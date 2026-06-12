@@ -17,14 +17,24 @@
 """
 import math
 from .trust import evidence_weight
+from .grounding import GROUNDED, interpret_bayes_factor
 
-# 판결별 기본 Bayes factor (사전등록 여부가 강도를 가른다 — novel 적중은 위조 어려움)
-# 나생문 F-MATH-1/2 수정: partial=1.0(땜빵=무정보, 누적금지), rejected=1/progressive(log-odds 대칭)
-BF_BASE = {'progressive': 6.0, 'partial': 1.0, 'equivalent': 1.0, 'rejected': 1.0 / 6.0}
-DEFAULT_PRIOR = 0.5         # base rate (감사 가능한 명시값 — 숨은 주관 금지)
-ABANDON_CREDENCE = 0.1      # 이 밑 = 폐기 (laudan 연속카운터의 연속판)
-EFF_CAP = 4.0              # 효과크기 상한 (이상치 1방 폭주 차단)
-WEIGHT_FLOOR = 0.3         # 마진이어도 판결 자체가 주는 최소 정보
+# 판결별 기본 Bayes factor — 값은 grounding 정본서 (Jeffreys 1961 / Kass-Raftery 1995 근거).
+#  progressive=6.0(Jeffreys substantial 밴드), rejected=1/6(log-odds 대칭, F-MATH-2),
+#  partial/equivalent=1.0(무정보, 누적금지 F-MATH-1). 야매 아님 — grounding.provenance 참조.
+BF_BASE = {'progressive': GROUNDED['bf_progressive']['value'],
+           'partial': GROUNDED['bf_partial_equivalent']['value'],
+           'equivalent': GROUNDED['bf_partial_equivalent']['value'],
+           'rejected': GROUNDED['bf_rejected']['value']}
+DEFAULT_PRIOR = GROUNDED['default_prior']['value']        # 무차별 원리 (Laplace 1814)
+ABANDON_CREDENCE = GROUNDED['abandon_credence']['value']  # odds 1:9 폐기 문턱
+EFF_CAP = GROUNDED['eff_cap']['value']                    # 효과크기 상한 (Cohen d=4=large×5)
+WEIGHT_FLOOR = GROUNDED['weight_floor']['value']          # 마진 개선 최소 증거력
+
+
+def interpret(bf: float) -> dict:
+    """Bayes factor → 문헌 등급(Jeffreys + Kass-Raftery). 점수의 해석(raw 숫자 금지)."""
+    return interpret_bayes_factor(bf)
 
 
 def effect_size(delta: float, noise_band: float, floor: float = 1e-6) -> float:
