@@ -194,3 +194,18 @@ ecosystem vocabulary:
 - Do not let PageRank, TrustRank, or MLflow metrics alone decide truth.
 - Do not make buffers canonical just because they are expensive to recompute.
 - Do not delete rejected branches; rejected branches are negative evidence.
+
+## Backlog Status (2026-06-12, Claude Fable)
+
+- [x] **1. Manifest dataclass** — `lakatos/lineage.py` `RawRoot` + `RebuildManifest` +
+  `build_manifest(final, bo, root_schemas, env_sha, tolerance)`. Groups raw roots
+  (path+sha+schema) with env fingerprint and topo recipe.
+- [x] **2. Environment fingerprint** — `lakatos/envfp.py`: python/platform/numeric
+  packages(numpy/scipy/trimesh)/determinism env vars/domain tools(Zivid/HALCON/CUDA)
+  → deterministic dict + sha256. Wired into `Derivation.env`, `lineage.env_drift`,
+  and `LineageReplayGate.evaluate(..., current_env=)` (G-RebuildFromRaw now env-aware).
+- [x] **3. G-RebuildFromRaw CLI/endpoint** — `GET /api/rebuild-verify/{artifact}` +
+  `lakatos rebuild-verify <final>`: reproducible + stale + env_drift → `rebuildable`
+  or `progressive_conditional` (consumer_b ZDF Rule #5), emits full RebuildManifest.
+- [ ] 4. Marquez I/O (adapters export ready, sender TODO).
+- [ ] 5. `prov` package serializer (PROV documents ready in adapters.py, lib serialize TODO).

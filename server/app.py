@@ -25,7 +25,9 @@ from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from lakatos.engine import FoundationRequirement, KnowledgeKind
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
-                             reproducibility_gaps, stale_inputs, is_reproducible, script_history)
+                             reproducibility_gaps, stale_inputs, is_reproducible, script_history,
+                             build_manifest, env_drift, RawRoot, RebuildManifest)
+from lakatos.envfp import environment_fingerprint, fingerprint_sha, env_matches
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -566,14 +568,15 @@ class DerivationIn(BaseModel):
     inputs: list = []            # [[path, sha], ...]
     params: dict = {}
     kind: str = 'intermediate'   # source|intermediate|final
+    env: str = ''                # 환경 지문 sha (envfp.fingerprint_sha)
 
 @app.post('/api/lineage/derivation')
 def record_derivation(d: DerivationIn):
     # PROV-O: output Entity wasDerivedFrom input Entities, wasGeneratedBy producer Activity
     kg("""MERGE (o:DataArtifact {path:$out}) SET o.sha=$osha, o.kind=$kind, o.producer=$prod,
-              o.producer_sha=$psha, o.params=$params, o.recorded_at=$ts""",
+              o.producer_sha=$psha, o.params=$params, o.env=$env, o.recorded_at=$ts""",
        out=d.output, osha=d.output_sha, kind=d.kind, prod=d.producer, psha=d.producer_sha,
-       params=json.dumps(d.params, ensure_ascii=False), ts=datetime.now(timezone.utc).isoformat())
+       params=json.dumps(d.params, ensure_ascii=False), env=d.env, ts=datetime.now(timezone.utc).isoformat())
     for path, sha in d.inputs:
         kg("""MERGE (i:DataArtifact {path:$ip}) ON CREATE SET i.sha=$ish
               WITH i MATCH (o:DataArtifact {path:$out})
@@ -589,13 +592,47 @@ def record_derivation(d: DerivationIn):
 def _load_lineage():
     rows = kg("""MATCH (o:DataArtifact) OPTIONAL MATCH (o)-[r:DERIVED_FROM]->(i:DataArtifact)
                  RETURN o.path AS out, o.sha AS osha, o.producer AS prod, o.producer_sha AS psha,
-                        o.kind AS kind, collect({path:i.path, sha:r.input_sha}) AS inputs""")
+                        o.kind AS kind, o.env AS env, collect({path:i.path, sha:r.input_sha}) AS inputs""")
     ds = []
     for x in rows:
         inp = [(a['path'], a['sha']) for a in x['inputs'] if a['path']]
         ds.append(Derivation(output=x['out'], output_sha=x['osha'] or '', producer=x['prod'] or '',
-                             producer_sha=x['psha'] or '', inputs=inp, kind=x['kind'] or 'intermediate'))
+                             producer_sha=x['psha'] or '', inputs=inp, kind=x['kind'] or 'intermediate',
+                             env=x.get('env') or ''))
     return ds
+
+@app.get('/api/rebuild-verify/{artifact:path}')
+def rebuild_verify(artifact: str):
+    """G-RebuildFromRaw — 완성본이 raw root + 현재 환경에서 재생성 가능한가."""
+    import hashlib as _h, os as _os
+    ds = _load_lineage()
+    bo = by_output(ds)
+    if artifact not in bo:
+        raise HTTPException(404, f'산출물 미기록: {artifact}')
+    src = {d.output for d in ds if d.kind == 'source'}
+    gaps = reproducibility_gaps(artifact, bo, src)
+    # 현재 디스크 sha 로 stale + 현재 환경으로 env drift
+    cur = {}
+    for d in ds:
+        for path, _ in d.inputs:
+            if path not in cur and _os.path.isfile(path):
+                cur[path] = _h.sha256(open(path, 'rb').read()).hexdigest()
+    cur_env = fingerprint_sha(environment_fingerprint())
+    plan = rebuild_plan(artifact, bo)
+    stale = {d.output: True for d in plan if stale_inputs(d, cur)}
+    env_changed = {d.output: {'recorded': d.env[:12], 'current': cur_env[:12]}
+                   for d in plan if env_drift(d, cur_env)}
+    mani = build_manifest(artifact, bo, env_sha=cur_env)
+    ok = (not gaps) and (not stale) and (not env_changed)
+    verdict = 'rebuildable' if ok else 'progressive_conditional'
+    return dict(artifact=artifact, verdict=verdict,
+                reproducible=(not gaps), gaps=sorted(gaps),
+                stale=list(stale), env_changed=env_changed,
+                manifest=dict(final=mani.final,
+                              roots=[{'path': r.path, 'sha': r.sha[:12], 'schema': r.schema} for r in mani.roots],
+                              env_sha=mani.env_sha[:12],
+                              recipe=[{k: v for k, v in step.items() if k != 'params'} for step in mani.recipe]),
+                note='rebuildable=raw root+현재환경서 재생성 가능. progressive_conditional=env/데이터 바뀜 → 재실행 필요(consumer_b ZDF Rule #5)')
 
 @app.get('/api/lineage-script/{producer:path}')
 def get_script_history(producer: str):

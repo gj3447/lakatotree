@@ -670,6 +670,8 @@ class LineageReplayResult(GateResult):
     rebuild_plan: tuple[Derivation, ...] = ()
     stale: bool = False
     changed: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = ()
+    env_drift: bool = False
+    env_changed: tuple[str, ...] = ()   # 환경 지문 바뀐 산출물
 
 
 class LineageReplayGate:
@@ -682,6 +684,7 @@ class LineageReplayGate:
         *,
         sources: set[str] | None = None,
         current_shas: dict[str, str] | None = None,
+        current_env: str | None = None,
     ) -> LineageReplayResult:
         derivs = list(derivations)
         bo = by_output(derivs)
@@ -709,11 +712,19 @@ class LineageReplayGate:
                 if bad:
                     changed.append((deriv.output, bad))
 
+        env_changed: list[str] = []
+        if current_env is not None:
+            for deriv in plan:
+                if deriv.env and deriv.env != current_env:
+                    env_changed.append(deriv.output)   # 환경 바뀜 → float 결과 달라질 수 있음
+
         reasons: list[str] = []
         if gaps:
             reasons.append("reproducibility_gaps")
         if changed:
             reasons.append("stale_inputs")
+        if env_changed:
+            reasons.append("env_drift")
         return LineageReplayResult(
             passed=not reasons,
             reasons=tuple(reasons),
@@ -722,6 +733,8 @@ class LineageReplayGate:
             rebuild_plan=plan,
             stale=bool(changed),
             changed=tuple(changed),
+            env_drift=bool(env_changed),
+            env_changed=tuple(env_changed),
         )
 
 
