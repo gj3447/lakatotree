@@ -218,6 +218,7 @@ class TestResultIn(BaseModel):
     script: str                      # 채점 스크립트 경로 (재현 가능해야 함)
     script_sha: str | None = None    # 제출 스크립트 sha256 (사전등록과 대조)
     novel_measured: float | None = None   # 구조적 novel 예측의 실측값
+    source_trust: float = 1.0        # 상계(인터넷) 증거 신뢰 [0,1] — 베이즈 결합용
     result_path: str = ''            # 원본 결과 파일
     log: str = ''
 
@@ -254,9 +255,9 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
           SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
               e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
               e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
-              e.novel_confirmed=$novel""",
+              e.novel_confirmed=$novel, e.source_trust=$st""",
        tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel)
+       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel, st=r.source_trust)
     # PROV-O 계보 기록 (W3C 표준 — 판결의 검증가능 출처그래프)
     for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
         if tr.get('kind'):
