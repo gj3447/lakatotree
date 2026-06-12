@@ -18,10 +18,13 @@
 
 | 층 | 이론 | 역할 | 모듈 |
 |---|---|---|---|
-| 신념개정 | AGM (contraction/revision, epistemic entrenchment) | hard_core 개정 형식화, CANONICAL demote=revision | (P1) |
+| 신념개정 | AGM 1985 / Hansson 1993 base revision (Levi identity, entrenchment) | hard_core 개정 형식화(기본 PROTECTED, 동의 시 shift 신호), CANONICAL demote=revision | `agm.py` ✅ |
 | 출처추적 | W3C PROV-O (Entity/Activity/Agent) | "LLM 점수 금지·스크립트 채점"을 검증가능 계보로 | `prov.py` |
 | 탐색배분 | bandit UCB1 + VoI (Howard 1966) | frontier 질문 우선순위 = 신뢰도+미탐색보너스, 기대진보/비용 | `explore.py` |
-| 메타-종료 | Lakatos 프로그램 소멸 + regret | 수확/발산/소멸 3-상태 판정 | (P1) |
+| 메타-종료 | Lakatos 프로그램 소멸 + regret | 수확/발산/소멸 3-상태 판정 (extinct 는 stack 정족수만 선고) | `lifecycle.py` ✅ |
+| 메타규칙 | Condorcet 다수결 (층=철학 렌즈, 독립성은 근사) | 층간 충돌 시 정족수 2/3 — 침묵 OR 제거, conflict 정직 보고 | `stack.py` ✅ |
+| 프로그램 비교 | Lakatos-Zahar 1976 supersession + Kuhn 상태 어휘 | 리더보드(Pareto+Borda) + shift_candidate=인간 안건(자동 교체 금지) | `leaderboard.py` `kuhn.py` ✅ |
+| 인증 | 게이트 전수 AND (계보 묶음) | 사전등록/재현/standing/보정/grounding 5게이트 인증서 | `certify.py` ✅ |
 
 ## 3. 정량 지표 (계산식)
 
@@ -32,22 +35,25 @@
 - **VoI(q) ≈ E[Δ진보|q closed] × 1/cost(q)** / **UCB(q) = credence(q) + c·√(ln N/n_q)**
 - Bayes 폐기 = credence<0.1 (라우든 이산 3규칙과 OR)
 
-## 4. 이론적 gaps (정직 — 미해결/논쟁)
+## 4. 이론적 gaps (정직 — 상태 명시, 2026-06-13 갱신)
 
-1. **novel 채점 미해결**: progressive 가 텍스트 존재만으로 partial 차등 → 구조적 corroboration 구현 필요 (본 버전 착수)
-2. prior 주관성: BF_BASE={6,1.5,0.3} 보정 근거 없음 — Bayesian "problem of the priors"
-3. **층간 통약불가**: 포퍼=rejected/베이즈=생존/라우든=양호 충돌 시 메타규칙 부재. 현재 OR=가장 관대한 층 지배 (Feyerabend 다원주의 미해결)
-4. 라우든 규칙③ dead: problem_balance_windowed 항상 0 (per-branch 질문귀속 미배선)
-5. AGM entrenchment 순서 유일해 없음 (credence? 문제수지? 연결도?)
-6. bandit reward 순환: reward=progressive 적중이 novel 채점(gap1)에 의존 → 채점 신뢰성 선결
-7. 단일 트리 한계: 진정한 패러다임 전환(Kuhn) 정량모델 부재
-8. 통계 표본 미반영: 점추정 비교만, 다중비교 보정 없음 (false-progressive 율)
+| # | gap | 상태 | 어떻게/왜 |
+|---|---|---|---|
+| 1 | novel 채점 (텍스트 존재만으로 차등) | ✅ 닫힘 | `judge.NovelTarget` 구조적 corroboration — 실측 대조 없으면 novel 불인정(F-CON-3) |
+| 2 | prior 주관성 (BF_BASE 보정 근거) | 🟡 완화 | grounding tier 공개 + `calibrate.py` Brier/ECE 로 경험 측정 — "problem of the priors" 자체는 원리상 미해결 |
+| 3 | 층간 통약불가 (침묵 OR) | ✅ 닫힘 | `stack.py` 명시 투표+정족수 2/3(Condorcet) + conflict 보고. 단 층 독립성은 근사(같은 판결 시퀀스 공유) — 정족수는 '렌즈 3개의 합의' |
+| 4 | 라우든 규칙③ dead (per-branch 질문귀속 미배선) | ❌ 미해결 | 엔진은 problem_balance_windowed 인자를 받지만 서버의 per-branch 질문귀속 배선이 없음 — 다음 작업 |
+| 5 | AGM entrenchment 유일해 없음 | ✅ 정책 선언으로 닫음 | `agm.py` — 해소가 아니라 사전식 순서를 *선언*하고 모든 결과에 entrenchment_policy 동봉(감사 가능) |
+| 6 | bandit reward 순환 (novel 채점 의존) | ✅ 선결 해소 | gap1 닫힘 → reward 의 근거가 구조적 corroboration |
+| 7 | 단일 트리 한계 (Kuhn 정량모델 부재) | ✅ 닫힘(범위 한정) | `kuhn.py` — 기계화는 Lakatos-Zahar supersession 기준만, Kuhn 은 상태 어휘. shift 는 자동 아닌 인간 안건 |
+| 8 | 통계 표본 미반영 (다중비교 보정) | ❌ 미해결 | 점추정 비교만 — false-progressive 율 추정 없음. 후보: 가지 수에 Bonferroni/BH 보정 |
 
-## 5. 우선순위 (이 버전 = v4 구현 대상)
+## 5. 우선순위 (상태 갱신 2026-06-13)
 
-P0: 구조적 corroboration(gap1) + PROV-O 계보 + 스크립트 sha256 무결성
-P1: VoI/UCB directions + AGM hardcore 개정 + lifecycle 종료판정
-P2: 경쟁 가지 리더보드 + 인증층
+- P0 ✅: 구조적 corroboration(gap1) + PROV-O 계보 + 스크립트 sha256 무결성
+- P1 ✅: VoI/UCB directions + AGM hardcore 개정(`agm.py`) + lifecycle 종료판정(`lifecycle.py`)
+- P2 ✅: 경쟁 가지 리더보드(`leaderboard.py`+`kuhn.py`) + 인증층(`certify.py`)
+- **P3 (신규 frontier)**: gap4 per-branch 질문귀속 서버 배선 + gap8 다중비교 보정 + 신규 층의 서버/CLI/MCP 노출
 
 ## 6. 2차 prom 확장 — 인터넷·인간·agent·하계 엮기 (2026-06-12)
 
