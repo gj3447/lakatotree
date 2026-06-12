@@ -48,3 +48,20 @@
 P0: 구조적 corroboration(gap1) + PROV-O 계보 + 스크립트 sha256 무결성
 P1: VoI/UCB directions + AGM hardcore 개정 + lifecycle 종료판정
 P2: 경쟁 가지 리더보드 + 인증층
+
+## 6. 2차 prom 확장 — 인터넷·인간·agent·하계 엮기 (2026-06-12)
+
+> 비전: 라카토트리 = KG(상계) + 인터넷(창/세상) + bash실행(하계) + 인간 + agent 를 엮는 하나의 과정.
+> 우선순위: ①인터넷 공간 엮기 ②연구 수행 ③순수 수학구조(창조의 이성적 기쁨).
+> 정본 출처: EigenTrust(Kamvar WWW2003), TrustRank(Gyöngyi VLDB2004), Dung AF(1995), Brier(1950)/log score.
+
+| 모듈 | 이론 | 라카토트리 역할 |
+|---|---|---|
+| `trust.py` | TrustRank(시드전파)·EigenTrust(고유벡터) | **인터넷 증거에 정량 신뢰가중** → 베이즈 P(E|H) 결합. 골방 아님 |
+| `argue.py` | Dung 추상 논증(grounded extension) | **인간+agent 비판 채널**: 의문=공격, 반박=재공격. 판결이 grounded extension 에 서야 정당 |
+| `calibrate.py` | proper scoring(Brier/log/ECE) | 예측 **신뢰도 보정** — prior 주관성 gap 경험적 측정, 정직성 강제 |
+
+- **인터넷→베이즈**: `bayes_factor(..., source_trust)` — 권위 출처(높은 TrustRank) = 강한 증거, 저신뢰는 floor 까지 감쇠. evidence_weight(trust) 가 log(BF) 에 곱.
+- **역할분담**: 인간+agent = critique(질문/의문/평가, Dung attack) / 순수 agent = 코드빌딩(test_result). 의문이 막히지 않으면(stands=False) 판결 재검토.
+- **상계/하계**: 노드(상계 추상)는 하계(bash실행·인터넷fetch·실측)로 채점. 인터넷 = 질의가능한 세상의 창.
+- 새 지표: 출처신뢰(TrustRank/EigenTrust 벡터), 판결 정당성(grounded extension 포함 여부), Brier/log/ECE(보정).

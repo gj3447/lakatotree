@@ -42,3 +42,12 @@ def test_prior_audit_explicit():
     # 사전확률 주관성(베이즈 한계) → 명시 인자, 같은 증거도 prior 다르면 결과 다름
     ev = [{'verdict':'partial','delta':-0.01,'noise_band':0.01}]
     assert branch_credence(ev, prior=0.8) > branch_credence(ev, prior=0.2)
+
+
+# === 인터넷 신뢰가중 증거 (P1: 인터넷→베이즈 결합) ===
+def test_trust_weighted_evidence():
+    from lakatos.bayes import bayes_factor
+    # 같은 progressive 증거라도 고신뢰 출처가 신뢰도를 더 움직인다 (BF 가 1에서 더 멀다)
+    hi = bayes_factor('progressive', delta=-0.1, noise_band=0.01, source_trust=1.0)
+    lo = bayes_factor('progressive', delta=-0.1, noise_band=0.01, source_trust=0.1)
+    assert hi > lo > 1.0   # 저신뢰도 증거도 무시는 아님(floor)

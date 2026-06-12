@@ -12,6 +12,9 @@ lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판
   explore.py        [탐색배분] bandit UCB + VoI — frontier 질문 우선순위(다음 어느 가지)
   prov.py           [출처추적] W3C PROV-O 트리플 — 판결의 검증가능 계보 + 재현 명령
   fertility.py      [이론 발전성] novel 예측 적중 track record — 과학=예측력, nobel_grade
+  trust.py          [인터넷 신뢰] TrustRank/EigenTrust — 웹 증거에 신뢰가중 → 베이즈 결합 (P1)
+  argue.py          [논증 채널] Dung AF — 인간+agent 의문/반박, grounded extension 정당성
+  calibrate.py      [신뢰도 보정] Brier/log/ECE proper scoring — 예측 정직성
   metrics.py        트리 지표 (진보율/기각률/퇴행/베이즈/★발전성 + 라우든)
   cli.py            CLI 조작층 (python -m lakatos.cli)
   mcp_server.py     MCP 도구 7종 (Claude/Codex 가 나무 조작)

@@ -19,6 +19,9 @@ from lakatos.judge import (Prediction, NovelTarget, judge, PredictionMissing,
 from lakatos.metrics import tree_metrics
 from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
+from lakatos.argue import grounded_extension, verdict_stands
+from lakatos.calibrate import brier_score, log_score, calibration_error
+from lakatos.trust import evidence_weight
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -285,6 +288,61 @@ def provenance(name: str, tag: str):
     return dict(tag=tag, verdict=x['verdict'], script=x['script'], script_sha=x['sha'],
                 result_path=x['rp'], prov_graph=[p for p in x['prov'] if p['id']],
                 replay=replay_command(x['script'] or '', x['rp'] or ''))
+
+class CritiqueIn(BaseModel):
+    """인간/agent 의 의문·코멘트·반박 (Dung argument attack). 역할: 인간+agent=비판."""
+    arg_id: str                      # 이 논증의 식별자 (예: doubt:reviewer1)
+    attacks: str                     # 무엇을 공격하는가 (노드 tag, 또는 다른 arg_id)
+    by: str = ''                     # 누가 (human:name / agent:name)
+    kind: str = 'doubt'              # doubt | comment | rebuttal | evaluation
+    body: str = ''
+
+@app.post('/api/tree/{name}/node/{tag}/critique')
+def add_critique(name: str, tag: str, c: CritiqueIn):
+    kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+          MERGE (a:Argument {id:$tree+'/'+$arg}) SET a.by=$by, a.kind=$kind, a.body=$body,
+                a.attacks=$attacks, a.at=$ts
+          MERGE (e)-[:HAS_ARGUMENT]->(a)""",
+       tree=name, tag=tag, arg=c.arg_id, by=c.by, kind=c.kind, body=c.body,
+       attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
+    hist(name, 'critique', tag, c.model_dump())
+    return {'ok': True, 'note': '비판 등재 — 코드 빌딩은 순수 agent(test_result) 담당'}
+
+@app.get('/api/tree/{name}/node/{tag}/standing')
+def standing(name: str, tag: str):
+    """판결이 의문들을 막아내고 서는가 — Dung grounded extension."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                 RETURN e.verdict AS verdict, collect({id:a.id, attacks:a.attacks, kind:a.kind, by:a.by}) AS args""",
+              tree=name, tag=tag)
+    if not rows:
+        raise HTTPException(404, f'노드 없음: {tag}')
+    verdict_arg = f'verdict:{tag}'
+    arguments = {verdict_arg}
+    attacks = []
+    for a in rows[0]['args']:
+        if not a['id']:
+            continue
+        short = a['id'].split('/')[-1]
+        arguments.add(short)
+        tgt = verdict_arg if a['attacks'] == tag else a['attacks']
+        attacks.append((short, tgt))
+    ext = grounded_extension(arguments, attacks)
+    stands = verdict_arg in ext
+    return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,
+                grounded_extension=sorted(ext),
+                note='stands=False → 막지 못한 의문 존재, 판결 재검토 필요 (코드빌딩=순수agent)')
+
+@app.get('/api/tree/{name}/calibration')
+def calibration(name: str):
+    """예측 신뢰도 보정 — proper scoring(Brier/log/ECE)으로 nobel급 정직성 측정."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                 WHERE e.pred_credence IS NOT NULL AND e.novel_confirmed IS NOT NULL
+                 RETURN e.pred_credence AS p, e.novel_confirmed AS o""", tree=name)
+    fc = [(r['p'], 1 if r['o'] else 0) for r in rows]
+    return dict(n=len(fc), brier=round(brier_score(fc), 4), log_score=round(log_score(fc), 4),
+                calibration_error=round(calibration_error(fc), 4),
+                note='Brier 0=완벽, log=overconfidence 강벌, ECE=보정오차. 표본 부족시 0')
 
 @app.get('/api/tree/{name}/directions')
 def directions(name: str):
