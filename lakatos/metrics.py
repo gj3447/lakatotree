@@ -31,10 +31,14 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         for t, m, sc in pm:
             scopes[sc].append((t, m))
         sc = max(scopes.values(), key=len)
-        if len(sc) >= 2:
+        if len(sc) >= 2 and sc[0][1] != 0:   # 나생문 F-FG-8: first=0 ZeroDivision 가드
             prog = dict(first={'tag': sc[0][0], 'm': sc[0][1]},
                         last={'tag': sc[-1][0], 'm': sc[-1][1]},
                         improvement_pct=round(100 * (sc[0][1] - sc[-1][1]) / sc[0][1], 1))
+        elif len(sc) >= 2:   # 기준 0 (예: 시작 tests=0) → 절대 증가량만
+            prog = dict(first={'tag': sc[0][0], 'm': sc[0][1]},
+                        last={'tag': sc[-1][0], 'm': sc[-1][1]},
+                        improvement_pct=None, abs_gain=round(sc[-1][1] - sc[0][1], 4))
     children = defaultdict(list)
     for r in nodes:
         if r.get('parent'):
@@ -96,7 +100,8 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                  note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
     alerts = [a for a in [
         f'퇴행 경보: 연속 비진보 깊이 {stalled} ≥3 — 가지 전환 검토' if stalled >= 3 else None,
-        '정체 경보: 진보율 ≤0' if prog and prog['improvement_pct'] <= 0 else None,
+        '정체 경보: 진보율 ≤0' if prog and prog.get('improvement_pct') is not None
+        and prog['improvement_pct'] <= 0 else None,
         '주석 미완 노드 존재' if annotated < n else None,
     ] + [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon] if a]
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,

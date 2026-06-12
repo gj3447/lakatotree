@@ -47,3 +47,16 @@ def test_parent_cycle_does_not_hang():
     ]
     m = tree_metrics(cyc, [])   # 무한루프면 여기서 hang — 가드 있으면 즉시 반환
     assert m['canonical'] == 'c1'
+
+
+def test_zero_first_metric_no_crash():
+    """나생문 F-FG-8: 시작 metric=0(예: tests 0개)이어도 ZeroDivision 안 남."""
+    nodes = [
+        dict(tag='a', verdict='canonical_stage', parent=None, metric_value=0.0, metric_scope='s',
+             algorithm='x', comment='x', limitation='x'),
+        dict(tag='b', verdict='CANONICAL', parent='a', metric_value=26.0, metric_scope='s',
+             algorithm='x', comment='x', limitation='x'),
+    ]
+    m = tree_metrics(nodes, [])
+    assert m['progress']['improvement_pct'] is None
+    assert m['progress']['abs_gain'] == 26.0

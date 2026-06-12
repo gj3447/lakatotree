@@ -13,8 +13,12 @@ import html, json, os, sys
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lakatos.judge import Prediction, judge, PredictionMissing, PredictionLocked, check_registration
+import hashlib
+from lakatos.judge import (Prediction, NovelTarget, judge, PredictionMissing,
+                           PredictionLocked, check_registration)
 from lakatos.metrics import tree_metrics
+from lakatos.prov import prov_triples, replay_command
+from lakatos.explore import rank_questions
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -179,7 +183,11 @@ class PredictionIn(BaseModel):
     direction: str = 'lower'          # lower|higher = 개선 방향
     baseline_value: float             # 비교 기준 (보통 CANONICAL 의 값)
     noise_band: float = Field(0.0, ge=0)   # 나생문 F-FG-2: 음수 금지(worse-is-progressive 차단)
-    novel_prediction: str = ''        # 무엇이 "새로" 맞아야 하는가 (없으면 땜빵=퇴행 후보)
+    novel_prediction: str = ''        # (구) 자유텍스트 — 구조적 명세 권장
+    novel_metric: str | None = None   # (신) 구조적 corroboration: 예측 metric
+    novel_direction: str | None = None    # lower|higher
+    novel_threshold: float | None = None  # 이 값 넘어야 적중
+    judge_script_sha: str | None = None   # 채점 스크립트 sha256 사전고정 (무결성)
     closes_question: str = ''         # 닫으려는 OpenQuestion
 
 @app.post('/api/tree/{name}/node/{tag}/prediction')
@@ -189,6 +197,8 @@ def register_prediction(name: str, tag: str, p: PredictionIn):
               SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                   e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
                   e.pred_novel=$novel_prediction, e.pred_closes=$closes_question,
+                  e.pred_novel_metric=$novel_metric, e.pred_novel_direction=$novel_direction,
+                  e.pred_novel_threshold=$novel_threshold, e.pred_script_sha=$judge_script_sha,
                   e.pred_registered_at=$ts
               RETURN e.tag AS tag""",
            tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(), **p.model_dump())
@@ -201,6 +211,8 @@ class TestResultIn(BaseModel):
     """채점 스크립트 산출 — LLM 점수 금지, 판결은 규칙으로 자동."""
     metric_value: float
     script: str                      # 채점 스크립트 경로 (재현 가능해야 함)
+    script_sha: str | None = None    # 제출 스크립트 sha256 (사전등록과 대조)
+    novel_measured: float | None = None   # 구조적 novel 예측의 실측값
     result_path: str = ''            # 원본 결과 파일
     log: str = ''
 
@@ -208,51 +220,89 @@ class TestResultIn(BaseModel):
 def submit_test_result(name: str, tag: str, r: TestResultIn):
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                  RETURN e.pred_metric AS m, e.pred_direction AS d, e.pred_baseline AS b,
-                        e.pred_noise_band AS nb, e.pred_novel AS novel,
-                        e.verdict_source AS vsrc""", tree=name, tag=tag)
+                        e.pred_noise_band AS nb, e.pred_novel AS novel, e.verdict_source AS vsrc,
+                        e.pred_novel_metric AS nmet, e.pred_novel_direction AS ndir,
+                        e.pred_novel_threshold AS nthr, e.pred_script_sha AS psha""", tree=name, tag=tag)
     if not rows:
         raise HTTPException(404, f'노드 없음: {tag}')
     pr = rows[0]
-    if pr['vsrc'] == 'scripted':   # 나생문 F-FG-1: re-roll 금지 (원하는 값 나올 때까지 재제출 차단)
-        raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). '
-                                 '새 시도는 새 노드로 분기할 것')
+    if pr['vsrc'] == 'scripted':   # 나생문 F-FG-1: re-roll 금지
+        raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). 새 노드로 분기할 것')
+    # P0 스크립트 무결성: 사전등록 sha 와 제출 sha 불일치 시 거부 (재현성 강제)
+    if pr['psha'] and r.script_sha and pr['psha'] != r.script_sha:
+        raise HTTPException(409, f"채점 스크립트 sha256 불일치 — 사전등록 {pr['psha'][:12]} ≠ 제출 {r.script_sha[:12]}")
+    nt = None
+    if pr['nmet'] and pr['ndir'] and pr['nthr'] is not None:
+        nt = NovelTarget(metric_name=pr['nmet'], direction=pr['ndir'], threshold=pr['nthr'])
     try:
         v = judge(None if pr['m'] is None else Prediction(
             metric_name=pr['m'], direction=pr['d'], baseline_value=pr['b'],
-            noise_band=pr['nb'] or 0.0, novel_prediction=pr['novel'] or ''), r.metric_value)
+            noise_band=pr['nb'] or 0.0, novel_prediction=pr['novel'] or ''),
+            r.metric_value, novel_target=nt, novel_measured=r.novel_measured)
     except PredictionMissing as e:
         raise HTTPException(409, str(e))
     except ValueError as e:
-        raise HTTPException(422, str(e))   # 음수밴드/NaN 등 무효 입력
+        raise HTTPException(422, str(e))
     verdict, delta = v.verdict, v.delta
+    ts = datetime.now(timezone.utc).isoformat()
     kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
           SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
-              e.verdict_source='scripted', e.judge_script=$script,
+              e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
               e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts""",
        tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-       script=r.script, rp=r.result_path, ts=datetime.now(timezone.utc).isoformat())
+       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts)
+    # PROV-O 계보 기록 (W3C 표준 — 판결의 검증가능 출처그래프)
+    for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
+        if tr.get('kind'):
+            kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  MERGE (p:ProvNode {id:$id}) SET p.kind=$kind, p.type=$type, p.sha256=$sha
+                  MERGE (e)-[:HAS_PROV]->(p)""",
+               tree=name, tag=tag, id=tr['id'], kind=tr['kind'], type=tr.get('type'), sha=tr.get('sha256'))
+        else:
+            kg("""MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
+                  MERGE (a)-[rel:PROV_REL {kind:$rk}]->(b)""",
+               f=tr['from'], to=tr['to'], rk=tr['rel'])
     hist(name, 'test_result', tag, dict(value=r.metric_value, baseline=pr['b'],
-                                        delta=round(delta, 4), verdict=verdict, script=r.script))
-    return {'ok': True, 'verdict': verdict, 'delta': round(delta, 4), 'rule': v.reason}
+                                        delta=round(delta, 4), verdict=verdict, script=r.script,
+                                        novel=v.novel, script_sha=r.script_sha))
+    return {'ok': True, 'verdict': verdict, 'delta': round(delta, 4), 'novel': v.novel,
+            'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}
+
+@app.get('/api/tree/{name}/node/{tag}/provenance')
+def provenance(name: str, tag: str):
+    """판결의 W3C PROV-O 계보 + 재현 명령."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 OPTIONAL MATCH (e)-[:HAS_PROV]->(p:ProvNode)
+                 RETURN e.judge_script AS script, e.result_path AS rp, e.verdict AS verdict,
+                        e.judge_script_sha AS sha, collect({id:p.id,kind:p.kind,type:p.type}) AS prov""",
+              tree=name, tag=tag)
+    if not rows or rows[0]['script'] is None:
+        raise HTTPException(404, '채점 이력 없음')
+    x = rows[0]
+    return dict(tag=tag, verdict=x['verdict'], script=x['script'], script_sha=x['sha'],
+                result_path=x['rp'], prov_graph=[p for p in x['prov'] if p['id']],
+                replay=replay_command(x['script'] or '', x['rp'] or ''))
 
 @app.get('/api/tree/{name}/directions')
 def directions(name: str):
     """frontier → 다음 가지 방향 자동 생성 (규칙 기반)."""
     td = tree_data(name)
     can = next((r for r in td['nodes'] if r['verdict'] == 'CANONICAL'), None)
-    out = []
-    for q in td['frontier']:
-        if q['status'] != 'OPEN':
-            continue
-        out.append(dict(
-            question=q['name'], body=(q['body'] or '')[:200],
-            branch_from=(can or {}).get('tag'),
-            suggested_tag=q['name'].replace('q-', 'exp-') + '-try1',
-            protocol=['① prediction 사전등록 (baseline=' +
-                      str((can or {}).get('metric_value')) + ', 방향/노이즈밴드/novel_prediction 명시)',
-                      '② 변경 하나로 실험 실행', '③ 채점 스크립트로 test_result 제출 (LLM 점수 금지)',
-                      '④ 자동 판결 — progressive 면 CANONICAL 승격 검토 + 질문 close']))
-    return dict(canonical=(can or {}).get('tag'), open_directions=out)
+    m = compute_metrics(td)
+    cred = (m.get('bayes') or {}).get('canonical_credence') or 0.5
+    opens = [q for q in td['frontier'] if q['status'] == 'OPEN']
+    # VoI/UCB 우선순위 (bandit 탐색배분) — q 메타 없으면 기본값
+    qmeta = [dict(name=q['name'], body=(q['body'] or '')[:160],
+                  expected_gain=q.get('expected_gain', 0.1), cost=q.get('cost', 1.0),
+                  credence=cred, n_visits=q.get('n_visits', 1)) for q in opens]
+    ranked = rank_questions(qmeta, total_visits=max(len(td['nodes']), 1))
+    for q in ranked:
+        q['branch_from'] = (can or {}).get('tag')
+        q['suggested_tag'] = q['name'].replace('q-', 'exp-') + '-try1'
+    return dict(canonical=(can or {}).get('tag'), canonical_credence=cred,
+                ranked_directions=ranked,
+                protocol=['① prediction 사전등록(구조적 novel_metric/threshold + script_sha 권장)',
+                          '② 변경 하나 실행', '③ test_result 스크립트 채점', '④ 자동 판결+질문 close'])
 
 class ArtifactIn(BaseModel):
     node_tag: str
