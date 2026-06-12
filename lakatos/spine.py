@@ -9,6 +9,7 @@
 """
 from .promote import promotion_gate
 from .engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
+from .pnr import PnRAppraisal
 
 
 def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False,
@@ -50,6 +51,24 @@ def reconcile_verdict(metric_verdict: str, lakatos_result=None) -> dict:
     return {'verdict': lakatos_result.verdict.value, 'lakatos': lakatos_result.verdict.value,
             'status': 'reconciled', 'reasons': tuple(lakatos_result.reasons),
             'requires_human': bool(getattr(lakatos_result, 'requires_human_verdict', False))}
+
+
+def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None' = None,
+                        lakatos_result=None) -> dict:
+    """judge(메트릭) + 증명과반박 변증법 + LakatosGate 합성 — 라카토스의 심장.
+
+    반례 대응(monster-barring 등)이 부적절하면 메트릭이 진보라도 변증법이 퇴행으로 강등한다.
+    PnR progressive 면 reconcile 결과 유지 + ad_hoc 등급 부착. 반례 대응 없으면 reconcile 그대로.
+    """
+    base = reconcile_verdict(metric_verdict, lakatos_result)
+    if pnr_appraisal is None:
+        return base
+    if pnr_appraisal.verdict in ('degenerating', 'withdrawn'):   # 변증법 우선 강등
+        return {'verdict': pnr_appraisal.verdict, 'lakatos': base.get('lakatos', 'n/a'),
+                'status': 'dialectic_overrides', 'pnr': pnr_appraisal.verdict,
+                'ad_hoc': pnr_appraisal.ad_hoc, 'reasons': tuple(pnr_appraisal.reasons)}
+    return {**base, 'pnr': 'progressive', 'ad_hoc': pnr_appraisal.ad_hoc,
+            'status': base.get('status', '') + '+pnr_progressive'}
 
 
 def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
