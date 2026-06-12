@@ -75,6 +75,20 @@ class Realm(str, Enum):
     GIT = "git"
 
 
+class KnowledgeKind(str, Enum):
+    """연구 시작 전에 필요한 기반지식 범주."""
+
+    THEORY = "theory"
+    DOMAIN = "domain"
+    DATA = "data"
+    METRIC = "metric"
+    METHOD = "method"
+    TOOL = "tool"
+    TRUST = "trust"
+    REPRODUCIBILITY = "reproducibility"
+    HUMAN_PROTOCOL = "human_protocol"
+
+
 @dataclass(frozen=True)
 class ResearchProject:
     """LakatoTree 틀 안의 구체 프로젝트 인스턴스."""
@@ -82,6 +96,149 @@ class ResearchProject:
     name: str
     goal: str
     root_artifacts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class FoundationRequirement:
+    """연구가 시작되기 전 명시돼야 할 기반지식 requirement."""
+
+    name: str
+    kind: KnowledgeKind
+    question: str
+    why_needed: str
+    acceptance_criteria: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    status: str = "needed"       # needed | satisfied | waived
+    optional: bool = False
+    owner: str = ""
+    risk_if_missing: str = ""
+
+    @property
+    def satisfied(self) -> bool:
+        if self.optional and self.status == "waived":
+            return True
+        return self.status == "satisfied" and bool(self.evidence_refs)
+
+    def db_record(self) -> dict:
+        return {
+            "name": self.name,
+            "kind": self.kind.value,
+            "question": self.question,
+            "why_needed": self.why_needed,
+            "acceptance_criteria": list(self.acceptance_criteria),
+            "evidence_refs": list(self.evidence_refs),
+            "status": self.status,
+            "optional": self.optional,
+            "owner": self.owner,
+            "risk_if_missing": self.risk_if_missing,
+            "satisfied": self.satisfied,
+        }
+
+
+@dataclass
+class FoundationMap:
+    """프로젝트 기반지식을 sparse requirement 목록으로 관리한다."""
+
+    _requirements: dict[str, FoundationRequirement] = field(default_factory=dict)
+
+    def add(self, requirement: FoundationRequirement) -> FoundationRequirement:
+        if requirement.name in self._requirements:
+            raise ValueError(f"foundation requirement already exists: {requirement.name}")
+        self._requirements[requirement.name] = requirement
+        return requirement
+
+    def requirements(self) -> tuple[FoundationRequirement, ...]:
+        return tuple(self._requirements.values())
+
+    def gaps(self) -> tuple[FoundationRequirement, ...]:
+        return tuple(r for r in self._requirements.values() if not r.satisfied)
+
+    def summary(self) -> dict:
+        reqs = self.requirements()
+        gaps = self.gaps()
+        by_kind: dict[str, int] = {}
+        for req in reqs:
+            by_kind[req.kind.value] = by_kind.get(req.kind.value, 0) + 1
+        return {
+            "required": len(reqs),
+            "satisfied": len(reqs) - len(gaps),
+            "gaps": [g.name for g in gaps],
+            "by_kind": by_kind,
+        }
+
+    @classmethod
+    def default_for_project(cls, project: ResearchProject) -> "FoundationMap":
+        fmap = cls()
+        defaults = [
+            FoundationRequirement(
+                name="research-program-theory",
+                kind=KnowledgeKind.THEORY,
+                question="what counts as progressive, degenerating, or merely partial?",
+                why_needed="prevents the tree from becoming an absolute narrative",
+                acceptance_criteria=("verdict vocabulary", "revision rule", "non-absolute current best"),
+            ),
+            FoundationRequirement(
+                name="domain-ontology",
+                kind=KnowledgeKind.DOMAIN,
+                question="what entities, observations, and interventions exist in this project?",
+                why_needed="prevents project-specific facts from leaking into the framework",
+                acceptance_criteria=("entity vocabulary", "scope boundary", "unknown list"),
+            ),
+            FoundationRequirement(
+                name="root-data-contract",
+                kind=KnowledgeKind.DATA,
+                question="what raw/root artifacts anchor the research?",
+                why_needed="makes all derived results replayable from roots",
+                acceptance_criteria=("root artifact ids", "content hashes", "stale policy"),
+            ),
+            FoundationRequirement(
+                name="metric-contract",
+                kind=KnowledgeKind.METRIC,
+                question="which metrics judge branches and where do metric relabels break continuity?",
+                why_needed="prevents relabel events from masquerading as progress",
+                acceptance_criteria=("metric_name", "direction", "noise_band", "relabel rule"),
+            ),
+            FoundationRequirement(
+                name="trust-and-provenance-contract",
+                kind=KnowledgeKind.TRUST,
+                question="which sources and observations are trusted enough for each claim tier?",
+                why_needed="prevents internet observations from silently becoming extracted claims",
+                acceptance_criteria=("credibility tier", "source refs", "corroboration rule"),
+            ),
+            FoundationRequirement(
+                name="reproducibility-contract",
+                kind=KnowledgeKind.REPRODUCIBILITY,
+                question="how can final artifacts be regenerated from root artifacts?",
+                why_needed="keeps buffers temporary and final claims replayable",
+                acceptance_criteria=("lineage DAG", "producer sha", "rebuild plan"),
+            ),
+            FoundationRequirement(
+                name="human-agent-protocol",
+                kind=KnowledgeKind.HUMAN_PROTOCOL,
+                question="what can humans decide, what can agents build, and how are doubts recorded?",
+                why_needed="keeps critique, construction, and sigma judgement separate",
+                acceptance_criteria=("critique channel", "closure events", "conflict rule"),
+            ),
+        ]
+        for req in defaults:
+            fmap.add(req)
+        if project.root_artifacts:
+            existing = fmap._requirements["root-data-contract"]
+            fmap._requirements["root-data-contract"] = replace(
+                existing,
+                evidence_refs=tuple(project.root_artifacts),
+                status="satisfied",
+            )
+        return fmap
+
+
+class FoundationGate:
+    """기반지식 gap 이 남아 있으면 연구 판결을 보수적으로 막는다."""
+
+    @staticmethod
+    def evaluate(foundation: FoundationMap) -> GateResult:
+        gaps = foundation.gaps()
+        return GateResult.pass_() if not gaps else GateResult.fail(g.name for g in gaps)
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
   result <name> <tag> --value V --script S [--sha S] [--novel-measured X]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
+  foundation <name>              기반지식 requirement 목록
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
 # KG: span_lakatotree_cli
 """
@@ -35,7 +36,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog='lakatos', description='라카토트리 CLI')
     sub = p.add_subparsers(dest='cmd', required=True)
     sub.add_parser('trees')
-    for c in ('tree', 'metrics', 'directions'):
+    for c in ('tree', 'metrics', 'directions', 'foundation'):
         sp = sub.add_parser(c); sp.add_argument('name')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--parent', action='append', default=[])
@@ -56,6 +57,14 @@ def main(argv=None):
     sp.add_argument('--lifecycle', default=''); sp.add_argument('--scope', default='domain-agnostic')
     sp = sub.add_parser('use-element'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('element_name')
     sp.add_argument('--note', default=''); sp.add_argument('--evidence-ref', default='')
+    sp = sub.add_parser('foundation-record'); sp.add_argument('name'); sp.add_argument('requirement_name')
+    sp.add_argument('--kind', required=True, choices=['theory','domain','data','metric','method','tool',
+                                                     'trust','reproducibility','human_protocol'])
+    sp.add_argument('--question', default=''); sp.add_argument('--why-needed', default='')
+    sp.add_argument('--accept', action='append', default=[]); sp.add_argument('--evidence', action='append', default=[])
+    sp.add_argument('--status', default='needed', choices=['needed','satisfied','waived'])
+    sp.add_argument('--optional', action='store_true'); sp.add_argument('--owner', default='')
+    sp.add_argument('--risk-if-missing', default='')
     sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
     sp = sub.add_parser('script-history'); sp.add_argument('producer')
     sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
@@ -72,6 +81,8 @@ def main(argv=None):
         out = call('GET', f'/api/tree/{a.name}/metrics')
     elif a.cmd == 'directions':
         out = call('GET', f'/api/tree/{a.name}/directions')
+    elif a.cmd == 'foundation':
+        out = call('GET', f'/api/tree/{a.name}/foundation')
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:
@@ -99,6 +110,12 @@ def main(argv=None):
     elif a.cmd == 'use-element':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/element/{a.element_name}',
                    dict(note=a.note, evidence_ref=a.evidence_ref))
+    elif a.cmd == 'foundation-record':
+        out = call('POST', f'/api/tree/{a.name}/foundation',
+                   dict(name=a.requirement_name, kind=a.kind, question=a.question,
+                        why_needed=a.why_needed, acceptance_criteria=a.accept,
+                        evidence_refs=a.evidence, status=a.status, optional=a.optional,
+                        owner=a.owner, risk_if_missing=a.risk_if_missing))
     elif a.cmd == 'lineage':
         import urllib.parse as up
         out = call('GET', f'/api/lineage/{up.quote(a.artifact)}' + ('?stale=true' if a.stale else ''))

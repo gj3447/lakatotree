@@ -10,7 +10,11 @@ from lakatos.engine import (
     BashAct,
     CredibilityPromotionGate,
     CredibilityTier,
+    FoundationGate,
+    FoundationMap,
+    FoundationRequirement,
     InternetObservation,
+    KnowledgeKind,
     LakatosEvidence,
     LakatosGate,
     LakatosNode,
@@ -187,6 +191,51 @@ def test_research_frame_keeps_sparse_possibilities_and_append_only_events():
     assert standing["event_count"] == 2
     assert standing["realms"] == ["human", "internet"]
     assert frame.events()[0].db_record()["payload"] == {"trust": "0.82"}
+
+
+def test_foundation_map_tracks_required_base_knowledge_and_gates_research():
+    foundation = FoundationMap()
+    foundation.add(
+        FoundationRequirement(
+            name="lakatos-program-theory",
+            kind=KnowledgeKind.THEORY,
+            question="what counts as progressive rather than degenerating?",
+            why_needed="prevents the tree from treating every branch as absolute truth",
+            acceptance_criteria=("progressive/degenerated distinction recorded",),
+            evidence_refs=("THEORY.md#lakatos",),
+            status="satisfied",
+        )
+    )
+    foundation.add(
+        FoundationRequirement(
+            name="metric-contract",
+            kind=KnowledgeKind.METRIC,
+            question="which metric judges a branch and when does it break?",
+            why_needed="prevents metric relabel from looking like continuous progress",
+            acceptance_criteria=("metric_name", "direction", "noise_band", "relabel rule"),
+        )
+    )
+
+    gate = FoundationGate.evaluate(foundation)
+
+    assert not gate.passed
+    assert gate.reasons == ("metric-contract",)
+    assert foundation.gaps()[0].kind == KnowledgeKind.METRIC
+    assert foundation.summary()["required"] == 2
+    assert foundation.summary()["satisfied"] == 1
+
+
+def test_default_foundation_requirements_are_sparse_and_domain_agnostic():
+    foundation = FoundationMap.default_for_project(
+        ResearchProject(name="new-lab", goal="study a measurement problem")
+    )
+    kinds = {req.kind for req in foundation.requirements()}
+
+    assert KnowledgeKind.THEORY in kinds
+    assert KnowledgeKind.DATA in kinds
+    assert KnowledgeKind.METRIC in kinds
+    assert KnowledgeKind.REPRODUCIBILITY in kinds
+    assert all("BPC" not in req.name and "ZDF" not in req.name for req in foundation.requirements())
 
 
 def test_bash_act_distinguishes_recorded_evidence_from_successful_world_action():
