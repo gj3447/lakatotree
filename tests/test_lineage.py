@@ -47,3 +47,23 @@ def test_cycle_guard():
     b = Derivation('b', 'b0', 'p', 'sp', [('a', 'a0')], {}, 'intermediate', 't')
     with pytest.raises(ValueError):
         rebuild_plan('a', by_output([a, b]))
+
+
+# === 스크립트 버전 이력 (생산 코드도 중간에 바뀐다) ===
+def test_script_history_tracks_versions():
+    from lakatos.lineage import script_history
+    # 319.py 가 s319_v1 → s319_v2 로 수정됨. 각 버전이 만든 산출물 추적
+    ds = [
+        Derivation('_rim_A.npz', 'rA', '319.py', 's319_v1', [('zdf','z0')], {}, 'intermediate', 't1'),
+        Derivation('_rim_B.npz', 'rB', '319.py', 's319_v1', [('zdf','z0')], {}, 'intermediate', 't2'),
+        Derivation('_rim_C.npz', 'rC', '319.py', 's319_v2', [('zdf','z0')], {}, 'intermediate', 't3'),
+    ]
+    h = script_history(ds, '319.py')
+    assert len(h) == 2                          # 2개 버전
+    assert h[0]['sha'] == 's319_v1' and set(h[0]['outputs']) == {'_rim_A.npz', '_rim_B.npz'}
+    assert h[1]['sha'] == 's319_v2' and h[1]['outputs'] == ['_rim_C.npz']
+    assert h[0]['first_seen'] < h[1]['first_seen']   # 시간순
+
+def test_script_history_empty():
+    from lakatos.lineage import script_history
+    assert script_history([], 'x.py') == []

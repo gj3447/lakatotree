@@ -32,3 +32,16 @@ lakatos lineage <완성본> --stale    # 데이터 바뀜 감지
 ## 라이브 검증 (BPC)
 perview_fixedr_joint_v22 → roots=[VFEZ0060], reproducible=True,
 rebuild_plan=[_rimobs, perview_v22], stale 감지(기록 sha≠현재 → 재생성 필요) 작동.
+
+## 스크립트도 이력 (생산 코드 수정 추적)
+스크립트도 중간에 수정된다. append-only 기록에서 `producer_sha` 가 바뀌면 새 버전.
+- `script_history(derivs, producer)` → [{sha, first_seen, outputs}] 시간순
+- `GET /api/lineage-script/{producer}` / `lakatos script-history <p.py>`
+- 어느 코드 버전이 어느 데이터를 만들었나 = 완전 재현의 마지막 조각
+
+## 프로젝트 온톨로지 — LakatoTree(틀) ⊃ 프로젝트(인스턴스)
+- **LakatoTree** = 추상 형상/틀/프레임워크 (domain-agnostic, 순수이성구조체)
+- **프로젝트** = 그 안의 구체 인스턴스. root 데이터·목표·파이프라인·연구나무를 가짐
+  - **BPC**: root=ZDF, 목표=sub-1mm 검사 PASS/FAIL, tree=LakatosTree_BPC_20View
+  - 타 프로젝트 = 타 root 데이터 (ZDF 아님)
+- KG: `(:LegionCommander LakatoTree)-[:INSTANTIATED_AS]->(:LakatoProject)-[:HAS_RESEARCH_TREE]->(:LakatosTree)`

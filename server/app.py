@@ -23,7 +23,7 @@ from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
-                             reproducibility_gaps, stale_inputs, is_reproducible)
+                             reproducibility_gaps, stale_inputs, is_reproducible, script_history)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -426,6 +426,19 @@ def _load_lineage():
         ds.append(Derivation(output=x['out'], output_sha=x['osha'] or '', producer=x['prod'] or '',
                              producer_sha=x['psha'] or '', inputs=inp, kind=x['kind'] or 'intermediate'))
     return ds
+
+@app.get('/api/lineage-script/{producer:path}')
+def get_script_history(producer: str):
+    """생산 스크립트 버전 이력 — 중간에 수정되면 sha 바뀜, 각 버전이 만든 산출물(시간순)."""
+    with pg() as c, c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute('SELECT output, producer_sha, ts FROM lineage WHERE producer=%s ORDER BY ts',
+                    (producer,))
+        rows = cur.fetchall()
+    ds = [Derivation(output=r['output'], output_sha='', producer=producer,
+                     producer_sha=r['producer_sha'] or '', inputs=[], ts=r['ts'].isoformat())
+          for r in rows]
+    return dict(producer=producer, versions=script_history(ds, producer),
+                note='sha 바뀐 지점 = 스크립트 수정. 어느 버전이 어느 데이터 만들었나 추적')
 
 @app.get('/api/lineage/{artifact:path}')
 def get_lineage(artifact: str, stale: bool = False):

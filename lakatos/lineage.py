@@ -91,3 +91,20 @@ def stale_inputs(deriv: Derivation, current_shas: dict) -> list:
         if cur is not None and cur != rec_sha:
             bad.append((path, rec_sha, cur))
     return bad
+
+
+def script_history(derivs: list, producer: str) -> list:
+    """한 생산 스크립트의 버전 이력 — sha 변화 + 각 버전이 만든 산출물(시간순).
+
+    스크립트도 중간에 수정된다. append-only 기록에서 producer_sha 가 바뀌면 새 버전.
+    어느 코드 버전이 어느 데이터를 만들었는지 = 완전 재현의 마지막 조각.
+    """
+    rows = sorted((d for d in derivs if d.producer == producer), key=lambda x: x.ts)
+    versions = {}
+    order = []
+    for d in rows:
+        if d.producer_sha not in versions:
+            versions[d.producer_sha] = {'sha': d.producer_sha, 'first_seen': d.ts, 'outputs': []}
+            order.append(d.producer_sha)
+        versions[d.producer_sha]['outputs'].append(d.output)
+    return [versions[k] for k in order]
