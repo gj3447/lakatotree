@@ -82,3 +82,5 @@ core 는 `LakatosGate + critique + replayability` 이고, 외부 도구는 adapt
 | NetworkX / Neo4j | in-memory graph algorithms / persistent KG mirror | pure tests stay DB-free; KG mirror remains queryable |
 
 Development seed: `docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md`.
+Reference comparison and upgrade boundary: `docs/REFERENCE_COMPARISON.md`.
+Implemented adapter surface: `lakatos/adapters.py`.

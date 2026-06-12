@@ -23,6 +23,16 @@ from .engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
+from .adapters import (
+    bash_act_to_prov_document,
+    derivation_to_openlineage_event,
+    derivations_to_dvc_lock,
+    derivations_to_dvc_pipeline,
+    derivations_to_prov_document,
+    lineage_result_to_openlineage_events,
+    observation_to_prov_document,
+    rebuild_recipe_manifest,
+)
 from .verdicts import (
     ADMIN_VERDICTS,
     SCRIPTED_VERDICTS,
@@ -60,4 +70,12 @@ __all__ = [
     "is_admin_verdict",
     "is_registered_verdict",
     "is_scripted_verdict",
+    "bash_act_to_prov_document",
+    "derivation_to_openlineage_event",
+    "derivations_to_dvc_lock",
+    "derivations_to_dvc_pipeline",
+    "derivations_to_prov_document",
+    "lineage_result_to_openlineage_events",
+    "observation_to_prov_document",
+    "rebuild_recipe_manifest",
 ]

@@ -45,7 +45,9 @@ PipelineRun start/complete -> OpenLineage RunEvent
 ```
 
 Do not copy the full OpenLineage stack into the core engine. Add an optional
-adapter later, for example `lakatos/adapters/openlineage.py`.
+adapter at the edge. Current implementation: `lakatos/adapters.py` exports
+OpenLineage-shaped `RunEvent` dictionaries from `Derivation` and
+`LineageReplayResult`.
 
 ### 2. Marquez
 
@@ -77,7 +79,9 @@ rebuild from raw roots -> dvc repro style replay
 
 LakatoTree should not require DVC, because consumer_b data may live outside a neat ML
 project. But `RebuildRecipe` should be close enough that exporting to `dvc.yaml`
-is mechanical.
+is mechanical. Current implementation: `derivations_to_dvc_pipeline()`,
+`derivations_to_dvc_lock()`, and `rebuild_recipe_manifest()` expose a
+DVC-style replay manifest from raw roots.
 
 ### 4. W3C PROV / Python `prov`
 
@@ -95,7 +99,10 @@ Agent    -> HumanSigmaOracle, AgentPureBuilder, Tool, Organization
 
 Python `prov` is a good optional serializer target for PROV-N, PROV-JSON,
 PROV-XML, RDF, and graph visualizations. Keep `lakatos/prov.py` as the local
-minimal model, then add a serializer adapter if needed.
+minimal model, then add a serializer adapter if needed. Current implementation:
+`derivations_to_prov_document()`, `observation_to_prov_document()`, and
+`bash_act_to_prov_document()` emit PROV-shaped documents without importing
+`prov`.
 
 ### 5. MLflow Dataset Tracking
 
@@ -159,17 +166,26 @@ For consumer_b-like pipelines, every final output must answer:
 
 If answer 5 is no, the branch remains `progressive_conditional`.
 
+## Implemented Reference Adapters
+
+`lakatos/adapters.py` now keeps the pure engine DB-free while exposing external
+ecosystem vocabulary:
+
+1. OpenLineage-shaped `RunEvent` export for `Derivation` and
+   `LineageReplayResult`.
+2. DVC-shaped `dvc.yaml`/`dvc.lock` export and a raw-rooted rebuild manifest.
+3. W3C PROV-shaped documents for pipeline derivations, internet observations,
+   and bash actions.
+
 ## Immediate Development Backlog
 
-1. Add optional `to_openlineage_event()` export for `Derivation` or
-   `LineageReplayResult`.
-2. Add optional `to_prov_document()` export from `InternetObservation`,
-   `BashAct`, and `PipelineRun`.
-3. Add a manifest type that groups raw ZDF roots with content hashes.
-4. Add environment fingerprint support: Python version, package lock hash,
+1. Add a first-class manifest dataclass that groups raw ZDF roots with content
+   hashes and schema metadata.
+2. Add environment fingerprint support: Python version, package lock hash,
    relevant env vars, CUDA/HALCON/Zivid versions if present.
-5. Add a CLI command that verifies `G-RebuildFromRaw` for one final artifact.
-6. Add an adapter that emits Marquez-compatible OpenLineage events.
+3. Add a CLI command that verifies `G-RebuildFromRaw` for one final artifact.
+4. Add an I/O layer that sends the existing OpenLineage event dicts to Marquez.
+5. Add optional `prov` package serialization for PROV-N/PROV-JSON/RDF.
 
 ## Non-Goals
 
