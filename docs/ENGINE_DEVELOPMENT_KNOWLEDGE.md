@@ -179,16 +179,17 @@ ecosystem vocabulary:
 2. DVC-shaped `dvc.yaml`/`dvc.lock` export and a raw-rooted rebuild manifest.
 3. W3C PROV-shaped documents for pipeline derivations, internet observations,
    and bash actions.
+4. First-class `DatasetManifest` with raw roots, derivation ledger, schema
+   version, tolerance, metadata, and `EnvironmentFingerprint`.
+5. `verify_dataset_manifest()` and `python -m lakatos.cli manifest-verify` for
+   `G-RebuildFromRaw` checks against recorded and current hashes.
 
 ## Immediate Development Backlog
 
-1. Add a first-class manifest dataclass that groups raw ZDF roots with content
-   hashes and schema metadata.
-2. Add environment fingerprint support: Python version, package lock hash,
-   relevant env vars, CUDA/HALCON/Zivid versions if present.
-3. Add a CLI command that verifies `G-RebuildFromRaw` for one final artifact.
-4. Add an I/O layer that sends the existing OpenLineage event dicts to Marquez.
-5. Add optional `prov` package serialization for PROV-N/PROV-JSON/RDF.
+1. Add an I/O layer that sends the existing OpenLineage event dicts to Marquez.
+2. Add optional `prov` package serialization for PROV-N/PROV-JSON/RDF.
+3. Add optional lockfile generators for observed BPC/ZDF package layouts.
+4. Add KG mirror nodes for `DatasetManifest` and `EnvironmentFingerprint`.
 
 ## Non-Goals
 

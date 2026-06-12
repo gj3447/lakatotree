@@ -1,9 +1,24 @@
 """데이터 계보 TDD — 버퍼는 임시, 완성본은 root data 서 재생성.
 # KG: span_lakatotree_lineage
 """
+import json
 import pytest
-from lakatos.lineage import (Derivation, by_output, roots, rebuild_plan,
-                             reproducibility_gaps, stale_inputs, is_reproducible)
+from lakatos.lineage import (
+    DatasetManifest,
+    Derivation,
+    EnvironmentFingerprint,
+    by_output,
+    dataset_manifest_from_derivations,
+    fingerprint_environment,
+    is_reproducible,
+    load_dataset_manifest,
+    manifest_to_dict,
+    rebuild_plan,
+    reproducibility_gaps,
+    roots,
+    stale_inputs,
+    verify_dataset_manifest,
+)
 
 # root(source) → cache(buffer) → final
 ROOT = Derivation(output='raw://experiment/lot-0060', output_sha='raw0', producer='', producer_sha='',
@@ -71,3 +86,110 @@ def test_script_history_tracks_versions():
 def test_script_history_empty():
     from lakatos.lineage import script_history
     assert script_history([], 'x.py') == []
+
+
+def test_dataset_manifest_groups_roots_environment_and_rebuild_plan():
+    env = EnvironmentFingerprint(
+        python="3.12.0",
+        platform="linux-x86_64",
+        package_locks={"requirements.txt": "locksha"},
+        env_vars={"CUDA_VISIBLE_DEVICES": "0"},
+        tool_versions={"zivid": "2.14"},
+    )
+
+    manifest = dataset_manifest_from_derivations(
+        "artifact://model-v22",
+        [ROOT, CACHE, FINAL],
+        environment=env,
+        metadata={"project": "bpc"},
+    )
+
+    assert manifest.schema_version == "lakatotree.dataset-manifest.v1"
+    assert manifest.root_artifacts == ("raw://experiment/lot-0060",)
+    assert [d.output for d in manifest.rebuild_plan()] == [
+        "cache://observations-0060",
+        "artifact://model-v22",
+    ]
+    as_dict = manifest_to_dict(manifest)
+    assert as_dict["environment"]["package_locks"]["requirements.txt"] == "locksha"
+    assert as_dict["metadata"]["project"] == "bpc"
+
+
+def test_verify_dataset_manifest_blocks_gaps_stale_and_root_mismatch():
+    good = dataset_manifest_from_derivations(
+        "artifact://model-v22",
+        [ROOT, CACHE, FINAL],
+        environment=EnvironmentFingerprint(python="3.12.0"),
+    )
+    missing_cache = DatasetManifest(
+        final_artifact="artifact://model-v22",
+        root_artifacts=("raw://experiment/lot-0060",),
+        derivations=(ROOT, FINAL),
+        environment=EnvironmentFingerprint(python="3.12.0"),
+    )
+    wrong_root = DatasetManifest(
+        final_artifact="artifact://model-v22",
+        root_artifacts=("raw://other-lot",),
+        derivations=(ROOT, CACHE, FINAL),
+        environment=EnvironmentFingerprint(python="3.12.0"),
+    )
+
+    ok = verify_dataset_manifest(good, current_shas={"raw://experiment/lot-0060": "raw0"})
+    gap = verify_dataset_manifest(missing_cache)
+    stale = verify_dataset_manifest(good, current_shas={"raw://experiment/lot-0060": "rawNEW"})
+    mismatch = verify_dataset_manifest(wrong_root)
+
+    assert ok.passed
+    assert not gap.passed and "reproducibility_gaps" in gap.reasons
+    assert not stale.passed and stale.stale
+    assert not mismatch.passed and "root_manifest_mismatch" in mismatch.reasons
+
+
+def test_verify_dataset_manifest_requires_environment_when_enabled():
+    manifest = DatasetManifest(
+        final_artifact="artifact://model-v22",
+        root_artifacts=("raw://experiment/lot-0060",),
+        derivations=(ROOT, CACHE, FINAL),
+    )
+
+    result = verify_dataset_manifest(manifest, require_environment=True)
+
+    assert not result.passed
+    assert "environment_fingerprint_missing" in result.reasons
+
+
+def test_dataset_manifest_json_round_trip(tmp_path):
+    manifest = dataset_manifest_from_derivations(
+        "artifact://model-v22",
+        [ROOT, CACHE, FINAL],
+        environment=EnvironmentFingerprint(python="3.12.0"),
+    )
+    manifest.derivations[1].env = "env-sha"
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest_to_dict(manifest)), encoding="utf-8")
+
+    loaded = load_dataset_manifest(path)
+    result = verify_dataset_manifest(loaded)
+
+    assert loaded.final_artifact == "artifact://model-v22"
+    assert loaded.derivations[1].params == {"stride": 2}
+    assert loaded.derivations[1].env == "env-sha"
+    assert result.passed
+
+
+def test_fingerprint_environment_hashes_lock_files_and_selected_env(tmp_path):
+    lock = tmp_path / "requirements.txt"
+    lock.write_text("pytest==8\n", encoding="utf-8")
+
+    fp = fingerprint_environment(
+        package_lock_paths=[lock],
+        env_vars=["CUDA_VISIBLE_DEVICES", "MISSING_ENV"],
+        environ={"CUDA_VISIBLE_DEVICES": "0"},
+        tool_versions={"halcon": "24.11"},
+    )
+
+    assert fp.python
+    assert fp.platform
+    assert fp.package_locks[str(lock)]
+    assert fp.env_vars == {"CUDA_VISIBLE_DEVICES": "0"}
+    assert fp.tool_versions["halcon"] == "24.11"

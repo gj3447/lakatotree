@@ -13,6 +13,7 @@
   event <name> <tag> <event_id>  ClaimStanding 용 상계/하계 evidence event 기록
   claim-standing <name> <tag>    상계/하계 confidence + blocking reason
   foundation <name>              기반지식 requirement 목록
+  manifest-verify <manifest.json> [--current-sha path:sha]
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
 # KG: span_lakatotree_cli
 """
@@ -83,6 +84,9 @@ def main(argv=None):
     sp.add_argument('--producer', default=''); sp.add_argument('--producer-sha', default='')
     sp.add_argument('--input', action='append', default=[], help='path:sha (반복)')
     sp.add_argument('--kind', default='intermediate', choices=['source','intermediate','final'])
+    sp = sub.add_parser('manifest-verify'); sp.add_argument('manifest')
+    sp.add_argument('--current-sha', action='append', default=[], help='path:sha (반복)')
+    sp.add_argument('--no-require-environment', action='store_true')
     a = p.parse_args(argv)
 
     if a.cmd == 'trees':
@@ -174,6 +178,14 @@ def main(argv=None):
         inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]
         out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
                    producer=a.producer, producer_sha=a.producer_sha, inputs=inputs, kind=a.kind))
+    elif a.cmd == 'manifest-verify':
+        from .lineage import load_dataset_manifest, verify_dataset_manifest
+        current_shas = {p.rsplit(':', 1)[0]: p.rsplit(':', 1)[1] for p in a.current_sha}
+        out = verify_dataset_manifest(
+            load_dataset_manifest(a.manifest),
+            current_shas=(current_shas or None),
+            require_environment=not a.no_require_environment,
+        ).as_dict()
     print(json.dumps(out, ensure_ascii=False, indent=1))
 
 
