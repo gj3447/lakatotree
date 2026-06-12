@@ -82,5 +82,19 @@ def provenance(name: str, tag: str) -> str:
     return json.dumps(_get(f'/api/tree/{name}/node/{tag}/provenance'), ensure_ascii=False)
 
 
+@mcp.tool()
+def critique(name: str, tag: str, arg_id: str, attacks: str, by: str = '',
+             kind: str = 'doubt', body: str = '') -> str:
+    """인간/agent 의 의문·코멘트·반박 등재(Dung attack). kind=doubt|comment|rebuttal|evaluation."""
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/critique',
+        dict(arg_id=arg_id, attacks=attacks, by=by, kind=kind, body=body)), ensure_ascii=False)
+
+
+@mcp.tool()
+def standing(name: str, tag: str) -> str:
+    """판결이 의문들을 막아내고 서는가 — grounded extension."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/standing'), ensure_ascii=False)
+
+
 if __name__ == '__main__':
     mcp.run()
