@@ -193,3 +193,78 @@ def test_unknown_foundation_kind_is_rejected_before_kg_write(monkeypatch):
 
     assert exc.value.status_code == 422
     assert not any(isinstance(c[0], str) and "FoundationRequirement" in c[0] for c in calls)
+
+
+def test_claim_standing_endpoint_combines_foundation_arguments_and_lineage(monkeypatch):
+    app = load_app()
+    from lakatos.lineage import Derivation
+
+    calls = []
+
+    def fake_kg(query, **params):
+        calls.append((query, params))
+        if "RETURN e.tag AS tag, e.verdict AS verdict" in query and "collect({id:a.id" in query:
+            return [
+                {
+                    "tag": "p1",
+                    "verdict": "progressive",
+                    "source_trust": 0.9,
+                    "verdict_source": "scripted",
+                    "judge_script": "judge.py",
+                    "judge_script_sha": "sha-judge",
+                    "result_path": "artifact://final",
+                    "args": [
+                        {
+                            "id": "T/doubt1",
+                            "attacks": "p1",
+                            "kind": "doubt",
+                            "by": "human:reviewer",
+                        }
+                    ],
+                }
+            ]
+        if "FoundationRequirement" in query and "ORDER BY fr.kind" in query:
+            return [
+                {
+                    "name": "metric-contract",
+                    "kind": "metric",
+                    "question": "which metric?",
+                    "why_needed": "avoid relabel",
+                    "acceptance_criteria": ["metric_name"],
+                    "evidence_refs": ["doc:metric"],
+                    "status": "satisfied",
+                    "optional": False,
+                    "owner": "",
+                    "risk_if_missing": "",
+                    "satisfied": True,
+                }
+            ]
+        return []
+
+    def fake_lineage():
+        return [
+            Derivation("raw://lot", "raw0", "", "", [], kind="source", ts="t0"),
+            Derivation(
+                "artifact://final",
+                "final0",
+                "solve.py",
+                "sha-solve",
+                [("raw://lot", "raw0")],
+                kind="final",
+                ts="t1",
+            ),
+        ]
+
+    monkeypatch.setattr(app, "kg", fake_kg)
+    monkeypatch.setattr(app, "hist", lambda *a, **k: None)
+    monkeypatch.setattr(app, "_load_lineage", fake_lineage)
+    monkeypatch.setattr(app, "environment_fingerprint", lambda: {"python": "test"})
+    monkeypatch.setattr(app, "fingerprint_sha", lambda _: "")
+
+    out = app.claim_standing("T", "p1", require_replay=True)
+
+    assert out["claim"] == "p1"
+    assert out["status"] == "blocked"
+    assert "human_doubt:doubt1" in out["blocking_reasons"]
+    assert not any(r.startswith("foundation:") for r in out["blocking_reasons"])
+    assert not any(r.startswith("lineage:") for r in out["blocking_reasons"])

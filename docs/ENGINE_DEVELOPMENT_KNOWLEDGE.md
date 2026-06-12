@@ -27,6 +27,7 @@ be marked `progressive`.
 | `lakatos/trust.py` | TrustRank/EigenTrust style internet trust signals | Use as a component of evidence, never as truth. |
 | `lakatos/prov.py` | W3C PROV-style entity/activity/agent mapping | Bridge to RDF/PROV-JSON later. |
 | `lakatos/argue.py` | Human+agent critique via argumentation | Unanswered doubts must block silent promotion. |
+| `lakatos/claim.py` | ClaimStanding read-model | Combine upper/lower confidence with foundation, doubt, and lineage blockers. |
 | `lakatos/harness.py` | Hexagonal cycle harness | Keep ports explicit: internet read, bash exec, git, HTTP/KG. |
 
 ## Open Source References
@@ -152,6 +153,7 @@ The engine should preserve these labels even if the storage backend changes.
 | `G-RebuildFromRaw` | Final artifact cannot be replayed from raw roots or declared metric tolerance |
 | `G-SourceHistory` | Source code change lacks git status/diff/test or Longinus-style source binding |
 | `G-Human` | Hard-core mutation, ambiguous source promotion, or practical acceptance of a degenerating branch lacks human verdict |
+| `G-ClaimStanding` | A claim has foundation gaps, unresolved human doubts, missing upper/lower evidence, or failed raw replay |
 
 ## BPC ZDF Rule
 
@@ -213,3 +215,8 @@ ecosystem vocabulary:
 - [x] **5. `prov` package serializer** — `prov_document_to_prov_json()` emits
   dependency-free PROV-JSON shape; `serialize_prov_document(..., use_prov_package=True)`
   delegates to optional `prov` for PROV-N/other package-supported formats.
+- [x] **6. ClaimStanding read-model** — `lakatos/claim.py` combines
+  upper-world evidence (`internet/human/kg`) and lower-world evidence
+  (`bash/data/git/agent`) with foundation gaps, unresolved doubts, and
+  `LineageReplayGate` results. Exposed as `GET /api/tree/{name}/node/{tag}/claim-standing`,
+  CLI `claim-standing`, and MCP `claim_standing`.

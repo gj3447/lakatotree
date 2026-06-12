@@ -23,7 +23,10 @@ from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
-from lakatos.engine import FoundationRequirement, KnowledgeKind
+from lakatos.engine import (FoundationMap, FoundationRequirement, KnowledgeKind,
+                            LineageReplayGate, Possibility, Realm, ResearchEvent,
+                            ResearchFrame, ResearchProject)
+from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
                              reproducibility_gaps, stale_inputs, is_reproducible, script_history,
                              build_manifest, env_drift, RawRoot, RebuildManifest)
@@ -403,6 +406,124 @@ def standing(name: str, tag: str):
     return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,
                 grounded_extension=sorted(ext),
                 note='stands=False → 막지 못한 의문 존재, 판결 재검토 필요 (코드빌딩=순수agent)')
+
+
+def _foundation_from_rows(rows) -> FoundationMap | None:
+    if not rows:
+        return None
+    foundation = FoundationMap()
+    for r in rows:
+        try:
+            kind = KnowledgeKind(r['kind'])
+        except ValueError:
+            continue
+        foundation.add(FoundationRequirement(
+            name=r['name'],
+            kind=kind,
+            question=r.get('question') or '',
+            why_needed=r.get('why_needed') or '',
+            acceptance_criteria=tuple(r.get('acceptance_criteria') or []),
+            evidence_refs=tuple(r.get('evidence_refs') or []),
+            status=r.get('status') or 'needed',
+            optional=bool(r.get('optional')),
+            owner=r.get('owner') or '',
+            risk_if_missing=r.get('risk_if_missing') or '',
+        ))
+    return foundation
+
+
+def _foundation_rows(name: str):
+    return kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_FOUNDATION]->(fr:FoundationRequirement)
+                 RETURN fr.short_name AS name, fr.kind AS kind, fr.question AS question,
+                        fr.why_needed AS why_needed, fr.acceptance_criteria AS acceptance_criteria,
+                        fr.evidence_refs AS evidence_refs, fr.status AS status,
+                        fr.optional AS optional, fr.owner AS owner,
+                        fr.risk_if_missing AS risk_if_missing, fr.satisfied AS satisfied
+                 ORDER BY fr.kind, fr.short_name""", tree=name)
+
+
+def _event_from_argument(tag: str, arg: dict) -> ResearchEvent | None:
+    if not arg.get('id'):
+        return None
+    short = arg['id'].split('/')[-1]
+    kind = (arg.get('kind') or 'comment').lower()
+    action = 'doubt' if kind == 'doubt' else ('human_verdict' if kind in {'evaluation', 'verdict'} else kind)
+    payload = (('confidence', '0.75'),) if action == 'human_verdict' else ()
+    return ResearchEvent(
+        name=short,
+        realm=Realm.HUMAN,
+        actor=arg.get('by') or 'human',
+        action=action,
+        target=tag,
+        evidence_refs=(arg['id'],),
+        payload=payload,
+    )
+
+
+@app.get('/api/tree/{name}/node/{tag}/claim-standing')
+def claim_standing(name: str, tag: str, require_replay: bool = True):
+    """상계/하계 evidence + foundation + lineage 를 합친 claim standing."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                 RETURN e.tag AS tag, e.verdict AS verdict, e.source_trust AS source_trust,
+                        e.verdict_source AS verdict_source, e.judge_script AS judge_script,
+                        e.judge_script_sha AS judge_script_sha, e.result_path AS result_path,
+                        collect({id:a.id, attacks:a.attacks, kind:a.kind, by:a.by}) AS args""",
+              tree=name, tag=tag)
+    if not rows:
+        raise HTTPException(404, f'노드 없음: {tag}')
+    x = rows[0]
+    result_path = x.get('result_path') or ''
+    frame = ResearchFrame(ResearchProject(name=name, goal='claim standing'))
+    frame.open_possibility(Possibility(tag, f'claim standing for {name}/{tag}',
+                                       evidence_refs=((result_path,) if result_path else ())))
+    if x.get('source_trust') is not None:
+        frame.record_event(ResearchEvent(
+            name=f'{tag}:source-trust',
+            realm=Realm.INTERNET,
+            actor='server:node',
+            action='source_trust',
+            target=tag,
+            evidence_refs=((result_path,) if result_path else ()),
+            payload=(('trust', str(x['source_trust'])),),
+        ))
+    if x.get('verdict_source') == 'scripted' or x.get('judge_script') or result_path:
+        action = 'test_failed' if x.get('verdict') == 'rejected' else 'test_passed'
+        refs = tuple(v for v in (result_path, x.get('judge_script_sha') or '') if v)
+        frame.record_event(ResearchEvent(
+            name=f'{tag}:scripted-result',
+            realm=Realm.BASH,
+            actor=x.get('judge_script') or 'server:judge',
+            action=action,
+            target=tag,
+            evidence_refs=refs,
+            payload=(('exit_code', '0'),) if action == 'test_passed' else (('exit_code', '1'),),
+        ))
+    for arg in x.get('args') or []:
+        event = _event_from_argument(tag, arg)
+        if event is not None:
+            frame.record_event(event)
+
+    lineage = None
+    if result_path:
+        ds = _load_lineage()
+        if result_path in by_output(ds):
+            cur_env = fingerprint_sha(environment_fingerprint())
+            lineage = LineageReplayGate.evaluate(
+                result_path,
+                ds,
+                sources={d.output for d in ds if d.kind == 'source'},
+                current_env=cur_env,
+            )
+
+    standing_result = evaluate_claim_standing(
+        tag,
+        frame=frame,
+        foundation=_foundation_from_rows(_foundation_rows(name)),
+        lineage=lineage,
+        policy=ClaimStandingPolicy(require_replay=require_replay),
+    )
+    return standing_result.to_dict()
 
 @app.get('/api/tree/{name}/calibration')
 def calibration(name: str):

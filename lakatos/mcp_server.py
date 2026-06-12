@@ -101,6 +101,13 @@ def standing(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def claim_standing(name: str, tag: str, require_replay: bool = True) -> str:
+    """상계/하계 confidence, foundation gap, human doubt, lineage block 을 합친 claim standing."""
+    suffix = '?require_replay=false' if not require_replay else ''
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/claim-standing{suffix}'), ensure_ascii=False)
+
+
+@mcp.tool()
 def add_element(name: str, element_name: str, definition: str = '',
                 implication: str = '', lifecycle: str = '',
                 scope: str = 'domain-agnostic') -> str:

@@ -27,6 +27,11 @@ from .engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
+from .claim import (
+    ClaimStanding,
+    ClaimStandingPolicy,
+    evaluate_claim_standing,
+)
 from .adapters import (
     MarquezClientError,
     bash_act_to_prov_document,
@@ -76,6 +81,9 @@ __all__ = [
     "ResearchFrame",
     "ResearchProject",
     "SourceCredibilityScore",
+    "ClaimStanding",
+    "ClaimStandingPolicy",
+    "evaluate_claim_standing",
     "MarquezClientError",
     "ADMIN_VERDICTS",
     "SCRIPTED_VERDICTS",
