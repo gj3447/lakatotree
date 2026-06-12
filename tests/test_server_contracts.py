@@ -268,3 +268,113 @@ def test_claim_standing_endpoint_combines_foundation_arguments_and_lineage(monke
     assert "human_doubt:doubt1" in out["blocking_reasons"]
     assert not any(r.startswith("foundation:") for r in out["blocking_reasons"])
     assert not any(r.startswith("lineage:") for r in out["blocking_reasons"])
+
+
+def test_research_event_is_appended_to_claim_without_overwriting(monkeypatch):
+    app = load_app()
+    calls = install_fake_ports(monkeypatch, app, existing_nodes=("p1",))
+
+    out = app.add_research_event(
+        "T",
+        "p1",
+        app.ResearchEventIn(
+            event_id="evt-web-1",
+            realm="internet",
+            actor="agent:researcher",
+            action="fetch_source",
+            evidence_refs=["obs:paper"],
+            payload={"trust": "0.82"},
+        ),
+    )
+
+    event_calls = [c for c in calls if isinstance(c[0], str) and "ResearchEvent" in c[0]]
+    assert out["ok"] is True
+    assert event_calls
+    query, params = event_calls[0]
+    assert "MERGE (ev:ResearchEvent" in query
+    assert "HAS_RESEARCH_EVENT" in query
+    assert params["realm"] == "internet"
+    assert params["payload"] == '{"trust": "0.82"}'
+    assert any(c[0] == "hist" and c[1][1] == "research_event" for c in calls)
+
+
+def test_unknown_research_event_realm_is_rejected_before_kg_write(monkeypatch):
+    app = load_app()
+    calls = install_fake_ports(monkeypatch, app, existing_nodes=("p1",))
+
+    with pytest.raises(HTTPException) as exc:
+        app.add_research_event(
+            "T",
+            "p1",
+            app.ResearchEventIn(event_id="evt-bad", realm="dream", actor="x", action="note"),
+        )
+
+    assert exc.value.status_code == 422
+    assert not any(isinstance(c[0], str) and "ResearchEvent" in c[0] for c in calls)
+
+
+def test_claim_standing_includes_recorded_research_events(monkeypatch):
+    app = load_app()
+
+    def fake_kg(query, **params):
+        if "RETURN e.tag AS tag, e.verdict AS verdict" in query and "collect({id:a.id" in query:
+            return [
+                {
+                    "tag": "p1",
+                    "verdict": "progressive",
+                    "source_trust": None,
+                    "verdict_source": "",
+                    "judge_script": "",
+                    "judge_script_sha": "",
+                    "result_path": "",
+                    "args": [],
+                }
+            ]
+        if "ResearchEvent" in query and "ORDER BY ev.created_at, ev.name" in query:
+            return [
+                {
+                    "name": "evt-web",
+                    "realm": "internet",
+                    "actor": "agent:researcher",
+                    "action": "fetch_source",
+                    "evidence_refs": ["obs:paper"],
+                    "payload": '{"trust":"0.9"}',
+                    "created_at": "2026-06-12T00:00:00Z",
+                },
+                {
+                    "name": "evt-bash",
+                    "realm": "bash",
+                    "actor": "agent:builder",
+                    "action": "test_passed",
+                    "evidence_refs": ["bash:pytest"],
+                    "payload": '{"exit_code":"0"}',
+                    "created_at": "2026-06-12T00:01:00Z",
+                },
+            ]
+        if "FoundationRequirement" in query and "ORDER BY fr.kind" in query:
+            return [
+                {
+                    "name": "metric-contract",
+                    "kind": "metric",
+                    "question": "which metric?",
+                    "why_needed": "avoid relabel",
+                    "acceptance_criteria": ["metric_name"],
+                    "evidence_refs": ["doc:metric"],
+                    "status": "satisfied",
+                    "optional": False,
+                    "owner": "",
+                    "risk_if_missing": "",
+                    "satisfied": True,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(app, "kg", fake_kg)
+    monkeypatch.setattr(app, "hist", lambda *a, **k: None)
+
+    out = app.claim_standing("T", "p1", require_replay=False)
+
+    assert out["status"] == "stands"
+    assert out["upper_confidence"] >= 0.9
+    assert out["lower_confidence"] >= 0.8
+    assert out["realms"] == ["bash", "internet"]

@@ -95,6 +95,21 @@ def critique(name: str, tag: str, arg_id: str, attacks: str, by: str = '',
 
 
 @mcp.tool()
+def add_research_event(name: str, tag: str, event_id: str, realm: str,
+                       action: str, actor: str = '',
+                       evidence_csv: str = '', payload_json: str = '{}') -> str:
+    """ClaimStanding 용 상계/하계 evidence event 를 append-only 로 기록."""
+    try:
+        payload = json.loads(payload_json or '{}')
+    except json.JSONDecodeError as exc:
+        return json.dumps({'error': 'invalid_payload_json', 'detail': str(exc)}, ensure_ascii=False)
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/event',
+        dict(event_id=event_id, realm=realm, actor=actor, action=action,
+             evidence_refs=[x.strip() for x in evidence_csv.split(',') if x.strip()],
+             payload=payload)), ensure_ascii=False)
+
+
+@mcp.tool()
 def standing(name: str, tag: str) -> str:
     """판결이 의문들을 막아내고 서는가 — grounded extension."""
     return json.dumps(_get(f'/api/tree/{name}/node/{tag}/standing'), ensure_ascii=False)

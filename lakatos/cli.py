@@ -10,6 +10,7 @@
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
   result <name> <tag> --value V --script S [--sha S] [--novel-measured X]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
+  event <name> <tag> <event_id>  ClaimStanding 용 상계/하계 evidence event 기록
   claim-standing <name> <tag>    상계/하계 confidence + blocking reason
   foundation <name>              기반지식 requirement 목록
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
@@ -41,6 +42,11 @@ def main(argv=None):
         sp = sub.add_parser(c); sp.add_argument('name')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
+    sp = sub.add_parser('event'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
+    sp.add_argument('--realm', required=True, choices=['internet','human','agent','bash','data','kg','git'])
+    sp.add_argument('--actor', default=''); sp.add_argument('--action', required=True)
+    sp.add_argument('--evidence', action='append', default=[])
+    sp.add_argument('--payload', action='append', default=[], help='key=value (반복)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
@@ -92,6 +98,16 @@ def main(argv=None):
     elif a.cmd == 'claim-standing':
         suffix = '?require_replay=false' if a.no_replay else ''
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')
+    elif a.cmd == 'event':
+        payload = {}
+        for item in a.payload:
+            if '=' not in item:
+                sys.exit(f'payload 형식 오류: {item} (key=value)')
+            k, v = item.split('=', 1)
+            payload[k] = v
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/event',
+                   dict(event_id=a.event_id, realm=a.realm, actor=a.actor,
+                        action=a.action, evidence_refs=a.evidence, payload=payload))
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:
