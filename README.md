@@ -7,6 +7,7 @@
 ```
 lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판정) — 이론 기반 = THEORY.md
   judge.py          [포퍼층] 4판결 + 사전등록 게이트 + 구조적 corroboration(NovelTarget 실측 대조)
+  engine.py         ★결합 엔진 — 인터넷 신뢰승격, 하계 bash evidence, lineage replay gate
   bayes.py          [베이즈층] 가지 신뢰도 = 판결 시퀀스 사후확률. 강한 가지는 반례 하나로 안 죽는다
   laudan.py         [라우든층] 문제 수지/PSR/비교 점수/should_abandon 폐기 3규칙
   explore.py        [탐색배분] bandit UCB + VoI — frontier 질문 우선순위(다음 어느 가지)
@@ -23,7 +24,7 @@ lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판
   mcp_server.py     MCP 도구 7종 (Claude/Codex 가 나무 조작)
 server/             FastAPI 박층 (:55170) — Neo4j(그래프 정본)+PG(append-only 이력)+Mongo(산출물)
 judges/             채점 스크립트 (결과 파일 → metric, LLM 무관)
-tests/              판결 규칙 TDD (16 케이스 — 규칙 변경은 RED 부터)
+tests/              판결/엔진 규칙 TDD (81 케이스 — 규칙 변경은 RED 부터)
 ```
 
 ## 엄격도 스택 (과학철학을 층으로 — 경쟁 아닌 스택)
@@ -40,7 +41,7 @@ tests/              판결 규칙 TDD (16 케이스 — 규칙 변경은 RED 부
 
 ## 기동/사용
 ```bash
-python -m pytest tests/ -q      # 엔진 검증 (49 케이스)
+python -m pytest tests/ -q      # 엔진 검증 (81 케이스)
 bash server/run.sh              # http://localhost:55170 (대시보드 /, API /api/*)
 python -m lakatos.cli metrics <tree>      # CLI: 지표(진보율/베이즈/발전성)
 python -m lakatos.cli directions <tree>   # CLI: 다음 어느 가지(VoI 우선순위)
