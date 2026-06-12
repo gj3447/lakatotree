@@ -10,6 +10,7 @@
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
   result <name> <tag> --value V --script S [--sha S] [--novel-measured X]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
+  claim-standing <name> <tag>    상계/하계 confidence + blocking reason
   foundation <name>              기반지식 requirement 목록
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
 # KG: span_lakatotree_cli
@@ -38,6 +39,8 @@ def main(argv=None):
     sub.add_parser('trees')
     for c in ('tree', 'metrics', 'directions', 'foundation'):
         sp = sub.add_parser(c); sp.add_argument('name')
+    sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
+    sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
@@ -68,6 +71,8 @@ def main(argv=None):
     sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
     sp = sub.add_parser('script-history'); sp.add_argument('producer')
     sp = sub.add_parser('rebuild-verify'); sp.add_argument('artifact')
+    sp = sub.add_parser('rebuild-run'); sp.add_argument('artifact'); sp.add_argument('--recorded', type=float, required=True)
+    sp.add_argument('--cmd-template', default='echo metric=0')
     sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
     sp.add_argument('--producer', default=''); sp.add_argument('--producer-sha', default='')
     sp.add_argument('--input', action='append', default=[], help='path:sha (반복)')
@@ -84,6 +89,9 @@ def main(argv=None):
         out = call('GET', f'/api/tree/{a.name}/directions')
     elif a.cmd == 'foundation':
         out = call('GET', f'/api/tree/{a.name}/foundation')
+    elif a.cmd == 'claim-standing':
+        suffix = '?require_replay=false' if a.no_replay else ''
+        out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:
@@ -126,6 +134,26 @@ def main(argv=None):
     elif a.cmd == 'rebuild-verify':
         import urllib.parse as up
         out = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
+    elif a.cmd == 'rebuild-run':
+        import urllib.parse as up, subprocess, uuid
+        from lakatos.rebuild import RebuildExecutor
+        from lakatos.lineage import RebuildManifest, RawRoot
+        from lakatos.envfp import environment_fingerprint, fingerprint_sha
+        from lakatos import oo_sink
+        v = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
+        m = v['manifest']
+        mani = RebuildManifest(final=m['final'], roots=[RawRoot(**r) for r in m['roots']],
+                               env_sha=m['env_sha'], recipe=m['recipe'])
+        cid = 'rebuild-' + uuid.uuid4().hex[:8]
+        recs = []
+        def emit(rec):
+            recs.append(rec); oo_sink.ship([rec])   # oo 적재(게이트 OFF면 no-op)
+        ex = RebuildExecutor(run_bash=lambda c: (subprocess.run(c, shell=True, capture_output=True, text=True).stdout, 0),
+                             emit=emit, env_now=fingerprint_sha(environment_fingerprint())[:12], cid=cid)
+        res = ex.run(mani, recorded_metric=a.recorded, cmd_for=lambda st: a.cmd_template)
+        out = dict(cid=cid, verdict=res.verdict, regenerated=res.regenerated_metric,
+                   recorded=res.recorded_metric, within_tolerance=res.within_tolerance,
+                   trace_events=[r['event'] for r in recs], oo_shipped=oo_sink.enabled())
     elif a.cmd == 'lineage-record':
         inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]
         out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
