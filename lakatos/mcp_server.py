@@ -110,6 +110,12 @@ def add_research_event(name: str, tag: str, event_id: str, realm: str,
 
 
 @mcp.tool()
+def research_events(name: str, tag: str) -> str:
+    """ClaimStanding 이 소비하는 append-only ResearchEvent 목록."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/events'), ensure_ascii=False)
+
+
+@mcp.tool()
 def standing(name: str, tag: str) -> str:
     """판결이 의문들을 막아내고 서는가 — grounded extension."""
     return json.dumps(_get(f'/api/tree/{name}/node/{tag}/standing'), ensure_ascii=False)

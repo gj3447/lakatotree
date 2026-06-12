@@ -21,7 +21,7 @@ from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.promote import promotion_gate
-from lakatos.spine import reconcile_verdict, promotion_decision, synthesize_promotion
+from lakatos.spine import reconcile_verdict, promotion_decision, synthesize_promotion, credibility_from_trust
 from lakatos.adapters import (lineage_result_to_openlineage_events, derivations_to_dvc_pipeline,
                               derivations_to_dvc_lock, derivations_to_prov_document)
 from lakatos.calibrate import brier_score, log_score, calibration_error
@@ -188,6 +188,7 @@ class VerdictIn(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     evidence_window: str = ''
     valid_until_rebutted: bool = True
+    human_verdict: bool = False     # 인간이 직접 vouch — CredibilityPromotionGate 인간판정 신호
 
 @app.post('/api/tree/{name}/node/{tag}/verdict')
 def set_verdict(name: str, tag: str, v: VerdictIn):
@@ -199,6 +200,8 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
         pre = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
                     OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
                     RETURN cur.verdict AS verdict,
+                           cur.source_trust AS source_trust,
+                           cur.novel_confirmed AS novel_confirmed,
                            collect({id:a.id, attacks:a.attacks}) AS args''', tree=name, tag=tag)
         if not pre:
             raise HTTPException(404, f'노드 없음: {tag}')
@@ -213,10 +216,18 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
             arguments.add(short)
             attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
         stands = varg in grounded_extension(arguments, attacks)
-        # 완전 합성: 헌법 + FoundationGate(나무 준비도) — 강건한 엔진 척추
+        # 완전 합성: 헌법 + FoundationGate(나무 준비도) + CredibilityPromotionGate(인터넷 등급)
+        #  — 강건한 엔진 척추. source_trust<0.70 인 저신뢰 인터넷 영향 노드는 직접출처/인간판정 없이 CANONICAL 차단.
         foundation = _foundation_from_rows(_foundation_rows(name))
+        st = cand.get('source_trust')
+        credibility = credibility_from_trust(
+            float(st) if st is not None else 1.0,
+            novel_confirmed=bool(cand.get('novel_confirmed')),
+            has_human_verdict=bool(v.human_verdict),
+        )
         decision = synthesize_promotion(scripted_verdict=cand.get('verdict') or 'proof',
-                                        stands=stands, foundation=foundation)
+                                        stands=stands, foundation=foundation,
+                                        credibility=credibility)
         if not decision['ok']:
             raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
                                      f"게이트별: {decision['gates']}")
@@ -563,7 +574,7 @@ def _event_from_argument(tag: str, arg: dict) -> ResearchEvent | None:
 def _research_event_rows(name: str, tag: str):
     return kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                  OPTIONAL MATCH (e)-[:HAS_RESEARCH_EVENT]->(ev:ResearchEvent)
-                 RETURN ev.name AS name, ev.realm AS realm, ev.actor AS actor,
+                 RETURN ev.id AS id, ev.name AS name, ev.realm AS realm, ev.actor AS actor,
                         ev.action AS action, ev.evidence_refs AS evidence_refs,
                         ev.payload AS payload, ev.created_at AS created_at
                  ORDER BY ev.created_at, ev.name""", tree=name, tag=tag)
@@ -593,6 +604,33 @@ def _event_from_row(tag: str, row: dict) -> ResearchEvent | None:
         evidence_refs=tuple(row.get('evidence_refs') or []),
         payload=tuple((str(k), str(v)) for k, v in payload.items()),
     )
+
+
+def _event_row_dict(tag: str, row: dict) -> dict | None:
+    event = _event_from_row(tag, row)
+    if event is None:
+        return None
+    return {
+        "id": row.get("id") or "",
+        "name": event.name,
+        "realm": event.realm.value,
+        "actor": event.actor,
+        "action": event.action,
+        "target": event.target,
+        "evidence_refs": list(event.evidence_refs),
+        "payload": dict(event.payload),
+        "created_at": row.get("created_at"),
+    }
+
+
+@app.get('/api/tree/{name}/node/{tag}/events')
+def research_events(name: str, tag: str):
+    """ClaimStanding 이 소비하는 append-only ResearchEvent 목록."""
+    rows = _research_event_rows(name, tag)
+    if not rows:
+        raise HTTPException(404, f'노드 없음: {tag}')
+    events = [event for row in rows if (event := _event_row_dict(tag, row)) is not None]
+    return {"tag": tag, "count": len(events), "events": events}
 
 
 @app.get('/api/tree/{name}/node/{tag}/claim-standing')

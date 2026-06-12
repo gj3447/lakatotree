@@ -226,3 +226,9 @@ ecosystem vocabulary:
   records append-only evidence events without changing verdicts. `ClaimStanding`
   reads these events alongside arguments, script results, foundation, and lineage.
   CLI `event` and MCP `add_research_event` expose the same path.
+- [x] **8. ResearchEvent read path + repair hints** —
+  `GET /api/tree/{name}/node/{tag}/events`, CLI `events`, and MCP
+  `research_events` expose the event ledger consumed by `ClaimStanding`.
+  `ClaimStanding.next_actions` maps blockers such as foundation gaps, human
+  doubts, lineage failures, and missing upper/lower evidence to machine-readable
+  repair actions without mutating verdicts.
