@@ -88,12 +88,15 @@ def tree_data(name):
                e.metric_name AS metric_name, e.metric_value AS metric_value,
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
                e.novel_confirmed AS novel_confirmed,
+               e.pred_baseline AS pred_baseline, e.pred_noise_band AS pred_noise_band,
+               e.pred_direction AS pred_direction,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
                [pe IN parent_edges | pe.tag] AS parents, parent_edges AS parent_edges,
                questions AS questions
         ORDER BY tag''', n=name)
     qs = kg('MATCH (t:LakatosTree {name:$n})-[:HAS_FRONTIER]->(q) '
-            'RETURN q.name AS name, q.status AS status, q.body AS body', n=name)
+            'RETURN q.name AS name, q.status AS status, q.body AS body, '
+            'q.closed_by AS closed_by', n=name)
     return dict(name=name, **t[0], nodes=nodes, frontier=qs)
 
 def compute_metrics(td):

@@ -21,6 +21,24 @@ def problem_balance(closed: int, opened: int) -> int:
     return closed - opened
 
 
+def branch_problem_balance_windowed(chain: list, frontier: list,
+                                    window: int = ABANDON_BUDGET) -> int:
+    """가지 단위 문제수지 (gap4 해소 — 규칙③을 살리는 per-branch 질문귀속).
+
+    chain    = leaf→분기점 순 노드 dict 리스트. 노드의 'questions' = 그 노드가 연 질문 이름들
+               (KG RAISES_QUESTION). window 개의 leaf 쪽 최근 노드만 본다 (윈도우=예산 규모 정책).
+    frontier = 질문 dict 리스트. 'closed_by' = 닫은 노드 tag 리스트 (없으면 미귀속=미집계 정직).
+    opened   = 윈도우 노드가 연 질문 수 / closed = closed_by 가 윈도우 노드인 질문 수.
+    같은 질문을 윈도우 안에서 열고 닫으면 자연히 수지 0.
+    """
+    recent = chain[:max(window, 0)]
+    recent_tags = {r.get('tag') for r in recent}
+    opened = sum(len(r.get('questions') or []) for r in recent)
+    closed = sum(1 for q in frontier
+                 if recent_tags & set(q.get('closed_by') or []))
+    return problem_balance(closed, opened)
+
+
 def psr(closed: int, path_nodes: int) -> float:
     """problem-solving rate = 닫은 질문 / 정본경로 노드 수."""
     return closed / path_nodes if path_nodes else 0.0

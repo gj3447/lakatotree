@@ -4,9 +4,10 @@
 # KG: span_lakatotree_S1_laudan_layer
 """
 from collections import defaultdict
-from .laudan import problem_balance, psr, should_abandon
+from .laudan import branch_problem_balance_windowed, problem_balance, psr, should_abandon
 from .bayes import branch_credence, should_abandon_bayes
 from .fertility import predictive_fertility, nobel_grade
+from .multiplicity import false_progressive_screen
 
 NONPROGRESSIVE = ('rejected', 'partial', 'equivalent')
 
@@ -82,9 +83,11 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 break
         hits = sum(1 for r in chain
                    if r['verdict'] in ('progressive', 'CANONICAL', 'former_canonical'))
+        # gap4: 규칙③ 가동 — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
+        pb_windowed = branch_problem_balance_windowed(chain, frontier)
         ok, reason = should_abandon(consecutive_nonprogressive=consec,
                                     nodes_spent=len(chain), prediction_hits=hits,
-                                    problem_balance_windowed=0)
+                                    problem_balance_windowed=pb_windowed)
         if ok:
             abandon.append(dict(leaf=leaf, branch_len=len(chain), reason=reason))
     laudan = dict(frontier_balance=problem_balance(closed_q, open_q),
@@ -92,7 +95,15 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                   abandon_candidates=abandon)
     # 베이즈 연속층: 정본 경로 신뢰도 + 저신뢰 가지 (판결 시퀀스 = 증거)
     def verdict_seq(tags):
-        return [{'verdict': by[t]['verdict']} for t in tags]   # delta 미보유 시 판결만
+        out = []
+        for t in tags:
+            r = by[t]
+            d = {'verdict': r['verdict']}
+            if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
+                d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
+                d['noise_band'] = r.get('pred_noise_band') or 0.0
+            out.append(d)
+        return out
     can_cred = round(branch_credence(verdict_seq(path)), 3) if path else None
     low_branches = []
     for leaf in leaves:
@@ -110,6 +121,25 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     fert = predictive_fertility([by[t] for t in path]) if path else predictive_fertility(nodes)
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
+    # gap8: 다중비교 — improved 판결을 (metric_name, scope) family 별로 BH/Bonferroni 스크린.
+    # 판결은 불변(judge 권위) — family 수준 false-progressive 경보만.
+    fam = defaultdict(list)
+    for r in nodes:
+        if (r['verdict'] in ('progressive', 'partial')
+                and r.get('metric_value') is not None and r.get('pred_baseline') is not None):
+            fam[(r.get('metric_name'), r.get('metric_scope'))].append(dict(
+                tag=r['tag'], delta=r['metric_value'] - r['pred_baseline'],
+                noise_band=r.get('pred_noise_band') or 0.0,
+                direction=r.get('pred_direction') or 'lower'))
+    multiplicity = {}
+    for key, cands in fam.items():
+        if len(cands) < 2:
+            continue   # family 1개 = 다중비교 아님
+        rep = false_progressive_screen(cands)
+        multiplicity['/'.join(str(k) for k in key)] = dict(
+            family_size=rep.family_size, untestable=list(rep.untestable),
+            survivors_bh=list(rep.survivors_bh),
+            survivors_bonferroni=list(rep.survivors_bonferroni), q=rep.q, note=rep.note)
     coverage_backlog = list(cfg.get('coverage_backlog') or [])
     coverage = dict(statement=cfg.get('coverage_statement') or '',
                     backlog=coverage_backlog, backlog_count=len(coverage_backlog),
@@ -120,11 +150,14 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         and prog['improvement_pct'] <= 0 else None,
         '주석 미완 노드 존재' if annotated < n else None,
         f'커버리지 backlog {len(coverage_backlog)}건 — 전수성 주장 금지' if coverage_backlog else None,
-    ] + [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon] if a]
+    ] + [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon]
+      + [f"다중비교 경보({k}): improved {m['family_size']}건 중 BH 생존 {len(m['survivors_bh'])}건"
+         for k, m in multiplicity.items() if len(m['survivors_bh']) < m['family_size']] if a]
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
                 rejected=rejected, max_degeneration_depth=stalled,
                 frontier=dict(open=open_q, closed=closed_q,
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
-                coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert, alerts=alerts)
+                coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
+                multiplicity=multiplicity, alerts=alerts)
