@@ -1,13 +1,13 @@
-"""라카토트리 엔진 결합부.
+"""라카토트리 sparse engine.
 
 기존 순수층은 이미 분리되어 있다:
 trust.py = 인터넷 신뢰, judge.py = 판결, lineage.py = 데이터 계보,
 argue.py = 인간/agent 비판, harness.py = 실제 포트 연결.
 
-이 모듈은 그 층들이 조용히 서로를 우회하지 못하게 묶는 순수 게이트다.
-인터넷 관측은 신뢰 승격 게이트를 통과해야 하고, bash 실행은 하계의
-기록 가능한 세계 행위로 남아야 하며, 데이터 가지는 lineage 재생 가능성으로
-검증된다.
+이 모듈은 특정 프로젝트의 해법이 아니라 연구 프레임워크의 얇은 뼈대다.
+가능성은 단칼에 사라지지 않고, 인간/agent/인터넷/bash/DB/git
+행위는 append-only event 로 남으며, 데이터 가지는 source root 에서
+언제든 재현 가능한지 lineage 로 검증된다.
 # KG: span_lakatotree_engine
 """
 from __future__ import annotations
@@ -61,6 +61,112 @@ class GateResult:
     @classmethod
     def fail(cls, reasons: Iterable[str]) -> "GateResult":
         return cls(False, tuple(reasons))
+
+
+class Realm(str, Enum):
+    """연구 이벤트가 속한 세계/행위 채널."""
+
+    INTERNET = "internet"
+    HUMAN = "human"
+    AGENT = "agent"
+    BASH = "bash"
+    DATA = "data"
+    KG = "kg"
+    GIT = "git"
+
+
+@dataclass(frozen=True)
+class ResearchProject:
+    """LakatoTree 틀 안의 구체 프로젝트 인스턴스."""
+
+    name: str
+    goal: str
+    root_artifacts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Possibility:
+    """아직 닫히지 않은 연구 가능성.
+
+    state 는 DB/KG 에서 해석할 문자열로 둔다. 엔진은 가능성을 강제 폐기하지
+    않고 이벤트와 evidence 를 축적한다.
+    """
+
+    name: str
+    question: str
+    parent: str | None = None
+    state: str = "open"
+    evidence_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ResearchEvent:
+    """인간/agent/인터넷/bash/git/DB 행위의 최소 이력 단위."""
+
+    name: str
+    realm: Realm
+    actor: str
+    action: str
+    target: str
+    evidence_refs: tuple[str, ...] = ()
+    payload: tuple[tuple[str, str], ...] = ()
+    created_at: datetime | None = None
+
+    def db_record(self) -> dict:
+        return {
+            "name": self.name,
+            "realm": self.realm.value,
+            "actor": self.actor,
+            "action": self.action,
+            "target": self.target,
+            "evidence_refs": list(self.evidence_refs),
+            "payload": dict(self.payload),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+@dataclass
+class ResearchFrame:
+    """프로젝트의 가능성들과 모든 행위 이력을 sparse 하게 보존한다."""
+
+    project: ResearchProject
+    _possibilities: dict[str, Possibility] = field(default_factory=dict)
+    _events: list[ResearchEvent] = field(default_factory=list)
+
+    def open_possibility(self, possibility: Possibility) -> Possibility:
+        if possibility.name in self._possibilities:
+            raise ValueError(f"possibility already exists: {possibility.name}")
+        if possibility.parent and possibility.parent not in self._possibilities:
+            raise KeyError(f"unknown parent possibility: {possibility.parent}")
+        self._possibilities[possibility.name] = possibility
+        return possibility
+
+    def record_event(self, event: ResearchEvent) -> ResearchEvent:
+        if event.target not in self._possibilities:
+            raise KeyError(f"unknown event target: {event.target}")
+        self._events.append(event)
+        return event
+
+    def possibilities(self) -> tuple[Possibility, ...]:
+        return tuple(self._possibilities.values())
+
+    def events(self) -> tuple[ResearchEvent, ...]:
+        return tuple(self._events)
+
+    def events_for(self, possibility: str) -> tuple[ResearchEvent, ...]:
+        return tuple(e for e in self._events if e.target == possibility)
+
+    def standing(self, possibility: str) -> dict:
+        p = self._possibilities[possibility]
+        evs = self.events_for(possibility)
+        refs = sorted({ref for e in evs for ref in e.evidence_refs} | set(p.evidence_refs))
+        return {
+            "name": p.name,
+            "state": p.state,
+            "event_count": len(evs),
+            "realms": sorted({e.realm.value for e in evs}),
+            "evidence_refs": refs,
+        }
 
 
 @dataclass(frozen=True)
@@ -459,4 +565,26 @@ class LineageReplayGate:
             rebuild_plan=plan,
             stale=bool(changed),
             changed=tuple(changed),
+        )
+
+
+@dataclass(frozen=True)
+class ReproducibilityContract:
+    """프로젝트별 root 데이터에서 final artifact 를 다시 만들 수 있어야 한다."""
+
+    final_artifact: str
+    root_artifacts: tuple[str, ...]
+    tolerance: str | None = None
+
+    def evaluate(
+        self,
+        derivations: Iterable[Derivation],
+        *,
+        current_shas: dict[str, str] | None = None,
+    ) -> LineageReplayResult:
+        return LineageReplayGate.evaluate(
+            self.final_artifact,
+            derivations,
+            sources=set(self.root_artifacts),
+            current_shas=current_shas,
         )

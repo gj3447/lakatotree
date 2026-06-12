@@ -15,6 +15,12 @@ from .engine import (
     LineageReplayGate,
     LineageReplayResult,
     ObservationLedger,
+    Possibility,
+    Realm,
+    ReproducibilityContract,
+    ResearchEvent,
+    ResearchFrame,
+    ResearchProject,
     SourceCredibilityScore,
 )
 
@@ -33,5 +39,11 @@ __all__ = [
     "LineageReplayGate",
     "LineageReplayResult",
     "ObservationLedger",
+    "Possibility",
+    "Realm",
+    "ReproducibilityContract",
+    "ResearchEvent",
+    "ResearchFrame",
+    "ResearchProject",
     "SourceCredibilityScore",
 ]
