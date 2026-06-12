@@ -27,6 +27,14 @@ judges/             채점 스크립트 (결과 파일 → metric, LLM 무관)
 tests/              판결/엔진/서버계약 TDD (91 케이스 — 규칙 변경은 RED 부터)
 ```
 
+## 엔진 개발 기반지식
+
+- `docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md`: 인터넷 관측, 인간/agent critique,
+  bash evidence, source history, raw ZDF replayability, OpenLineage/DVC/PROV
+  reference mapping.
+- 핵심 원칙: 버퍼와 캐시는 허용하지만 정본이 아니다. 완성본은 raw root
+  manifest 에서 기록된 pipeline 으로 재생성 가능해야 한다.
+
 ## 엄격도 스택 (과학철학을 층으로 — 경쟁 아닌 스택)
 | 층 | 모듈 | 봄 | 엄격도 |
 |---|---|---|---|

@@ -65,3 +65,20 @@ P2: 경쟁 가지 리더보드 + 인증층
 - **역할분담**: 인간+agent = critique(질문/의문/평가, Dung attack) / 순수 agent = 코드빌딩(test_result). 의문이 막히지 않으면(stands=False) 판결 재검토.
 - **상계/하계**: 노드(상계 추상)는 하계(bash실행·인터넷fetch·실측)로 채점. 인터넷 = 질의가능한 세상의 창.
 - 새 지표: 출처신뢰(TrustRank/EigenTrust 벡터), 판결 정당성(grounded extension 포함 여부), Brier/log/ECE(보정).
+
+## 7. 엔진 개발 참조층 — 오픈소스는 adapter, hard core 는 내부 규칙
+
+상용/오픈소스 lineage 도구를 그대로 흡수하지 않는다. 라카토트리의 hard
+core 는 `LakatosGate + critique + replayability` 이고, 외부 도구는 adapter
+또는 schema reference 로 쓴다.
+
+| Reference | 가져올 것 | 라카토트리 대응 |
+|---|---|---|
+| OpenLineage | Run/Job/Dataset event vocabulary | `PipelineRun`, `TransformStep`, `RawDataArtifact`, `DerivedDataArtifact` |
+| Marquez | OpenLineage metadata server and lineage UI | optional lineage graph viewer/backend |
+| DVC | raw deps + command + params + output hash replay model | `RebuildRecipe`, `DatasetManifest`, `G-RebuildFromRaw` |
+| W3C PROV / Python `prov` | Entity/Activity/Agent provenance serialization | `InternetObservation`, `BashAct`, `AgentBuild`, `PipelineRun` |
+| MLflow Dataset Tracking | params/metrics/artifact logging pattern | auxiliary experiment mirror, not verdict authority |
+| NetworkX / Neo4j | in-memory graph algorithms / persistent KG mirror | pure tests stay DB-free; KG mirror remains queryable |
+
+Development seed: `docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md`.
