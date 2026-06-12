@@ -7,12 +7,19 @@ from lakatos.judge import Prediction, judge, PredictionMissing, PredictionLocked
 P = dict(metric_name='loo_p95', direction='lower', baseline_value=0.384)
 
 def test_progressive_improved_and_novel():
-    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='OUTER 분기로 0.3 이하'), 0.279)
+    from lakatos.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.3)   # F-CON-3: 구조적 예측 필수
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='OUTER 분기로 0.3 이하'),
+              0.279, novel_target=nt, novel_measured=0.279)
     assert v.verdict == 'progressive' and v.improved and round(v.delta, 3) == -0.105
 
 def test_partial_improved_without_novel():
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction=''), 0.279)
     assert v.verdict == 'partial'   # 땜빵성 개선 — 라카토스가 경계한 것
+
+def test_text_only_novelty_is_not_progressive():   # F-CON-3 회귀
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'), 0.279)
+    assert v.verdict == 'partial'   # 한 글자 텍스트로 progressive 못 받음
 
 def test_equivalent_within_noise():
     v = judge(Prediction(**P, noise_band=0.02, novel_prediction='x'), 0.380)
@@ -23,8 +30,10 @@ def test_rejected_worse():
     assert v.verdict == 'rejected'
 
 def test_higher_direction():
+    from lakatos.judge import NovelTarget
     v = judge(Prediction(metric_name='psr', direction='higher', baseline_value=0.5,
-                         noise_band=0.0, novel_prediction='x'), 0.7)
+                         noise_band=0.0, novel_prediction='x'), 0.7,
+              novel_target=NovelTarget('psr', 'higher', 0.6), novel_measured=0.7)
     assert v.verdict == 'progressive'
 
 def test_missing_prediction_refused():

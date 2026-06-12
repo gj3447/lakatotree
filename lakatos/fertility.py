@@ -9,8 +9,20 @@
 # KG: span_lakatotree_fertility
 """
 
-NOBEL_MIN_PREDICTIONS = 3   # 표본 하한 (1방 행운 배제)
-NOBEL_MIN_HITRATE = 0.7     # 적중률 하한
+import math
+NOBEL_MIN_PREDICTIONS = 3       # 표본 하한
+NOBEL_MIN_HITRATE_LB = 0.7      # Wilson 95% 하한 (운 배제 — 10/10 이상서야 통과)
+
+
+def _wilson_lower(k: int, n: int, z: float = 1.96) -> float:
+    """Wilson 점수 95% 하한 — 작은 표본의 과신 방지(나생문 F-MATH-6)."""
+    if n == 0:
+        return 0.0
+    phat = k / n
+    denom = 1 + z * z / n
+    centre = phat + z * z / (2 * n)
+    margin = z * math.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n))
+    return max(0.0, (centre - margin) / denom)
 
 
 def predictive_fertility(nodes: list) -> dict:
@@ -22,5 +34,6 @@ def predictive_fertility(nodes: list) -> dict:
 
 
 def nobel_grade(fert: dict) -> bool:
-    """노벨급 = 예측 수 충분 ∧ 적중률 높음 (이론 발전성의 강한 증거)."""
-    return fert['registered'] >= NOBEL_MIN_PREDICTIONS and fert['fertility'] >= NOBEL_MIN_HITRATE
+    """노벨급 = 예측 수 충분 ∧ Wilson 적중률 하한 ≥0.7 (운 좋은 소표본 배제, F-MATH-6)."""
+    lb = _wilson_lower(fert['confirmed'], fert['registered'])
+    return fert['registered'] >= NOBEL_MIN_PREDICTIONS and lb >= NOBEL_MIN_HITRATE_LB

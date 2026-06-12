@@ -19,7 +19,8 @@ import math
 from .trust import evidence_weight
 
 # 판결별 기본 Bayes factor (사전등록 여부가 강도를 가른다 — novel 적중은 위조 어려움)
-BF_BASE = {'progressive': 6.0, 'partial': 1.5, 'equivalent': 1.0, 'rejected': 0.3}
+# 나생문 F-MATH-1/2 수정: partial=1.0(땜빵=무정보, 누적금지), rejected=1/progressive(log-odds 대칭)
+BF_BASE = {'progressive': 6.0, 'partial': 1.0, 'equivalent': 1.0, 'rejected': 1.0 / 6.0}
 DEFAULT_PRIOR = 0.5         # base rate (감사 가능한 명시값 — 숨은 주관 금지)
 ABANDON_CREDENCE = 0.1      # 이 밑 = 폐기 (laudan 연속카운터의 연속판)
 EFF_CAP = 4.0              # 효과크기 상한 (이상치 1방 폭주 차단)

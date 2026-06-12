@@ -6,7 +6,9 @@ from lakatos.bayes import bayes_factor, branch_credence, should_abandon_bayes
 def test_bf_ordering():
     # 진보(사전등록 novel 적중) > 땜빵 > 무정보 > 기각
     bf = lambda v: bayes_factor(v, delta=-0.1, noise_band=0.01)
-    assert bf('progressive') > bf('partial') > 1.0
+    # F-MATH-1/2: progressive>1=partial(중립), rejected<1 (대칭)
+    assert bf('progressive') > 1.0
+    assert bayes_factor('partial', delta=-0.1, noise_band=0.01) == 1.0   # 땜빵=무정보
     assert bayes_factor('equivalent') == 1.0
     assert bayes_factor('rejected', delta=0.1, noise_band=0.01) < 1.0
 

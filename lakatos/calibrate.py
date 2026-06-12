@@ -33,7 +33,7 @@ def calibration_error(forecasts: list, bins: int = 10) -> float:
         return 0.0
     buckets = [[] for _ in range(bins)]
     for p, o in forecasts:
-        idx = min(int(p * bins), bins - 1)
+        idx = max(0, min(int(p * bins), bins - 1))   # 나생문 F-MATH-7: 음수 p 클램프
         buckets[idx].append((p, o))
     n = len(forecasts)
     ece = 0.0

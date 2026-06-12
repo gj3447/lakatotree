@@ -47,13 +47,17 @@ def eigentrust(local_trust: dict, pre_trusted: dict, alpha: float = 0.15,
     n = len(nodes)
     if n == 0:
         return {}
+    sp0 = sum(pre_trusted.values()) or 1.0
+    pre_trusted = {x: pre_trusted.get(x, 0.0) / sp0 for x in nodes}
     C = {}   # 행정규화 (i 의 신뢰 합 = 1)
     for i in nodes:
         row = local_trust.get(i, {})
         s = sum(max(v, 0.0) for v in row.values())
-        C[i] = {j: max(row.get(j, 0.0), 0.0) / s for j in row} if s > 0 else {}
-    sp = sum(pre_trusted.values()) or 1.0
-    p = {x: pre_trusted.get(x, 0.0) / sp for x in nodes}
+        if s > 0:
+            C[i] = {j: max(row.get(j, 0.0), 0.0) / s for j in row}
+        else:
+            C[i] = {x: pre_trusted.get(x, 0.0) for x in nodes}   # 나생문 F-MATH-3: dangling→pre-trusted 재분배
+    p = dict(pre_trusted)   # 이미 정규화됨
     t = {x: p[x] if any(p.values()) else 1.0 / n for x in nodes}
     for _ in range(iters):
         nxt = {x: alpha * p[x] for x in nodes}
@@ -65,9 +69,9 @@ def eigentrust(local_trust: dict, pre_trusted: dict, alpha: float = 0.15,
     return t
 
 
-def evidence_weight(source_trust: float, floor: float = 0.2) -> float:
+def evidence_weight(source_trust: float, floor: float = 0.0) -> float:
     """출처 신뢰 → 증거 가중 [floor, 1]. 베이즈 BF 지수에 곱해 P(E|H) 결합.
 
-    무신뢰 출처도 floor (완전 무시 아님), 권위 출처는 1.0. 선형.
+    나생문 F-MATH-4: floor=0 → zero-trust(junk) 출처는 무정보(BF=1), credence 안 움직임.
     """
     return floor + (1.0 - floor) * max(0.0, min(1.0, source_trust))

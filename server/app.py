@@ -583,10 +583,10 @@ def record_derivation(d: DerivationIn):
               MERGE (o)-[:DERIVED_FROM {input_sha:$ish}]->(i)""",
            ip=path, ish=sha, out=d.output)
     with pg() as c, c.cursor() as cur:
-        cur.execute('INSERT INTO lineage(output, output_sha, producer, producer_sha, inputs, params, kind) '
-                    'VALUES (%s,%s,%s,%s,%s,%s,%s)',
+        cur.execute('INSERT INTO lineage(output, output_sha, producer, producer_sha, inputs, params, kind, env) '
+                    'VALUES (%s,%s,%s,%s,%s,%s,%s,%s)',
                     (d.output, d.output_sha, d.producer, d.producer_sha,
-                     json.dumps(d.inputs), json.dumps(d.params, ensure_ascii=False), d.kind))
+                     json.dumps(d.inputs), json.dumps(d.params, ensure_ascii=False), d.kind, d.env))
     return {'ok': True}
 
 def _load_lineage():

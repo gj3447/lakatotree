@@ -82,7 +82,8 @@ def judge(pred: Prediction | None, measured: float,
             raise ValueError('novel_measured 비유한')
         novel = novel_target.corroborated(nm)
     else:
-        novel = bool(pred.novel_prediction.strip())
+        # 나생문 F-CON-3: 구조적 novel_target 없으면 텍스트 존재만으론 novel 불인정(→partial)
+        novel = False
     if improved and novel:
         verdict = 'progressive'
     elif improved:
