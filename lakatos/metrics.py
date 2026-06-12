@@ -5,6 +5,7 @@
 """
 from collections import defaultdict
 from .laudan import problem_balance, psr, should_abandon
+from .bayes import branch_credence, should_abandon_bayes
 
 NONPROGRESSIVE = ('rejected', 'partial', 'equivalent')
 
@@ -77,6 +78,22 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     laudan = dict(frontier_balance=problem_balance(closed_q, open_q),
                   psr=round(psr(closed_q, len(path)), 3),
                   abandon_candidates=abandon)
+    # 베이즈 연속층: 정본 경로 신뢰도 + 저신뢰 가지 (판결 시퀀스 = 증거)
+    def verdict_seq(tags):
+        return [{'verdict': by[t]['verdict']} for t in tags]   # delta 미보유 시 판결만
+    can_cred = round(branch_credence(verdict_seq(path)), 3) if path else None
+    low_branches = []
+    for leaf in leaves:
+        if leaf in path:
+            continue
+        chain, cur3, seen3 = [], leaf, set()
+        while cur3 and cur3 not in path and cur3 not in seen3 and cur3 in by:
+            seen3.add(cur3); chain.append(cur3); cur3 = by[cur3].get('parent')
+        ab, c = should_abandon_bayes(verdict_seq(chain[::-1]))
+        if ab:
+            low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
+    bayes = dict(canonical_credence=can_cred, low_credence_branches=low_branches,
+                 note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
     alerts = [a for a in [
         f'퇴행 경보: 연속 비진보 깊이 {stalled} ≥3 — 가지 전환 검토' if stalled >= 3 else None,
         '정체 경보: 진보율 ≤0' if prog and prog['improvement_pct'] <= 0 else None,
@@ -88,4 +105,4 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 frontier=dict(open=open_q, closed=closed_q,
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
-                laudan=laudan, alerts=alerts)
+                laudan=laudan, bayes=bayes, alerts=alerts)

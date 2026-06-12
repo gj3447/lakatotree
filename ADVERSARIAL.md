@@ -19,3 +19,9 @@
 - F-FG-2 깊은 버전: novel_prediction 이 텍스트 존재만 검사(미입증). 구조화+채점은 별도 노드.
 - F-FG-4: 라우든 규칙③ per-branch 질문 귀속(RAISES_QUESTION→windowed balance) 미배선.
 - F-FG-6/7: 인증 레이어 부재(LAN 노출), .env 전체 주입 — 배포 시 토큰+최소권한.
+
+## 베이즈 신뢰도 층 추가 (2026-06-12, F-FG-2 부분 보강)
+나생문 F-FG-2 "novel_prediction 이 미입증"의 원리적 답: 사전등록된 novel 예측 적중은
+퇴행 프로그램에선 잘 안 나오므로 **Bayes factor 가 크다**(BF_progressive=6 vs partial=1.5).
+즉 progressive > partial 차등의 수학적 근거. 단 구조적 corroboration(예측↔실측 자동대조)은
+여전히 frontier — bayes 는 판결을 증거로 받을 뿐, 예측 텍스트를 채점하지 않는다.
