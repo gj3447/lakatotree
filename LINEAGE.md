@@ -8,6 +8,10 @@
 - **intermediate(버퍼)**: 캐시/관측/전처리 산출물 — 코드+params 로 source 서 파생, 삭제/재생성 가능
 - **final(완성본)**: 모델/리포트/판결 입력 — 버퍼서 파생
 - **Derivation**: 출력 ← f(입력[path,sha], 생산코드[path,sha], params). 모든 sha 기록
+- **DatasetManifest**: final artifact + root artifacts + derivation ledger +
+  environment fingerprint 를 묶은 재빌드 계약
+- **EnvironmentFingerprint**: Python/platform/package lock/env var/tool version
+  요약. HALCON/Zivid/CUDA 같은 외부 버전은 호출자가 관측해 고정한다.
 
 ## 기능
 | 질문 | 함수/엔드포인트 |
@@ -16,6 +20,7 @@
 | root data 서 어떻게 재생성하나 | `rebuild_plan` → topo 순서 (버퍼 먼저, 완성본 끝) |
 | 정말 재현 가능한가(끊긴 링크 없나) | `is_reproducible` / reproducible+gaps |
 | 데이터가 바뀌었나 | `stale_inputs` / `?stale=true` → 기록 sha vs 현 디스크 sha |
+| manifest 가 G-RebuildFromRaw 를 통과하나 | `verify_dataset_manifest` / `lakatos manifest-verify` |
 
 ## 저장 (3중)
 - KG: `(:DataArtifact)-[:DERIVED_FROM]->(:DataArtifact)` = W3C PROV wasDerivedFrom
@@ -27,6 +32,7 @@
 lakatos lineage-record <out> --sha <s> --producer <p.py> --input <root>:<sha> --kind final
 lakatos lineage <완성본>            # root 추적 + 재빌드 플랜 + 재현가능?
 lakatos lineage <완성본> --stale    # 데이터 바뀜 감지
+python -m lakatos.cli manifest-verify manifest.json --current-sha VFEZ0060.zdf:<sha>
 ```
 
 ## 프로젝트 예시 (consumer_b)

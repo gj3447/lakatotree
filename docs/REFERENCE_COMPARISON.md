@@ -64,6 +64,8 @@ Implemented:
 - `lakatos.adapters.derivations_to_dvc_pipeline`
 - `lakatos.adapters.derivations_to_dvc_lock`
 - `lakatos.adapters.rebuild_recipe_manifest`
+- `lakatos.lineage.DatasetManifest`
+- `lakatos.lineage.verify_dataset_manifest`
 
 Why not require DVC? consumer_b pipelines can span Windows capture machines, HALCON,
 Zivid/ZDF roots, generated caches, and solver packages outside a clean DVC
@@ -145,6 +147,7 @@ The adapter layer now gives the engine a clean bridge to the outside world:
 LakatoTree pure gates
   -> OpenLineage/Marquez for lineage ecosystem integration
   -> DVC-style manifests for raw-root replay
+  -> DatasetManifest + EnvironmentFingerprint for G-RebuildFromRaw checks
   -> PROV-like documents for standard provenance semantics
   -> MLflow-compatible telemetry later, without verdict authority
 ```
