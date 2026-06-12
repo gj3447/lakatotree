@@ -43,3 +43,39 @@ def test_promotion_decision_composes_all_gates():
 def test_promotion_decision_clean_passes():
     ok, reasons = promotion_decision(scripted_verdict='progressive', stands=True)
     assert ok and reasons == ()
+
+
+# === 완전 합성: 모든 승격 게이트 (Foundation + Credibility + 헌법) ===
+from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind, CredibilityTier
+from lakatos.spine import synthesize_promotion
+
+def _foundation_with_gap():
+    fm = FoundationMap()
+    fm.add(FoundationRequirement(name='root-data', kind=KnowledgeKind.DATA,
+                                 question='roots?', why_needed='replay', status='needed'))
+    return fm
+
+def test_synthesize_all_pass():
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True)
+    assert d['ok'] and d['reasons'] == ()
+
+def test_synthesize_foundation_gap_blocks():   # FoundationGate 배선
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True,
+                             foundation=_foundation_with_gap())
+    assert not d['ok'] and any('foundation' in r for r in d['reasons'])
+    assert d['gates']['foundation']['passed'] is False
+
+def test_synthesize_credibility_blocks():   # CredibilityPromotionGate 배선
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True,
+                             credibility=dict(current=CredibilityTier.AMBIGUOUS, target=CredibilityTier.EXTRACTED,
+                                              has_direct_source=False, has_independent_corroboration=False,
+                                              has_human_verdict=False))
+    assert not d['ok'] and d['gates']['credibility']['passed'] is False
+
+def test_synthesize_reproducible_false_blocks():
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True, reproducible=False)
+    assert not d['ok'] and 'not_reproducible' in d['reasons']
+
+def test_synthesize_per_gate_report():
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True)
+    assert 'constitution' in d['gates']
