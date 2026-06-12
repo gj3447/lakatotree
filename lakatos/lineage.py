@@ -20,6 +20,7 @@ class Derivation:
     params: dict = field(default_factory=dict)
     kind: str = 'intermediate'   # source | intermediate | final
     ts: str = ''
+    env: str = ''                # 환경 지문 sha (envfp) — 재현성 마지막 조각
 
 
 def by_output(derivs: list) -> dict:
@@ -108,3 +109,42 @@ def script_history(derivs: list, producer: str) -> list:
             order.append(d.producer_sha)
         versions[d.producer_sha]['outputs'].append(d.output)
     return [versions[k] for k in order]
+
+
+@dataclass
+class RawRoot:
+    """source(raw) 데이터 — BPC ZDF 등. 재현의 시작점."""
+    path: str
+    sha: str
+    schema: str = ''             # 예: 'ZDF 2448x2048 xyz+rgb+snr'
+
+
+@dataclass
+class RebuildManifest:
+    """완성본을 raw root 에서 재생성하는 완전한 레시피 (코드·params·환경 포함)."""
+    final: str
+    roots: list                  # [RawRoot]
+    env_sha: str                 # 환경 지문 sha
+    recipe: list                 # [{producer, producer_sha, inputs, output, params, env}]
+    tolerance: str | None = None # float 파이프라인: byte-exact 대신 metric 허용오차
+
+
+def env_drift(deriv: Derivation, current_env_sha: str) -> bool:
+    """이 산출물의 기록 환경 != 현재 환경? — 재현 결과 달라질 수 있음."""
+    return bool(deriv.env) and deriv.env != current_env_sha
+
+
+def build_manifest(final: str, bo: dict, root_schemas: dict | None = None,
+                   env_sha: str = '', tolerance: str | None = None) -> RebuildManifest:
+    """완성본 → RebuildManifest. roots(schema 부착) + env + topo recipe."""
+    root_schemas = root_schemas or {}
+    rts = []
+    for r in sorted(roots(final, bo)):
+        d = bo.get(r)
+        rts.append(RawRoot(path=r, sha=(d.output_sha if d else ''),
+                           schema=root_schemas.get(r, '')))
+    recipe = [{'producer': d.producer, 'producer_sha': d.producer_sha,
+               'inputs': [p for p, _ in d.inputs], 'output': d.output,
+               'params': d.params, 'env': d.env} for d in rebuild_plan(final, bo)]
+    return RebuildManifest(final=final, roots=rts, env_sha=env_sha,
+                           recipe=recipe, tolerance=tolerance)

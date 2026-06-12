@@ -67,6 +67,7 @@ def main(argv=None):
     sp.add_argument('--risk-if-missing', default='')
     sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
     sp = sub.add_parser('script-history'); sp.add_argument('producer')
+    sp = sub.add_parser('rebuild-verify'); sp.add_argument('artifact')
     sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
     sp.add_argument('--producer', default=''); sp.add_argument('--producer-sha', default='')
     sp.add_argument('--input', action='append', default=[], help='path:sha (반복)')
@@ -122,6 +123,9 @@ def main(argv=None):
     elif a.cmd == 'script-history':
         import urllib.parse as up
         out = call('GET', f'/api/lineage-script/{up.quote(a.producer)}')
+    elif a.cmd == 'rebuild-verify':
+        import urllib.parse as up
+        out = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
     elif a.cmd == 'lineage-record':
         inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]
         out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
