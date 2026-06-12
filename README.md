@@ -25,7 +25,7 @@ lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판
   mcp_server.py     MCP 도구 7종 (Claude/Codex 가 나무 조작)
 server/             FastAPI 박층 (:55170) — Neo4j(그래프 정본)+PG(append-only 이력)+Mongo(산출물)
 judges/             채점 스크립트 (결과 파일 → metric, LLM 무관)
-tests/              판결/엔진/서버계약 TDD (101 케이스 — 규칙 변경은 RED 부터)
+tests/              판결/엔진/서버계약 TDD — 규칙 변경은 RED 부터
 ```
 
 ## 엔진 개발 기반지식
@@ -52,7 +52,7 @@ tests/              판결/엔진/서버계약 TDD (101 케이스 — 규칙 변
 
 ## 기동/사용
 ```bash
-python -m pytest tests/ -q      # 엔진 검증 (101 케이스)
+python -m pytest tests/ -q      # 엔진 검증
 bash server/run.sh              # http://localhost:55170 (대시보드 /, API /api/*)
 python -m lakatos.cli metrics <tree>      # CLI: 지표(진보율/베이즈/발전성)
 python -m lakatos.cli directions <tree>   # CLI: 다음 어느 가지(VoI 우선순위)

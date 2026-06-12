@@ -207,5 +207,9 @@ ecosystem vocabulary:
 - [x] **3. G-RebuildFromRaw CLI/endpoint** — `GET /api/rebuild-verify/{artifact}` +
   `lakatos rebuild-verify <final>`: reproducible + stale + env_drift → `rebuildable`
   or `progressive_conditional` (consumer_b ZDF Rule #5), emits full RebuildManifest.
-- [ ] 4. Marquez I/O (adapters export ready, sender TODO).
-- [ ] 5. `prov` package serializer (PROV documents ready in adapters.py, lib serialize TODO).
+- [x] **4. Marquez I/O** — `send_openlineage_events_to_marquez()` posts existing
+  OpenLineage-shaped event dicts to Marquez `POST /api/v1/lineage`, with
+  injected opener for network-free TDD and explicit failure surfacing.
+- [x] **5. `prov` package serializer** — `prov_document_to_prov_json()` emits
+  dependency-free PROV-JSON shape; `serialize_prov_document(..., use_prov_package=True)`
+  delegates to optional `prov` for PROV-N/other package-supported formats.

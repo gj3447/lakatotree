@@ -28,6 +28,7 @@ from .engine import (
     SourceCredibilityScore,
 )
 from .adapters import (
+    MarquezClientError,
     bash_act_to_prov_document,
     derivation_to_openlineage_event,
     derivations_to_dvc_lock,
@@ -35,7 +36,10 @@ from .adapters import (
     derivations_to_prov_document,
     lineage_result_to_openlineage_events,
     observation_to_prov_document,
+    prov_document_to_prov_json,
     rebuild_recipe_manifest,
+    send_openlineage_events_to_marquez,
+    serialize_prov_document,
 )
 from .verdicts import (
     ADMIN_VERDICTS,
@@ -72,6 +76,7 @@ __all__ = [
     "ResearchFrame",
     "ResearchProject",
     "SourceCredibilityScore",
+    "MarquezClientError",
     "ADMIN_VERDICTS",
     "SCRIPTED_VERDICTS",
     "VERDICT_REGISTRY",
@@ -85,5 +90,8 @@ __all__ = [
     "derivations_to_prov_document",
     "lineage_result_to_openlineage_events",
     "observation_to_prov_document",
+    "prov_document_to_prov_json",
     "rebuild_recipe_manifest",
+    "send_openlineage_events_to_marquez",
+    "serialize_prov_document",
 ]

@@ -7,6 +7,10 @@ plain dict 로 내보낸다. 순수 엔진은 그대로 두고, Marquez/DVC/prov
 """
 from __future__ import annotations
 
+import json
+import re
+import urllib.error
+import urllib.request
 from dataclasses import asdict
 from datetime import datetime, timezone
 from uuid import uuid5, NAMESPACE_URL
@@ -17,6 +21,11 @@ from .lineage import Derivation, by_output, rebuild_plan, roots
 
 OPENLINEAGE_SCHEMA_URL = "https://openlineage.io/spec/1-0-5/OpenLineage.json"
 LAKATOS_PRODUCER = "https://github.com/gj3447/lakatotree"
+MARQUEZ_LINEAGE_PATH = "/api/v1/lineage"
+
+
+class MarquezClientError(RuntimeError):
+    """Marquez/OpenLineage 전송 실패."""
 
 
 def _utc_now() -> str:
@@ -29,6 +38,20 @@ def _stable_run_id(namespace: str, job_name: str, output: str, output_sha: str) 
 
 def _dataset_name(path: str) -> str:
     return path or "<anonymous>"
+
+
+def _marquez_lineage_url(base_url: str) -> str:
+    return base_url.rstrip("/") + MARQUEZ_LINEAGE_PATH
+
+
+def _json_response(body: bytes) -> dict | str:
+    if not body:
+        return {}
+    text = body.decode("utf-8", errors="replace")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
 
 
 def derivation_to_openlineage_event(
@@ -276,3 +299,183 @@ def bash_act_to_prov_document(act: BashAct) -> dict:
             {"rel": "wasAttributedTo", "from": activity, "to": "shell"},
         ],
     }
+
+
+def send_openlineage_events_to_marquez(
+    events: list[dict],
+    *,
+    base_url: str,
+    timeout: float = 10.0,
+    token: str | None = None,
+    opener=urllib.request.urlopen,
+) -> list[dict]:
+    """OpenLineage event dict 를 Marquez LineageAPI 로 전송한다.
+
+    Marquez 는 OpenLineage event 를 `POST /api/v1/lineage` 로 받는다. 이 함수는
+    adapter I/O 경계라서 순수 엔진에는 의존성을 추가하지 않고, 테스트에서는
+    opener 를 주입해 네트워크 없이 검증한다.
+    """
+    url = _marquez_lineage_url(base_url)
+    results = []
+    for event in events:
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(event, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with opener(request, timeout=timeout) as response:
+                results.append({
+                    "status": getattr(response, "status", None),
+                    "response": _json_response(response.read()),
+                })
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise MarquezClientError(
+                f"Marquez lineage POST failed: {exc.code} {exc.reason}: {body}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise MarquezClientError(f"Marquez lineage POST failed: {exc}") from exc
+    return results
+
+
+def _prov_attr_key(key: str) -> str:
+    return "prov:type" if key == "type" else f"lakatotree:{key}"
+
+
+def _prov_attrs(attrs: dict) -> dict:
+    return {_prov_attr_key(k): v for k, v in attrs.items() if v is not None}
+
+
+def _prov_package_value(value):
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return value
+
+
+def _prov_package_attr_key(key: str) -> str:
+    return "prov:type" if key == "type" else f"lkt:{key}"
+
+
+def _prov_package_attrs(attrs: dict) -> dict:
+    return {
+        _prov_package_attr_key(k): _prov_package_value(v)
+        for k, v in attrs.items()
+        if v is not None
+    }
+
+
+def prov_document_to_prov_json(doc: dict) -> dict:
+    """LakatoTree PROV-like dict 를 PROV-JSON 형태로 변환한다."""
+    out = {
+        "prefix": {
+            **doc.get("prefix", {}),
+            "lakatotree": LAKATOS_PRODUCER + "/prov#",
+        },
+        "entity": {
+            entity_id: _prov_attrs(attrs)
+            for entity_id, attrs in doc.get("entity", {}).items()
+        },
+        "activity": {
+            activity_id: _prov_attrs(attrs)
+            for activity_id, attrs in doc.get("activity", {}).items()
+        },
+        "agent": {
+            agent_id: _prov_attrs(attrs)
+            for agent_id, attrs in doc.get("agent", {}).items()
+        },
+    }
+    counters: dict[str, int] = {}
+    for rel in doc.get("relations", []):
+        name = rel["rel"]
+        idx = counters.get(name, 0)
+        counters[name] = idx + 1
+        target = out.setdefault(name, {})
+        rel_id = f"_:{name}{idx}"
+        src = rel["from"]
+        dst = rel["to"]
+        if name == "wasGeneratedBy":
+            target[rel_id] = {"prov:entity": src, "prov:activity": dst}
+        elif name == "used":
+            target[rel_id] = {"prov:activity": src, "prov:entity": dst}
+        elif name == "wasDerivedFrom":
+            target[rel_id] = {"prov:generatedEntity": src, "prov:usedEntity": dst}
+        elif name == "wasAttributedTo":
+            target[rel_id] = {"prov:entity": src, "prov:agent": dst}
+        else:
+            target[rel_id] = {"prov:from": src, "prov:to": dst}
+    return out
+
+
+def _safe_prov_id(raw: str) -> str:
+    local = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("_") or "anonymous"
+    if local[0].isdigit():
+        local = "id_" + local
+    return f"lkt:{local}"
+
+
+def _to_prov_package_document(doc: dict):
+    from prov.model import ProvDocument
+
+    pdoc = ProvDocument()
+    pdoc.add_namespace("lkt", LAKATOS_PRODUCER + "/prov#")
+    ids = {}
+
+    def qid(raw: str) -> str:
+        if raw not in ids:
+            ids[raw] = _safe_prov_id(raw)
+        return ids[raw]
+
+    for entity_id, attrs in doc.get("entity", {}).items():
+        pdoc.entity(qid(entity_id), {
+            **_prov_package_attrs(attrs),
+            "lkt:original_id": entity_id,
+        })
+    for activity_id, attrs in doc.get("activity", {}).items():
+        pdoc.activity(qid(activity_id), other_attributes={
+            **_prov_package_attrs(attrs),
+            "lkt:original_id": activity_id,
+        })
+    for agent_id, attrs in doc.get("agent", {}).items():
+        pdoc.agent(qid(agent_id), {
+            **_prov_package_attrs(attrs),
+            "lkt:original_id": agent_id,
+        })
+
+    for rel in doc.get("relations", []):
+        src = qid(rel["from"])
+        dst = qid(rel["to"])
+        if rel["rel"] == "wasGeneratedBy":
+            pdoc.wasGeneratedBy(src, dst)
+        elif rel["rel"] == "used":
+            pdoc.used(src, dst)
+        elif rel["rel"] == "wasDerivedFrom":
+            pdoc.wasDerivedFrom(src, dst)
+        elif rel["rel"] == "wasAttributedTo":
+            pdoc.wasAttributedTo(src, dst)
+    return pdoc
+
+
+def serialize_prov_document(
+    doc: dict,
+    *,
+    format: str = "json",
+    use_prov_package: bool = False,
+) -> str:
+    """PROV-like document 를 문자열로 직렬화한다.
+
+    `json`/`prov-json` 은 의존성 없이 안정적으로 출력한다. 다른 형식은
+    `use_prov_package=True` 일 때만 optional `prov` 패키지로 위임한다.
+    """
+    fmt = format.lower()
+    if fmt in {"json", "prov-json", "prov_json"} and not use_prov_package:
+        return json.dumps(prov_document_to_prov_json(doc), ensure_ascii=False, sort_keys=True)
+    if not use_prov_package:
+        raise ValueError(f"format requires use_prov_package=True: {format}")
+    pdoc = _to_prov_package_document(doc)
+    prov_fmt = "provn" if fmt in {"provn", "prov-n"} else fmt
+    return pdoc.serialize(format=prov_fmt)
