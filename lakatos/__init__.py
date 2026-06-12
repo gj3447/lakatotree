@@ -67,6 +67,12 @@ from .verdicts import (
     is_registered_verdict,
     is_scripted_verdict,
 )
+from .stack import LayerVote, StackVerdict, evaluate_stack, stack_verdict
+from .agm import Belief, HardCoreProtected, RevisionResult, contraction, demote_canonical, expansion, revision
+from .lifecycle import LifecycleState, lifecycle_state, regret_nodes
+from .leaderboard import Competitor, dominates, leaderboard, score_competitor
+from .kuhn import ParadigmAssessment, assess_paradigm, sustained_dominance
+from .certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
 
 __all__ = [
     "BashAct",
@@ -126,4 +132,30 @@ __all__ = [
     "rebuild_recipe_manifest",
     "send_openlineage_events_to_marquez",
     "serialize_prov_document",
+    "LayerVote",
+    "StackVerdict",
+    "evaluate_stack",
+    "stack_verdict",
+    "Belief",
+    "HardCoreProtected",
+    "RevisionResult",
+    "contraction",
+    "demote_canonical",
+    "expansion",
+    "revision",
+    "LifecycleState",
+    "lifecycle_state",
+    "regret_nodes",
+    "Competitor",
+    "dominates",
+    "leaderboard",
+    "score_competitor",
+    "ParadigmAssessment",
+    "assess_paradigm",
+    "sustained_dominance",
+    "Certificate",
+    "GateCheck",
+    "certify_claim",
+    "gate_check",
+    "next_actions",
 ]

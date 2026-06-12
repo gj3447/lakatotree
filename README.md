@@ -18,6 +18,12 @@ lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판
   claim.py          ★ClaimStanding — 상계/하계 confidence + foundation/lineage/doubt blocking reason
   argue.py          [논증 채널] Dung AF — 인간+agent 의문/반박, grounded extension 정당성
   calibrate.py      [신뢰도 보정] Brier/log/ECE proper scoring — 예측 정직성
+  stack.py          [메타규칙] 층간 충돌 명시투표+정족수 2/3 — 침묵 OR 제거 (gap3)
+  agm.py            [신념개정] AGM/Levi hard_core 개정 — 기본 PROTECTED, entrenchment 정책 선언 (P1)
+  lifecycle.py      [메타-종료] 수확/발산/소멸 3-상태 + regret (P1)
+  leaderboard.py    [경쟁비교] Pareto+Borda 다기준 리더보드 — 단일점수 환원 금지 (P2)
+  kuhn.py           [프로그램 교체] Lakatos-Zahar supersession — shift 는 인간 안건 (gap7)
+  certify.py        [인증층] 5게이트 AND 인증서 — 검증가능 계보 묶음 (P2)
   metrics.py        트리 지표 (진보율/기각률/퇴행/베이즈/★발전성 + 라우든)
   lineage.py        ★데이터 계보 — manifest + env fingerprint + root replay 검증. LINEAGE.md
   harness.py        ★하네스 — 상계/하계/인간/agent 한 사이클 엮기 (포트-어댑터). HARNESS.md
