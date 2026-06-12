@@ -1,25 +1,30 @@
 """정량 점수 기반 지식 정본 — 모든 상수/척도를 권위 문헌에 근거 (야매 점수 금지).
 
 사용자 요구(2026-06-12): "그냥 우리가 야매로 점수주는게 아니라 기반 지식이 풍부하게 있는
-기반으로 정확하게 점수를 매겨야". → 모든 정량 상수는 여기서 value + source(문헌) +
-band(척도밴드) + rationale 로 근거화된다. 점수는 raw number 가 아니라 이 척도에 대해 *해석*된다.
+기반으로 정확하게 점수를 매겨야". → 모든 정량 상수는 value + source + band + rationale + **tier** 로
+근거화된다. 점수는 raw number 가 아니라 문헌 척도에 대해 *해석*된다.
 
-상계(인터넷 read-only)에서 검증한 canonical 지식 내장 (2026-06-12 WebSearch 확인):
-  - Jeffreys (1961), Theory of Probability, 3rd ed., Appendix B — Bayes factor 등급
-  - Kass & Raftery (1995), JASA 90(430):773-795 — 2·ln(BF) 척도
+★정직성(나생문 grounding-fidelity 적대검증 후): "척도/방법은 문헌 근거, 특정 값은 정책 선택"을
+혼동하지 않는다. tier 로 명시 구분 — 가짜 정밀(역산값을 derivation 인 척) 금지:
+  - 'literature'       : 값이 인용 문헌서 직접 (예 damping=0.85 Brin-Page, Cohen 밴드, z=1.96)
+  - 'policy_in_scale'  : 값은 엔지니어링 선택이나 *문헌 척도* 위에서 해석/경계됨 (예 BF=6.0 ∈ Jeffreys substantial)
+  - 'policy'           : 순수 엔지니어링/도메인 튜너블 (문헌은 영감일 뿐, 값은 literature 도출 아님)
+
+상계(인터넷 read-only)에서 검증한 canonical 지식 내장 (2026-06-12 WebSearch + 계산 확인):
+  - Jeffreys (1961), Theory of Probability, 3rd ed., Appendix B — Bayes factor 등급 (밴드=10^(k/2))
+  - Kass & Raftery (1995), JASA 90(430):773-795 — 2·ln(BF) 척도 (최상등급 very_strong, decisive 없음)
   - Cohen (1988), Statistical Power Analysis, 2nd ed. — 효과크기 d 등급
-  - Wald (1945), Ann. Math. Stat. 16(2):117-186 — SPRT 순차검정 경계
+  - Wald (1945), Ann. Math. Stat. 16(2):117-186 — SPRT 순차검정 경계 (α+β<1 필요)
   - Wilson (1927), JASA 22(158):209-212 — 점수구간 신뢰하한
-  - Brier (1950), Mon. Weather Rev. 78(1):1-3 — proper scoring rule
-  - Good (1952), JRSS-B 14(1):107-114 — logarithmic scoring rule
-  - Laplace (1814) — 무차별 원리(non-informative prior)
-  - Brin & Page (1998) — PageRank damping; Kamvar et al. (2003) — EigenTrust
+  - Brier (1950) / Good (1952) — proper scoring rule (calibrate.py 함수 근거; 상수 아님)
+  - Guo et al. (2017) — ECE 10-bin 관행
+  - Laplace (1814) — 무차별 원리; Brin & Page (1998) / Kamvar (2003) — PageRank/EigenTrust
 # KG: span_lakatotree_grounding / q-lkt-quantitative-grounding
 """
 import math
 
 # ════════════════════════════════════════════════════════════════════════
-#  문헌 정본 (citation registry) — 상수마다 source 키로 참조
+#  문헌 정본 (citation registry) — 상수의 source 키가 모두 여기 등록되어야(고아 인용 금지)
 # ════════════════════════════════════════════════════════════════════════
 SOURCES = {
     'jeffreys1961': 'Jeffreys, H. (1961). Theory of Probability (3rd ed.), Appendix B. Oxford.',
@@ -29,24 +34,28 @@ SOURCES = {
     'wilson1927': 'Wilson, E.B. (1927). Probable Inference... JASA 22(158):209-212.',
     'brier1950': 'Brier, G.W. (1950). Verification of Forecasts Expressed in Probability. MWR 78(1):1-3.',
     'good1952': 'Good, I.J. (1952). Rational Decisions. JRSS-B 14(1):107-114.',
+    'guo2017': 'Guo, C. et al. (2017). On Calibration of Modern Neural Networks. ICML (ECE, 10-bin 관행).',
     'laplace1814': 'Laplace, P.S. (1814). Essai philosophique sur les probabilités (principle of indifference).',
+    'laudan1977': 'Laudan, L. (1977). Progress and Its Problems. UC Press (문제해결 효율 — *정성적* 모델).',
     'brin_page1998': 'Brin, S. & Page, L. (1998). The Anatomy of a Large-Scale... Hypertextual Web Search Engine.',
     'kamvar2003': 'Kamvar, S. et al. (2003). The EigenTrust Algorithm for Reputation Management in P2P Networks.',
+    'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
 # ════════════════════════════════════════════════════════════════════════
-#  Bayes factor 해석 척도 (raw BF → 등급) — 점수를 문헌 밴드로 *해석*
+#  해석 척도 (raw 점수 → 등급) — 점수를 문헌 밴드로 *해석*
 # ════════════════════════════════════════════════════════════════════════
 # Jeffreys (1961): 밴드 경계 = 10^(k/2) (half-decade on log10). 검증: 3.162/10/31.62/100.
-JEFFREYS_BANDS = [   # (BF 하한, 라벨)
+JEFFREYS_BANDS = [   # (BF 하한, 라벨) — 오름차순
     (1.0,             'barely_worth_mentioning'),
     (math.sqrt(10),   'substantial'),    # 10^0.5 ≈ 3.162
     (10.0,            'strong'),          # 10^1
     (10 ** 1.5,       'very_strong'),     # 10^1.5 ≈ 31.623
     (100.0,           'decisive'),        # 10^2
 ]
-# Kass & Raftery (1995): 2·ln(BF) 척도 (deviance 와 동일 단위). 검증: 2lnBF 2/6/10 → BF 2.72/20.1/148.
-KASS_RAFTERY_BANDS_2LN = [   # (2lnBF 하한, 라벨)
+# Kass & Raftery (1995): 2·ln(BF) 척도. ★원전 최상 등급 = very_strong(2lnBF>10); 'decisive' 없음
+#  (그건 Jeffreys 스케일). 따라서 BF>148 saturate 는 원전 충실 — 버그 아님(나생문 F-MATH-4 응답).
+KASS_RAFTERY_BANDS_2LN = [   # (2lnBF 하한, 라벨) — 오름차순
     (0.0,  'not_worth_more_than_bare_mention'),
     (2.0,  'positive'),
     (6.0,  'strong'),
@@ -57,17 +66,21 @@ COHEN_D_BANDS = [(0.0, 'negligible'), (0.2, 'small'), (0.5, 'medium'), (0.8, 'la
 
 
 def _band_label(value: float, bands: list) -> str:
-    label = bands[0][1]
-    for lo, lbl in bands:
+    """value 가 속한 최상위 밴드 라벨. 입력 순서 무관(내부 오름차순 정렬 — 나생문 F-MATH-2)."""
+    label = None
+    for lo, lbl in sorted(bands, key=lambda x: x[0]):
         if value >= lo:
             label = lbl
+    if label is None:   # value < 첫 하한 → 최저 밴드
+        label = min(bands, key=lambda x: x[0])[1]
     return label
 
 
 def interpret_bayes_factor(bf: float) -> dict:
     """raw Bayes factor → 문헌 등급(Jeffreys + Kass-Raftery). 점수의 *해석* — 야매 숫자 금지.
 
-    BF<1(증거가 반대 방향)이면 역수로 등급 매기고 favors='against'.
+    BF<1(증거가 반대 방향)이면 역수 크기로 등급 매기고 favors='against'.
+    반환 two_ln_bf = 증거 *크기*(항상 ≥0); 방향은 favors 가 준다(나생문 F-MATH-5 명시).
     """
     if bf <= 0:
         raise ValueError('Bayes factor must be > 0')
@@ -76,7 +89,7 @@ def interpret_bayes_factor(bf: float) -> dict:
     two_ln = 2 * math.log(mag)
     return {
         'bf': bf,
-        'two_ln_bf': round(two_ln, 4),
+        'two_ln_bf': round(two_ln, 4),     # 크기(magnitude, ≥0). 방향은 favors.
         'favors': favors,
         'jeffreys': _band_label(mag, JEFFREYS_BANDS),          # 출처 jeffreys1961
         'kass_raftery': _band_label(two_ln, KASS_RAFTERY_BANDS_2LN),  # 출처 kass_raftery1995
@@ -91,11 +104,14 @@ def cohen_d_grade(d: float) -> str:
 def sprt_log_boundaries(alpha: float = 0.05, beta: float = 0.05) -> tuple:
     """Wald (1945) SPRT 로그 경계 (lnA 상한=H1수용, lnB 하한=H0수용).
 
-    A=(1-β)/α, B=β/(1-α). 누적 로그우도비가 lnA 초과→H1, lnB 미만→H0, 사이면 더 관측.
+    A=(1-β)/α, B=β/(1-α). 누적 로그우도비 ≥lnA→H1, ≤lnB→H0, 사이면 더 관측.
+    ★α+β<1 필수 — 아니면 lnA≤lnB(경계 역전, 의미 붕괴). 나생문 F-MATH-3.
     α=β=0.05 → (lnA, lnB) = (+2.944, −2.944). 출처 wald1945.
     """
     if not (0 < alpha < 1 and 0 < beta < 1):
         raise ValueError('alpha, beta must be in (0,1)')
+    if alpha + beta >= 1:
+        raise ValueError('alpha + beta must be < 1 (else SPRT boundaries invert: lnA ≤ lnB)')
     A = (1 - beta) / alpha
     B = beta / (1 - alpha)
     return math.log(A), math.log(B)
@@ -104,7 +120,7 @@ def sprt_log_boundaries(alpha: float = 0.05, beta: float = 0.05) -> tuple:
 def wilson_lower_bound(k: int, n: int, z: float = 1.96) -> float:
     """Wilson (1927) 점수구간 신뢰하한 — 소표본 과신 방지. z=1.96 → 95%. 출처 wilson1927.
 
-    검증: 10/10→0.722, 9/10→0.596, 3/3→0.438, 20/20→0.839.
+    검증: 10/10→0.722, 9/10→0.596, 9/9→0.701, 8/8→0.676, 3/3→0.438, 20/20→0.839.
     """
     if n == 0:
         return 0.0
@@ -116,106 +132,121 @@ def wilson_lower_bound(k: int, n: int, z: float = 1.96) -> float:
 
 
 # ════════════════════════════════════════════════════════════════════════
-#  Grounded 상수 정본 — 각 상수 value + source + band + rationale (provenance)
-#  점수 모듈은 inline 매직넘버 대신 여기를 import. "어느 근거로 이 점수가?" 추적 가능.
+#  Grounded 상수 정본 — value + source + tier + band + rationale (provenance)
+#  tier 가 정직성의 핵심: literature(문헌값) vs policy_in_scale(척도내 정책) vs policy(순수 정책).
 # ════════════════════════════════════════════════════════════════════════
 GROUNDED = {
     'bf_progressive': {
-        'value': 6.0, 'source': 'jeffreys1961',
-        'band': 'substantial [3.162, 10]',
-        'rationale': '단일 progressive 판결 = "substantial" 증거(decisive 아님). '
-                     'Jeffreys substantial 밴드 기하중심 √(3.162·10)=5.66 ≈ 6.0. '
-                     'Kass-Raftery 2ln(6)=3.58 → "positive" 밴드 [2,6] 정합.',
+        'value': 6.0, 'source': 'jeffreys1961', 'tier': 'policy_in_scale',
+        'band': 'Jeffreys substantial [3.162, 10]',
+        'rationale': 'single progressive = "substantial" 증거(decisive 아님). 6.0 은 substantial 밴드 '
+                     '*내부의 정책값*(반올림 라운드, 기하평균 √32≈5.66 근방) — 밴드는 문헌, 6.0 자체는 '
+                     '엔지니어링 선택(derivation 아님). KR 2ln(6)=3.58 → "positive".',
     },
     'bf_rejected': {
-        'value': 1.0 / 6.0, 'source': 'jeffreys1961',
+        'value': 1.0 / 6.0, 'source': 'jeffreys1961', 'tier': 'policy_in_scale',
         'band': 'substantial (역방향)',
-        'rationale': 'log-odds 대칭 — rejected 는 progressive 의 역수(BF=1/6). '
-                     '진보 증거와 같은 크기의 반대 증거(나생문 F-MATH-2).',
+        'rationale': 'log-odds 대칭으로 progressive 의 역수(BF=1/6) — 같은 크기 반대 증거(F-MATH-2). '
+                     'bf_progressive 정책값에 종속(대칭은 수학적 필연).',
     },
     'bf_partial_equivalent': {
-        'value': 1.0, 'source': 'kass_raftery1995',
-        'band': 'not worth more than a bare mention (BF≈1)',
-        'rationale': '사후 땜빵/동등 = 무정보(둘 다 흔함). BF=1 → 신뢰도 불변, 누적 금지(F-MATH-1).',
+        'value': 1.0, 'source': 'kass_raftery1995', 'tier': 'literature',
+        'band': 'not worth more than a bare mention (BF=1)',
+        'rationale': 'BF=1 = 무정보(둘 다 흔함) = KR 최저 등급. 신뢰도 불변, 누적 금지(F-MATH-1). '
+                     '값 1.0 은 "증거 없음"의 수학적 정의 — 정책 아님.',
     },
     'eff_cap': {
-        'value': 4.0, 'source': 'cohen1988',
-        'band': 'd=4.0 = "large"(0.8)의 5배 — 포화영역',
-        'rationale': '효과크기 상한 — Cohen "large"=0.8 의 5배. 이상치 1방이 BF 를 '
-                     '무한정 키우지 못하게(증거 포화). d>4 는 실무서 거의 없음.',
+        'value': 4.0, 'source': 'cohen1988', 'tier': 'policy_in_scale',
+        'band': 'Cohen d 스케일 — large(0.8)의 5배 = 포화',
+        'rationale': '효과크기 상한(이상치 1방 차단). Cohen large=0.8 대비 5×=4.0 정책 cap — '
+                     'd>4 는 실무서 거의 없음. 스케일은 Cohen, 4.0 cap 은 엔지니어링 선택.',
     },
     'weight_floor': {
-        'value': 0.3, 'source': 'jeffreys1961',
-        'band': 'log(BF) 최소 가중 — 마진 개선의 하한 증거력',
-        'rationale': '효과크기 0 에 수렴해도 판결 자체(progressive=substantial)가 주는 최소 정보. '
-                     'log(6)·0.3=0.54 → BF≈1.7(Jeffreys "barely~substantial 경계"). 0 으로 죽지 않음.',
+        'value': 0.3, 'source': 'policy', 'tier': 'policy',
+        'band': 'log(BF) 가중 하한 (Jeffreys 스케일서 해석)',
+        'rationale': '★정직: 0.3 은 *경험적 정책값*(문헌 도출 아님). progressive 가 효과크기 0 에서도 '
+                     '사라지지 않게 하한. log(6)·0.3=0.54 → BF≈1.71(Jeffreys "barely~substantial 경계"). '
+                     '원하는 ~1.7× 배율에 맞춘 튜닝값 — Jeffreys 가 0.3 을 주는 게 아님.',
     },
     'abandon_credence': {
-        'value': 0.1, 'source': 'jeffreys1961',
-        'band': 'posterior odds ≈ 1:9 (BF 9 ≈ Jeffreys substantial 상단)',
-        'rationale': '사후신뢰도 0.1 = odds 1:9. 진보 가설이 퇴행 대비 9배 불리 = '
-                     'substantial-to-strong 반대증거 누적. 폐기 문턱.',
+        'value': 0.1, 'source': 'policy', 'tier': 'policy_in_scale',
+        'band': 'posterior odds 1:9 (BF 9 ∈ Jeffreys substantial)',
+        'rationale': '사후신뢰도 0.1 = odds 1:9 정책 문턱. odds→증거등급 해석은 Jeffreys 근거(9 ∈ '
+                     'substantial 상단), 0.1 임계 자체는 엔지니어링 선택.',
     },
     'abandon_k': {
-        'value': 3, 'source': 'wald1945',
-        'band': 'SPRT 하한 lnB(α=β=0.05)=−2.944 의 이산근사',
-        'rationale': '연속 비진보 K=3 = Wald SPRT 하한 교차의 휴리스틱. 노드당 로그우도비 '
-                     '≈−0.98 nat(비진보=퇴행이 e배 우세)이면 3개 누적 −2.94 ≈ lnB. '
-                     '즉 표준 오류율(0.05/0.05) 순차검정의 정수 근사 — 야매 아님.',
+        'value': 3, 'source': 'wald1945', 'tier': 'policy_in_scale',
+        'band': 'Wald SPRT 하한 lnB(α=β=0.05)=−2.944 의 정수 휴리스틱',
+        'rationale': '★정직: K=3 은 *휴리스틱 정수*. SPRT 방법(Wald)은 문헌 근거지만 노드당 LLR 은 '
+                     '판결별로 다름(BF 모델: rejected=ln(1/6)=−1.79 nat → ~2 노드서 lnB 교차; partial=0 nat). '
+                     'K=3 = 보수적 정수 근사(SPRT 영역). 엄밀판 = should_abandon_sprt(실제 LLR 누적). '
+                     '"노드당 0.98 nat" 류 역산 정밀 주장 철회.',
     },
     'abandon_budget': {
-        'value': 5, 'source': 'wald1945',
-        'band': 'SPRT 평균표본수(ASN) 규모 — 약증거 누적 관용창',
-        'rationale': '예측 적중 0 인 채 소진 가능한 노드 예산. 약한 per-node 증거(≈0.59 nat)일 때 '
-                     'lnB 도달에 필요한 표본수(2.944/0.59≈5). 적중 1 이면 가설 살림.',
+        'value': 5, 'source': 'policy', 'tier': 'policy',
+        'band': 'SPRT 평균표본수(ASN) 규모의 정책 예산',
+        'rationale': '★정직: 예측 적중 0 노드 예산 5 = 정책값. 약증거 누적이 SPRT 하한 도달에 드는 '
+                     '표본수 규모(약 lnB/약한per-node)에서 *영감*받은 엔지니어링 선택 — 역산 아님.',
     },
     'abandon_b': {
-        'value': 2, 'source': 'laudan',
-        'band': '문제수지 적자 한계(정책)',
+        'value': 2, 'source': 'policy', 'tier': 'policy',
+        'band': '문제수지 적자 한계 (Laudan 영감)',
         'rationale': 'Laudan(1977) 문제해결 효율 — 변명이 문제를 낳는 속도가 해결을 추월(net −2). '
-                     '정량 임계는 정책값(Laudan 원전은 정성적), SPRT 와 독립한 안전망.',
+                     'Laudan 원전은 *정성적* → 정량 임계 2 는 도메인 튜너블 정책값(영감: laudan1977).',
     },
     'w_problem': {
-        'value': 5.0, 'source': 'laudan',
-        'band': '문제수지 vs metric 가중(정책)',
-        'rationale': 'Laudan: 해결한 *문제* 1개 > metric % 개선 — 문제해결이 과학의 목적. '
-                     '정책 가중(도메인 튜너블), 보편상수 아님(명시).',
+        'value': 5.0, 'source': 'policy', 'tier': 'policy',
+        'band': '문제수지 vs metric 가중 (Laudan 영감)',
+        'rationale': 'Laudan: 해결한 *문제* 1개 > metric % — 문제해결이 과학 목적. 가중 5.0 은 도메인 '
+                     '튜너블 정책값(영감: laudan1977, 정성 원전). 보편상수 아님.',
     },
     'nobel_min_hitrate_lb': {
-        'value': 0.7, 'source': 'wilson1927',
-        'band': 'Wilson 95% 하한 ≥0.7 → 사실상 10/10 요구',
-        'rationale': 'novel 예측 적중률의 Wilson 하한 임계. 9/10 하한 0.596<0.7 탈락, '
-                     '10/10 하한 0.722≥0.7 통과. "운 좋은 소표본" 배제(F-MATH-6).',
+        'value': 0.7, 'source': 'wilson1927', 'tier': 'policy_in_scale',
+        'band': 'Wilson 95% 하한 임계 — 실효 통과선 ≈9/9',
+        'rationale': 'novel 적중률 Wilson 하한 ≥0.7 정책 임계. Wilson(척도)은 문헌, 0.7 컷은 정책. '
+                     '★실효: 8/8 하한 0.676<0.7 탈락, 9/9 하한 0.701 통과 — 이게 진짜 표본 하한(아래 참조).',
     },
     'nobel_min_predictions': {
-        'value': 3, 'source': 'wilson1927',
-        'band': '표본 하한 — Wilson 하한이 의미 갖는 최소 n',
-        'rationale': '등록 novel 예측 최소 수. n<3 이면 Wilson 하한이 너무 넓어 무의미.',
+        'value': 3, 'source': 'wilson1927', 'tier': 'policy_in_scale',
+        'band': 'Wilson 유의 최소 n(=3); 단 실효 통과선은 LB 게이트가 결정(≈9)',
+        'rationale': '★정직(나생문 F-MATH-1): n=3 은 Wilson 하한이 의미갖는 최소표본일 뿐, *통과 보장 아님*. '
+                     'LB≥0.7 게이트가 binding → 3/3 은 하한 0.438 로 탈락, 9/9(0.701)부터 통과. '
+                     '즉 두 게이트 AND 의 실효 최소는 9/9. 3 은 하한선, 9 는 통과선.',
     },
     'pagerank_damping': {
-        'value': 0.85, 'source': 'brin_page1998',
+        'value': 0.85, 'source': 'brin_page1998', 'tier': 'literature',
         'band': 'PageRank 표준 damping',
-        'rationale': 'TrustRank(biased PageRank) damping. Brin-Page 원전 0.85 표준.',
+        'rationale': 'TrustRank(biased PageRank) damping 0.85 = Brin-Page 원전 표준값(문헌 직접).',
     },
     'eigentrust_alpha': {
-        'value': 0.15, 'source': 'kamvar2003',
+        'value': 0.15, 'source': 'kamvar2003', 'tier': 'literature',
         'band': 'EigenTrust pre-trusted teleport (=1−0.85)',
-        'rationale': '악성 협잡 저항용 pre-trusted 가중. Kamvar 권장 ~0.1–0.2.',
+        'rationale': '악성 협잡 저항 pre-trusted 가중. Kamvar 권장 ~0.1–0.2 범위 표준(문헌).',
     },
     'default_prior': {
-        'value': 0.5, 'source': 'laplace1814',
+        'value': 0.5, 'source': 'laplace1814', 'tier': 'literature',
         'band': '무차별 원리(principle of indifference)',
-        'rationale': '진보/퇴행 사전 동률 — 숨은 주관 금지, 감사 가능한 명시 기준선.',
+        'rationale': '진보/퇴행 사전 동률 = Laplace 무차별 원리(문헌). 숨은 주관 금지, 감사 가능 기준선.',
     },
     'ece_bins': {
-        'value': 10, 'source': 'good1952',
+        'value': 10, 'source': 'guo2017', 'tier': 'literature',
         'band': 'ECE 표준 bin 수',
-        'rationale': '예측 보정오차(ECE) 구간 수 — 문헌 관행 10(Guo 2017 등).',
+        'rationale': '예측 보정오차(ECE) 구간 수 10 = Guo et al.(2017) 등 보정 문헌 표준 관행(문헌).',
     },
 }
 
+# Brier(1950)/Good(1952) = calibrate.py 의 brier_score/log_score *함수* 근거(상수 아님) — SOURCES 등록만.
+
+# tier 별 정직성 요약 (감사용): 어느 값이 문헌이고 어느 게 정책인지 한눈에.
+def grounding_tiers() -> dict:
+    """tier → 상수 리스트. 정직성 감사 — '문헌값 vs 정책값' 명시 (가짜 정밀 자가검출)."""
+    out = {}
+    for k, g in GROUNDED.items():
+        out.setdefault(g['tier'], []).append(k)
+    return out
+
 
 def provenance(constant: str) -> dict:
-    """상수의 근거 — value + 문헌 전체인용 + band + rationale. 점수가 자기 근거를 들고 다님."""
+    """상수 근거 — value + tier + 문헌 전체인용 + band + rationale. 점수가 자기 근거를 들고 다님."""
     g = GROUNDED[constant]
     return {**g, 'citation': SOURCES.get(g['source'], g['source'])}
