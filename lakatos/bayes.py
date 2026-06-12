@@ -16,6 +16,7 @@
 # KG: span_lakatotree_bayes
 """
 import math
+from .trust import evidence_weight
 
 # 판결별 기본 Bayes factor (사전등록 여부가 강도를 가른다 — novel 적중은 위조 어려움)
 BF_BASE = {'progressive': 6.0, 'partial': 1.5, 'equivalent': 1.0, 'rejected': 0.3}
@@ -30,13 +31,15 @@ def effect_size(delta: float, noise_band: float, floor: float = 1e-6) -> float:
     return abs(delta) / max(noise_band, floor)
 
 
-def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0) -> float:
-    """판결 + 효과크기 → Bayes factor. equivalent=1(무정보), 나머지는 효과로 증폭."""
+def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0,
+                 source_trust: float = 1.0) -> float:
+    """판결 + 효과크기 + 인터넷 출처신뢰 → Bayes factor. 권위 출처 = 강한 증거(P1).
+    equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게."""
     base = BF_BASE.get(verdict, 1.0)
     if base == 1.0:
         return 1.0
     es = min(effect_size(delta, noise_band), EFF_CAP) / EFF_CAP   # 0..1
-    w = max(es, WEIGHT_FLOOR)
+    w = max(es, WEIGHT_FLOOR) * evidence_weight(source_trust)   # ★출처신뢰 결합
     return math.exp(math.log(base) * w)   # base>1 → BF>1, base<1 → BF<1
 
 
@@ -44,7 +47,8 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR) -> float:
     """판결 시퀀스(시간순) → 사후 신뢰도. odds 곱셈(베이즈 갱신)."""
     odds = prior / (1 - prior)
     for v in verdicts:
-        odds *= bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0))
+        odds *= bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0),
+                             v.get('source_trust', 1.0))
     return odds / (1 + odds)
 
 
