@@ -11,6 +11,13 @@ from .fertility import predictive_fertility, nobel_grade
 NONPROGRESSIVE = ('rejected', 'partial', 'equivalent')
 
 
+def _primary_parent(row: dict) -> str | None:
+    if row.get('parent'):
+        return row.get('parent')
+    parents = row.get('parents') or []
+    return parents[0] if parents else None
+
+
 def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     cfg = cfg or {}
     by = {r['tag']: r for r in nodes}
@@ -21,7 +28,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     while cur and cur not in seen and cur in by:   # 사이클 가드(나생문 F-FG-3)
         seen.add(cur)
         path.append(cur)
-        cur = by[cur].get('parent')
+        cur = _primary_parent(by[cur])
     path = path[::-1]
     # 진보율 (같은 scope 의 정본경로 metric)
     prog = None
@@ -42,8 +49,8 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                         improvement_pct=None, abs_gain=round(sc[-1][1] - sc[0][1], 4))
     children = defaultdict(list)
     for r in nodes:
-        if r.get('parent'):
-            children[r['parent']].append(r)
+        for parent in (r.get('parents') or ([r.get('parent')] if r.get('parent') else [])):
+            children[parent].append(r)
     def degen_depth(tag, _seen=None):
         _seen = _seen or set()
         if tag in _seen:
@@ -66,7 +73,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         while cur2 and cur2 not in path and cur2 not in seen2 and cur2 in by:
             seen2.add(cur2)
             chain.append(by[cur2])
-            cur2 = by[cur2].get('parent')
+            cur2 = _primary_parent(by[cur2])
         consec = 0
         for r in chain:                      # leaf→분기점 방향 연속 비진보
             if r['verdict'] in NONPROGRESSIVE:
@@ -93,7 +100,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             continue
         chain, cur3, seen3 = [], leaf, set()
         while cur3 and cur3 not in path and cur3 not in seen3 and cur3 in by:
-            seen3.add(cur3); chain.append(cur3); cur3 = by[cur3].get('parent')
+            seen3.add(cur3); chain.append(cur3); cur3 = _primary_parent(by[cur3])
         ab, c = should_abandon_bayes(verdict_seq(chain[::-1]))
         if ab:
             low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
@@ -103,11 +110,16 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     fert = predictive_fertility([by[t] for t in path]) if path else predictive_fertility(nodes)
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
+    coverage_backlog = list(cfg.get('coverage_backlog') or [])
+    coverage = dict(statement=cfg.get('coverage_statement') or '',
+                    backlog=coverage_backlog, backlog_count=len(coverage_backlog),
+                    exhaustive=(len(coverage_backlog) == 0))
     alerts = [a for a in [
         f'퇴행 경보: 연속 비진보 깊이 {stalled} ≥3 — 가지 전환 검토' if stalled >= 3 else None,
         '정체 경보: 진보율 ≤0' if prog and prog.get('improvement_pct') is not None
         and prog['improvement_pct'] <= 0 else None,
         '주석 미완 노드 존재' if annotated < n else None,
+        f'커버리지 backlog {len(coverage_backlog)}건 — 전수성 주장 금지' if coverage_backlog else None,
     ] + [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon] if a]
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
@@ -115,4 +127,4 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 frontier=dict(open=open_q, closed=closed_q,
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
-                laudan=laudan, bayes=bayes, fertility=fert, alerts=alerts)
+                coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert, alerts=alerts)

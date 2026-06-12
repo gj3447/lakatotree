@@ -43,10 +43,14 @@ def next_directions(name: str) -> str:
 
 
 @mcp.tool()
-def add_node(name: str, tag: str, parent: str = '', comment: str = '', algorithm: str = '') -> str:
-    """나무에 노드(실험/지식상태) 추가. parent=분기 원점(CANONICAL 권장)."""
+def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
+             comment: str = '', algorithm: str = '') -> str:
+    """나무에 노드 추가. parent/parents_csv 로 DAG 다중 부모를 기록."""
+    parents = [p.strip() for p in parents_csv.split(',') if p.strip()]
+    if parent:
+        parents.insert(0, parent)
     return json.dumps(_post(f'/api/tree/{name}/node',
-        dict(tag=tag, parent=parent or None, comment=comment, algorithm=algorithm)), ensure_ascii=False)
+        dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm)), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -94,6 +98,24 @@ def critique(name: str, tag: str, arg_id: str, attacks: str, by: str = '',
 def standing(name: str, tag: str) -> str:
     """판결이 의문들을 막아내고 서는가 — grounded extension."""
     return json.dumps(_get(f'/api/tree/{name}/node/{tag}/standing'), ensure_ascii=False)
+
+
+@mcp.tool()
+def add_element(name: str, element_name: str, definition: str = '',
+                implication: str = '', lifecycle: str = '',
+                scope: str = 'domain-agnostic') -> str:
+    """기법/요소를 LakatosElement 로 등록하고 나무에 연결."""
+    return json.dumps(_post(f'/api/tree/{name}/element',
+        dict(name=element_name, definition=definition, implication=implication,
+             lifecycle=lifecycle, scope=scope)), ensure_ascii=False)
+
+
+@mcp.tool()
+def use_element(name: str, tag: str, element_name: str,
+                note: str = '', evidence_ref: str = '') -> str:
+    """노드가 어떤 LakatosElement 를 사용했는지 연결."""
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/element/{element_name}',
+        dict(note=note, evidence_ref=evidence_ref)), ensure_ascii=False)
 
 
 if __name__ == '__main__':

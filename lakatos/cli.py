@@ -5,7 +5,7 @@
   tree <name>                    나무 구조
   metrics <name>                 지표(진보율/기각률/퇴행/베이즈/발전성)
   directions <name>              VoI 우선순위 다음 방향
-  node <name> <tag> [--parent P] 노드 생성
+  node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
   result <name> <tag> --value V --script S [--sha S] [--novel-measured X]
@@ -38,7 +38,9 @@ def main(argv=None):
     for c in ('tree', 'metrics', 'directions'):
         sp = sub.add_parser(c); sp.add_argument('name')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
-    sp.add_argument('--parent'); sp.add_argument('--comment', default=''); sp.add_argument('--algorithm', default='')
+    sp.add_argument('--parent', action='append', default=[])
+    sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
+    sp.add_argument('--comment', default=''); sp.add_argument('--algorithm', default='')
     sp = sub.add_parser('predict'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--metric', required=True); sp.add_argument('--baseline', type=float, required=True)
     sp.add_argument('--dir', default='lower', choices=['lower', 'higher'])
@@ -49,6 +51,11 @@ def main(argv=None):
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
     sp = sub.add_parser('provenance'); sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('element'); sp.add_argument('name'); sp.add_argument('element_name')
+    sp.add_argument('--definition', default=''); sp.add_argument('--implication', default='')
+    sp.add_argument('--lifecycle', default=''); sp.add_argument('--scope', default='domain-agnostic')
+    sp = sub.add_parser('use-element'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('element_name')
+    sp.add_argument('--note', default=''); sp.add_argument('--evidence-ref', default='')
     sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
     sp = sub.add_parser('script-history'); sp.add_argument('producer')
     sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
@@ -66,8 +73,15 @@ def main(argv=None):
     elif a.cmd == 'directions':
         out = call('GET', f'/api/tree/{a.name}/directions')
     elif a.cmd == 'node':
+        parent_edges = []
+        for item in a.inferred_parent:
+            parts = item.split(':', 2)
+            parent_edges.append(dict(tag=parts[0], inferred=True,
+                                     relation_kind=(parts[1] if len(parts) > 1 else 'backfill'),
+                                     evidence_ref=(parts[2] if len(parts) > 2 else '')))
         out = call('POST', f'/api/tree/{a.name}/node',
-                   dict(tag=a.tag, parent=a.parent, comment=a.comment, algorithm=a.algorithm))
+                   dict(tag=a.tag, parents=a.parent, parent_edges=parent_edges,
+                        comment=a.comment, algorithm=a.algorithm))
     elif a.cmd == 'predict':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/prediction',
                    dict(metric_name=a.metric, direction=a.dir, baseline_value=a.baseline,
@@ -78,6 +92,13 @@ def main(argv=None):
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured))
     elif a.cmd == 'provenance':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/provenance')
+    elif a.cmd == 'element':
+        out = call('POST', f'/api/tree/{a.name}/element',
+                   dict(name=a.element_name, definition=a.definition, implication=a.implication,
+                        lifecycle=a.lifecycle, scope=a.scope))
+    elif a.cmd == 'use-element':
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/element/{a.element_name}',
+                   dict(note=a.note, evidence_ref=a.evidence_ref))
     elif a.cmd == 'lineage':
         import urllib.parse as up
         out = call('GET', f'/api/lineage/{up.quote(a.artifact)}' + ('?stale=true' if a.stale else ''))
