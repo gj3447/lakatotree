@@ -8,6 +8,7 @@
 # KG: span_lakatotree_spine / q-lkt-engine-unify
 """
 from .promote import promotion_gate
+from .engine import FoundationGate, CredibilityPromotionGate
 
 
 def reconcile_verdict(metric_verdict: str, lakatos_result=None) -> dict:
@@ -35,3 +36,28 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
         block.append('foundation_gaps:' + ','.join(foundation_gaps))
     block.extend(credibility_reasons)
     return (not block, tuple(block))
+
+
+def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
+                         foundation=None, credibility: dict | None = None) -> dict:
+    """완전 합성 승격 게이트 — 헌법(promotion_gate) + FoundationGate(준비도) +
+    CredibilityPromotionGate(인터넷 등급). 입력 있는 게이트만 실행, 단일 결정 + per-gate 리포트.
+
+    이게 강건한 엔진의 척추: 서버가 가진 신호를 흘려보내면 모든 게이트가 합의해 차단/통과.
+    """
+    block: list[str] = []
+    gates: dict = {}
+    _, pr = promotion_gate(scripted_verdict=scripted_verdict, stands=stands, reproducible=reproducible)
+    gates['constitution'] = {'passed': not pr, 'reasons': list(pr)}
+    block.extend(pr)
+    if foundation is not None:
+        fr = FoundationGate.evaluate(foundation)
+        gates['foundation'] = {'passed': fr.passed, 'reasons': list(fr.reasons)}
+        if not fr.passed:
+            block.append('foundation_gaps:' + ','.join(fr.reasons))
+    if credibility is not None:
+        cr = CredibilityPromotionGate.evaluate(**credibility)
+        gates['credibility'] = {'passed': cr.passed, 'reasons': list(cr.reasons)}
+        if not cr.passed:
+            block.extend(cr.reasons)
+    return {'ok': not block, 'reasons': tuple(block), 'gates': gates}

@@ -21,7 +21,9 @@ from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.promote import promotion_gate
-from lakatos.spine import reconcile_verdict, promotion_decision
+from lakatos.spine import reconcile_verdict, promotion_decision, synthesize_promotion
+from lakatos.adapters import (lineage_result_to_openlineage_events, derivations_to_dvc_pipeline,
+                              derivations_to_dvc_lock, derivations_to_prov_document)
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
@@ -211,10 +213,13 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
             arguments.add(short)
             attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
         stands = varg in grounded_extension(arguments, attacks)
-        ok, reasons = promotion_decision(scripted_verdict=cand.get('verdict') or 'proof', stands=stands)
-        if not ok:
-            raise HTTPException(409, f'CANONICAL 승격 차단(헌법 게이트): {list(reasons)}. '
-                                     f'퇴행 가지(rejected)·막지못한 의문(unresolved_doubt)은 승격 불가')
+        # 완전 합성: 헌법 + FoundationGate(나무 준비도) — 강건한 엔진 척추
+        foundation = _foundation_from_rows(_foundation_rows(name))
+        decision = synthesize_promotion(scripted_verdict=cand.get('verdict') or 'proof',
+                                        stands=stands, foundation=foundation)
+        if not decision['ok']:
+            raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
+                                     f"게이트별: {decision['gates']}")
         kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
               WITH t, cur
               OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
@@ -415,6 +420,32 @@ class CritiqueIn(BaseModel):
     kind: str = 'doubt'              # doubt | comment | rebuttal | evaluation
     body: str = ''
 
+
+class ResearchEventIn(BaseModel):
+    """ClaimStanding 용 상계/하계 event. 판결을 바꾸지 않는 append-only evidence."""
+    event_id: str
+    realm: str
+    actor: str = ''
+    action: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    payload: dict[str, str] = Field(default_factory=dict)
+    created_at: str | None = None
+
+    def to_engine(self, target: str) -> ResearchEvent:
+        try:
+            realm = Realm(self.realm)
+        except ValueError as exc:
+            raise HTTPException(422, f'unknown research event realm: {self.realm}') from exc
+        return ResearchEvent(
+            name=self.event_id,
+            realm=realm,
+            actor=self.actor,
+            action=self.action,
+            target=target,
+            evidence_refs=tuple(self.evidence_refs),
+            payload=tuple((str(k), str(v)) for k, v in self.payload.items()),
+        )
+
 @app.post('/api/tree/{name}/node/{tag}/critique')
 def add_critique(name: str, tag: str, c: CritiqueIn):
     kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -425,6 +456,29 @@ def add_critique(name: str, tag: str, c: CritiqueIn):
        attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
     hist(name, 'critique', tag, c.model_dump())
     return {'ok': True, 'note': '비판 등재 — 코드 빌딩은 순수 agent(test_result) 담당'}
+
+
+@app.post('/api/tree/{name}/node/{tag}/event')
+def add_research_event(name: str, tag: str, ev: ResearchEventIn):
+    engine_event = ev.to_engine(tag)
+    ts = ev.created_at or datetime.now(timezone.utc).isoformat()
+    event_id = f'{name}/{tag}/event/{engine_event.name}'
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 MERGE (ev:ResearchEvent {id:$id})
+                 ON CREATE SET ev.name=$event_name, ev.realm=$realm, ev.actor=$actor,
+                               ev.action=$action, ev.target=$tag,
+                               ev.evidence_refs=$evidence_refs, ev.payload=$payload,
+                               ev.created_at=$ts
+                 MERGE (e)-[:HAS_RESEARCH_EVENT]->(ev)
+                 RETURN ev.id AS id""",
+              tree=name, tag=tag, id=event_id, event_name=engine_event.name,
+              realm=engine_event.realm.value, actor=engine_event.actor,
+              action=engine_event.action, evidence_refs=list(engine_event.evidence_refs),
+              payload=json.dumps(dict(engine_event.payload), ensure_ascii=False), ts=ts)
+    if not rows:
+        raise HTTPException(404, f'노드 없음: {tag}')
+    hist(name, 'research_event', tag, {**engine_event.db_record(), 'id': event_id})
+    return {'ok': True, 'id': event_id, 'event': engine_event.name}
 
 @app.get('/api/tree/{name}/node/{tag}/standing')
 def standing(name: str, tag: str):
@@ -457,6 +511,8 @@ def _foundation_from_rows(rows) -> FoundationMap | None:
         return None
     foundation = FoundationMap()
     for r in rows:
+        if not r.get('name') or not r.get('kind'):
+            continue
         try:
             kind = KnowledgeKind(r['kind'])
         except ValueError:
@@ -504,6 +560,41 @@ def _event_from_argument(tag: str, arg: dict) -> ResearchEvent | None:
     )
 
 
+def _research_event_rows(name: str, tag: str):
+    return kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 OPTIONAL MATCH (e)-[:HAS_RESEARCH_EVENT]->(ev:ResearchEvent)
+                 RETURN ev.name AS name, ev.realm AS realm, ev.actor AS actor,
+                        ev.action AS action, ev.evidence_refs AS evidence_refs,
+                        ev.payload AS payload, ev.created_at AS created_at
+                 ORDER BY ev.created_at, ev.name""", tree=name, tag=tag)
+
+
+def _event_from_row(tag: str, row: dict) -> ResearchEvent | None:
+    if not row.get('name') or not row.get('realm'):
+        return None
+    try:
+        realm = Realm(row['realm'])
+    except ValueError:
+        return None
+    payload_raw = row.get('payload') or '{}'
+    if isinstance(payload_raw, str):
+        try:
+            payload = json.loads(payload_raw)
+        except json.JSONDecodeError:
+            payload = {}
+    else:
+        payload = payload_raw
+    return ResearchEvent(
+        name=row['name'],
+        realm=realm,
+        actor=row.get('actor') or '',
+        action=row.get('action') or '',
+        target=tag,
+        evidence_refs=tuple(row.get('evidence_refs') or []),
+        payload=tuple((str(k), str(v)) for k, v in payload.items()),
+    )
+
+
 @app.get('/api/tree/{name}/node/{tag}/claim-standing')
 def claim_standing(name: str, tag: str, require_replay: bool = True):
     """상계/하계 evidence + foundation + lineage 를 합친 claim standing."""
@@ -545,6 +636,10 @@ def claim_standing(name: str, tag: str, require_replay: bool = True):
         ))
     for arg in x.get('args') or []:
         event = _event_from_argument(tag, arg)
+        if event is not None:
+            frame.record_event(event)
+    for row in _research_event_rows(name, tag):
+        event = _event_from_row(tag, row)
         if event is not None:
             frame.record_event(event)
 
@@ -765,6 +860,35 @@ def _load_lineage():
                              producer_sha=x['psha'] or '', inputs=inp, kind=x['kind'] or 'intermediate',
                              env=x.get('env') or ''))
     return ds
+
+@app.get('/api/openlineage/{artifact:path}')
+def artifact_openlineage(artifact: str):
+    """완성본의 OpenLineage RunEvent 들 (생태계 표준 — 어댑터 노출, F-ARCH-5)."""
+    ds = _load_lineage(); bo = by_output(ds)
+    if artifact not in bo:
+        raise HTTPException(404, f'산출물 미기록: {artifact}')
+    src = {d.output for d in ds if d.kind == 'source'}
+    res = LineageReplayGate.evaluate(artifact, ds, sources=src)
+    return {'artifact': artifact, 'events': lineage_result_to_openlineage_events(res)}
+
+@app.get('/api/dvc/{artifact:path}')
+def artifact_dvc(artifact: str):
+    """완성본 계보를 DVC dvc.yaml/dvc.lock 형태로 (raw-rooted replay, F-ARCH-5)."""
+    ds = _load_lineage(); bo = by_output(ds)
+    if artifact not in bo:
+        raise HTTPException(404, f'산출물 미기록: {artifact}')
+    plan = rebuild_plan(artifact, bo)
+    return {'artifact': artifact, 'dvc_yaml': derivations_to_dvc_pipeline(plan),
+            'dvc_lock': derivations_to_dvc_lock(plan)}
+
+@app.get('/api/prov/{artifact:path}')
+def artifact_prov(artifact: str):
+    """완성본 계보의 W3C PROV 문서 (Entity/Activity/Agent, F-ARCH-5)."""
+    ds = _load_lineage(); bo = by_output(ds)
+    if artifact not in bo:
+        raise HTTPException(404, f'산출물 미기록: {artifact}')
+    plan = rebuild_plan(artifact, bo)
+    return {'artifact': artifact, 'prov': derivations_to_prov_document(plan)}
 
 @app.get('/api/rebuild-verify/{artifact:path}')
 def rebuild_verify(artifact: str):
