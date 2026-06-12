@@ -44,6 +44,12 @@ SOURCES = {
     'popper1959': 'Popper, K. (1959). The Logic of Scientific Discovery (falsifiability, ad hoc).',
     'brin_page1998': 'Brin, S. & Page, L. (1998). The Anatomy of a Large-Scale... Hypertextual Web Search Engine.',
     'kamvar2003': 'Kamvar, S. et al. (2003). The EigenTrust Algorithm for Reputation Management in P2P Networks.',
+    'condorcet1785': 'Condorcet, M. (1785). Essai sur l\'application de l\'analyse... (jury theorem — 독립 다수결 > 단일 판정자).',
+    'borda1781': 'Borda, J-C. (1781). Mémoire sur les élections au scrutin (Borda count — 순위 합산 집계).',
+    'kuhn1962': 'Kuhn, T. (1962). The Structure of Scientific Revolutions. U Chicago Press (*정성적* — 위기/혁명 모델).',
+    'agm1985': 'Alchourrón, C., Gärdenfors, P. & Makinson, D. (1985). On the Logic of Theory Change. JSL 50(2):510-530.',
+    'hansson1993': 'Hansson, S.O. (1993). Reversing the Levi Identity. J. Phil. Logic 22:637-669 (belief *base* revision).',
+    'feyerabend1975': 'Feyerabend, P. (1975). Against Method (방법론 다원주의 — 층 불일치는 보고하라, 숨기지 마라).',
     'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
@@ -237,6 +243,25 @@ GROUNDED = {
         'value': 10, 'source': 'guo2017', 'tier': 'literature',
         'band': 'ECE 표준 bin 수',
         'rationale': '예측 보정오차(ECE) 구간 수 10 = Guo et al.(2017) 등 보정 문헌 표준 관행(문헌).',
+    },
+    'stack_quorum': {
+        'value': 2, 'source': 'condorcet1785', 'tier': 'policy_in_scale',
+        'band': '3층 중 2층 합의 (단순 다수결)',
+        'rationale': '층간 통약불가(gap3) 메타규칙: 폐기는 3층(포퍼/베이즈/라우든) 중 ≥2층 합의에서만. '
+                     '다수결 정당화는 Condorcet jury theorem(독립·개별정확도>0.5 가정 — 층 독립성은 '
+                     '근사일 뿐임을 정직 표기). 2/3 컷 자체는 정책 선택.',
+    },
+    'supersession_window': {
+        'value': 3, 'source': 'policy', 'tier': 'policy',
+        'band': '연속 우세 스냅샷 수 (Lakatos-Zahar 영감)',
+        'rationale': '프로그램 대체(supersession) 판정에 필요한 연속 우세 윈도우. Lakatos&Zahar(1976)는 '
+                     '*시간을 두고* 입증된 초과 novel 적중을 요구(정성) → 윈도우 3 은 도메인 정책값.',
+    },
+    'lifecycle_stall_window': {
+        'value': 3, 'source': 'policy', 'tier': 'policy',
+        'band': '수확/발산 판정 최근 노드 윈도우',
+        'rationale': 'lifecycle 종료판정(수확=novel 등록 고갈+안정, 발산=문제수지 적자+정본 정체)의 '
+                     '관측 윈도우. ABANDON_K=3 과 같은 규모의 정책값(SPRT 영감, 도출 아님).',
     },
 }
 
