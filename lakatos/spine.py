@@ -63,10 +63,17 @@ def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None
     base = reconcile_verdict(metric_verdict, lakatos_result)
     if pnr_appraisal is None:
         return base
-    if pnr_appraisal.verdict in ('degenerating', 'withdrawn'):   # 변증법 우선 강등
-        return {'verdict': pnr_appraisal.verdict, 'lakatos': base.get('lakatos', 'n/a'),
-                'status': 'dialectic_overrides', 'pnr': pnr_appraisal.verdict,
+    pv = pnr_appraisal.verdict
+    if pv in ('degenerating', 'withdrawn'):   # 변증법 우선 강등 (안 배움/철회)
+        return {'verdict': pv, 'lakatos': base.get('lakatos', 'n/a'),
+                'status': 'dialectic_overrides', 'pnr': pv,
                 'ad_hoc': pnr_appraisal.ad_hoc, 'reasons': tuple(pnr_appraisal.reasons)}
+    if pv == 'conditional':   # 배웠으나 미확정 — 메트릭 진보를 조건부로 (라카토스 이론적≠경험적 진보)
+        out = {**base, 'pnr': 'conditional', 'ad_hoc': pnr_appraisal.ad_hoc,
+               'status': 'dialectic_conditional', 'reasons': tuple(pnr_appraisal.reasons)}
+        if base.get('verdict') == 'progressive':
+            out['verdict'] = 'progressive_conditional'
+        return out
     return {**base, 'pnr': 'progressive', 'ad_hoc': pnr_appraisal.ad_hoc,
             'status': base.get('status', '') + '+pnr_progressive'}
 
