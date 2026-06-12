@@ -21,12 +21,13 @@ from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.promote import promotion_gate
+from lakatos.spine import reconcile_verdict, promotion_decision
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from lakatos.engine import (FoundationMap, FoundationRequirement, KnowledgeKind,
                             LineageReplayGate, Possibility, Realm, ResearchEvent,
-                            ResearchFrame, ResearchProject)
+                            ResearchFrame, ResearchProject, LakatosGate, LakatosEvidence)
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
                              reproducibility_gaps, stale_inputs, is_reproducible, script_history,
@@ -210,7 +211,7 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
             arguments.add(short)
             attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
         stands = varg in grounded_extension(arguments, attacks)
-        ok, reasons = promotion_gate(scripted_verdict=cand.get('verdict') or 'proof', stands=stands)
+        ok, reasons = promotion_decision(scripted_verdict=cand.get('verdict') or 'proof', stands=stands)
         if not ok:
             raise HTTPException(409, f'CANONICAL 승격 차단(헌법 게이트): {list(reasons)}. '
                                      f'퇴행 가지(rejected)·막지못한 의문(unresolved_doubt)은 승격 불가')
@@ -317,6 +318,12 @@ class TestResultIn(BaseModel):
     source_trust: float = 1.0        # 상계(인터넷) 증거 신뢰 [0,1] — 베이즈 결합용
     result_path: str = ''            # 원본 결과 파일
     log: str = ''
+    # 라카토스 질적 증거(LakatosGate) — 4 기준 다 주면 spine 이 메트릭 진보를 질적으로 검증
+    lakatos_anomaly: bool | None = None        # theory_laden_anomaly
+    lakatos_consequence: bool | None = None    # independent_testable_consequence
+    lakatos_excess: bool | None = None         # excess_empirical_content
+    lakatos_hardcore: bool | None = None       # hard_core_preserved
+    implementation_complete: bool = True
 
 @app.post('/api/tree/{name}/node/{tag}/test_result')
 def submit_test_result(name: str, tag: str, r: TestResultIn):
@@ -345,15 +352,28 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
         raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(422, str(e))
-    verdict, delta = v.verdict, v.delta
+    delta = v.delta
+    # 엔진 spine: judge(메트릭) + LakatosGate(질적) 합의 — F-ARCH-1 두 엔진 통합
+    lak_result = None
+    if None not in (r.lakatos_anomaly, r.lakatos_consequence, r.lakatos_excess, r.lakatos_hardcore):
+        lak_result = LakatosGate.evaluate(LakatosEvidence(
+            theory_laden_anomaly=r.lakatos_anomaly,
+            independent_testable_consequence=r.lakatos_consequence,
+            excess_empirical_content=r.lakatos_excess,
+            hard_core_preserved=r.lakatos_hardcore,
+            implementation_complete=r.implementation_complete))
+    decided = reconcile_verdict(v.verdict, lak_result)
+    verdict = decided['verdict']
+    lakatos_status = decided['lakatos']
     ts = datetime.now(timezone.utc).isoformat()
     kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
           SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
               e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
               e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
-              e.novel_confirmed=$novel, e.source_trust=$st""",
+              e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat""",
        tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel, st=r.source_trust)
+       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel,
+       st=r.source_trust, lstat=lakatos_status)
     # PROV-O 계보 기록 (W3C 표준 — 판결의 검증가능 출처그래프)
     for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
         if tr.get('kind'):
@@ -369,6 +389,7 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
                                         delta=round(delta, 4), verdict=verdict, script=r.script,
                                         novel=v.novel, script_sha=r.script_sha))
     return {'ok': True, 'verdict': verdict, 'delta': round(delta, 4), 'novel': v.novel,
+            'lakatos': lakatos_status, 'metric_verdict': v.verdict,
             'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}
 
 @app.get('/api/tree/{name}/node/{tag}/provenance')
