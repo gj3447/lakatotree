@@ -131,6 +131,7 @@ The engine should preserve these labels even if the storage backend changes.
 | `InternetObservation` | One append-only web fetch/snapshot |
 | `SourceCredibilityScore` | Decomposed source trust components |
 | `HumanQuestion` / `HumanComment` / `HumanVerdict` | Sigma-oracle critique |
+| `ResearchEvent` | Append-only upper/lower evidence event for ClaimStanding |
 | `AgentBuild` | Agent-owned implementation action |
 | `BashAct` | Shell execution with stdout/stderr/exit evidence |
 | `RawDataArtifact` | Immutable raw source such as a ZDF file |
@@ -220,3 +221,7 @@ ecosystem vocabulary:
   (`bash/data/git/agent`) with foundation gaps, unresolved doubts, and
   `LineageReplayGate` results. Exposed as `GET /api/tree/{name}/node/{tag}/claim-standing`,
   CLI `claim-standing`, and MCP `claim_standing`.
+- [x] **7. ResearchEvent write path** — `POST /api/tree/{name}/node/{tag}/event`
+  records append-only evidence events without changing verdicts. `ClaimStanding`
+  reads these events alongside arguments, script results, foundation, and lineage.
+  CLI `event` and MCP `add_research_event` expose the same path.
