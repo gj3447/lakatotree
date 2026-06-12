@@ -114,6 +114,65 @@ def test_fertility_constants_match_grounding():
     assert fertility.NOBEL_MIN_HITRATE_LB == G.GROUNDED['nobel_min_hitrate_lb']['value']
 
 
+# ── 정직성: 고아 인용 0 (모든 source 키가 SOURCES 에 등록) ──────────────
+def test_no_orphan_citations():
+    for k, g in G.GROUNDED.items():
+        assert g['source'] in G.SOURCES, f'고아 인용: {k} → {g["source"]}'
+
+
+# ── 정직성: tier 가 문헌값/정책값을 정직히 구분 (가짜 정밀 차단) ────────
+def test_every_constant_has_tier():
+    for k, g in G.GROUNDED.items():
+        assert g['tier'] in ('literature', 'policy_in_scale', 'policy'), f'{k} tier 누락/오류'
+
+
+def test_policy_constants_labeled_policy_not_literature():
+    # ★나생문: 역산/엔지니어링 값은 policy 로 정직 표시 (문헌인 척 금지)
+    tiers = G.grounding_tiers()
+    for c in ('weight_floor', 'abandon_b', 'w_problem', 'abandon_budget'):
+        assert c in tiers['policy'], f'{c} 는 정책값인데 policy tier 아님'
+    # 순수 문헌값은 literature
+    for c in ('pagerank_damping', 'default_prior', 'ece_bins'):
+        assert c in tiers['literature']
+
+
+def test_policy_source_constants_point_to_policy_or_inspiration():
+    # source='policy' 인 값은 SOURCES['policy'] 가 "문헌 도출 아님"을 명시
+    assert '문헌 도출 아님' in G.SOURCES['policy']
+
+
+def test_two_ln_bf_is_magnitude_nonnegative():
+    # bf<1 이어도 two_ln_bf ≥0 (크기), 방향은 favors
+    r = G.interpret_bayes_factor(0.1)
+    assert r['two_ln_bf'] >= 0 and r['favors'] == 'against'
+
+
+# ── F-MATH-2: _band_label 입력 순서 무관 (정렬 안 된 밴드도 옳게) ───────
+def test_band_label_order_independent():
+    unsorted_bands = [(10, 'high'), (3, 'medium'), (1, 'low')]
+    assert G._band_label(5.0, unsorted_bands) == 'medium'   # 5 ∈ [3,10)
+    assert G._band_label(0.5, unsorted_bands) == 'low'      # < 첫 하한 → 최저
+    assert G._band_label(20.0, unsorted_bands) == 'high'
+
+
+# ── F-MATH-3: SPRT α+β≥1 거부 (경계 역전 방지) ────────────────────────
+def test_sprt_rejects_alpha_plus_beta_ge_1():
+    with pytest.raises(ValueError):
+        G.sprt_log_boundaries(0.6, 0.5)   # 합 1.1 ≥ 1 → 경계 역전
+    with pytest.raises(ValueError):
+        G.sprt_log_boundaries(0.5, 0.5)   # 합 정확히 1
+
+
+# ── F-MATH-1: NOBEL 실효 최소표본 = 9/9 (3/3·8/8 탈락) ─────────────────
+def test_nobel_effective_minimum_is_9():
+    from lakatos.fertility import nobel_grade
+    def fert(c, r): return dict(registered=r, confirmed=c, fertility=c / r)
+    assert nobel_grade(fert(3, 3)) is False    # 하한 0.438 < 0.7
+    assert nobel_grade(fert(8, 8)) is False    # 하한 0.676 < 0.7
+    assert nobel_grade(fert(9, 9)) is True     # 하한 0.701 ≥ 0.7 (실효 통과선)
+    assert nobel_grade(fert(9, 10)) is False   # 적중률 자체 부족
+
+
 # ── SPRT-근거 폐기가 휴리스틱 K=3 과 정합 ─────────────────────────────
 def test_sprt_abandonment_matches_k3_heuristic():
     from lakatos.laudan import should_abandon_sprt
