@@ -23,6 +23,7 @@ from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
+from lakatos.engine import FoundationRequirement, KnowledgeKind
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
                              reproducibility_gaps, stale_inputs, is_reproducible, script_history)
 from fastapi import FastAPI, HTTPException
@@ -459,6 +460,37 @@ class ElementUseIn(BaseModel):
     evidence_ref: str = ''
 
 
+class FoundationRequirementIn(BaseModel):
+    name: str
+    kind: str
+    question: str = ''
+    why_needed: str = ''
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    status: str = 'needed'
+    optional: bool = False
+    owner: str = ''
+    risk_if_missing: str = ''
+
+    def to_engine(self) -> FoundationRequirement:
+        try:
+            kind = KnowledgeKind(self.kind)
+        except ValueError as exc:
+            raise HTTPException(422, f'unknown foundation kind: {self.kind}') from exc
+        return FoundationRequirement(
+            name=self.name,
+            kind=kind,
+            question=self.question,
+            why_needed=self.why_needed,
+            acceptance_criteria=tuple(self.acceptance_criteria),
+            evidence_refs=tuple(self.evidence_refs),
+            status=self.status,
+            optional=self.optional,
+            owner=self.owner,
+            risk_if_missing=self.risk_if_missing,
+        )
+
+
 @app.post('/api/tree/{name}/element')
 def add_element(name: str, el: ElementIn):
     kg("""MATCH (t:LakatosTree {name:$tree})
@@ -486,6 +518,37 @@ def attach_element(name: str, tag: str, element_name: str, use: ElementUseIn):
         raise HTTPException(404, f'노드 또는 엘리멘트 없음: {tag}, {element_name}')
     hist(name, 'element_use', tag, {'element': element_name, **use.model_dump()})
     return {'ok': True, 'tag': tag, 'element': element_name}
+
+
+@app.post('/api/tree/{name}/foundation')
+def add_foundation_requirement(name: str, req: FoundationRequirementIn):
+    engine_req = req.to_engine()
+    kg("""MATCH (t:LakatosTree {name:$tree})
+          MERGE (fr:FoundationRequirement {name:$tree+'/'+$name})
+          SET fr.short_name=$name, fr.kind=$kind, fr.question=$question,
+              fr.why_needed=$why_needed, fr.acceptance_criteria=$acceptance_criteria,
+              fr.evidence_refs=$evidence_refs, fr.status=$status, fr.optional=$optional,
+              fr.owner=$owner, fr.risk_if_missing=$risk_if_missing,
+              fr.satisfied=$satisfied, fr.updated_at=$ts
+          MERGE (t)-[:HAS_FOUNDATION]->(fr)
+          RETURN fr.name AS name""",
+       tree=name, ts=datetime.now(timezone.utc).isoformat(), **engine_req.db_record())
+    hist(name, 'foundation_upsert', req.name, engine_req.db_record())
+    return {'ok': True, 'name': req.name, 'satisfied': engine_req.satisfied}
+
+
+@app.get('/api/tree/{name}/foundation')
+def get_foundation_requirements(name: str):
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_FOUNDATION]->(fr:FoundationRequirement)
+                 RETURN fr.short_name AS name, fr.kind AS kind, fr.question AS question,
+                        fr.why_needed AS why_needed, fr.acceptance_criteria AS acceptance_criteria,
+                        fr.evidence_refs AS evidence_refs, fr.status AS status,
+                        fr.optional AS optional, fr.owner AS owner,
+                        fr.risk_if_missing AS risk_if_missing, fr.satisfied AS satisfied
+                 ORDER BY fr.kind, fr.short_name""", tree=name)
+    gaps = [r['name'] for r in rows if not r.get('satisfied')]
+    return {'requirements': rows, 'summary': {'required': len(rows),
+            'satisfied': len(rows) - len(gaps), 'gaps': gaps}}
 
 @app.get('/api/tree/{name}/history')
 def history(name: str, limit: int = 100):

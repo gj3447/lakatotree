@@ -118,5 +118,26 @@ def use_element(name: str, tag: str, element_name: str,
         dict(note=note, evidence_ref=evidence_ref)), ensure_ascii=False)
 
 
+@mcp.tool()
+def foundation_requirements(name: str) -> str:
+    """나무의 기반지식 requirement 와 gap summary."""
+    return json.dumps(_get(f'/api/tree/{name}/foundation'), ensure_ascii=False)
+
+
+@mcp.tool()
+def add_foundation(name: str, requirement_name: str, kind: str,
+                   question: str = '', why_needed: str = '',
+                   acceptance_csv: str = '', evidence_csv: str = '',
+                   status: str = 'needed', optional: bool = False,
+                   owner: str = '', risk_if_missing: str = '') -> str:
+    """연구 시작/판정 전 필요한 기반지식 requirement 를 기록."""
+    return json.dumps(_post(f'/api/tree/{name}/foundation',
+        dict(name=requirement_name, kind=kind, question=question, why_needed=why_needed,
+             acceptance_criteria=[x.strip() for x in acceptance_csv.split(',') if x.strip()],
+             evidence_refs=[x.strip() for x in evidence_csv.split(',') if x.strip()],
+             status=status, optional=optional, owner=owner,
+             risk_if_missing=risk_if_missing)), ensure_ascii=False)
+
+
 if __name__ == '__main__':
     mcp.run()
