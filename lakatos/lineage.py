@@ -1,7 +1,7 @@
-"""데이터 계보 — 버퍼는 임시, 완성본은 source(ZDF)서 전 파이프라인 재생성 가능.
+"""데이터 계보 — 버퍼는 임시, 완성본은 source root 서 전 파이프라인 재생성 가능.
 
-문제(사용자): 데이터가 바뀐다. ZDF→버퍼/캐시(_rimobs/perview)→완성본 사슬에서
-  중간 버퍼를 써도 마지막 완성본이 나오면 ZDF서 다시 전체 파이프라인으로 재생성할 수 있어야.
+문제(사용자): 데이터가 바뀐다. root data→버퍼/캐시→완성본 사슬에서
+  중간 버퍼를 써도 마지막 완성본이 나오면 root data 서 다시 전체 파이프라인으로 재생성할 수 있어야.
 해법: 모든 산출물의 derivation 기록(입력 sha + 생산 코드 sha + params → 출력 sha).
   계보 DAG 로 ①완성본→source 추적 ②재빌드 플랜(topo) ③재현가능성(끊긴 링크 탐지)
   ④stale(입력 데이터 바뀜) 감지. PROV-O wasDerivedFrom + content hashing(DVC/Longinus 동형).
@@ -28,7 +28,7 @@ def by_output(derivs: list) -> dict:
 
 
 def roots(artifact: str, bo: dict, _seen=None) -> set:
-    """artifact 의 궁극 source(derivation 없는 = ZDF) 집합."""
+    """artifact 의 궁극 source(root artifact) 집합."""
     _seen = _seen or set()
     if artifact in _seen:
         return set()

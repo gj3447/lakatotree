@@ -18,6 +18,12 @@ from lakatos.engine import (
     LakatosVerdict,
     LineageReplayGate,
     ObservationLedger,
+    Possibility,
+    Realm,
+    ReproducibilityContract,
+    ResearchEvent,
+    ResearchFrame,
+    ResearchProject,
     SourceCredibilityScore,
 )
 from lakatos.lineage import Derivation
@@ -143,6 +149,46 @@ def test_tree_retains_rejected_branches_but_excludes_them_from_canonical_path():
     assert [n.name for n in tree.canonical_nodes()] == ["root", "good"]
 
 
+def test_research_frame_keeps_sparse_possibilities_and_append_only_events():
+    frame = ResearchFrame(
+        ResearchProject(
+            name="materials-lab",
+            goal="explain repeated measurement drift",
+            root_artifacts=("raw://experiment/lot-001",),
+        )
+    )
+    frame.open_possibility(Possibility("p1", "is the drift from calibration?"))
+    frame.open_possibility(Possibility("p2", "is the drift from sample geometry?", parent="p1"))
+    frame.record_event(
+        ResearchEvent(
+            name="evt-web-1",
+            realm=Realm.INTERNET,
+            actor="agent:researcher",
+            action="fetch_source",
+            target="p1",
+            evidence_refs=("obs:paper-1",),
+            payload=(("trust", "0.82"),),
+        )
+    )
+    frame.record_event(
+        ResearchEvent(
+            name="evt-human-1",
+            realm=Realm.HUMAN,
+            actor="human:reviewer",
+            action="doubt",
+            target="p1",
+            evidence_refs=("comment:needs-replay",),
+        )
+    )
+
+    standing = frame.standing("p1")
+    assert [p.name for p in frame.possibilities()] == ["p1", "p2"]
+    assert standing["state"] == "open"
+    assert standing["event_count"] == 2
+    assert standing["realms"] == ["human", "internet"]
+    assert frame.events()[0].db_record()["payload"] == {"trust": "0.82"}
+
+
 def test_bash_act_distinguishes_recorded_evidence_from_successful_world_action():
     failed = BashAct(
         name="red",
@@ -166,47 +212,68 @@ def test_bash_act_distinguishes_recorded_evidence_from_successful_world_action()
 
 
 def test_lineage_replay_gate_uses_existing_derivation_topology_and_stale_detection():
-    zdf = Derivation("VFEZ0060.zdf", "z0", "", "", [], kind="source", ts="t0")
+    raw = Derivation("raw://experiment/lot-0060", "raw0", "", "", [], kind="source", ts="t0")
     rim = Derivation(
-        "_rimobs.npz",
-        "r0",
-        "319.py",
-        "s319",
-        [("VFEZ0060.zdf", "z0")],
+        "cache://edge-observations",
+        "cache0",
+        "extract_edges.py",
+        "sha-extract",
+        [("raw://experiment/lot-0060", "raw0")],
         {"stride": 2},
         "intermediate",
         "t1",
     )
     final = Derivation(
-        "perview_v22.json",
-        "p0",
-        "334.py",
-        "s334",
-        [("_rimobs.npz", "r0")],
+        "artifact://joint-model",
+        "model0",
+        "solve_model.py",
+        "sha-solve",
+        [("cache://edge-observations", "cache0")],
         {"lots": 6},
         "final",
         "t2",
     )
 
     ok = LineageReplayGate.evaluate(
-        "perview_v22.json",
-        [zdf, rim, final],
-        sources={"VFEZ0060.zdf"},
-        current_shas={"VFEZ0060.zdf": "z0", "_rimobs.npz": "r0"},
+        "artifact://joint-model",
+        [raw, rim, final],
+        sources={"raw://experiment/lot-0060"},
+        current_shas={"raw://experiment/lot-0060": "raw0", "cache://edge-observations": "cache0"},
     )
     stale = LineageReplayGate.evaluate(
-        "perview_v22.json",
-        [zdf, rim, final],
-        sources={"VFEZ0060.zdf"},
-        current_shas={"VFEZ0060.zdf": "zNEW", "_rimobs.npz": "r0"},
+        "artifact://joint-model",
+        [raw, rim, final],
+        sources={"raw://experiment/lot-0060"},
+        current_shas={"raw://experiment/lot-0060": "rawNEW", "cache://edge-observations": "cache0"},
     )
     gap = LineageReplayGate.evaluate(
-        "perview_v22.json",
-        [zdf, final],
-        sources={"VFEZ0060.zdf"},
+        "artifact://joint-model",
+        [raw, final],
+        sources={"raw://experiment/lot-0060"},
     )
 
     assert ok.passed
-    assert [d.output for d in ok.rebuild_plan] == ["_rimobs.npz", "perview_v22.json"]
+    assert [d.output for d in ok.rebuild_plan] == ["cache://edge-observations", "artifact://joint-model"]
     assert not stale.passed and stale.stale
-    assert "_rimobs.npz" in gap.gaps
+    assert "cache://edge-observations" in gap.gaps
+
+
+def test_reproducibility_contract_is_project_root_agnostic():
+    raw = Derivation("raw://spectrometer/run-1", "raw1", "", "", [], kind="source")
+    final = Derivation(
+        "artifact://report",
+        "report1",
+        "build_report.py",
+        "sha-report",
+        [("raw://spectrometer/run-1", "raw1")],
+        kind="final",
+    )
+    contract = ReproducibilityContract(
+        final_artifact="artifact://report",
+        root_artifacts=("raw://spectrometer/run-1",),
+    )
+
+    result = contract.evaluate([raw, final], current_shas={"raw://spectrometer/run-1": "raw1"})
+
+    assert result.passed
+    assert result.roots == ("raw://spectrometer/run-1",)
