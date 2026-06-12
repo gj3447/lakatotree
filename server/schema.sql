@@ -16,6 +16,6 @@ CREATE TABLE IF NOT EXISTS metric_snapshots(
 CREATE TABLE IF NOT EXISTS lineage(
   id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT now(),
   output TEXT NOT NULL, output_sha TEXT, producer TEXT, producer_sha TEXT,
-  inputs JSONB, params JSONB, kind TEXT
+  inputs JSONB, params JSONB, kind TEXT, env TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_lineage_output ON lineage(output);

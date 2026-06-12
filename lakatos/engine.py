@@ -751,10 +751,12 @@ class ReproducibilityContract:
         derivations: Iterable[Derivation],
         *,
         current_shas: dict[str, str] | None = None,
+        current_env: str | None = None,   # 나생문 F-ARCH-3: env 전달 (계약이 env-blind 였음)
     ) -> LineageReplayResult:
         return LineageReplayGate.evaluate(
             self.final_artifact,
             derivations,
             sources=set(self.root_artifacts),
             current_shas=current_shas,
+            current_env=current_env,
         )

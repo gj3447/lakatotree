@@ -21,8 +21,8 @@ def test_fertility_zero_when_no_predictions():
 
 def test_nobel_grade_requires_volume_and_hitrate():
     # 노벨급 = 충분한 예측 수 AND 높은 적중률 (둘 다)
-    strong = [dict(tag=str(i), verdict='progressive', novel_registered=True, novel_confirmed=True) for i in range(5)]
-    assert nobel_grade(predictive_fertility(strong))
+    strong = [dict(tag=str(i), verdict='progressive', novel_registered=True, novel_confirmed=True) for i in range(10)]
+    assert nobel_grade(predictive_fertility(strong))   # F-MATH-6: Wilson 하한 → 10/10 필요
     few = [dict(tag='a', verdict='progressive', novel_registered=True, novel_confirmed=True)]
     assert not nobel_grade(predictive_fertility(few))   # 적중률 100%여도 표본 부족
     noisy = [dict(tag=str(i), verdict='progressive', novel_registered=True, novel_confirmed=(i<2)) for i in range(5)]

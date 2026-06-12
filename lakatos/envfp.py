@@ -24,6 +24,17 @@ def _pkg_version(name):
         return None
 
 
+def _blas_backend():
+    """나생문 F-MATH-5: numpy 버전만으론 부족 — BLAS 백엔드(OpenBLAS/MKL)가 float 결과 좌우."""
+    try:
+        import numpy as _np
+        cfg = _np.show_config(mode='dicts')
+        blas = cfg.get('Build Dependencies', {}).get('blas', {})
+        return {'name': blas.get('name'), 'version': blas.get('version')}
+    except Exception:
+        return {}
+
+
 def _detect_tools():
     """도메인 툴(있으면 버전, 없으면 생략) — HALCON/Zivid/CUDA 가 float 결과 좌우."""
     tools = {}
@@ -48,6 +59,7 @@ def environment_fingerprint(probe: dict | None = None) -> dict:
         'env_vars': p.get('env_vars') if p.get('env_vars') is not None
                     else {k: os.environ[k] for k in DETERMINISM_ENV_VARS if os.environ.get(k)},
         'tools': p.get('tools') if p.get('tools') is not None else _detect_tools(),
+        'blas': p.get('blas') if p.get('blas') is not None else _blas_backend(),
     }
 
 
