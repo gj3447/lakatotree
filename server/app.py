@@ -20,6 +20,7 @@ from lakatos.metrics import tree_metrics
 from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
+from lakatos.promote import promotion_gate
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
@@ -191,6 +192,28 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
         raise HTTPException(403, f'판결 어휘({v.verdict})는 test_result 스크립트 전용 — 수동 지정 금지. '
                                  f'행정 상태만: {sorted(ADMIN_VERDICTS)}')
     if v.verdict == 'CANONICAL':   # demote+promote 단일 트랜잭션 (F-FG-5)
+        # 나생문 F-CON-2/5 강제: 승격 전 헌법 게이트 — 퇴행 가지·막지못한 의문 차단
+        pre = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
+                    OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
+                    RETURN cur.verdict AS verdict,
+                           collect({id:a.id, attacks:a.attacks}) AS args''', tree=name, tag=tag)
+        if not pre:
+            raise HTTPException(404, f'노드 없음: {tag}')
+        cand = pre[0]
+        varg = f'verdict:{tag}'
+        arguments = {varg}
+        attacks = []
+        for a in (cand.get('args') or []):
+            if not a.get('id'):
+                continue
+            short = a['id'].split('/')[-1]
+            arguments.add(short)
+            attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
+        stands = varg in grounded_extension(arguments, attacks)
+        ok, reasons = promotion_gate(scripted_verdict=cand.get('verdict') or 'proof', stands=stands)
+        if not ok:
+            raise HTTPException(409, f'CANONICAL 승격 차단(헌법 게이트): {list(reasons)}. '
+                                     f'퇴행 가지(rejected)·막지못한 의문(unresolved_doubt)은 승격 불가')
         kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
               WITH t, cur
               OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
