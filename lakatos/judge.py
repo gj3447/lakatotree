@@ -36,6 +36,19 @@ class Prediction:
 
 
 @dataclass(frozen=True)
+class NovelTarget:
+    """구조적 novel 예측 — 텍스트가 아니라 검증가능 명세 (gap1/F-FG-2 해소)."""
+    metric_name: str
+    direction: str               # lower|higher
+    threshold: float             # 이 값을 넘어서야 '적중'
+
+    def corroborated(self, measured: float) -> bool:
+        if self.direction == 'lower':
+            return measured <= self.threshold
+        return measured >= self.threshold
+
+
+@dataclass(frozen=True)
 class Verdict:
     verdict: str                 # progressive | partial | equivalent | rejected
     delta: float
@@ -49,7 +62,9 @@ def check_registration(already_judged: bool) -> None:
         raise PredictionLocked('이미 채점된 노드 — 사후 예측등록/변경 금지')
 
 
-def judge(pred: Prediction | None, measured: float) -> Verdict:
+def judge(pred: Prediction | None, measured: float,
+          novel_target: 'NovelTarget | None' = None,
+          novel_measured: float | None = None) -> Verdict:
     if pred is None:
         raise PredictionMissing('사전등록된 예측 없음 — prediction 먼저 (사후 채점 금지)')
     if not math.isfinite(measured):
@@ -60,7 +75,14 @@ def judge(pred: Prediction | None, measured: float) -> Verdict:
     else:
         improved = delta > pred.noise_band
     within_noise = abs(delta) <= pred.noise_band
-    novel = bool(pred.novel_prediction.strip())
+    # 구조적 corroboration: 명세가 있으면 실측 대조로 채점(텍스트 존재만으론 novel 불인정)
+    if novel_target is not None:
+        nm = novel_measured if novel_measured is not None else measured
+        if not math.isfinite(nm):
+            raise ValueError('novel_measured 비유한')
+        novel = novel_target.corroborated(nm)
+    else:
+        novel = bool(pred.novel_prediction.strip())
     if improved and novel:
         verdict = 'progressive'
     elif improved:

@@ -53,3 +53,19 @@ def test_worse_never_progressive():
     v = judge(Prediction(metric_name='m', direction='lower', baseline_value=1.0,
                          noise_band=0.0, novel_prediction='x'), 1.3)
     assert v.verdict == 'rejected'
+
+
+# === 구조적 corroboration (gap1/F-FG-2 해소) ===
+def test_structural_corroboration_hit():
+    from lakatos.judge import NovelTarget
+    nt = NovelTarget(metric_name='psr', direction='higher', threshold=0.5)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='ignored'),
+              measured=0.279, novel_target=nt, novel_measured=0.7)
+    assert v.verdict == 'progressive' and v.novel   # 예측 적중
+
+def test_structural_corroboration_miss_demotes_to_partial():
+    from lakatos.judge import NovelTarget
+    nt = NovelTarget(metric_name='psr', direction='higher', threshold=0.5)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='텍스트만'),
+              measured=0.279, novel_target=nt, novel_measured=0.2)   # 예측 빗나감
+    assert v.verdict == 'partial' and not v.novel   # 개선이나 novel 미적중 → 땜빵
