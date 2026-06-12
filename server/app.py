@@ -225,9 +225,14 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
             novel_confirmed=bool(cand.get('novel_confirmed')),
             has_human_verdict=bool(v.human_verdict),
         )
+        # F-CON-1: 노드↔계보 링크(result_path) → 재현성 게이트 자동 공급.
+        #  완성본이 raw root(ZDF)서 재생성 불가하면 CANONICAL 차단. None=비파이프라인 노드(비적용).
+        #  재현성은 CANONICAL(현재best 진리주장)에만 의도적 적용 — proof/superseded/canonical_stage 등
+        #  행정상태는 재현불가여도 마킹 가능해야 하므로 게이트 비대상(나생문 REPRODUCIBLE_ONLY_CANONICAL_GATE 의도).
+        reproducible = _reproducible_for_node(name, tag)
         decision = synthesize_promotion(scripted_verdict=cand.get('verdict') or 'proof',
                                         stands=stands, foundation=foundation,
-                                        credibility=credibility)
+                                        credibility=credibility, reproducible=reproducible)
         if not decision['ok']:
             raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
                                      f"게이트별: {decision['gates']}")
@@ -541,6 +546,34 @@ def _foundation_from_rows(rows) -> FoundationMap | None:
             risk_if_missing=r.get('risk_if_missing') or '',
         ))
     return foundation
+
+
+def _reproducible_for_node(name: str, tag: str) -> bool | None:
+    """F-CON-1: 노드 result_path 가 계보에 기록된 완성본이면 raw-root 재현가능 여부.
+
+    엄격 재현성 = 완성본의 *모든 궁극 root 가 선언된 source(kind='source')* 일 때만 True.
+    reproducibility_gaps 단독은 "derivation 기록은 됐지만 inputs 빈 비-source(dangling leaf)"
+    를 못 잡아 가짜 reproducible=True 를 냈다(나생문 CON-1/F-CON-1-A/B/LINEAGE-1 수렴 확인).
+    roots() 는 그런 leaf 도 root 로 반환하므로 ⊆declared 검사가 갭+dangling 둘 다 포섭한다.
+    result_path 없음 or 계보 미기록 → None(증명 노드 등 — 재현성 게이트 비적용, 차단 안 함).
+    이게 set_verdict 에서 synthesize_promotion(reproducible=) 으로 흘러 RebuildFromRaw 게이트 발동.
+    """
+    rows = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 RETURN e.result_path AS rp''', tree=name, tag=tag)
+    if not rows:
+        return None
+    rp = rows[0].get('rp')
+    if not rp:
+        return None
+    ds = _load_lineage()
+    bo = by_output(ds)
+    if rp not in bo:
+        return None
+    declared = {d.output for d in ds if d.kind == 'source'}
+    if rp in declared:
+        return True
+    rts = lin_roots(rp, bo)   # 궁극 root 집합 (derivation 없거나 inputs 빈 leaf 포함)
+    return bool(rts) and rts.issubset(declared)   # 빈 closure(사이클/고립)=재현불가
 
 
 def _foundation_rows(name: str):
@@ -870,6 +903,11 @@ class DerivationIn(BaseModel):
 
 @app.post('/api/lineage/derivation')
 def record_derivation(d: DerivationIn):
+    # 나생문 CON-2: 계보 DAG 불변식 — 비-source 산출물은 반드시 입력에서 파생.
+    #  inputs 빈 비-source = dangling leaf(재현불가)를 기록단계서 차단(write-path 게이트).
+    if d.kind != 'source' and not d.inputs:
+        raise HTTPException(400, f"비-source 산출물(kind={d.kind})은 inputs 필수 — "
+                                 f"inputs 빈 산출물은 source 로만 기록 가능(재현성 불변식).")
     # PROV-O: output Entity wasDerivedFrom input Entities, wasGeneratedBy producer Activity
     kg("""MERGE (o:DataArtifact {path:$out}) SET o.sha=$osha, o.kind=$kind, o.producer=$prod,
               o.producer_sha=$psha, o.params=$params, o.env=$env, o.recorded_at=$ts""",
@@ -908,6 +946,30 @@ def artifact_openlineage(artifact: str):
     src = {d.output for d in ds if d.kind == 'source'}
     res = LineageReplayGate.evaluate(artifact, ds, sources=src)
     return {'artifact': artifact, 'events': lineage_result_to_openlineage_events(res)}
+
+@app.post('/api/openlineage/{artifact:path}/marquez')
+def send_artifact_to_marquez(artifact: str):
+    """완성본 OpenLineage event 를 Marquez 로 전송 (전송층, F-ARCH-5 완결).
+
+    직렬화는 /api/openlineage 가, 전송만 여기서 — MARQUEZ_URL env-gated(미설정 503).
+    토큰 필요 시 MARQUEZ_TOKEN env. 자격증명 없으면 조용히 비활성(골방 아님, 흘려보낼 길은 열림).
+    """
+    from lakatos import marquez_sink
+    from lakatos.adapters import MarquezClientError
+    if not marquez_sink.enabled():
+        raise HTTPException(503, 'MARQUEZ_URL 미설정 — 전송 비활성. 직렬화는 GET /api/openlineage/{artifact} '
+                                 '로 가능. 환경변수 MARQUEZ_URL(+선택 MARQUEZ_TOKEN) 설정 후 재시도.')
+    ds = _load_lineage(); bo = by_output(ds)
+    if artifact not in bo:
+        raise HTTPException(404, f'산출물 미기록: {artifact}')
+    src = {d.output for d in ds if d.kind == 'source'}
+    res = LineageReplayGate.evaluate(artifact, ds, sources=src)
+    events = lineage_result_to_openlineage_events(res)
+    try:   # 나생문 BLOCKER: Marquez 도달 불가/HTTP 에러 → 500 누수 금지, 502 로 명시
+        sent = marquez_sink.ship(events)
+    except MarquezClientError as exc:
+        raise HTTPException(502, f'Marquez 전송 실패(upstream): {exc}')
+    return {'artifact': artifact, 'sent_events': len(events), 'marquez': sent}
 
 @app.get('/api/dvc/{artifact:path}')
 def artifact_dvc(artifact: str):
