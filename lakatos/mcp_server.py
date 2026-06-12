@@ -1,0 +1,86 @@
+"""라카토트리 MCP 서버 — Claude/Codex 가 라카토스 나무를 조작.
+
+FastAPI(:55170) 위의 얇은 MCP 도구층. 도구는 서버 API 를 호출(단일 정본).
+등록: claude mcp add lakatotree -- python -m lakatos.mcp_server
+환경: LAKATOTREE_URL (기본 http://localhost:55170)
+# KG: span_lakatotree_mcp
+"""
+import json, os
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
+mcp = FastMCP('lakatotree')
+
+
+def _get(path):
+    r = httpx.get(BASE + path, timeout=30); r.raise_for_status(); return r.json()
+
+
+def _post(path, body):
+    r = httpx.post(BASE + path, json=body, timeout=30)
+    if r.status_code >= 400:
+        return {'error': r.status_code, 'detail': r.text[:200]}
+    return r.json()
+
+
+@mcp.tool()
+def list_trees() -> str:
+    """모든 라카토스 나무 목록."""
+    return json.dumps(_get('/api/trees'), ensure_ascii=False)
+
+
+@mcp.tool()
+def tree_metrics(name: str) -> str:
+    """나무 지표: 진보율/기각률/퇴행깊이/베이즈 신뢰도/이론 발전성(novel 예측 적중)/frontier."""
+    return json.dumps(_get(f'/api/tree/{name}/metrics'), ensure_ascii=False)
+
+
+@mcp.tool()
+def next_directions(name: str) -> str:
+    """다음 어느 가지를 확장할지 — VoI/UCB 우선순위 frontier 질문."""
+    return json.dumps(_get(f'/api/tree/{name}/directions'), ensure_ascii=False)
+
+
+@mcp.tool()
+def add_node(name: str, tag: str, parent: str = '', comment: str = '', algorithm: str = '') -> str:
+    """나무에 노드(실험/지식상태) 추가. parent=분기 원점(CANONICAL 권장)."""
+    return json.dumps(_post(f'/api/tree/{name}/node',
+        dict(tag=tag, parent=parent or None, comment=comment, algorithm=algorithm)), ensure_ascii=False)
+
+
+@mcp.tool()
+def register_prediction(name: str, tag: str, metric: str, baseline: float,
+                        direction: str = 'lower', noise_band: float = 0.0,
+                        novel_metric: str = '', novel_direction: str = '',
+                        novel_threshold: float = 0.0, script_sha: str = '') -> str:
+    """실행 전 사전등록 예측(의무). 구조적 novel(novel_metric/threshold) 권장 — 텍스트 아닌 실측 대조."""
+    body = dict(metric_name=metric, direction=direction, baseline_value=baseline, noise_band=noise_band)
+    if novel_metric:
+        body.update(novel_metric=novel_metric, novel_direction=novel_direction or 'higher',
+                    novel_threshold=novel_threshold)
+    if script_sha:
+        body['judge_script_sha'] = script_sha
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/prediction', body), ensure_ascii=False)
+
+
+@mcp.tool()
+def submit_result(name: str, tag: str, value: float, script: str,
+                  script_sha: str = '', novel_measured: float = None) -> str:
+    """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected."""
+    body = dict(metric_value=value, script=script)
+    if script_sha:
+        body['script_sha'] = script_sha
+    if novel_measured is not None:
+        body['novel_measured'] = novel_measured
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/test_result', body), ensure_ascii=False)
+
+
+@mcp.tool()
+def provenance(name: str, tag: str) -> str:
+    """판결의 W3C PROV-O 계보 + 재현 명령."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/provenance'), ensure_ascii=False)
+
+
+if __name__ == '__main__':
+    mcp.run()

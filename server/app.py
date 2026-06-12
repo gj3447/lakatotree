@@ -62,7 +62,8 @@ def tree_data(name):
                e.result_path AS result_path, e.algorithm AS algorithm, e.comment AS comment,
                e.limitation AS limitation, e.open_question AS open_question,
                e.metric_name AS metric_name, e.metric_value AS metric_value,
-               e.metric_scope AS metric_scope, p.tag AS parent, collect(q.name) AS questions
+               e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
+               e.novel_confirmed AS novel_confirmed, p.tag AS parent, collect(q.name) AS questions
         ORDER BY tag''', n=name)
     qs = kg('MATCH (t:LakatosTree {name:$n})-[:HAS_FRONTIER]->(q) '
             'RETURN q.name AS name, q.status AS status, q.body AS body', n=name)
@@ -199,6 +200,7 @@ def register_prediction(name: str, tag: str, p: PredictionIn):
                   e.pred_novel=$novel_prediction, e.pred_closes=$closes_question,
                   e.pred_novel_metric=$novel_metric, e.pred_novel_direction=$novel_direction,
                   e.pred_novel_threshold=$novel_threshold, e.pred_script_sha=$judge_script_sha,
+                  e.novel_registered = ($novel_metric IS NOT NULL),
                   e.pred_registered_at=$ts
               RETURN e.tag AS tag""",
            tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(), **p.model_dump())
@@ -248,9 +250,10 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
     kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
           SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
               e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
-              e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts""",
+              e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
+              e.novel_confirmed=$novel""",
        tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts)
+       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel)
     # PROV-O 계보 기록 (W3C 표준 — 판결의 검증가능 출처그래프)
     for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
         if tr.get('kind'):

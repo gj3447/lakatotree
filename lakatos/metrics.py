@@ -6,6 +6,7 @@
 from collections import defaultdict
 from .laudan import problem_balance, psr, should_abandon
 from .bayes import branch_credence, should_abandon_bayes
+from .fertility import predictive_fertility, nobel_grade
 
 NONPROGRESSIVE = ('rejected', 'partial', 'equivalent')
 
@@ -98,6 +99,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
     bayes = dict(canonical_credence=can_cred, low_credence_branches=low_branches,
                  note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
+    # 이론 발전성: 정본 경로의 novel 예측 적중 track record (과학=예측력)
+    fert = predictive_fertility([by[t] for t in path]) if path else predictive_fertility(nodes)
+    fert['nobel_grade'] = nobel_grade(fert)
+    fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
     alerts = [a for a in [
         f'퇴행 경보: 연속 비진보 깊이 {stalled} ≥3 — 가지 전환 검토' if stalled >= 3 else None,
         '정체 경보: 진보율 ≤0' if prog and prog.get('improvement_pct') is not None
@@ -110,4 +115,4 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 frontier=dict(open=open_q, closed=closed_q,
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
-                laudan=laudan, bayes=bayes, alerts=alerts)
+                laudan=laudan, bayes=bayes, fertility=fert, alerts=alerts)
