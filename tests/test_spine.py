@@ -47,7 +47,7 @@ def test_promotion_decision_clean_passes():
 
 # === 완전 합성: 모든 승격 게이트 (Foundation + Credibility + 헌법) ===
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind, CredibilityTier
-from lakatos.spine import synthesize_promotion
+from lakatos.spine import synthesize_promotion, credibility_from_trust
 
 def _foundation_with_gap():
     fm = FoundationMap()
@@ -79,3 +79,33 @@ def test_synthesize_reproducible_false_blocks():
 def test_synthesize_per_gate_report():
     d = synthesize_promotion(scripted_verdict='progressive', stands=True)
     assert 'constitution' in d['gates']
+
+# credibility_from_trust 매핑 — source_trust → CredibilityPromotionGate 입력 (set_verdict 배선)
+def test_credibility_high_trust_is_extracted_passes():
+    # bash 지반·고신뢰(>=0.70) → EXTRACTED, target<=current → 게이트 자명 통과
+    c = credibility_from_trust(1.0)
+    assert c['current'] == CredibilityTier.EXTRACTED and c['has_direct_source'] is True
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
+    assert d['ok'] and d['gates']['credibility']['passed'] is True
+
+def test_credibility_low_trust_internet_blocks_canonical():
+    # source_trust 0.5 = 인터넷 영향 중간신뢰, 직접출처·인간판정 없음 → CANONICAL 차단
+    c = credibility_from_trust(0.5)
+    assert c['current'] == CredibilityTier.INFERRED and c['has_direct_source'] is False
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
+    assert not d['ok'] and d['gates']['credibility']['passed'] is False
+
+def test_credibility_ambiguous_needs_human():
+    # source_trust 0.2 = 저신뢰 → AMBIGUOUS, 인간판정 필수
+    c = credibility_from_trust(0.2)
+    assert c['current'] == CredibilityTier.AMBIGUOUS
+    blocked = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
+    assert not blocked['ok']
+    c2 = credibility_from_trust(0.2, has_human_verdict=True)
+    passed = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c2)
+    assert passed['ok']  # 인간이 vouch 하면 통과
+
+def test_credibility_human_verdict_unblocks():
+    c = credibility_from_trust(0.5, has_human_verdict=True)
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
+    assert d['ok']
