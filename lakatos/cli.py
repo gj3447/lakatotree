@@ -49,6 +49,11 @@ def main(argv=None):
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
     sp = sub.add_parser('provenance'); sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
+    sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
+    sp.add_argument('--producer', default=''); sp.add_argument('--producer-sha', default='')
+    sp.add_argument('--input', action='append', default=[], help='path:sha (반복)')
+    sp.add_argument('--kind', default='intermediate', choices=['source','intermediate','final'])
     a = p.parse_args(argv)
 
     if a.cmd == 'trees':
@@ -72,6 +77,13 @@ def main(argv=None):
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured))
     elif a.cmd == 'provenance':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/provenance')
+    elif a.cmd == 'lineage':
+        import urllib.parse as up
+        out = call('GET', f'/api/lineage/{up.quote(a.artifact)}' + ('?stale=true' if a.stale else ''))
+    elif a.cmd == 'lineage-record':
+        inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]
+        out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
+                   producer=a.producer, producer_sha=a.producer_sha, inputs=inputs, kind=a.kind))
     print(json.dumps(out, ensure_ascii=False, indent=1))
 
 

@@ -16,6 +16,7 @@ lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판
   argue.py          [논증 채널] Dung AF — 인간+agent 의문/반박, grounded extension 정당성
   calibrate.py      [신뢰도 보정] Brier/log/ECE proper scoring — 예측 정직성
   metrics.py        트리 지표 (진보율/기각률/퇴행/베이즈/★발전성 + 라우든)
+  lineage.py        ★데이터 계보 — 버퍼는 임시, 완성본은 ZDF서 재생성. stale 감지. LINEAGE.md
   harness.py        ★하네스 — 상계/하계/인간/agent 한 사이클 엮기 (포트-어댑터). HARNESS.md
   harness_run.py    하네스 실행기 (실 HTTP/bash/git 포트)
   cli.py            CLI 조작층 (python -m lakatos.cli)

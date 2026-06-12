@@ -13,3 +13,9 @@ CREATE TABLE IF NOT EXISTS metric_snapshots(
   tree TEXT NOT NULL,
   metrics JSONB
 );
+CREATE TABLE IF NOT EXISTS lineage(
+  id BIGSERIAL PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+  output TEXT NOT NULL, output_sha TEXT, producer TEXT, producer_sha TEXT,
+  inputs JSONB, params JSONB, kind TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lineage_output ON lineage(output);
