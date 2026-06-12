@@ -11,6 +11,7 @@
   result <name> <tag> --value V --script S [--sha S] [--novel-measured X]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
   event <name> <tag> <event_id>  ClaimStanding 용 상계/하계 evidence event 기록
+  events <name> <tag>            ClaimStanding 이 소비하는 evidence event 목록
   claim-standing <name> <tag>    상계/하계 confidence + blocking reason
   foundation <name>              기반지식 requirement 목록
   manifest-verify <manifest.json> [--current-sha path:sha]
@@ -43,6 +44,7 @@ def main(argv=None):
         sp = sub.add_parser(c); sp.add_argument('name')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
+    sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('event'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--realm', required=True, choices=['internet','human','agent','bash','data','kg','git'])
     sp.add_argument('--actor', default=''); sp.add_argument('--action', required=True)
@@ -102,6 +104,8 @@ def main(argv=None):
     elif a.cmd == 'claim-standing':
         suffix = '?require_replay=false' if a.no_replay else ''
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')
+    elif a.cmd == 'events':
+        out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/events')
     elif a.cmd == 'event':
         payload = {}
         for item in a.payload:

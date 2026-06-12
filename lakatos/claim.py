@@ -33,6 +33,26 @@ class ClaimStandingPolicy:
 
 
 @dataclass(frozen=True)
+class ClaimNextAction:
+    """A machine-readable repair hint for a blocked claim."""
+
+    reason: str
+    action: str
+    realm: str = ""
+    target: str = ""
+    hint: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "reason": self.reason,
+            "action": self.action,
+            "realm": self.realm,
+            "target": self.target,
+            "hint": self.hint,
+        }
+
+
+@dataclass(frozen=True)
 class ClaimStanding:
     claim: str
     stands: bool
@@ -47,6 +67,7 @@ class ClaimStanding:
     unresolved_doubts: tuple[str, ...] = ()
     foundation_gaps: tuple[str, ...] = ()
     lineage_reasons: tuple[str, ...] = ()
+    next_actions: tuple[ClaimNextAction, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -63,6 +84,7 @@ class ClaimStanding:
             "unresolved_doubts": list(self.unresolved_doubts),
             "foundation_gaps": list(self.foundation_gaps),
             "lineage_reasons": list(self.lineage_reasons),
+            "next_actions": [a.to_dict() for a in self.next_actions],
         }
 
 
@@ -150,6 +172,93 @@ def _combine(scores: list[float]) -> float:
     return round(1.0 - miss, 4)
 
 
+def _action_for_blocker(reason: str) -> ClaimNextAction:
+    if reason == "foundation:missing":
+        return ClaimNextAction(
+            reason=reason,
+            action="record_foundation_map",
+            realm=Realm.KG.value,
+            hint="add foundation requirements before promoting this claim",
+        )
+    if reason.startswith("foundation:"):
+        target = reason.split(":", 1)[1]
+        return ClaimNextAction(
+            reason=reason,
+            action="satisfy_foundation_requirement",
+            realm=Realm.KG.value,
+            target=target,
+            hint="append evidence_refs or waive the requirement explicitly",
+        )
+    if reason.startswith("human_doubt:"):
+        target = reason.split(":", 1)[1]
+        return ClaimNextAction(
+            reason=reason,
+            action="resolve_human_doubt",
+            realm=Realm.HUMAN.value,
+            target=target,
+            hint=f"append ResearchEvent action=resolve_doubt payload resolves={target}",
+        )
+    if reason == "lineage:missing":
+        return ClaimNextAction(
+            reason=reason,
+            action="record_lineage",
+            realm=Realm.DATA.value,
+            hint="record derivations or rerun claim-standing with replay disabled",
+        )
+    if reason.startswith("lineage:"):
+        target = reason.split(":", 1)[1]
+        return ClaimNextAction(
+            reason=reason,
+            action="run_rebuild_or_refresh_lineage",
+            realm=Realm.BASH.value,
+            target=target,
+            hint="run rebuild-verify/rebuild-run, then append the result as lower evidence",
+        )
+    if reason == "evidence:missing_refs":
+        return ClaimNextAction(
+            reason=reason,
+            action="attach_evidence_refs",
+            realm=Realm.KG.value,
+            hint="record source, artifact, command, or review refs for this claim",
+        )
+    if reason == "upper_confidence_below_threshold":
+        return ClaimNextAction(
+            reason=reason,
+            action="add_upper_world_evidence",
+            realm="internet|human|kg",
+            hint="append internet, human, or KG ResearchEvent with confidence/trust",
+        )
+    if reason == "lower_confidence_below_threshold":
+        return ClaimNextAction(
+            reason=reason,
+            action="add_lower_world_evidence",
+            realm="bash|data|git|agent",
+            hint="append bash/data/git/agent ResearchEvent from a reproducible observation",
+        )
+    return ClaimNextAction(
+        reason=reason,
+        action="investigate_blocker",
+        hint="inspect the claim event stream and add a specific evidence event",
+    )
+
+
+def _next_actions(blocking_reasons: tuple[str, ...], warnings: tuple[str, ...]) -> tuple[ClaimNextAction, ...]:
+    actions = [_action_for_blocker(reason) for reason in blocking_reasons]
+    if "lineage:not_checked" in warnings:
+        actions.append(
+            ClaimNextAction(
+                reason="lineage:not_checked",
+                action="check_lineage_replay",
+                realm=Realm.DATA.value,
+                hint="run claim-standing with replay enabled before treating the claim as final",
+            )
+        )
+    deduped: dict[tuple[str, str, str], ClaimNextAction] = {}
+    for action in actions:
+        deduped.setdefault((action.reason, action.action, action.target), action)
+    return tuple(deduped.values())
+
+
 def evaluate_claim_standing(
     claim: str,
     *,
@@ -222,6 +331,7 @@ def evaluate_claim_standing(
     warnings = []
     if lineage is None and not policy.require_replay:
         warnings.append("lineage:not_checked")
+    warnings_tuple = tuple(warnings)
 
     return ClaimStanding(
         claim=claim,
@@ -231,10 +341,11 @@ def evaluate_claim_standing(
         upper_confidence=upper_confidence,
         lower_confidence=lower_confidence,
         blocking_reasons=unique_blocking,
-        warnings=tuple(warnings),
         realms=realms,
         evidence_refs=tuple(evidence_refs),
         unresolved_doubts=unresolved_doubts,
         foundation_gaps=foundation_gaps,
         lineage_reasons=lineage_reasons,
+        warnings=warnings_tuple,
+        next_actions=_next_actions(unique_blocking, warnings_tuple),
     )

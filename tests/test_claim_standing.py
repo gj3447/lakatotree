@@ -123,6 +123,10 @@ def test_claim_standing_blocks_on_foundation_gap_human_doubt_and_lineage_failure
     assert standing.upper_confidence >= 0.82
     assert standing.lower_confidence >= 0.80
     assert standing.to_dict()["claim"] == "claim-1"
+    actions = {a["reason"]: a for a in standing.to_dict()["next_actions"]}
+    assert actions["foundation:metric-contract"]["action"] == "satisfy_foundation_requirement"
+    assert actions["human_doubt:evt-human-doubt"]["action"] == "resolve_human_doubt"
+    assert actions["lineage:stale_inputs"]["action"] == "run_rebuild_or_refresh_lineage"
 
 
 def test_claim_standing_stands_when_foundation_replay_and_upper_lower_evidence_pass():
@@ -268,3 +272,6 @@ def test_claim_standing_can_make_missing_lower_world_evidence_explicit():
     assert not standing.stands
     assert "lower_confidence_below_threshold" in standing.blocking_reasons
     assert standing.upper_confidence > standing.lower_confidence
+    actions = {a["reason"]: a for a in standing.to_dict()["next_actions"]}
+    assert actions["lower_confidence_below_threshold"]["realm"] == "bash|data|git|agent"
+    assert actions["lineage:not_checked"]["action"] == "check_lineage_replay"

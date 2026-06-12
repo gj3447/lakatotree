@@ -378,3 +378,44 @@ def test_claim_standing_includes_recorded_research_events(monkeypatch):
     assert out["upper_confidence"] >= 0.9
     assert out["lower_confidence"] >= 0.8
     assert out["realms"] == ["bash", "internet"]
+
+
+def test_research_events_endpoint_lists_append_only_events(monkeypatch):
+    app = load_app()
+
+    def fake_kg(query, **params):
+        if "ResearchEvent" in query and "ORDER BY ev.created_at, ev.name" in query:
+            return [
+                {
+                    "id": "T/p1/event/evt-web",
+                    "name": "evt-web",
+                    "realm": "internet",
+                    "actor": "agent:researcher",
+                    "action": "fetch_source",
+                    "evidence_refs": ["obs:paper"],
+                    "payload": '{"trust":"0.9"}',
+                    "created_at": "2026-06-12T00:00:00Z",
+                },
+                {
+                    "id": "T/p1/event/evt-bash",
+                    "name": "evt-bash",
+                    "realm": "bash",
+                    "actor": "agent:builder",
+                    "action": "test_passed",
+                    "evidence_refs": ["bash:pytest"],
+                    "payload": '{"exit_code":"0"}',
+                    "created_at": "2026-06-12T00:01:00Z",
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(app, "kg", fake_kg)
+    monkeypatch.setattr(app, "hist", lambda *a, **k: None)
+
+    out = app.research_events("T", "p1")
+
+    assert out["tag"] == "p1"
+    assert out["count"] == 2
+    assert out["events"][0]["id"] == "T/p1/event/evt-web"
+    assert out["events"][0]["payload"] == {"trust": "0.9"}
+    assert out["events"][1]["realm"] == "bash"

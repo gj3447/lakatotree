@@ -28,6 +28,7 @@ from .engine import (
     SourceCredibilityScore,
 )
 from .claim import (
+    ClaimNextAction,
     ClaimStanding,
     ClaimStandingPolicy,
     evaluate_claim_standing,
@@ -93,6 +94,7 @@ __all__ = [
     "ResearchFrame",
     "ResearchProject",
     "SourceCredibilityScore",
+    "ClaimNextAction",
     "ClaimStanding",
     "ClaimStandingPolicy",
     "evaluate_claim_standing",
