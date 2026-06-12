@@ -22,6 +22,7 @@ from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
+from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
                              reproducibility_gaps, stale_inputs, is_reproducible, script_history)
 from fastapi import FastAPI, HTTPException
@@ -57,25 +58,37 @@ NODE_LABELS = 'PrismExperiment|LakatosNode'
 
 def tree_data(name):
     t = kg('MATCH (t:LakatosTree {name:$n}) RETURN t.title AS title, t.hard_core AS hard_core, '
-           't.frontier_rule AS frontier_rule, t.doc AS doc', n=name)
+           't.frontier_rule AS frontier_rule, t.doc AS doc, '
+           't.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement', n=name)
     if not t:
         raise HTTPException(404, f'나무 없음: {name}')
     nodes = kg(f'''MATCH (t:LakatosTree {{name:$n}})-[:HAS_NODE]->(e)
-        OPTIONAL MATCH (e)-[:BRANCHED_FROM]->(p)
+        OPTIONAL MATCH (e)-[bf:BRANCHED_FROM]->(p)
+        WITH e, collect(DISTINCT {{tag:p.tag, inferred:coalesce(bf.inferred,false),
+             relation_kind:coalesce(bf.relation_kind,'knowledge_inheritance'),
+             evidence_ref:coalesce(bf.evidence_ref,'')}}) AS raw_parent_edges
         OPTIONAL MATCH (e)-[:RAISES_QUESTION]->(q)
+        WITH e, [pe IN raw_parent_edges WHERE pe.tag IS NOT NULL] AS parent_edges,
+             collect(DISTINCT q.name) AS questions
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
                e.result_path AS result_path, e.algorithm AS algorithm, e.comment AS comment,
                e.limitation AS limitation, e.open_question AS open_question,
                e.metric_name AS metric_name, e.metric_value AS metric_value,
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
-               e.novel_confirmed AS novel_confirmed, p.tag AS parent, collect(q.name) AS questions
+               e.novel_confirmed AS novel_confirmed,
+               CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
+               [pe IN parent_edges | pe.tag] AS parents, parent_edges AS parent_edges,
+               questions AS questions
         ORDER BY tag''', n=name)
     qs = kg('MATCH (t:LakatosTree {name:$n})-[:HAS_FRONTIER]->(q) '
             'RETURN q.name AS name, q.status AS status, q.body AS body', n=name)
     return dict(name=name, **t[0], nodes=nodes, frontier=qs)
 
 def compute_metrics(td):
-    return tree_metrics(td['nodes'], td['frontier'])
+    return tree_metrics(td['nodes'], td['frontier'], cfg={
+        'coverage_backlog': td.get('coverage_backlog') or [],
+        'coverage_statement': td.get('coverage_statement') or '',
+    })
 
 @app.get('/api/trees')
 def trees():
@@ -94,9 +107,18 @@ def metrics(name: str, snapshot: bool = False):
                         (name, json.dumps(m, ensure_ascii=False)))
     return m
 
+class ParentEdgeIn(BaseModel):
+    tag: str
+    inferred: bool = False
+    relation_kind: str = 'knowledge_inheritance'
+    evidence_ref: str = ''
+
+
 class NodeIn(BaseModel):
     tag: str
     parent: str | None = None
+    parents: list[str] = Field(default_factory=list)
+    parent_edges: list[ParentEdgeIn] = Field(default_factory=list)
     verdict: str = 'proof'
     script: str = ''
     result_path: str = ''
@@ -108,11 +130,28 @@ class NodeIn(BaseModel):
     metric_value: float | None = None
     metric_scope: str | None = None
 
+
+def _normalized_parent_edges(n: NodeIn) -> list[ParentEdgeIn]:
+    edges: dict[str, ParentEdgeIn] = {}
+    if n.parent:
+        edges[n.parent] = ParentEdgeIn(tag=n.parent)
+    for p in n.parents:
+        edges.setdefault(p, ParentEdgeIn(tag=p))
+    for edge in n.parent_edges:
+        edges[edge.tag] = edge
+    if n.tag in edges:
+        raise HTTPException(400, '자기 자신을 parent 로 둘 수 없음')
+    return list(edges.values())
+
+
 @app.post('/api/tree/{name}/node')
 def add_node(name: str, n: NodeIn):
     td = tree_data(name)   # 존재 검증
-    if n.parent and n.parent not in {r['tag'] for r in td['nodes']}:
-        raise HTTPException(400, f'부모 노드 없음: {n.parent}')
+    existing = {r['tag'] for r in td['nodes']}
+    parent_edges = _normalized_parent_edges(n)
+    missing = [e.tag for e in parent_edges if e.tag not in existing]
+    if missing:
+        raise HTTPException(400, f'부모 노드 없음: {missing}')
     kg('''MATCH (t:LakatosTree {name:$tree})
           MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+$tag})
           SET e.tag=$tag, e.verdict=$verdict, e.script=$script, e.result_path=$result_path,
@@ -122,23 +161,27 @@ def add_node(name: str, n: NodeIn):
               e.recorded_at=$ts
           MERGE (t)-[:HAS_NODE]->(e)''',
        tree=name, ts=datetime.now(timezone.utc).isoformat(), **n.model_dump())
-    if n.parent:
+    for edge in parent_edges:
         kg(f'''MATCH (t:LakatosTree {{name:$tree}})-[:HAS_NODE]->(e {{tag:$tag}})
                MATCH (t)-[:HAS_NODE]->(p {{tag:$parent}})
-               MERGE (e)-[:BRANCHED_FROM]->(p)''', tree=name, tag=n.tag, parent=n.parent)
+               MERGE (e)-[r:BRANCHED_FROM]->(p)
+               SET r.inferred=$inferred, r.relation_kind=$relation_kind, r.evidence_ref=$evidence_ref''',
+           tree=name, tag=n.tag, parent=edge.tag, inferred=edge.inferred,
+           relation_kind=edge.relation_kind, evidence_ref=edge.evidence_ref)
     hist(name, 'node_create', n.tag, n.model_dump())
     return {'ok': True, 'tag': n.tag}
 
 class VerdictIn(BaseModel):
     verdict: str
     note: str = ''
-
-# 행정 상태만 수동 지정 가능 — 판결 어휘(progressive/partial/...)는 test_result 스크립트 전용
-ADMIN_VERDICTS = {'CANONICAL', 'former_canonical', 'canonical_stage', 'repurposed_measurement', 'proof'}
+    scope: str = ''
+    assumptions: list[str] = Field(default_factory=list)
+    evidence_window: str = ''
+    valid_until_rebutted: bool = True
 
 @app.post('/api/tree/{name}/node/{tag}/verdict')
 def set_verdict(name: str, tag: str, v: VerdictIn):
-    if v.verdict not in ADMIN_VERDICTS:   # 나생문 F-FG-1: 판결 어휘 수동 덮어쓰기 금지
+    if not is_admin_verdict(v.verdict):   # 나생문 F-FG-1: 판결 어휘 수동 덮어쓰기 금지
         raise HTTPException(403, f'판결 어휘({v.verdict})는 test_result 스크립트 전용 — 수동 지정 금지. '
                                  f'행정 상태만: {sorted(ADMIN_VERDICTS)}')
     if v.verdict == 'CANONICAL':   # demote+promote 단일 트랜잭션 (F-FG-5)
@@ -146,8 +189,15 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
               WITH t, cur
               OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
               WHERE old.tag <> $tag
-              SET old.verdict='former_canonical'
-              SET cur.verdict='CANONICAL', cur.verdict_source='admin' ''', tree=name, tag=tag)
+              SET old.verdict='former_canonical', old.current_best_pointer=false
+              SET cur.verdict='CANONICAL', cur.verdict_source='admin',
+                  cur.current_best_pointer=true,
+                  cur.canonical_scope=$scope,
+                  cur.canonical_assumptions=$assumptions,
+                  cur.canonical_evidence_window=$evidence_window,
+                  cur.valid_until_rebutted=$valid_until_rebutted ''',
+           tree=name, tag=tag, scope=v.scope, assumptions=v.assumptions,
+           evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted)
         r = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag}) RETURN e.tag AS tag''',
                tree=name, tag=tag)
     else:
@@ -175,9 +225,24 @@ def open_question(name: str, q: QuestionIn):
 
 @app.post('/api/tree/{name}/question/{qname}/close')
 def close_question(name: str, qname: str, closed_by: str = ''):
+    ts = datetime.now(timezone.utc).isoformat()
+    closure_id = f'{name}/{qname}/closure/{closed_by or "unknown"}@{ts}'
     r = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
-              SET q.status='CLOSED', q.closed_by=$by RETURN q.name AS name''',
-           tree=name, qn=qname, by=closed_by)
+              SET q.status='CLOSED',
+                  q.closed_by=CASE
+                    WHEN q.closed_by IS NULL THEN [$by]
+                    WHEN $by IN q.closed_by THEN q.closed_by
+                    ELSE q.closed_by + $by
+                  END,
+                  q.closed_events=CASE
+                    WHEN q.closed_events IS NULL THEN [$closure_id]
+                    ELSE q.closed_events + $closure_id
+                  END
+              MERGE (c:QuestionClosure {id:$closure_id})
+              SET c.closed_by=$by, c.at=$ts, c.tree=$tree, c.question=$qn
+              MERGE (q)-[:HAS_CLOSURE]->(c)
+              RETURN q.name AS name''',
+           tree=name, qn=qname, by=closed_by, closure_id=closure_id, ts=ts)
     if not r:
         raise HTTPException(404, f'질문 없음: {qname}')
     hist(name, 'question_close', closed_by, {'question': qname})
@@ -379,6 +444,48 @@ def add_artifact(name: str, a: ArtifactIn):
                                     data=a.data, ts=datetime.now(timezone.utc)))
     hist(name, 'artifact', a.node_tag, {'kind': a.kind})
     return {'ok': True}
+
+
+class ElementIn(BaseModel):
+    name: str
+    definition: str = ''
+    implication: str = ''
+    lifecycle: str = ''
+    scope: str = 'domain-agnostic'
+
+
+class ElementUseIn(BaseModel):
+    note: str = ''
+    evidence_ref: str = ''
+
+
+@app.post('/api/tree/{name}/element')
+def add_element(name: str, el: ElementIn):
+    kg("""MATCH (t:LakatosTree {name:$tree})
+          MERGE (el:LakatosElement {name:$elname})
+          SET el.definition=$definition, el.implication=$implication,
+              el.lifecycle=$lifecycle, el.scope=$scope, el.updated_at=$ts
+          MERGE (t)-[:HAS_ELEMENT]->(el)
+          RETURN el.name AS name""",
+       tree=name, elname=el.name, definition=el.definition, implication=el.implication,
+       lifecycle=el.lifecycle, scope=el.scope, ts=datetime.now(timezone.utc).isoformat())
+    hist(name, 'element_upsert', el.name, el.model_dump())
+    return {'ok': True, 'name': el.name}
+
+
+@app.post('/api/tree/{name}/node/{tag}/element/{element_name}')
+def attach_element(name: str, tag: str, element_name: str, use: ElementUseIn):
+    r = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+              MATCH (t)-[:HAS_ELEMENT]->(el:LakatosElement {name:$elname})
+              MERGE (e)-[u:USES_ELEMENT]->(el)
+              SET u.note=$note, u.evidence_ref=$evidence_ref, u.at=$ts
+              RETURN e.tag AS tag, el.name AS element""",
+           tree=name, tag=tag, elname=element_name, note=use.note,
+           evidence_ref=use.evidence_ref, ts=datetime.now(timezone.utc).isoformat())
+    if not r:
+        raise HTTPException(404, f'노드 또는 엘리멘트 없음: {tag}, {element_name}')
+    hist(name, 'element_use', tag, {'element': element_name, **use.model_dump()})
+    return {'ok': True, 'tag': tag, 'element': element_name}
 
 @app.get('/api/tree/{name}/history')
 def history(name: str, limit: int = 100):

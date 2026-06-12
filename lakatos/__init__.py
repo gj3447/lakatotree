@@ -23,6 +23,14 @@ from .engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
+from .verdicts import (
+    ADMIN_VERDICTS,
+    SCRIPTED_VERDICTS,
+    VERDICT_REGISTRY,
+    is_admin_verdict,
+    is_registered_verdict,
+    is_scripted_verdict,
+)
 
 __all__ = [
     "BashAct",
@@ -46,4 +54,10 @@ __all__ = [
     "ResearchFrame",
     "ResearchProject",
     "SourceCredibilityScore",
+    "ADMIN_VERDICTS",
+    "SCRIPTED_VERDICTS",
+    "VERDICT_REGISTRY",
+    "is_admin_verdict",
+    "is_registered_verdict",
+    "is_scripted_verdict",
 ]

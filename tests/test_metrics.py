@@ -60,3 +60,27 @@ def test_zero_first_metric_no_crash():
     m = tree_metrics(nodes, [])
     assert m['progress']['improvement_pct'] is None
     assert m['progress']['abs_gain'] == 26.0
+
+
+def test_metrics_accept_multi_parent_nodes_by_using_primary_parent_for_path():
+    nodes = [
+        dict(tag='root', verdict='canonical_stage', parents=[], metric_value=1.0, metric_scope='s',
+             algorithm='x', comment='x', limitation='x'),
+        dict(tag='side', verdict='proof', parents=[], metric_value=1.1, metric_scope='s',
+             algorithm='x', comment='x', limitation='x'),
+        dict(tag='best', verdict='CANONICAL', parents=['root', 'side'], metric_value=0.7,
+             metric_scope='s', algorithm='x', comment='x', limitation='x'),
+    ]
+    m = tree_metrics(nodes, [])
+    assert m['canonical_path'] == ['root', 'best']
+    assert m['progress']['improvement_pct'] == 30.0
+
+
+def test_coverage_backlog_is_reported_and_alerted():
+    m = tree_metrics(NODES, FRONTIER, cfg={
+        'coverage_backlog': ['unread/spec-a.md', 'unread/spec-b.md'],
+        'coverage_statement': 'partial import, not exhaustive',
+    })
+    assert m['coverage']['backlog_count'] == 2
+    assert m['coverage']['statement'] == 'partial import, not exhaustive'
+    assert any('커버리지 backlog' in a for a in m['alerts'])
