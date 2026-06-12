@@ -50,6 +50,9 @@ SOURCES = {
     'agm1985': 'Alchourrón, C., Gärdenfors, P. & Makinson, D. (1985). On the Logic of Theory Change. JSL 50(2):510-530.',
     'hansson1993': 'Hansson, S.O. (1993). Reversing the Levi Identity. J. Phil. Logic 22:637-669 (belief *base* revision).',
     'feyerabend1975': 'Feyerabend, P. (1975). Against Method (방법론 다원주의 — 층 불일치는 보고하라, 숨기지 마라).',
+    'benjamini_hochberg1995': 'Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B 57(1):289-300.',
+    'dunn1961': 'Dunn, O.J. (1961). Multiple Comparisons Among Means. JASA 56(293):52-64 (Bonferroni 보정의 정식화).',
+    'fisher1925': 'Fisher, R.A. (1925). Statistical Methods for Research Workers (α=0.05 관행의 기원).',
     'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
@@ -262,6 +265,12 @@ GROUNDED = {
         'band': '수확/발산 판정 최근 노드 윈도우',
         'rationale': 'lifecycle 종료판정(수확=novel 등록 고갈+안정, 발산=문제수지 적자+정본 정체)의 '
                      '관측 윈도우. ABANDON_K=3 과 같은 규모의 정책값(SPRT 영감, 도출 아님).',
+    },
+    'fdr_q': {
+        'value': 0.05, 'source': 'benjamini_hochberg1995', 'tier': 'policy_in_scale',
+        'band': 'BH false discovery rate 목표',
+        'rationale': 'gap8 다중비교: 가지가 많을수록 우연 통과(false-progressive)가 늘어남 — '
+                     'BH 절차(문헌)로 FDR 통제. q=0.05 컷 자체는 Fisher 1925 이래 관행적 정책값.',
     },
 }
 
