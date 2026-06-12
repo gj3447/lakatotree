@@ -22,6 +22,8 @@ from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
+from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
+                             reproducibility_gaps, stale_inputs, is_reproducible)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -384,6 +386,86 @@ def history(name: str, limit: int = 100):
         cur.execute('SELECT ts, op, node_tag, payload FROM history WHERE tree=%s '
                     'ORDER BY id DESC LIMIT %s', (name, limit))
         return [dict(r, ts=r['ts'].isoformat()) for r in cur.fetchall()]
+
+class DerivationIn(BaseModel):
+    """데이터 산출물 계보 기록 — 입력 sha + 생산코드 sha → 출력 sha."""
+    output: str
+    output_sha: str
+    producer: str = ''
+    producer_sha: str = ''
+    inputs: list = []            # [[path, sha], ...]
+    params: dict = {}
+    kind: str = 'intermediate'   # source|intermediate|final
+
+@app.post('/api/lineage/derivation')
+def record_derivation(d: DerivationIn):
+    # PROV-O: output Entity wasDerivedFrom input Entities, wasGeneratedBy producer Activity
+    kg("""MERGE (o:DataArtifact {path:$out}) SET o.sha=$osha, o.kind=$kind, o.producer=$prod,
+              o.producer_sha=$psha, o.params=$params, o.recorded_at=$ts""",
+       out=d.output, osha=d.output_sha, kind=d.kind, prod=d.producer, psha=d.producer_sha,
+       params=json.dumps(d.params, ensure_ascii=False), ts=datetime.now(timezone.utc).isoformat())
+    for path, sha in d.inputs:
+        kg("""MERGE (i:DataArtifact {path:$ip}) ON CREATE SET i.sha=$ish
+              WITH i MATCH (o:DataArtifact {path:$out})
+              MERGE (o)-[:DERIVED_FROM {input_sha:$ish}]->(i)""",
+           ip=path, ish=sha, out=d.output)
+    with pg() as c, c.cursor() as cur:
+        cur.execute('INSERT INTO lineage(output, output_sha, producer, producer_sha, inputs, params, kind) '
+                    'VALUES (%s,%s,%s,%s,%s,%s,%s)',
+                    (d.output, d.output_sha, d.producer, d.producer_sha,
+                     json.dumps(d.inputs), json.dumps(d.params, ensure_ascii=False), d.kind))
+    return {'ok': True}
+
+def _load_lineage():
+    rows = kg("""MATCH (o:DataArtifact) OPTIONAL MATCH (o)-[r:DERIVED_FROM]->(i:DataArtifact)
+                 RETURN o.path AS out, o.sha AS osha, o.producer AS prod, o.producer_sha AS psha,
+                        o.kind AS kind, collect({path:i.path, sha:r.input_sha}) AS inputs""")
+    ds = []
+    for x in rows:
+        inp = [(a['path'], a['sha']) for a in x['inputs'] if a['path']]
+        ds.append(Derivation(output=x['out'], output_sha=x['osha'] or '', producer=x['prod'] or '',
+                             producer_sha=x['psha'] or '', inputs=inp, kind=x['kind'] or 'intermediate'))
+    return ds
+
+@app.get('/api/lineage/{artifact:path}')
+def get_lineage(artifact: str, stale: bool = False):
+    """완성본의 계보 — source(ZDF) 추적 + 재빌드 플랜 + 재현 가능성 + 끊긴 링크."""
+    ds = _load_lineage()
+    bo = by_output(ds)
+    if artifact not in bo:
+        raise HTTPException(404, f'산출물 미기록: {artifact}')
+    src = {d.output for d in ds if d.kind == 'source'} | \
+          {r for r in lin_roots(artifact, bo) if bo.get(r) is None or not bo[r].inputs}
+    gaps = reproducibility_gaps(artifact, bo, src)
+    plan = rebuild_plan(artifact, bo)
+    out = dict(artifact=artifact, roots=sorted(lin_roots(artifact, bo)),
+               reproducible=(not gaps), gaps=sorted(gaps),
+               rebuild_plan=[dict(output=d.output, producer=d.producer,
+                                  inputs=[p for p, _ in d.inputs]) for d in plan],
+               note='reproducible=True → source(ZDF)서 plan 순서대로 재실행하면 완성본 재생성')
+    if stale:   # 입력 데이터 변경 감지(현 디스크 sha vs 기록) — 느려서 opt-in
+        import hashlib as _h, os as _os
+        cur = {}
+        for d in ds:
+            for path, _ in d.inputs:
+                if path not in cur and _os.path.isfile(path):
+                    cur[path] = _h.sha256(open(path, 'rb').read()).hexdigest()
+                elif path not in cur and _os.path.isdir(path):
+                    # source 가 디렉토리(ZDF lot) → 내용 파일들의 sha 합성
+                    h = _h.sha256()
+                    for f in sorted(_os.listdir(path)):
+                        fp = _os.path.join(path, f)
+                        if _os.path.isfile(fp):
+                            h.update(f.encode()); h.update(str(_os.path.getsize(fp)).encode())
+                    cur[path] = h.hexdigest()
+        changed = {}
+        for d in plan:
+            bad = stale_inputs(d, cur)
+            if bad:
+                changed[d.output] = [{'input': p, 'recorded': r[:12], 'current': c[:12]} for p, r, c in bad]
+        out['stale'] = bool(changed)
+        out['changed'] = changed
+    return out
 
 VC = {'CANONICAL': '#1a7f37', 'canonical_stage': '#2da44e', 'former_canonical': '#6e7781',
       'rejected': '#cf222e', 'partial': '#bf8700', 'equivalent': '#0969da',
