@@ -34,9 +34,9 @@ class RebuildExecutor:
         self._cid = cid
 
     def _ev(self, event, **attrs):
-        import datetime
-        rec = {'cid': self._cid, 'service': 'lakatotree.rebuild', 'level': 'INFO',
-               'event': event, **attrs}
+        # correlation_id/cycle_id 동봉 — oo trace_cycle(cid) 한 콜 RCA 가 실제로 묶이도록 (나생문 F1-cid)
+        rec = {'cid': self._cid, 'correlation_id': self._cid, 'cycle_id': self._cid,
+               'service': 'lakatotree.rebuild', 'level': 'INFO', 'event': event, **attrs}
         self._emit(rec)
         return rec
 
