@@ -4,7 +4,10 @@
 > 정본 출처: Lakatos *MSRP* (1970), Laudan *Progress and its Problems* (1977),
 > Bayesian confirmation theory, AGM belief revision (Alchourrón–Gärdenfors–Makinson 1985),
 > W3C PROV-O, Multi-armed bandit (UCB1), Value of Information (Howard 1966).
-> ※ 12 웹-리서치 셀은 rate-limit 으로 실패 — 본 이론맵은 정본 명명 출처 기반 합성. 웹 재검증은 frontier.
+> ※ **웹 재검증 완료 (2026-06-14, 12/12 셀)**: grounding.py 의 인용·상수를 권위 출처로 재확증 + 적대 adjudication.
+> 8 셀 무수정 확증(Kass-Raftery/Cohen/Wald/Wilson/BH/AGM/Laudan/Jeffreys/Bonferroni-Dunn/Lakatos-Zahar),
+> 정정 2건 반영: ① `ece_bins`=Guo et al.(2017) 원전 M=15 (10 은 정책 기본값, tier 강등) ② `eigentrust_alpha`=0.15 는
+> PageRank teleport(1−0.85)이지 Kamvar 인쇄 상수 아님(tier 강등). 출처 레지스트리 = `grounding.py` SOURCES.
 
 ## 1. 엄격도 스택 (3층, 경쟁 아닌 스택)
 
