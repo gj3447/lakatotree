@@ -62,11 +62,22 @@ def _ids(base) -> set:
     return {b.belief_id for b in base}
 
 
-def expansion(base: list, new: Belief) -> RevisionResult:
-    """AGM expansion(+): 무모순 가정 하 단순 추가. 같은 id 면 교체(갱신)."""
+def expansion(base: list, new: Belief, allow_hard_core: bool = False) -> RevisionResult:
+    """AGM expansion(+): 무모순 가정 하 단순 추가. 같은 id 면 교체(갱신).
+
+    ★ENGINE-ROB-1: 같은 id 의 *hard_core* belief 를 덮어쓰는 것은 hard core 개정이므로
+    allow_hard_core 없이는 금지(아니면 contraction 가드를 우회해 보호대 밖에서 핵이 조용히 강등됨).
+    동의 하에 hard_core→비-hard_core 강등 시 programme_shift_candidate=True(Kuhn 연동).
+    """
+    existing = next((b for b in base if b.belief_id == new.belief_id), None)
+    if existing is not None and existing.kind == 'hard_core' and not allow_hard_core:
+        raise HardCoreProtected(
+            f'{new.belief_id} 는 hard core — expansion 으로 개정하려면 allow_hard_core=True '
+            f'(보호대가 흡수해야; contraction 과 동일 보호)')
     kept = tuple(b for b in base if b.belief_id != new.belief_id)
+    shift = bool(existing is not None and existing.kind == 'hard_core' and new.kind != 'hard_core')
     return RevisionResult(base=kept + (new,), removed=(), added=(new.belief_id,),
-                          programme_shift_candidate=False)
+                          programme_shift_candidate=shift)
 
 
 def _dependents_closure(base: list, target_ids: set) -> set:
@@ -120,14 +131,17 @@ def revision(base: list, new: Belief, contradicts: list = (),
     """
     cur = list(base)
     removed_all, shift = [], False
-    for cid in contradicts:
+    # 덜 굳건한 것부터 contraction (entrenchment_key 오름차순) — 선언된 정책을 실제 적용.
+    by = {b.belief_id: b for b in base}
+    ordered = sorted(contradicts, key=lambda cid: entrenchment_key(by[cid]) if cid in by else (-1, -1, -1, -1))
+    for cid in ordered:
         r = contraction(cur, cid, allow_hard_core=allow_hard_core)
         cur = list(r.base)
         removed_all += list(r.removed)
         shift = shift or r.programme_shift_candidate
-    r = expansion(cur, new)
+    r = expansion(cur, new, allow_hard_core=allow_hard_core)   # ENGINE-ROB-1: 가드 전파
     return RevisionResult(base=r.base, removed=tuple(sorted(set(removed_all))),
-                          added=r.added, programme_shift_candidate=shift)
+                          added=r.added, programme_shift_candidate=(shift or r.programme_shift_candidate))
 
 
 def demote_canonical(base: list, old_canonical_id: str, new_canonical: Belief) -> RevisionResult:

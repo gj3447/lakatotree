@@ -70,3 +70,32 @@ def test_demote_canonical_keeps_former():
     by_id = {b.belief_id: b for b in r.base}
     assert 'b1' in by_id                          # 제거 아니라 강등
     assert by_id['b1'].credence < by_id['v22'].credence
+
+
+# ── ENGINE-ROB-1: expansion/revision 으로 hard core 조용한 강등 차단 ──
+
+def test_expansion_cannot_silently_overwrite_hard_core():
+    with pytest.raises(HardCoreProtected):
+        expansion(BASE, Belief('hc1', 'downgraded', kind='protective_belt', credence=0.2))
+
+
+def test_expansion_hard_core_overwrite_with_consent_flags_shift():
+    r = expansion(BASE, Belief('hc1', 'revised', kind='protective_belt', credence=0.2),
+                  allow_hard_core=True)
+    assert r.programme_shift_candidate is True   # hard_core→belt 강등 = Kuhn shift 신호
+
+
+def test_expansion_restate_hard_core_still_needs_consent():
+    with pytest.raises(HardCoreProtected):     # 같은 kind 재기술도 hard core 개정 = consent 필요
+        expansion(BASE, Belief('hc1', 'restated', kind='hard_core', credence=0.99))
+
+
+def test_revision_inherits_hard_core_guard():
+    with pytest.raises(HardCoreProtected):     # revision→expansion 우회 차단
+        revision(BASE, Belief('hc1', 'x', kind='protective_belt', credence=0.2), contradicts=[])
+
+
+def test_expansion_non_hardcore_replace_unaffected():
+    r = expansion(BASE, Belief('b2', 'updated belt', credence=0.8))   # b2=protective_belt
+    assert r.programme_shift_candidate is False
+    assert sum(1 for b in r.base if b.belief_id == 'b2') == 1
