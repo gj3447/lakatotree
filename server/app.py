@@ -28,7 +28,7 @@ from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.promote import promotion_gate
 from lakatos.spine import (reconcile_verdict, promotion_decision, synthesize_promotion,
                            credibility_from_trust, dialectical_verdict)
-from lakatos.pnr import appraise_response, Response
+from lakatos.pnr import appraise_response, Response, CounterexampleType
 from lakatos.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected, ENTRENCHMENT_POLICY)
 from lakatos.adapters import (lineage_result_to_openlineage_events, derivations_to_dvc_pipeline,
@@ -458,6 +458,7 @@ class TestResultIn(BaseModel):
     implementation_complete: bool = True
     # 증명과반박 변증법(PnR) — 이 노드가 반례에 대응한 것이면 *대응 방식*이 진보/퇴행을 가른다
     counterexample_response: str | None = None  # surrender|monster_barring|exception_barring|monster_adjustment|lemma_incorporation|proofs_and_refutations
+    counterexample_type: str | None = None       # (선택) global|local|local_and_global|local_not_global|global_not_local — 숨은 보조정리 진단
     ce_excess_content: bool = False             # 대응이 초과 경험내용을 더했나
     ce_novel_corroborated: bool = False         # 그 초과내용 중 확증된 novel 사실
     ce_in_heuristic_spirit: bool | None = None  # 양의 휴리스틱 정신 내인가(미지정=미검증)
@@ -507,10 +508,18 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
         except ValueError:
             raise HTTPException(422, f'알 수 없는 반례 대응: {r.counterexample_response} — '
                                      f'{[e.value for e in Response]} 중 하나')
+        ce_type = None
+        if r.counterexample_type:
+            try:
+                ce_type = CounterexampleType(r.counterexample_type)
+            except ValueError:
+                raise HTTPException(422, f'알 수 없는 반례유형: {r.counterexample_type} — '
+                                         f'{[e.value for e in CounterexampleType]} 중 하나')
         pnr_appraisal = appraise_response(
             resp, excess_content=r.ce_excess_content, novel_corroborated=r.ce_novel_corroborated,
             in_heuristic_spirit=r.ce_in_heuristic_spirit,
-            hard_core_preserved=(r.lakatos_hardcore if r.lakatos_hardcore is not None else True))
+            hard_core_preserved=(r.lakatos_hardcore if r.lakatos_hardcore is not None else True),
+            counterexample_type=ce_type)
     decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
     verdict = decided['verdict']
     lakatos_status = decided['lakatos']
