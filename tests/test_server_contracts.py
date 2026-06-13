@@ -61,7 +61,11 @@ def install_fake_ports(monkeypatch, app, existing_nodes=("p1", "p2")):
     def fake_hist(*args, **kwargs):
         calls.append(("hist", args, kwargs))
 
+    def fake_kg_tx(ops):   # ROB-1: kg_tx = 단일 tx 로 묶은 kg 들 — 각 op 를 kg 호출처럼 기록
+        return [fake_kg(cypher, **params) for cypher, params in ops]
+
     monkeypatch.setattr(app, "kg", fake_kg)
+    monkeypatch.setattr(app, "kg_tx", fake_kg_tx)
     monkeypatch.setattr(app, "hist", fake_hist)
     return calls
 
