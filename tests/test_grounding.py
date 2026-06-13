@@ -132,8 +132,12 @@ def test_policy_constants_labeled_policy_not_literature():
     for c in ('weight_floor', 'abandon_b', 'w_problem', 'abandon_budget'):
         assert c in tiers['policy'], f'{c} 는 정책값인데 policy tier 아님'
     # 순수 문헌값은 literature
-    for c in ('pagerank_damping', 'default_prior', 'ece_bins'):
+    for c in ('pagerank_damping', 'default_prior'):
         assert c in tiers['literature']
+    # ★웹 재검증 2026-06-14 정정: ece_bins(=10)·eigentrust_alpha(=0.15)는 원전이 인쇄한 값이 아니라
+    # 정책 기본값/파생값(Guo 원전 M=15 / PageRank teleport 1−0.85) → policy_in_scale (문헌인 척 금지)
+    assert G.GROUNDED['ece_bins']['tier'] == 'policy_in_scale'
+    assert G.GROUNDED['eigentrust_alpha']['tier'] == 'policy_in_scale'
 
 
 def test_policy_source_constants_point_to_policy_or_inspiration():

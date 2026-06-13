@@ -34,7 +34,7 @@ SOURCES = {
     'wilson1927': 'Wilson, E.B. (1927). Probable Inference... JASA 22(158):209-212.',
     'brier1950': 'Brier, G.W. (1950). Verification of Forecasts Expressed in Probability. MWR 78(1):1-3.',
     'good1952': 'Good, I.J. (1952). Rational Decisions. JRSS-B 14(1):107-114.',
-    'guo2017': 'Guo, C. et al. (2017). On Calibration of Modern Neural Networks. ICML (ECE, 10-bin 관행).',
+    'guo2017': 'Guo, C. et al. (2017). On Calibration of Modern Neural Networks. ICML (ECE; 원전 M=15 bins — Table 1).',
     'laplace1814': 'Laplace, P.S. (1814). Essai philosophique sur les probabilités (principle of indifference).',
     'laudan1977': 'Laudan, L. (1977). Progress and Its Problems. UC Press (문제해결 효율 — *정성적* 모델).',
     'lakatos1976': 'Lakatos, I. (1976). Proofs and Refutations: The Logic of Mathematical Discovery. Cambridge UP.',
@@ -47,7 +47,7 @@ SOURCES = {
     'condorcet1785': 'Condorcet, M. (1785). Essai sur l\'application de l\'analyse... (jury theorem — 독립 다수결 > 단일 판정자).',
     'borda1781': 'Borda, J-C. (1781). Mémoire sur les élections au scrutin (Borda count — 순위 합산 집계).',
     'kuhn1962': 'Kuhn, T. (1962). The Structure of Scientific Revolutions. U Chicago Press (*정성적* — 위기/혁명 모델).',
-    'agm1985': 'Alchourrón, C., Gärdenfors, P. & Makinson, D. (1985). On the Logic of Theory Change. JSL 50(2):510-530.',
+    'agm1985': 'Alchourrón, C., Gärdenfors, P. & Makinson, D. (1985). On the Logic of Theory Change: Partial Meet Contraction and Revision Functions. JSL 50(2):510-530.',
     'hansson1993': 'Hansson, S.O. (1993). Reversing the Levi Identity. J. Phil. Logic 22:637-669 (belief *base* revision).',
     'feyerabend1975': 'Feyerabend, P. (1975). Against Method (방법론 다원주의 — 층 불일치는 보고하라, 숨기지 마라).',
     'benjamini_hochberg1995': 'Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B 57(1):289-300.',
@@ -68,7 +68,7 @@ JEFFREYS_BANDS = [   # (BF 하한, 라벨) — 오름차순
     (100.0,           'decisive'),        # 10^2
 ]
 # Kass & Raftery (1995): 2·ln(BF) 척도. ★원전 최상 등급 = very_strong(2lnBF>10); 'decisive' 없음
-#  (그건 Jeffreys 스케일). 따라서 BF>148 saturate 는 원전 충실 — 버그 아님(나생문 F-MATH-4 응답).
+#  (그건 Jeffreys 스케일). 따라서 BF>e^5≈148.4 saturate 는 원전 충실 — 버그 아님(나생문 F-MATH-4 응답).
 KASS_RAFTERY_BANDS_2LN = [   # (2lnBF 하한, 라벨) — 오름차순
     (0.0,  'not_worth_more_than_bare_mention'),
     (2.0,  'positive'),
@@ -233,9 +233,11 @@ GROUNDED = {
         'rationale': 'TrustRank(biased PageRank) damping 0.85 = Brin-Page 원전 표준값(문헌 직접).',
     },
     'eigentrust_alpha': {
-        'value': 0.15, 'source': 'kamvar2003', 'tier': 'literature',
+        'value': 0.15, 'source': 'kamvar2003', 'tier': 'policy_in_scale',
         'band': 'EigenTrust pre-trusted teleport (=1−0.85)',
-        'rationale': '악성 협잡 저항 pre-trusted 가중. Kamvar 권장 ~0.1–0.2 범위 표준(문헌).',
+        'rationale': '악성 협잡 저항 pre-trusted 가중. ★정정(웹 재검증 2026-06-14): 0.15 는 PageRank '
+                     'teleport(1−damping=1−0.85) 표준값이지 Kamvar(2003)가 인쇄한 상수가 아님 — EigenTrust 의 '
+                     'pre-trusted 가중 a 에 구조적으로 대응(통상 0.1~0.2). 값은 정책, 방법은 문헌(Kamvar).',
     },
     'default_prior': {
         'value': 0.5, 'source': 'laplace1814', 'tier': 'literature',
@@ -243,9 +245,11 @@ GROUNDED = {
         'rationale': '진보/퇴행 사전 동률 = Laplace 무차별 원리(문헌). 숨은 주관 금지, 감사 가능 기준선.',
     },
     'ece_bins': {
-        'value': 10, 'source': 'guo2017', 'tier': 'literature',
-        'band': 'ECE 표준 bin 수',
-        'rationale': '예측 보정오차(ECE) 구간 수 10 = Guo et al.(2017) 등 보정 문헌 표준 관행(문헌).',
+        'value': 10, 'source': 'guo2017', 'tier': 'policy_in_scale',
+        'band': 'ECE bin 수 (정책 기본값)',
+        'rationale': '예측 보정오차(ECE) 구간 수. ★정정(웹 재검증 2026-06-14): Guo et al.(2017) 원전은 '
+                     'M=15 bins. 10 은 많은 구현의 흔한 기본값(정책 선택)이지 Guo 의 값이 아님 — ECE *방법*은 '
+                     '문헌(Guo), bin *수*는 정책. 값 변경 영향 없어 10 유지(보정데이터 축적 전).',
     },
     'stack_quorum': {
         'value': 2, 'source': 'condorcet1785', 'tier': 'policy_in_scale',
