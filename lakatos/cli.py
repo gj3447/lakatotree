@@ -10,6 +10,9 @@
   leaderboard <a,b,..> [--snapshot]  경쟁 트리 Pareto+Borda 리더보드(P2)
   paradigm <incumbent> <a,b>     정상과학/위기/shift_candidate(gap7, shift=인간 안건)
   certificate <name> <tag>       5게이트 AND 인증서(P2)
+  calibration <name>             예측 신뢰도 보정 Brier/log/ECE (gap2 완화 근거)
+  question <name> <qname> [--body B --gain G --cost C]  frontier 질문 열기(VoI 메타 포함)
+  question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
@@ -57,6 +60,12 @@ def main(argv=None):
     sp = sub.add_parser('paradigm'); sp.add_argument('incumbent')
     sp.add_argument('rivals', help='쉼표구분 경쟁 트리명')
     sp = sub.add_parser('certificate'); sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('calibration'); sp.add_argument('name')
+    sp = sub.add_parser('question'); sp.add_argument('name'); sp.add_argument('qname')
+    sp.add_argument('--body', default=''); sp.add_argument('--gain', type=float, default=0.1)
+    sp.add_argument('--cost', type=float, default=1.0)
+    sp = sub.add_parser('question-close'); sp.add_argument('name'); sp.add_argument('qname')
+    sp.add_argument('--by', default='')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
@@ -75,6 +84,7 @@ def main(argv=None):
     sp.add_argument('--noise', type=float, default=0.0)
     sp.add_argument('--novel-metric'); sp.add_argument('--novel-dir', choices=['lower', 'higher'])
     sp.add_argument('--novel-thr', type=float); sp.add_argument('--sha')
+    sp.add_argument('--credence', type=float, help='예측 신뢰도[0,1] — calibration/certify G4 입력')
     sp = sub.add_parser('result'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
@@ -134,6 +144,15 @@ def main(argv=None):
         out = call('GET', f'/api/paradigm?{q}')
     elif a.cmd == 'certificate':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/certificate')
+    elif a.cmd == 'calibration':
+        out = call('GET', f'/api/tree/{a.name}/calibration')
+    elif a.cmd == 'question':
+        out = call('POST', f'/api/tree/{a.name}/question',
+                   dict(qname=a.qname, body=a.body, expected_gain=a.gain, cost=a.cost))
+    elif a.cmd == 'question-close':
+        import urllib.parse as up
+        q = ('?' + up.urlencode({'closed_by': a.by})) if a.by else ''
+        out = call('POST', f'/api/tree/{a.name}/question/{a.qname}/close{q}')
     elif a.cmd == 'claim-standing':
         suffix = '?require_replay=false' if a.no_replay else ''
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')
@@ -163,7 +182,8 @@ def main(argv=None):
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/prediction',
                    dict(metric_name=a.metric, direction=a.dir, baseline_value=a.baseline,
                         noise_band=a.noise, novel_metric=a.novel_metric,
-                        novel_direction=a.novel_dir, novel_threshold=a.novel_thr, judge_script_sha=a.sha))
+                        novel_direction=a.novel_dir, novel_threshold=a.novel_thr,
+                        judge_script_sha=a.sha, credence=a.credence))
     elif a.cmd == 'result':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result',
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured))

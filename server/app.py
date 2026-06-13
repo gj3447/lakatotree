@@ -101,7 +101,8 @@ def tree_data(name):
         ORDER BY tag''', n=name)
     qs = kg('MATCH (t:LakatosTree {name:$n})-[:HAS_FRONTIER]->(q) '
             'RETURN q.name AS name, q.status AS status, q.body AS body, '
-            'q.closed_by AS closed_by', n=name)
+            'q.closed_by AS closed_by, q.expected_gain AS expected_gain, '
+            'q.cost AS cost, q.n_visits AS n_visits', n=name)
     return dict(name=name, **t[0], nodes=nodes, frontier=qs)
 
 def compute_metrics(td):
@@ -273,14 +274,20 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
 class QuestionIn(BaseModel):
     qname: str
     body: str = ''
+    # 탐색배분(VoI/UCB) 입력 — 이게 write 안 되면 directions 가 전부 default 로 떨어져 dead (WIRE-1)
+    expected_gain: float = Field(0.1, ge=0)   # 이 질문이 닫히면 기대되는 진보 이득
+    cost: float = Field(1.0, gt=0)            # 검증 비용 (VoI = gain/cost)
 
 @app.post('/api/tree/{name}/question')
 def open_question(name: str, q: QuestionIn):
     kg('''MATCH (t:LakatosTree {name:$tree})
           MERGE (qn:OpenQuestion {name:$qn})
-          SET qn.body=$body, qn.status='OPEN', qn.created_at=$ts
+          SET qn.body=$body, qn.status='OPEN', qn.created_at=$ts,
+              qn.expected_gain=$expected_gain, qn.cost=$cost,
+              qn.n_visits=coalesce(qn.n_visits, 0)
           MERGE (t)-[:HAS_FRONTIER]->(qn)''',
-       tree=name, qn=q.qname, body=q.body, ts=datetime.now(timezone.utc).isoformat())
+       tree=name, qn=q.qname, body=q.body, expected_gain=q.expected_gain, cost=q.cost,
+       ts=datetime.now(timezone.utc).isoformat())
     hist(name, 'question_open', None, q.model_dump())
     return {'ok': True}
 
@@ -290,6 +297,7 @@ def close_question(name: str, qname: str, closed_by: str = ''):
     closure_id = f'{name}/{qname}/closure/{closed_by or "unknown"}@{ts}'
     r = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
               SET q.status='CLOSED',
+                  q.n_visits=coalesce(q.n_visits, 0) + 1,
                   q.closed_by=CASE
                     WHEN q.closed_by IS NULL THEN [$by]
                     WHEN $by IN q.closed_by THEN q.closed_by
@@ -321,6 +329,9 @@ class PredictionIn(BaseModel):
     novel_threshold: float | None = None  # 이 값 넘어야 적중
     judge_script_sha: str | None = None   # 채점 스크립트 sha256 사전고정 (무결성)
     closes_question: str = ''         # 닫으려는 OpenQuestion
+    # 발급자가 사전등록 시 밝히는 예측 신뢰도 [0,1] — calibrate(Brier/ECE) 입력. 이게 없으면
+    # /calibration 이 영구 n=0 → certify G4(calibrated) 영원히 fail → 인증서 발급 불가 (T3-1)
+    credence: float | None = Field(None, ge=0, le=1)
 
 @app.post('/api/tree/{name}/node/{tag}/prediction')
 def register_prediction(name: str, tag: str, p: PredictionIn):
@@ -331,6 +342,7 @@ def register_prediction(name: str, tag: str, p: PredictionIn):
                   e.pred_novel=$novel_prediction, e.pred_closes=$closes_question,
                   e.pred_novel_metric=$novel_metric, e.pred_novel_direction=$novel_direction,
                   e.pred_novel_threshold=$novel_threshold, e.pred_script_sha=$judge_script_sha,
+                  e.pred_credence=$credence,
                   e.novel_registered = ($novel_metric IS NOT NULL),
                   e.pred_registered_at=$ts
               RETURN e.tag AS tag""",
@@ -781,10 +793,14 @@ def directions(name: str):
     m = compute_metrics(td)
     cred = (m.get('bayes') or {}).get('canonical_credence') or 0.5
     opens = [q for q in td['frontier'] if q['status'] == 'OPEN']
-    # VoI/UCB 우선순위 (bandit 탐색배분) — q 메타 없으면 기본값
+    # VoI/UCB 우선순위 (bandit 탐색배분). 투영이 키를 항상 포함하되 옛 질문은 None →
+    # dict.get default 가 안 먹으므로 None-coalesce 필수(아니면 voi(None) crash) (WIRE-1)
+    def _num(q, k, d):
+        v = q.get(k)
+        return d if v is None else v
     qmeta = [dict(name=q['name'], body=(q['body'] or '')[:160],
-                  expected_gain=q.get('expected_gain', 0.1), cost=q.get('cost', 1.0),
-                  credence=cred, n_visits=q.get('n_visits', 1)) for q in opens]
+                  expected_gain=_num(q, 'expected_gain', 0.1), cost=_num(q, 'cost', 1.0),
+                  credence=cred, n_visits=_num(q, 'n_visits', 1)) for q in opens]
     ranked = rank_questions(qmeta, total_visits=max(len(td['nodes']), 1))
     for q in ranked:
         q['branch_from'] = (can or {}).get('tag')
