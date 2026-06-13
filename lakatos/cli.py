@@ -13,6 +13,8 @@
   calibration <name>             예측 신뢰도 보정 Brier/log/ECE (gap2 완화 근거)
   question <name> <qname> [--body B --gain G --cost C]  frontier 질문 열기(VoI 메타 포함)
   question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
+  agm <spec.json>                AGM 신념개정 — hard core revision/contraction(P1)
+  cycle <spec.json>              하네스 한 사이클 — 상계read→하계build/judge→critique→standing
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
@@ -66,6 +68,8 @@ def main(argv=None):
     sp.add_argument('--cost', type=float, default=1.0)
     sp = sub.add_parser('question-close'); sp.add_argument('name'); sp.add_argument('qname')
     sp.add_argument('--by', default='')
+    sp = sub.add_parser('agm'); sp.add_argument('spec', help='AgmReviseIn JSON 파일(신념개정)')
+    sp = sub.add_parser('cycle'); sp.add_argument('spec', help='CycleSpec JSON 파일(하네스 한 사이클)')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
@@ -153,6 +157,12 @@ def main(argv=None):
         import urllib.parse as up
         q = ('?' + up.urlencode({'closed_by': a.by})) if a.by else ''
         out = call('POST', f'/api/tree/{a.name}/question/{a.qname}/close{q}')
+    elif a.cmd == 'agm':
+        out = call('POST', '/api/agm/revise', json.loads(open(a.spec).read()))
+    elif a.cmd == 'cycle':
+        from lakatos.harness_run import main as run_cycle
+        run_cycle(a.spec)   # 하네스가 직접 prov JSON 출력 (bash 실행은 client-side, server RCE 회피)
+        return
     elif a.cmd == 'claim-standing':
         suffix = '?require_replay=false' if a.no_replay else ''
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')

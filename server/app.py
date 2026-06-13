@@ -29,6 +29,8 @@ from lakatos.promote import promotion_gate
 from lakatos.spine import (reconcile_verdict, promotion_decision, synthesize_promotion,
                            credibility_from_trust, dialectical_verdict)
 from lakatos.pnr import appraise_response, Response
+from lakatos.agm import (Belief, expansion, contraction, revision, demote_canonical,
+                         HardCoreProtected, ENTRENCHMENT_POLICY)
 from lakatos.adapters import (lineage_result_to_openlineage_events, derivations_to_dvc_pipeline,
                               derivations_to_dvc_lock, derivations_to_prov_document)
 from lakatos.calibrate import brier_score, log_score, calibration_error
@@ -938,6 +940,73 @@ def node_certificate(name: str, tag: str):
                              note=c.note) for c in cert.checks],
                 evidence_window=cert.evidence_window, limits=cert.limits,
                 next_actions=cert_next_actions(cert))
+
+# ── AGM 신념개정 (P1) — hard core revision/contraction 추론 surface (나생문 WIRE-3) ──
+# 무상태 reasoning 엔드포인트: belief base 를 받아 AGM 연산 결과를 돌려준다(what-if).
+# (트리 노드↔belief 영구 매핑은 더 깊은 모델 — 후속. 여기선 형식층을 *호출 가능*하게 만든다.)
+
+class BeliefIn(BaseModel):
+    belief_id: str
+    statement: str = ''
+    kind: str = 'protective_belt'      # hard_core | protective_belt
+    credence: float = Field(0.5, ge=0, le=1)
+    problem_balance: int = 0
+    connectivity: int = 0
+    depends_on: list[str] = Field(default_factory=list)
+
+
+class AgmReviseIn(BaseModel):
+    op: str = 'revision'               # expansion | contraction | revision | demote_canonical
+    base: list[BeliefIn] = Field(default_factory=list)
+    new: BeliefIn | None = None        # expansion | revision | demote_canonical
+    target_id: str | None = None       # contraction
+    contradicts: list[str] = Field(default_factory=list)   # revision
+    old_canonical_id: str | None = None                    # demote_canonical
+    allow_hard_core: bool = False
+
+
+def _belief(b: BeliefIn) -> Belief:
+    return Belief(belief_id=b.belief_id, statement=b.statement, kind=b.kind,
+                  credence=b.credence, problem_balance=b.problem_balance,
+                  connectivity=b.connectivity, depends_on=tuple(b.depends_on))
+
+
+@app.post('/api/agm/revise')
+def agm_revise(req: AgmReviseIn):
+    """AGM 신념개정(P1) — expansion/contraction/revision/demote_canonical.
+    hard core 는 PROTECTED: allow_hard_core 없이 깎으면 409, 깎이면 programme_shift_candidate=True."""
+    base = [_belief(b) for b in req.base]
+    try:
+        if req.op == 'expansion':
+            if not req.new:
+                raise HTTPException(422, 'expansion 은 new 필수')
+            r = expansion(base, _belief(req.new))
+        elif req.op == 'contraction':
+            if not req.target_id:
+                raise HTTPException(422, 'contraction 은 target_id 필수')
+            r = contraction(base, req.target_id, allow_hard_core=req.allow_hard_core)
+        elif req.op == 'revision':
+            if not req.new:
+                raise HTTPException(422, 'revision 은 new 필수')
+            r = revision(base, _belief(req.new), contradicts=req.contradicts,
+                         allow_hard_core=req.allow_hard_core)
+        elif req.op == 'demote_canonical':
+            if not (req.new and req.old_canonical_id):
+                raise HTTPException(422, 'demote_canonical 은 new + old_canonical_id 필수')
+            r = demote_canonical(base, req.old_canonical_id, _belief(req.new))
+        else:
+            raise HTTPException(422, f'미지원 op: {req.op} (expansion|contraction|revision|demote_canonical)')
+    except HardCoreProtected as e:
+        raise HTTPException(409, str(e))
+    return dict(
+        op=req.op,
+        base=[dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind,
+                   credence=b.credence, problem_balance=b.problem_balance,
+                   connectivity=b.connectivity, depends_on=list(b.depends_on)) for b in r.base],
+        removed=list(r.removed), added=list(r.added),
+        programme_shift_candidate=r.programme_shift_candidate,
+        entrenchment_policy=r.entrenchment_policy)
+
 
 class ArtifactIn(BaseModel):
     node_tag: str

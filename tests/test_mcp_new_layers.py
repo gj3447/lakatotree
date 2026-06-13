@@ -95,3 +95,17 @@ def test_register_prediction_tool_includes_credence(monkeypatch):
     path, body = seen[0]
     assert path == '/api/tree/T/node/v/prediction'
     assert body['credence'] == 0.8
+
+
+# ── Cluster ② MCP: agm_revise ──
+
+def test_agm_revise_tool_posts_spec(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.agm_revise('{"op":"expansion","base":[]}'))
+    assert seen[0][0] == '/api/agm/revise' and seen[0][1]['op'] == 'expansion'
+
+
+def test_agm_revise_tool_bad_json_no_call(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    out = json.loads(m.agm_revise('not json'))
+    assert out['error'] == 'invalid_spec_json' and seen == []

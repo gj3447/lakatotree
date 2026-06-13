@@ -143,3 +143,22 @@ def test_calibration_cli_routes(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['calibration', 'T'])
     assert calls[0] == ('GET', '/api/tree/T/calibration', None)
+
+
+# ── Cluster ② CLI: agm (spec file) / cycle (harness runner) ──
+
+def test_agm_cli_posts_spec_file(monkeypatch, tmp_path, capsys):
+    calls = _capture_calls(monkeypatch)
+    spec = tmp_path / 'agm.json'
+    spec.write_text('{"op":"expansion","base":[],"new":{"belief_id":"b1"}}')
+    cli.main(['agm', str(spec)])
+    assert calls[0][0] == 'POST' and calls[0][1] == '/api/agm/revise'
+    assert calls[0][2]['op'] == 'expansion'
+
+
+def test_cycle_cli_invokes_harness_run(monkeypatch):
+    import lakatos.harness_run as hr
+    seen = []
+    monkeypatch.setattr(hr, 'main', lambda p: seen.append(p))
+    cli.main(['cycle', '/tmp/spec.json'])
+    assert seen == ['/tmp/spec.json']        # 하네스 러너로 위임(서버 RCE 회피, client-side)
