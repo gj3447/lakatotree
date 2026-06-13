@@ -6,7 +6,7 @@
   G1 preregistered : 사전등록 예측 + scripted 판결 존재 (judge — 사후 합리화 차단)
   G2 reproducible  : DatasetManifest 가 G-RebuildFromRaw 통과 (lineage — raw root 서 재생성)
   G3 stands        : 판결이 Dung grounded extension 에 섬 (argue — 미해소 의문 없음)
-  G4 calibrated    : 발급자의 예측 보정 기록 존재 (calibrate — Brier/ECE 산출 가능)
+  G4 calibrated    : 트리(발급자) 수준 보정 기록 존재 (calibrate — novel 등록 예측의 Brier/ECE, *노드별 아님*)
   G5 grounded      : 인용 상수의 tier 공개 (grounding — 문헌값/정책값 구분 동봉)
 
 인증은 시점 스냅샷이다 — evidence_window 에 박힌 sha/시각 밖에선 효력 주장 안 함

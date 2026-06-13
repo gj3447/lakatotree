@@ -9,7 +9,7 @@
 env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_DSN, LAKATOS_MONGO_URI (run.sh 가 .env 에서 주입)
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
-import html, json, os, sys
+import html, json, os, secrets, sys
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -70,22 +70,28 @@ app = FastAPI(title='Lakatos Server', version='1.0')
 @app.exception_handler(ServiceUnavailable)
 @app.exception_handler(SessionExpired)
 async def _neo4j_down(request: Request, exc):
-    # DB 다운이 500 으로 누수되지 않게 — graceful 503 (운영자가 의존성 문제로 식별)
-    return JSONResponse(status_code=503, content={'detail': f'Neo4j 연결 불가: {type(exc).__name__}'})
+    # DB 다운이 500 으로 누수되지 않게 — graceful 503. 단 이미 적용된 부분 KG write 는
+    # 롤백 안 됨(ROB-1 비원자성 미해결, THEORY P5). 드라이버 클래스명은 노출 안 함(정보누설 차단).
+    return JSONResponse(status_code=503, content={'detail': 'Neo4j 연결 불가 (의존성 down)'})
 
 
 @app.exception_handler(PgOperationalError)
 async def _pg_down(request: Request, exc):
-    return JSONResponse(status_code=503, content={'detail': f'PostgreSQL 연결 불가: {type(exc).__name__}'})
+    return JSONResponse(status_code=503, content={'detail': 'PostgreSQL 연결 불가 (의존성 down)'})
 
 
 @app.middleware('http')
 async def _bearer_auth(request: Request, call_next):
     """opt-in 쓰기 보호 — LAKATOS_API_TOKEN 설정 시에만 mutating 요청에 Bearer 강제.
-    미설정이면 no-op(하위호환). 정본 연구그래프 무단 변조 방지(ROB-4)."""
+    미설정이면 no-op(하위호환). 정본 연구그래프 무단 변조 방지(ROB-4).
+    method 만이 아니라 side-effect GET(?snapshot=true=DB insert)도 게이트(AUTH-BYPASS 수정).
+    상수시간 비교(secrets.compare_digest)로 timing 누수 차단."""
     token = os.environ.get('LAKATOS_API_TOKEN')
-    if token and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
-        if request.headers.get('authorization', '') != f'Bearer {token}':
+    if token:
+        mutating = (request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
+                    or request.query_params.get('snapshot') == 'true')
+        if mutating and not secrets.compare_digest(
+                request.headers.get('authorization', ''), f'Bearer {token}'):
             return JSONResponse(status_code=401,
                                 content={'detail': '유효한 Bearer 토큰 필요 (LAKATOS_API_TOKEN)'})
     return await call_next(request)
@@ -98,19 +104,19 @@ def healthz():
     try:
         kg('RETURN 1 AS ok')
         svc['neo4j'] = 'ok'
-    except Exception as e:
-        svc['neo4j'] = f'down:{type(e).__name__}'
+    except Exception:
+        svc['neo4j'] = 'down'        # 드라이버/예외 클래스명 노출 안 함(정보누설 차단)
     try:
         with pg() as c, c.cursor() as cur:
             cur.execute('SELECT 1')
         svc['pg'] = 'ok'
-    except Exception as e:
-        svc['pg'] = f'down:{type(e).__name__}'
+    except Exception:
+        svc['pg'] = 'down'
     try:
         MONGO.command('ping')
         svc['mongo'] = 'ok'
-    except Exception as e:
-        svc['mongo'] = f'down:{type(e).__name__}'
+    except Exception:
+        svc['mongo'] = 'down'
     healthy = all(v == 'ok' for v in svc.values())
     return JSONResponse(status_code=200 if healthy else 503,
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
@@ -406,6 +412,9 @@ def register_prediction(name: str, tag: str, p: PredictionIn):
            tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(), **p.model_dump())
     if not r:
         raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
+    if p.closes_question:   # WIRE1-UCB: 이 질문에 대한 attempt → OPEN 질문 n_visits++ → UCB 탐색항 차등 부활
+        kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$cq})
+              SET q.n_visits=coalesce(q.n_visits, 0) + 1''', tree=name, cq=p.closes_question)
     hist(name, 'prediction_register', tag, p.model_dump())
     return {'ok': True, 'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}
 
@@ -833,14 +842,20 @@ def claim_standing(name: str, tag: str, require_replay: bool = True):
 
 @app.get('/api/tree/{name}/calibration')
 def calibration(name: str):
-    """예측 신뢰도 보정 — proper scoring(Brier/log/ECE)으로 nobel급 정직성 측정."""
+    """예측 신뢰도 보정 — proper scoring(Brier/log/ECE). **트리(발급자) 수준** 트랙레코드(노드별 아님).
+
+    표본 = novel target 을 *등록한* 예측만(novel_registered) — 그래야 credence vs 적중(novel_confirmed)
+    대조가 의미. novel 없는 예측까지 넣으면 항상 (credence, 미적중)으로 들어가 정직한 발급자를
+    overconfident 로 오염시킴(나생문 CREDENCE-CALIBRATION-TARGET-MISMATCH 수정)."""
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
                  WHERE e.pred_credence IS NOT NULL AND e.novel_confirmed IS NOT NULL
+                       AND e.novel_registered = true
                  RETURN e.pred_credence AS p, e.novel_confirmed AS o""", tree=name)
     fc = [(r['p'], 1 if r['o'] else 0) for r in rows]
     return dict(n=len(fc), brier=round(brier_score(fc), 4), log_score=round(log_score(fc), 4),
                 calibration_error=round(calibration_error(fc), 4),
-                note='Brier 0=완벽, log=overconfidence 강벌, ECE=보정오차. 표본 부족시 0')
+                scope='tree_level',
+                note='Brier 0=완벽, log=overconfidence 강벌, ECE=보정오차. novel 등록 예측만, 트리(발급자) 수준')
 
 @app.get('/api/tree/{name}/directions')
 def directions(name: str):
@@ -975,10 +990,10 @@ def node_certificate(name: str, tag: str):
     checks.append(gate_check('stands', bool(st['stands']),
                              ','.join(st['grounded_extension']) if st['stands'] else '',
                              '' if st['stands'] else '미해소 의문 존재'))
-    cal = calibration(name)
+    cal = calibration(name)   # 트리(발급자) 수준 보정 — 노드별 아님(G4-TREE-GLOBAL 정직 표기)
     checks.append(gate_check('calibrated', cal['n'] >= 1,
-                             f"/api/tree/{name}/calibration n={cal['n']}" if cal['n'] >= 1 else '',
-                             '' if cal['n'] >= 1 else '발급자 예측 보정 기록 0건'))
+                             f"/api/tree/{name}/calibration n={cal['n']} (tree-level)" if cal['n'] >= 1 else '',
+                             '' if cal['n'] >= 1 else 'novel 등록 예측의 보정 기록 0건(트리 수준)'))
     # G5 는 노드별이 아니라 *시스템 수준 불변식*: 채점 상수 전수 tier 공개. literal True 대신
     # 레지스트리에서 파생 → 미표기 상수 유입 시 게이트가 실제로 False 로 뒤집힌다 (나생문 F3).
     from lakatos.grounding import GROUNDED
@@ -1383,13 +1398,13 @@ def _tree_stack_lifecycle(td):
     """대시보드용 — 정본 leaf 의 stack 판결 + lifecycle 상태 (정본 없으면 None)."""
     try:
         bi = branch_inputs(td['nodes'], td['frontier'])     # leaf=None → 정본 leaf
-    except KeyError:
+        sv = evaluate_stack(bi['verdicts'], bi['consecutive_nonprogressive'], bi['nodes_spent'],
+                            bi['prediction_hits'], bi['problem_balance_windowed'])
+        ls = lifecycle_state(bi['verdicts'], sv, bi['novel_registered_recent'],
+                             bi['problem_balance_windowed'], bi['canonical_improved_recent'])
+        return bi['leaf'], sv, ls
+    except Exception:   # 엣지 데이터(정본 부재/이상 시퀀스)가 대시보드를 깨지 않게 (DASHBOARD-UNGUARDED)
         return None
-    sv = evaluate_stack(bi['verdicts'], bi['consecutive_nonprogressive'], bi['nodes_spent'],
-                        bi['prediction_hits'], bi['problem_balance_windowed'])
-    ls = lifecycle_state(bi['verdicts'], sv, bi['novel_registered_recent'],
-                         bi['problem_balance_windowed'], bi['canonical_improved_recent'])
-    return bi['leaf'], sv, ls
 
 
 @app.get('/', response_class=HTMLResponse)

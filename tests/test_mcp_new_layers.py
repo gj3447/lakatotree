@@ -109,3 +109,10 @@ def test_agm_revise_tool_bad_json_no_call(monkeypatch):
     seen = _cap_post(monkeypatch)
     out = json.loads(m.agm_revise('not json'))
     assert out['error'] == 'invalid_spec_json' and seen == []
+
+
+def test_mcp_headers_bearer_when_env(monkeypatch):
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'tok')
+    assert m._headers() == {'Authorization': 'Bearer tok'}     # REG-1
+    monkeypatch.delenv('LAKATOS_API_TOKEN', raising=False)
+    assert m._headers() == {}                                  # 미설정=헤더 없음(하위호환)
