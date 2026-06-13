@@ -83,6 +83,18 @@ def certificate(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def agm_revise(spec_json: str) -> str:
+    """AGM 신념개정(P1) — spec_json={op('expansion'|'contraction'|'revision'|'demote_canonical'),
+    base[],new?,target_id?,contradicts[]?,old_canonical_id?,allow_hard_core?}.
+    hard core 는 PROTECTED(allow_hard_core 없이 깎으면 409). 결과에 programme_shift_candidate(Kuhn 연동)."""
+    try:
+        spec = json.loads(spec_json or '{}')
+    except json.JSONDecodeError as e:
+        return json.dumps({'error': 'invalid_spec_json', 'detail': str(e)}, ensure_ascii=False)
+    return json.dumps(_post('/api/agm/revise', spec), ensure_ascii=False)
+
+
+@mcp.tool()
 def calibration(name: str) -> str:
     """예측 신뢰도 보정 — Brier/log/ECE proper scoring (gap2 완화 근거). 표본=credence 단 prediction 들."""
     return json.dumps(_get(f'/api/tree/{name}/calibration'), ensure_ascii=False)
