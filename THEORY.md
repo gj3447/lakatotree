@@ -35,25 +35,26 @@
 - **VoI(q) ≈ E[Δ진보|q closed] × 1/cost(q)** / **UCB(q) = credence(q) + c·√(ln N/n_q)**
 - Bayes 폐기 = credence<0.1 (라우든 이산 3규칙과 OR)
 
-## 4. 이론적 gaps (정직 — 상태 명시, 2026-06-13 갱신)
+## 4. 이론적 gaps (정직 — 상태 명시, 2026-06-14 갱신: 7 닫힘·1 완화·0 미해결)
 
 | # | gap | 상태 | 어떻게/왜 |
 |---|---|---|---|
 | 1 | novel 채점 (텍스트 존재만으로 차등) | ✅ 닫힘 | `judge.NovelTarget` 구조적 corroboration — 실측 대조 없으면 novel 불인정(F-CON-3) |
 | 2 | prior 주관성 (BF_BASE 보정 근거) | 🟡 완화 | grounding tier 공개 + `calibrate.py` Brier/ECE 로 경험 측정 — "problem of the priors" 자체는 원리상 미해결 |
 | 3 | 층간 통약불가 (침묵 OR) | ✅ 닫힘 | `stack.py` 명시 투표+정족수 2/3(Condorcet) + conflict 보고. 단 층 독립성은 근사(같은 판결 시퀀스 공유) — 정족수는 '렌즈 3개의 합의' |
-| 4 | 라우든 규칙③ dead (per-branch 질문귀속 미배선) | ❌ 미해결 | 엔진은 problem_balance_windowed 인자를 받지만 서버의 per-branch 질문귀속 배선이 없음 — 다음 작업 |
+| 4 | 라우든 규칙③ dead (per-branch 질문귀속 미배선) | ✅ 닫힘 | `metrics.branch_inputs` 가 leaf→root chain 에서 `problem_balance_windowed`(per-branch 질문귀속)를 계산 → `/api/tree/{name}/stack`·`/lifecycle` 가 라우든 규칙③에 배선. CLI/MCP `stack`·`lifecycle` 로 노출 |
 | 5 | AGM entrenchment 유일해 없음 | ✅ 정책 선언으로 닫음 | `agm.py` — 해소가 아니라 사전식 순서를 *선언*하고 모든 결과에 entrenchment_policy 동봉(감사 가능) |
 | 6 | bandit reward 순환 (novel 채점 의존) | ✅ 선결 해소 | gap1 닫힘 → reward 의 근거가 구조적 corroboration |
-| 7 | 단일 트리 한계 (Kuhn 정량모델 부재) | ✅ 닫힘(범위 한정) | `kuhn.py` — 기계화는 Lakatos-Zahar supersession 기준만, Kuhn 은 상태 어휘. shift 는 자동 아닌 인간 안건 |
-| 8 | 통계 표본 미반영 (다중비교 보정) | ❌ 미해결 | 점추정 비교만 — false-progressive 율 추정 없음. 후보: 가지 수에 Bonferroni/BH 보정 |
+| 7 | 단일 트리 한계 (Kuhn 정량모델 부재) | ✅ 닫힘(범위 한정) | `kuhn.py` — 기계화는 Lakatos-Zahar supersession 기준만, Kuhn 은 상태 어휘. shift 는 자동 아닌 인간 안건. CLI/MCP `leaderboard`·`paradigm` 으로 노출 |
+| 8 | 통계 표본 미반영 (다중비교 보정) | ✅ 닫힘 | `multiplicity.false_progressive_screen` (BH/FDR + Bonferroni/FWER) → `tree_metrics` 에 배선돼 `/api/tree/{name}/metrics` 가 family-level false-progressive 경보 노출. 정직 표기 3건(p=noise_band 1σ *근사*·noise_band=0 검정불가·보정은 판결 불변=family 경보) |
 
 ## 5. 우선순위 (상태 갱신 2026-06-13)
 
 - P0 ✅: 구조적 corroboration(gap1) + PROV-O 계보 + 스크립트 sha256 무결성
 - P1 ✅: VoI/UCB directions + AGM hardcore 개정(`agm.py`) + lifecycle 종료판정(`lifecycle.py`)
 - P2 ✅: 경쟁 가지 리더보드(`leaderboard.py`+`kuhn.py`) + 인증층(`certify.py`)
-- **P3 (신규 frontier)**: gap4 per-branch 질문귀속 서버 배선 + gap8 다중비교 보정 + 신규 층의 서버/CLI/MCP 노출
+- P3 ✅ (2026-06-14): gap4 per-branch 질문귀속 서버 배선(`branch_inputs`) + gap8 다중비교 보정(`multiplicity`) + 신규 층의 서버/CLI/MCP 노출 (stack/lifecycle/leaderboard/paradigm/certificate) + **oo LTDD 백본**(테스트 스위트 자체를 cid 트레이스로 oo `tests` 스트림에 적재 — `tests/conftest.py`+`oo_sink.test_outcome_records`, 게이트 OFF=no-op)
+- **P4 (신규 frontier)**: gap2 prior 보정 경험누적(calibrate 운영 데이터) + 12 웹-리서치 셀 재검증(rate-limit 재시도) + 대시보드(`/`)에 신규 층 위젯
 
 ## 6. 2차 prom 확장 — 인터넷·인간·agent·하계 엮기 (2026-06-12)
 
