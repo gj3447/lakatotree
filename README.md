@@ -62,13 +62,29 @@ docs/BPC_PRISMV2_LONGINUS_20260612.md   BPC/prismv2 segmentation 기반지식 Lo
 ```bash
 python -m pytest tests/ -q      # 엔진 검증
 bash server/run.sh              # http://localhost:55170 (대시보드 /, API /api/*)
-python -m lakatos.cli metrics <tree>      # CLI: 지표(진보율/베이즈/발전성)
+python -m lakatos.cli metrics <tree>      # CLI: 지표(진보율/베이즈/발전성/다중비교 보정 gap8)
 python -m lakatos.cli directions <tree>   # CLI: 다음 어느 가지(VoI 우선순위)
+python -m lakatos.cli stack <tree> [--leaf L]      # 포퍼/베이즈/라우든 3층 명시투표+정족수(gap3)
+python -m lakatos.cli lifecycle <tree> [--leaf L]  # 프로그램 종료판정 수확/발산/소멸/활성(P1)
+python -m lakatos.cli leaderboard a,b,c [--snapshot]  # 경쟁 트리 Pareto+Borda 리더보드(P2)
+python -m lakatos.cli paradigm <incumbent> rival1,rival2  # 정상과학/위기/shift_candidate(gap7)
+python -m lakatos.cli certificate <tree> <tag>     # 5게이트 AND 인증서(P2)
 python -m lakatos.cli event <tree> <tag> evt-web --realm internet --action fetch_source --payload trust=0.82
 python -m lakatos.cli events <tree> <tag> # node별 append-only ResearchEvent 조회
 python -m lakatos.cli claim-standing <tree> <tag>   # claim standing read-model
 python -m lakatos.cli manifest-verify manifest.json   # G-RebuildFromRaw 검증
-claude mcp add lakatotree -- python -m lakatos.mcp_server   # MCP: Claude 가 나무 조작
+claude mcp add lakatotree -- python -m lakatos.mcp_server   # MCP: Claude 가 나무 조작 (21 도구)
+```
+
+## oo LTDD 백본 — 로그가 ground truth (자기 테스트 스위트에도 적용)
+라카토트리는 "재현됐다는 주장이 아니라 영수증"(`rebuild.py`) 원칙을 *자기 테스트*에 적용한다.
+`tests/conftest.py` 가 매 pytest 세션을 correlation_id(cid)로 묶어 각 테스트 outcome 을
+`oo_sink.test_outcome_records` 로 직렬화해 oo `tests` 스트림에 적재한다 → 실패 RCA 는
+`trace_cycle(cid)` 한 콜로 전 타임라인 확보. 게이트 OFF(`AIRO_LOGS_E2E`/`OO_PASS` 미설정)면
+완전 no-op(로컬=조용), ship 실패는 빌드를 깨지 않는다(관측은 판결을 바꾸지 않는다).
+```bash
+AIRO_LOGS_E2E=1 OO_PASS=*** python -m pytest tests/ -q   # 트레이스 oo 적재(게이트 ON)
+LAKATOS_TEST_CID=my-run python -m pytest tests/ -q        # 부모 dev-loop 와 cid 공유
 ```
 
 ## 이론 발전성 (이론적 기반의 예측력 — 과학 판정의 본질)

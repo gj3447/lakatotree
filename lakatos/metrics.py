@@ -19,6 +19,56 @@ def _primary_parent(row: dict) -> str | None:
     return parents[0] if parents else None
 
 
+def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
+                  window: int | None = None) -> dict:
+    """가지(leaf) 또는 정본 leaf 의 stack/lifecycle 입력 묶음 — 서버/CLI 단일 어댑터.
+
+    반환: verdicts(시간순, delta/noise 동봉) / consecutive_nonprogressive / nodes_spent /
+          prediction_hits / problem_balance_windowed / novel_registered_recent /
+          canonical_improved_recent / leaf / window.
+    """
+    from .grounding import GROUNDED
+    window = window or GROUNDED['lifecycle_stall_window']['value']
+    by = {r['tag']: r for r in nodes}
+    if leaf is None:
+        can = [r['tag'] for r in nodes if r['verdict'] == 'CANONICAL']
+        leaf = can[0] if can else None
+    if leaf is None or leaf not in by:
+        raise KeyError(f'가지 leaf 없음: {leaf}')
+    chain, cur, seen = [], leaf, set()
+    while cur and cur not in seen and cur in by:   # leaf→root, 사이클 가드
+        seen.add(cur)
+        chain.append(by[cur])
+        cur = _primary_parent(by[cur])
+    seq = []
+    for r in reversed(chain):                      # 베이즈는 시간순(root→leaf)
+        d = {'verdict': r['verdict']}
+        if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
+            d['delta'] = r['metric_value'] - r['pred_baseline']
+            d['noise_band'] = r.get('pred_noise_band') or 0.0
+        seq.append(d)
+    consec = 0
+    for r in chain:                                # leaf 쪽부터 연속 비진보
+        if r['verdict'] in NONPROGRESSIVE:
+            consec += 1
+        else:
+            break
+    recent = chain[:window]
+    return dict(
+        leaf=leaf, window=window, verdicts=seq,
+        consecutive_nonprogressive=consec, nodes_spent=len(chain),
+        prediction_hits=sum(1 for r in chain if r['verdict']
+                            in ('progressive', 'CANONICAL', 'former_canonical')),
+        problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
+                                                                 window=window),
+        novel_registered_recent=sum(1 for r in recent if r.get('novel_registered')),
+        # 'partial' 은 NONPROGRESSIVE(정체/퇴행 신호)이므로 '정본 개선' 으로 세면 안 됨 —
+        # 그러면 diverging/harvesting 조기경보(lifecycle)를 부당하게 막는다 (나생문 F1).
+        canonical_improved_recent=any(
+            r['verdict'] in ('progressive', 'CANONICAL', 'former_canonical') for r in recent),
+    )
+
+
 def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     cfg = cfg or {}
     by = {r['tag']: r for r in nodes}

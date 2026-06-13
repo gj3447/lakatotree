@@ -42,6 +42,46 @@ def next_directions(name: str) -> str:
     return json.dumps(_get(f'/api/tree/{name}/directions'), ensure_ascii=False)
 
 
+# ── 신규 층(2026-06-13): stack 메타규칙 / lifecycle / 리더보드 / 패러다임 / 인증 ──
+
+@mcp.tool()
+def stack(name: str, leaf: str = '') -> str:
+    """3층(포퍼/베이즈/라우든) 명시투표+정족수 2/3 메타규칙 — gap3. leaf 생략=정본 leaf."""
+    import urllib.parse as up
+    q = ('?' + up.urlencode({'leaf': leaf})) if leaf else ''
+    return json.dumps(_get(f'/api/tree/{name}/stack{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def lifecycle(name: str, leaf: str = '') -> str:
+    """프로그램 종료판정 — 수확/발산/소멸/활성(P1). extinct 는 stack 정족수만 선고."""
+    import urllib.parse as up
+    q = ('?' + up.urlencode({'leaf': leaf})) if leaf else ''
+    return json.dumps(_get(f'/api/tree/{name}/lifecycle{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def leaderboard(trees_csv: str, snapshot: bool = False) -> str:
+    """경쟁 트리 리더보드 — Pareto+Borda 3기준(P2). trees_csv=a,b(≥2). snapshot=패러다임 판정용 축적."""
+    import urllib.parse as up
+    q = up.urlencode({'trees': trees_csv, 'snapshot': str(snapshot).lower()})
+    return json.dumps(_get(f'/api/leaderboard?{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def paradigm(incumbent: str, rivals_csv: str) -> str:
+    """패러다임 판정 — 정상과학/위기/shift_candidate(gap7). shift=인간 안건, 자동 교체 금지."""
+    import urllib.parse as up
+    q = up.urlencode({'incumbent': incumbent, 'rivals': rivals_csv})
+    return json.dumps(_get(f'/api/paradigm?{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def certificate(name: str, tag: str) -> str:
+    """5게이트 AND 인증서(P2) — 사전등록/재현/standing/보정/grounding, 증거 ref 동봉."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/certificate'), ensure_ascii=False)
+
+
 @mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
              comment: str = '', algorithm: str = '') -> str:

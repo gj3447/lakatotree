@@ -16,7 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import hashlib
 from lakatos.judge import (Prediction, NovelTarget, judge, PredictionMissing,
                            PredictionLocked, check_registration)
-from lakatos.metrics import tree_metrics
+from lakatos.metrics import tree_metrics, branch_inputs
+from lakatos.stack import evaluate_stack
+from lakatos.lifecycle import lifecycle_state
+from lakatos.leaderboard import Competitor, leaderboard as build_leaderboard
+from lakatos.kuhn import assess_paradigm
+from lakatos.certify import gate_check, certify_claim, next_actions as cert_next_actions
 from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
@@ -788,6 +793,135 @@ def directions(name: str):
                 ranked_directions=ranked,
                 protocol=['① prediction 사전등록(구조적 novel_metric/threshold + script_sha 권장)',
                           '② 변경 하나 실행', '③ test_result 스크립트 채점', '④ 자동 판결+질문 close'])
+
+# ── 신규 층 (2026-06-13): stack 메타규칙 / lifecycle / 리더보드 / 패러다임 / 인증 ──
+
+def _branch_stack(name: str, leaf: str | None):
+    td = tree_data(name)
+    try:
+        bi = branch_inputs(td['nodes'], td['frontier'], leaf=leaf)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    sv = evaluate_stack(bi['verdicts'], bi['consecutive_nonprogressive'], bi['nodes_spent'],
+                        bi['prediction_hits'], bi['problem_balance_windowed'])
+    return td, bi, sv
+
+def _stack_dict(sv):
+    return dict(decision=sv.decision, conflict=sv.conflict, quorum=sv.quorum, reason=sv.reason,
+                votes=[dict(layer=v.layer, vote=v.vote, reason=v.reason, detail=v.detail)
+                       for v in sv.votes])
+
+@app.get('/api/tree/{name}/stack')
+def stack_view(name: str, leaf: str | None = None):
+    """3층(포퍼/베이즈/라우든) 명시투표 + 정족수 메타규칙 — gap3. leaf 생략=정본 leaf."""
+    _, bi, sv = _branch_stack(name, leaf)
+    return dict(leaf=bi['leaf'], inputs={k: bi[k] for k in
+                ('consecutive_nonprogressive', 'nodes_spent', 'prediction_hits',
+                 'problem_balance_windowed')}, **_stack_dict(sv))
+
+@app.get('/api/tree/{name}/lifecycle')
+def lifecycle_view(name: str, leaf: str | None = None):
+    """프로그램 종료판정 — 수확/발산/소멸/활성 (P1). extinct 는 stack 정족수만 선고."""
+    _, bi, sv = _branch_stack(name, leaf)
+    ls = lifecycle_state(bi['verdicts'], sv, bi['novel_registered_recent'],
+                         bi['problem_balance_windowed'], bi['canonical_improved_recent'])
+    return dict(leaf=bi['leaf'], state=ls.state, reason=ls.reason, regret=ls.regret,
+                window=ls.window, stack=_stack_dict(sv))
+
+def _competitor_for_tree(n: str) -> Competitor:
+    td = tree_data(n)
+    m = compute_metrics(td)
+    try:
+        bi = branch_inputs(td['nodes'], td['frontier'])
+        verdicts = bi['verdicts']
+    except KeyError:                        # 정본 없음 — 빈 시퀀스(신뢰도 prior 유지)
+        verdicts = []
+    imp = (m.get('progress') or {}).get('improvement_pct') or 0.0
+    return Competitor(name=n, verdicts=verdicts, nodes=td['nodes'],
+                      metric_improvement_pct=imp,
+                      closed=m['frontier']['closed'], opened=m['frontier']['open'])
+
+@app.get('/api/leaderboard')
+def leaderboard_view(trees: str, snapshot: bool = False):
+    """경쟁 프로그램(트리) 리더보드 — Pareto+Borda 3기준 (P2). ?snapshot=true 로 축적."""
+    names = [t.strip() for t in trees.split(',') if t.strip()]
+    if len(names) < 2:
+        raise HTTPException(422, '비교는 트리 ≥2 (trees=a,b,...)')
+    lb = build_leaderboard([_competitor_for_tree(n) for n in names])
+    if snapshot:
+        MONGO['leaderboard_snapshots'].insert_one(dict(
+            key=','.join(sorted(names)), at=datetime.now(timezone.utc).isoformat(), board=lb))
+    return lb
+
+@app.get('/api/paradigm')
+def paradigm_view(incumbent: str, rivals: str):
+    """패러다임 판정 — 정상과학/위기/shift_candidate (gap7). shift=인간 안건, 자동 교체 금지."""
+    rivals_l = [r.strip() for r in rivals.split(',') if r.strip()]
+    if not rivals_l:
+        raise HTTPException(422, 'rivals 필수 (rivals=b,c)')
+    key = ','.join(sorted([incumbent] + rivals_l))
+    snaps = [s['board'] for s in
+             MONGO['leaderboard_snapshots'].find({'key': key}).sort('at', 1)]
+    td, bi, sv = _branch_stack(incumbent, None)
+    ls = lifecycle_state(bi['verdicts'], sv, bi['novel_registered_recent'],
+                         bi['problem_balance_windowed'], bi['canonical_improved_recent'])
+    # 프로그램 퇴행 = 정본경로(과거 성공 기록)가 아니라 *최근 가지들*의 비진보 —
+    # 트리 전체 max_degeneration_depth 가 프로그램 수준 신호
+    m = compute_metrics(td)
+    consec = max(bi['consecutive_nonprogressive'], m['max_degeneration_depth'])
+    pa = assess_paradigm(incumbent, rivals_l, snaps, [ls.state], consec)
+    return dict(state=pa.state, incumbent=pa.incumbent, rival=pa.rival, reason=pa.reason,
+                window=pa.window, requires_human_oracle=pa.requires_human_oracle,
+                snapshots=len(snaps), incumbent_lifecycle=ls.state,
+                note=('' if len(snaps) >= pa.window else
+                      f'스냅샷 {len(snaps)} < 윈도우 {pa.window} — '
+                      f'/api/leaderboard?trees={key}&snapshot=true 로 축적 필요'))
+
+@app.get('/api/tree/{name}/node/{tag}/certificate')
+def node_certificate(name: str, tag: str):
+    """5게이트 AND 인증서 (P2) — 사전등록/재현/standing/보정/grounding, 증거 ref 동봉."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 RETURN e.verdict AS verdict, e.verdict_source AS vsrc,
+                        e.pred_metric AS pm, e.judge_script AS script,
+                        e.judge_script_sha AS sha, e.result_path AS rp""", tree=name, tag=tag)
+    if not rows:
+        raise HTTPException(404, f'노드 없음: {tag}')
+    x = rows[0]
+    checks = []
+    # script 가 실재해야 prereg PASS — 빈 script 면 evidence_ref 가 bare ':' 로 고무도장 우회됨 (나생문 R2)
+    prereg = x['vsrc'] == 'scripted' and x['pm'] is not None and bool(x['script'])
+    checks.append(gate_check('preregistered', prereg,
+                             f"{x['script']}:{(x['sha'] or '')[:12]}" if prereg else '',
+                             '' if prereg else '사전등록+스크립트 채점 이력 없음(또는 script 미기록)'))
+    rep = _reproducible_for_node(name, tag)
+    checks.append(gate_check('reproducible', rep is True,
+                             x['rp'] or '' if rep is True else '',
+                             '' if rep is True else
+                             ('계보 미기록 — 인증은 기록을 요구' if rep is None else 'raw root 재생성 불가')))
+    st = standing(name, tag)
+    checks.append(gate_check('stands', bool(st['stands']),
+                             ','.join(st['grounded_extension']) if st['stands'] else '',
+                             '' if st['stands'] else '미해소 의문 존재'))
+    cal = calibration(name)
+    checks.append(gate_check('calibrated', cal['n'] >= 1,
+                             f"/api/tree/{name}/calibration n={cal['n']}" if cal['n'] >= 1 else '',
+                             '' if cal['n'] >= 1 else '발급자 예측 보정 기록 0건'))
+    # G5 는 노드별이 아니라 *시스템 수준 불변식*: 채점 상수 전수 tier 공개. literal True 대신
+    # 레지스트리에서 파생 → 미표기 상수 유입 시 게이트가 실제로 False 로 뒤집힌다 (나생문 F3).
+    from lakatos.grounding import GROUNDED
+    grounded_ok = bool(GROUNDED) and all('tier' in g for g in GROUNDED.values())
+    checks.append(gate_check('grounded', grounded_ok,
+                             'lakatos/grounding.py GROUNDED tier registry' if grounded_ok else '',
+                             '시스템 수준 불변식 — 채점 상수 전부 tier 공개(노드별 아님)'
+                             if grounded_ok else 'GROUNDED 레지스트리에 tier 미표기 상수 존재'))
+    cert = certify_claim(f'{name}/{tag}', checks, dict(
+        as_of=datetime.now(timezone.utc).isoformat(),
+        shas={k: v for k, v in {(x['script'] or ''): (x['sha'] or '')}.items() if k and v}))
+    return dict(claim_id=cert.claim_id, certified=cert.certified, missing=list(cert.missing),
+                checks=[dict(gate=c.gate, passed=c.passed, evidence_ref=c.evidence_ref,
+                             note=c.note) for c in cert.checks],
+                evidence_window=cert.evidence_window, limits=cert.limits,
+                next_actions=cert_next_actions(cert))
 
 class ArtifactIn(BaseModel):
     node_tag: str
