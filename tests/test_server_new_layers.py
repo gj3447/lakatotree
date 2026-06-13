@@ -110,9 +110,11 @@ class FakeCollection:
         self.docs.append(d)
     def find(self, q):
         docs = [d for d in self.docs if d['key'] == q['key']]
-        class _C:
+        class _C:   # chainable cursor — sort(asc<0=desc)→limit→iterable (OPS-ROB-2 bounded find)
             def __init__(self, ds): self.ds = ds
-            def sort(self, k, asc): return sorted(self.ds, key=lambda d: d[k])
+            def sort(self, k, asc): self.ds = sorted(self.ds, key=lambda d: d[k], reverse=(asc < 0)); return self
+            def limit(self, n): self.ds = self.ds[:n]; return self
+            def __iter__(self): return iter(self.ds)
         return _C(docs)
 
 

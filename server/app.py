@@ -162,6 +162,24 @@ def _file_sha(path, chunk=1 << 20):
             h.update(blk)
     return h.hexdigest()
 
+def _path_sha(path):
+    """파일/디렉토리 current sha — 단일 정본 헬퍼(OPS-COR-2/3). isfile=스트리밍 _file_sha(메모리 bounded),
+    isdir(ZDF lot)=내용 파일 이름+크기 합성(내용 미독), 읽기 실패=__unreadable__(stale 로 표면화),
+    경로 부재=None. get_lineage?stale·rebuild_verify 가 공유(전엔 rebuild_verify 만 전체파일 read + dir 무시)."""
+    try:
+        if os.path.isfile(path):
+            return _file_sha(path)
+        if os.path.isdir(path):
+            h = hashlib.sha256()
+            for f in sorted(os.listdir(path)):
+                fp = os.path.join(path, f)
+                if os.path.isfile(fp):
+                    h.update(f.encode()); h.update(str(os.path.getsize(fp)).encode())
+            return h.hexdigest()
+    except OSError as e:
+        return f'__unreadable__:{type(e).__name__}'
+    return None
+
 NODE_LABELS = 'PrismExperiment|LakatosNode'
 
 def tree_data(name):
@@ -990,7 +1008,8 @@ def paradigm_view(incumbent: str, rivals: str):
         raise HTTPException(422, 'rivals 필수 (rivals=b,c)')
     key = ','.join(sorted([incumbent] + rivals_l))
     snaps = [s['board'] for s in
-             MONGO['leaderboard_snapshots'].find({'key': key}).sort('at', 1)]
+             reversed(list(MONGO['leaderboard_snapshots'].find({'key': key})
+                           .sort('at', -1).limit(50)))]   # OPS-ROB-2: 누적 전수로드 금지(최신 50)
     td, bi, sv = _branch_stack(incumbent, None)
     ls = lifecycle_state(bi['verdicts'], sv, bi['novel_registered_recent'],
                          bi['problem_balance_windowed'], bi['canonical_improved_recent'])
@@ -1396,19 +1415,20 @@ def artifact_prov(artifact: str):
 @app.get('/api/rebuild-verify/{artifact:path}')
 def rebuild_verify(artifact: str):
     """G-RebuildFromRaw — 완성본이 raw root + 현재 환경에서 재생성 가능한가."""
-    import hashlib as _h, os as _os
     ds = _load_lineage()
     bo = by_output(ds)
     if artifact not in bo:
         raise HTTPException(404, f'산출물 미기록: {artifact}')
     src = {d.output for d in ds if d.kind == 'source'}
     gaps = reproducibility_gaps(artifact, bo, src)
-    # 현재 디스크 sha 로 stale + 현재 환경으로 env drift
+    # 현재 디스크 sha 로 stale + 현재 환경으로 env drift (OPS-COR-2/3: 스트리밍·dir·graceful 공통 헬퍼)
     cur = {}
     for d in ds:
         for path, _ in d.inputs:
-            if path not in cur and _os.path.isfile(path):
-                cur[path] = _h.sha256(open(path, 'rb').read()).hexdigest()
+            if path not in cur:
+                s = _path_sha(path)
+                if s is not None:
+                    cur[path] = s
     cur_env = fingerprint_sha(environment_fingerprint())
     plan = rebuild_plan(artifact, bo)
     stale = {d.output: True for d in plan if stale_inputs(d, cur)}
@@ -1455,26 +1475,15 @@ def get_lineage(artifact: str, stale: bool = False):
                rebuild_plan=[dict(output=d.output, producer=d.producer,
                                   inputs=[p for p, _ in d.inputs]) for d in plan],
                note='reproducible=True → source(ZDF)서 plan 순서대로 재실행하면 완성본 재생성')
-    if stale:   # 입력 데이터 변경 감지(현 디스크 sha vs 기록) — 느려서 opt-in
-        import hashlib as _h, os as _os
+    if stale:   # 입력 데이터 변경 감지(현 디스크 sha vs 기록) — 느려서 opt-in. 공통 _path_sha(DRY)
         cur = {}
         for d in ds:
             for path, _ in d.inputs:
                 if path in cur:
                     continue
-                try:                              # ROB-5: 스트리밍 sha(GB 파일 메모리 bounded) + I/O 예외 graceful
-                    if _os.path.isfile(path):
-                        cur[path] = _file_sha(path)
-                    elif _os.path.isdir(path):
-                        # source 가 디렉토리(ZDF lot) → 내용 파일들의 (이름+크기) sha 합성(파일내용 미독)
-                        h = _h.sha256()
-                        for f in sorted(_os.listdir(path)):
-                            fp = _os.path.join(path, f)
-                            if _os.path.isfile(fp):
-                                h.update(f.encode()); h.update(str(_os.path.getsize(fp)).encode())
-                        cur[path] = h.hexdigest()
-                except OSError as e:
-                    cur[path] = f'__unreadable__:{type(e).__name__}'   # 읽기 실패 → stale 로 표면화(조용한 통과 금지)
+                s = _path_sha(path)
+                if s is not None:
+                    cur[path] = s
         changed = {}
         for d in plan:
             bad = stale_inputs(d, cur)

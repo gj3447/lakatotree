@@ -103,3 +103,14 @@ def test_directions_total_visits_is_sum_of_visits(monkeypatch):
     monkeypatch.setattr(app, 'compute_metrics', lambda t: {'bayes': {'canonical_credence': 0.5}})
     app.directions('T')
     assert captured['tv'] == 8                           # 3+5 (노드수 proxy 아님)
+
+
+# ── B5 OPS-COR-2/3: _path_sha 공통 헬퍼 (rebuild_verify·get_lineage 공유) ──
+
+def test_path_sha_file_streams_and_dir_composite(tmp_path):
+    app = load_app()
+    f = tmp_path / 'f.bin'; f.write_bytes(b'zdf' * 100000)
+    assert app._path_sha(str(f)) == app._file_sha(str(f))     # 파일=스트리밍 sha
+    d = tmp_path / 'lot'; d.mkdir(); (d / 'a.zdf').write_bytes(b'x' * 10); (d / 'b.zdf').write_bytes(b'yy')
+    s1 = app._path_sha(str(d)); assert s1 and not s1.startswith('__unreadable__')   # dir=이름+크기 합성
+    assert app._path_sha(str(tmp_path / 'nope')) is None      # 부재=None
