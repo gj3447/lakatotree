@@ -25,7 +25,13 @@ from .grounding import GROUNDED, interpret_bayes_factor
 BF_BASE = {'progressive': GROUNDED['bf_progressive']['value'],
            'partial': GROUNDED['bf_partial_equivalent']['value'],
            'equivalent': GROUNDED['bf_partial_equivalent']['value'],
-           'rejected': GROUNDED['bf_rejected']['value']}
+           'rejected': GROUNDED['bf_rejected']['value'],
+           # THR-1: dialectical 판결도 명시 — 전엔 .get default 1.0(neutral) 로 degenerating 이
+           # 음의 증거인데 신뢰도에 무영향이었다. degenerating=rejected 급 음의 증거,
+           # withdrawn(철회)·progressive_conditional(미확증)=무정보(1.0, 누적금지).
+           'degenerating': GROUNDED['bf_rejected']['value'],
+           'withdrawn': GROUNDED['bf_partial_equivalent']['value'],
+           'progressive_conditional': GROUNDED['bf_partial_equivalent']['value']}
 DEFAULT_PRIOR = GROUNDED['default_prior']['value']        # 무차별 원리 (Laplace 1814)
 ABANDON_CREDENCE = GROUNDED['abandon_credence']['value']  # odds 1:9 폐기 문턱
 EFF_CAP = GROUNDED['eff_cap']['value']                    # 효과크기 상한 (Cohen d=4=large×5)

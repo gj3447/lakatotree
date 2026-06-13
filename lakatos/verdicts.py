@@ -31,6 +31,7 @@ ENGINE_VERDICTS = frozenset({
     "progressive",            # judge 와 공유
     "progressive_conditional",
     "degenerating",
+    "withdrawn",              # ENG-CORR-2: pnr surrender → spine.dialectical_verdict 가 emit (등록 누락이었음)
     "ambiguous",
 })
 
