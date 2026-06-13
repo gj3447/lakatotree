@@ -136,3 +136,29 @@ def test_healthz_does_not_leak_exception_class(monkeypatch):
     monkeypatch.setattr(app, 'kg', boom)
     r = TestClient(app.app).get('/healthz')
     assert r.json()['services']['neo4j'] == 'down'   # 클래스명 'RuntimeError' 노출 안 함
+
+
+# ── B4 OPS-ROB-1: bearer-auth ?snapshot 가 1/yes/on/True 변형도 게이트 (전엔 'true' 만) ──
+
+def test_auth_blocks_get_snapshot_truthy_variants(monkeypatch):
+    app = load_app()
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')
+    c = TestClient(app.app)
+    for v in ('1', 'yes', 'on', 'True', 'TRUE', 'true'):
+        r = c.get(f'/api/tree/T/metrics?snapshot={v}')
+        assert r.status_code == 401, f'snapshot={v} 가 인증 우회됨 (side-effect GET)'
+
+
+# ── B4 OPS-COR-1: _parse_metric 가 과학적 표기 지수 보존 (전엔 절단) ──
+
+def test_parse_metric_sci_notation_harness():
+    from lakatos.harness import _parse_metric
+    assert _parse_metric('metric=1.5e-3') == 0.0015
+    assert _parse_metric('done metric: -2.0E+2') == -200.0
+    assert _parse_metric('metric=0.279') == 0.279          # 회귀 0
+
+
+def test_parse_metric_sci_notation_rebuild():
+    from lakatos.rebuild import _parse_metric
+    assert _parse_metric('metric=1.5e-3') == 0.0015
+    assert _parse_metric('metric=0.279') == 0.279

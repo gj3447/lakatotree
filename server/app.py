@@ -46,7 +46,7 @@ from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_
 from lakatos.envfp import environment_fingerprint, fingerprint_sha, env_matches
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 import psycopg2, psycopg2.extras
@@ -63,6 +63,7 @@ PG_KW = dict(host=os.environ.get('LAKATOS_PG_HOST', 'localhost'),
              dbname=os.environ.get('LAKATOS_PG_DB', 'lakatos'))
 MONGO = MongoClient(os.environ.get('LAKATOS_MONGO_URI', 'mongodb://localhost:27017'))['lakatos']
 app = FastAPI(title='Lakatos Server', version='1.0')
+_BOOL = TypeAdapter(bool)   # FastAPI bool 쿼리 강제와 동일 파싱(미들웨어 snapshot 게이트용, OPS-ROB-1)
 
 
 # ── 운영 안전망 (나생문 ROB-2/4, DEPLOY-1) ──
@@ -88,8 +89,14 @@ async def _bearer_auth(request: Request, call_next):
     상수시간 비교(secrets.compare_digest)로 timing 누수 차단."""
     token = os.environ.get('LAKATOS_API_TOKEN')
     if token:
-        mutating = (request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
-                    or request.query_params.get('snapshot') == 'true')
+        snap = request.query_params.get('snapshot')
+        snap_true = False
+        if snap is not None:   # OPS-ROB-1: FastAPI bool 강제와 동일하게(1/yes/on/True) — 'true' 만 보면 우회됨
+            try:
+                snap_true = bool(_BOOL.validate_python(snap))
+            except Exception:
+                snap_true = False
+        mutating = request.method in ('POST', 'PUT', 'PATCH', 'DELETE') or snap_true
         if mutating and not secrets.compare_digest(
                 request.headers.get('authorization', ''), f'Bearer {token}'):
             return JSONResponse(status_code=401,
