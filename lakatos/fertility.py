@@ -12,7 +12,7 @@
 from .grounding import GROUNDED, wilson_lower_bound as _wilson_lower
 
 NOBEL_MIN_PREDICTIONS = GROUNDED['nobel_min_predictions']['value']  # 표본 하한 (Wilson 유의 최소 n)
-NOBEL_MIN_HITRATE_LB = GROUNDED['nobel_min_hitrate_lb']['value']    # Wilson 95% 하한 ≥0.7 (≈10/10)
+NOBEL_MIN_HITRATE_LB = GROUNDED['nobel_min_hitrate_lb']['value']    # Wilson 95% 하한 ≥0.7 (실효 통과선 ≈9/9, LB=0.701; T-H-2)
 
 
 def predictive_fertility(nodes: list) -> dict:

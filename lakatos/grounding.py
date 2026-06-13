@@ -53,6 +53,7 @@ SOURCES = {
     'benjamini_hochberg1995': 'Benjamini, Y. & Hochberg, Y. (1995). Controlling the False Discovery Rate. JRSS-B 57(1):289-300.',
     'dunn1961': 'Dunn, O.J. (1961). Multiple Comparisons Among Means. JASA 56(293):52-64 (Bonferroni 보정의 정식화).',
     'fisher1925': 'Fisher, R.A. (1925). Statistical Methods for Research Workers (α=0.05 관행의 기원).',
+    'auer2002': 'Auer, P., Cesa-Bianchi, N. & Fischer, P. (2002). Finite-time Analysis of the Multiarmed Bandit Problem. Machine Learning 47:235-256 (UCB1, c=√2).',
     'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
@@ -136,6 +137,8 @@ def wilson_lower_bound(k: int, n: int, z: float = 1.96) -> float:
 
     검증: 10/10→0.722, 9/10→0.596, 9/9→0.701, 8/8→0.676, 3/3→0.438, 20/20→0.839.
     """
+    if k < 0 or k > n:   # THR-2: 공개 API 입력 검증 (k>n 이면 sqrt 음수=math domain error)
+        raise ValueError(f'k 는 0..n 범위여야 함 (k={k}, n={n})')
     if n == 0:
         return 0.0
     phat = k / n
@@ -275,6 +278,12 @@ GROUNDED = {
         'band': 'BH false discovery rate 목표',
         'rationale': 'gap8 다중비교: 가지가 많을수록 우연 통과(false-progressive)가 늘어남 — '
                      'BH 절차(문헌)로 FDR 통제. q=0.05 컷 자체는 Fisher 1925 이래 관행적 정책값.',
+    },
+    'ucb_c': {
+        'value': math.sqrt(2), 'source': 'auer2002', 'tier': 'literature',
+        'band': 'UCB1 탐색계수',
+        'rationale': 'explore.py bandit UCB1 탐색항 계수 c=√2 = Auer et al.(2002) 정본값(문헌 직접). '
+                     '전엔 explore.py 에 1.414 하드코딩(부정확·G5 미감지) → grounding 정본화.',
     },
 }
 
