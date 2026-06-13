@@ -84,3 +84,22 @@ def test_coverage_backlog_is_reported_and_alerted():
     assert m['coverage']['backlog_count'] == 2
     assert m['coverage']['statement'] == 'partial import, not exhaustive'
     assert any('커버리지 backlog' in a for a in m['alerts'])
+
+
+def test_improvement_pct_higher_is_better_direction():
+    # ENG-HON-1: pred_direction='higher' 면 last>first 가 진보 (전엔 음수로 오보 + 가짜 정체경보)
+    nodes = [
+        dict(tag='root', verdict='progressive', parent=None, metric_value=0.60, metric_scope='m',
+             pred_direction='higher', algorithm='a', comment='c', limitation='l'),
+        dict(tag='best', verdict='CANONICAL', parent='root', metric_value=0.90, metric_scope='m',
+             pred_direction='higher', algorithm='a', comment='c', limitation='l'),
+    ]
+    m = tree_metrics(nodes, [])
+    assert m['progress']['improvement_pct'] == 50.0
+    assert m['progress']['direction'] == 'higher'
+    assert not any('정체' in a for a in m['alerts'])
+
+
+def test_improvement_pct_lower_default_unchanged():
+    m = tree_metrics(NODES, FRONTIER)
+    assert m['progress']['improvement_pct'] == 50.0          # 기존 lower-is-better 회귀 0
