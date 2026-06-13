@@ -54,3 +54,44 @@ def test_certificate_tool_routes(monkeypatch):
     seen = _cap(monkeypatch)
     json.loads(m.certificate('T', 'v22'))
     assert seen[0] == '/api/tree/T/node/v22/certificate'
+
+
+# ── Cluster ① MCP: calibration / open_question / close_question / register_prediction credence ──
+
+def _cap_post(monkeypatch):
+    seen = []
+
+    def fake_post(path, body):
+        seen.append((path, body))
+        return {'ok': True}
+
+    monkeypatch.setattr(m, '_post', fake_post)
+    return seen
+
+
+def test_calibration_tool_routes(monkeypatch):
+    seen = _cap(monkeypatch)
+    json.loads(m.calibration('T'))
+    assert seen[0] == '/api/tree/T/calibration'
+
+
+def test_open_question_tool_passes_voi_meta(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.open_question('T', 'q1', body='why', expected_gain=0.4, cost=2.0))
+    path, body = seen[0]
+    assert path == '/api/tree/T/question'
+    assert (body['expected_gain'], body['cost']) == (0.4, 2.0)
+
+
+def test_close_question_tool_routes(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.close_question('T', 'q1', closed_by='mid'))
+    assert seen[0][0] == '/api/tree/T/question/q1/close?closed_by=mid'
+
+
+def test_register_prediction_tool_includes_credence(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.register_prediction('T', 'v', metric='p95', baseline=0.5, credence=0.8))
+    path, body = seen[0]
+    assert path == '/api/tree/T/node/v/prediction'
+    assert body['credence'] == 0.8

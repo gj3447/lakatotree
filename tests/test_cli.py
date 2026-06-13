@@ -112,3 +112,34 @@ def test_certificate_cli_routes(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['certificate', 'T', 'v22'])
     assert calls[0] == ('GET', '/api/tree/T/node/v22/certificate', None)
+
+
+# ── Cluster ① CLI: predict --credence / question / question-close / calibration ──
+
+def test_predict_cli_passes_credence(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['predict', 'T', 'v', '--metric', 'p95', '--baseline', '0.5', '--credence', '0.8'])
+    method, path, body = calls[0]
+    assert path == '/api/tree/T/node/v/prediction'
+    assert body['credence'] == 0.8
+
+
+def test_question_cli_passes_voi_meta(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['question', 'T', 'q1', '--body', 'why', '--gain', '0.4', '--cost', '2.0'])
+    method, path, body = calls[0]
+    assert (method, path) == ('POST', '/api/tree/T/question')
+    assert (body['expected_gain'], body['cost'], body['qname']) == (0.4, 2.0, 'q1')
+
+
+def test_question_close_cli_routes(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['question-close', 'T', 'q1', '--by', 'mid'])
+    assert calls[0][0] == 'POST'
+    assert calls[0][1] == '/api/tree/T/question/q1/close?closed_by=mid'
+
+
+def test_calibration_cli_routes(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['calibration', 'T'])
+    assert calls[0] == ('GET', '/api/tree/T/calibration', None)

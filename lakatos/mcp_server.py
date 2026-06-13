@@ -83,6 +83,28 @@ def certificate(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def calibration(name: str) -> str:
+    """예측 신뢰도 보정 — Brier/log/ECE proper scoring (gap2 완화 근거). 표본=credence 단 prediction 들."""
+    return json.dumps(_get(f'/api/tree/{name}/calibration'), ensure_ascii=False)
+
+
+@mcp.tool()
+def open_question(name: str, qname: str, body: str = '',
+                  expected_gain: float = 0.1, cost: float = 1.0) -> str:
+    """frontier 질문 열기. expected_gain/cost = VoI 입력(directions 우선순위). 안 주면 default."""
+    return json.dumps(_post(f'/api/tree/{name}/question',
+        dict(qname=qname, body=body, expected_gain=expected_gain, cost=cost)), ensure_ascii=False)
+
+
+@mcp.tool()
+def close_question(name: str, qname: str, closed_by: str = '') -> str:
+    """frontier 질문 닫기 — append-only QuestionClosure 이벤트 + n_visits 증가(UCB 탐색)."""
+    import urllib.parse as up
+    q = ('?' + up.urlencode({'closed_by': closed_by})) if closed_by else ''
+    return json.dumps(_post(f'/api/tree/{name}/question/{qname}/close{q}', {}), ensure_ascii=False)
+
+
+@mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
              comment: str = '', algorithm: str = '') -> str:
     """나무에 노드 추가. parent/parents_csv 로 DAG 다중 부모를 기록."""
@@ -97,14 +119,18 @@ def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
 def register_prediction(name: str, tag: str, metric: str, baseline: float,
                         direction: str = 'lower', noise_band: float = 0.0,
                         novel_metric: str = '', novel_direction: str = '',
-                        novel_threshold: float = 0.0, script_sha: str = '') -> str:
-    """실행 전 사전등록 예측(의무). 구조적 novel(novel_metric/threshold) 권장 — 텍스트 아닌 실측 대조."""
+                        novel_threshold: float = 0.0, script_sha: str = '',
+                        credence: float = None) -> str:
+    """실행 전 사전등록 예측(의무). 구조적 novel(novel_metric/threshold) 권장 — 텍스트 아닌 실측 대조.
+    credence[0,1]=예측 신뢰도 → calibration/certify G4(calibrated) 입력. 안 주면 인증서 G4 영구 미통과."""
     body = dict(metric_name=metric, direction=direction, baseline_value=baseline, noise_band=noise_band)
     if novel_metric:
         body.update(novel_metric=novel_metric, novel_direction=novel_direction or 'higher',
                     novel_threshold=novel_threshold)
     if script_sha:
         body['judge_script_sha'] = script_sha
+    if credence is not None:
+        body['credence'] = credence
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/prediction', body), ensure_ascii=False)
 
 
