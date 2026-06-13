@@ -140,3 +140,37 @@ def test_register_prediction_bumps_closed_question_visits(monkeypatch):
         metric_name='p95', baseline_value=0.5, closes_question='q1'))
     assert any('n_visits=coalesce(q.n_visits, 0) + 1' in q for q, _ in calls)
     assert any(kw.get('cq') == 'q1' for _, kw in calls)
+
+
+# ── prom16 engine-axis: CounterexampleType end-to-end 배선 (server) ──
+import pytest
+from fastapi import HTTPException
+
+
+def _pred_row(q, **kw):
+    if 'RETURN e.pred_metric' in q:
+        return [dict(m='p95', d='lower', b=0.5, nb=0.05, novel=None, vsrc=None,
+                     nmet=None, ndir=None, nthr=None, psha=None)]
+    return []
+
+
+def test_test_result_invalid_counterexample_type_422(monkeypatch):
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _pred_row)
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    with pytest.raises(HTTPException) as e:
+        app.submit_test_result('T', 'v', app.TestResultIn(
+            metric_value=0.4, script='j.py', counterexample_response='lemma_incorporation',
+            counterexample_type='bogus'))
+    assert e.value.status_code == 422
+
+
+def test_test_result_accepts_valid_counterexample_type(monkeypatch):
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _pred_row)
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    out = app.submit_test_result('T', 'v', app.TestResultIn(
+        metric_value=0.4, script='j.py', counterexample_response='lemma_incorporation',
+        ce_excess_content=True, ce_novel_corroborated=True, ce_in_heuristic_spirit=True,
+        counterexample_type='local_not_global'))
+    assert 'verdict' in out            # CounterexampleType 파싱+전달 배선 — 422 없이 판결 산출

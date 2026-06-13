@@ -209,3 +209,34 @@ def test_matches_lakatos_1976_oracle():
         a = appraise_response(resp, excess_content=True, novel_corroborated=True,
                               in_heuristic_spirit=True, proof_generated_concept=SIMPLY_CONNECTED)
         assert a.verdict == expected, f'{resp.value}: 라카토스 판정 {expected} ≠ {a.verdict}'
+
+
+# ── CounterexampleType 배선 (prom16 engine-axis): 문서화됐으나 미배선이던 public enum 을
+#    appraise_response 에 additive 로 배선 — verdict 불변, 숨은 보조정리 진단만 추가 ──
+
+def test_counterexample_type_adds_hidden_lemma_signal_additive():
+    from lakatos.pnr import appraise_response, Response, CounterexampleType
+    base = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
+                             novel_corroborated=True, in_heuristic_spirit=True)
+    ce = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
+                           novel_corroborated=True, in_heuristic_spirit=True,
+                           counterexample_type=CounterexampleType.LOCAL_NOT_GLOBAL)
+    assert ce.verdict == base.verdict                       # additive — verdict 불변
+    assert ce.ad_hoc == base.ad_hoc
+    assert any('보조정리' in r for r in ce.reasons)          # 숨은 보조정리 진단 추가
+    assert not any('보조정리' in r for r in base.reasons)    # 없으면 추가 안 됨(default None)
+
+
+def test_counterexample_type_global_is_not_hidden_lemma():
+    from lakatos.pnr import appraise_response, Response, CounterexampleType
+    a = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
+                          novel_corroborated=True, in_heuristic_spirit=True,
+                          counterexample_type=CounterexampleType.GLOBAL)
+    assert not any('숨은 보조정리' in r for r in a.reasons)   # GLOBAL=추측 직접 반박, 숨은 보조정리 아님
+
+
+def test_counterexample_type_default_none_byte_identical():
+    from lakatos.pnr import appraise_response, Response
+    a = appraise_response(Response.MONSTER_BARRING)
+    b = appraise_response(Response.MONSTER_BARRING, counterexample_type=None)
+    assert a == b                                            # default None → 완전 동일

@@ -16,10 +16,16 @@ exception-barring 은 *조각적 배제*(방어적=퇴행)와 *전략적 후퇴*
 
 엄격도 스택서 이 모듈 = 질적 판정의 *내용*. spine.dialectical_verdict 로 판결 권위에 배선(고아 아님).
 정전 예제 = Euler V−E+F=2 + 반례(속빈정육면체 4) + 증명-생성 개념(단순연결).
+
+배선 정직 표기 (prom16 engine-axis):
+  - appraise_response : 프로덕션 판결 경로 (server test_result → spine.dialectical_verdict). ★CounterexampleType 도
+    counterexample_type 인자로 배선됨(2026-06-14) — verdict 불변, 숨은 보조정리 진단 풍부화.
+  - ad_hoc_class / PositiveHeuristic.in_spirit·next_problemshift : public *라이브러리* 표면 — 호출자(연구 프로그램
+    계획·문제생성기)가 직접 쓸 수 있는 Lakatos 도구. 최소 appraise 경로엔 없으나 고아 아님(공개 API, 테스트됨).
 # KG: span_lakatotree_pnr / q-lkt-lakatos-dialectic-heart
 # 출처: grounding.SOURCES[lakatos1976/lakatos1978/zahar1973/lakatos_zahar1976]
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 
@@ -138,11 +144,43 @@ def _appraise_learned(response: Response, excess: bool, corrob: bool,
     return 'progressive', 'progressive', msgs
 
 
+# 반례 유형이 '숨은 보조정리'를 시사하는 경우 (Lakatos 1976): lemma-incorporation 권장 신호
+_HIDDEN_LEMMA = {CounterexampleType.LOCAL_NOT_GLOBAL, CounterexampleType.GLOBAL_NOT_LOCAL}
+
+
+def _counterexample_note(ct: 'CounterexampleType | None') -> 'str | None':
+    """반례 유형 진단 메모 (additive — verdict 불변, 근거만 풍부화). CounterexampleType 배선."""
+    if ct is None:
+        return None
+    if ct in _HIDDEN_LEMMA:
+        return (f'반례유형 {ct.value}: 숨은 보조정리 신호 — lemma-incorporation 으로 '
+                f'죄있는 보조정리를 조건화 권장 (Lakatos 1976)')
+    if ct == CounterexampleType.LOCAL_AND_GLOBAL:
+        return f'반례유형 {ct.value}: local+global — lemma-incorporation 의 이상적 출발점'
+    return f'반례유형 {ct.value}'
+
+
 def appraise_response(response: Response, *, excess_content: bool = False,
                       novel_corroborated: bool = False, in_heuristic_spirit: 'bool | None' = None,
                       hard_core_preserved: bool = True,
-                      proof_generated_concept: 'ProofGeneratedConcept | None' = None) -> PnRAppraisal:
+                      proof_generated_concept: 'ProofGeneratedConcept | None' = None,
+                      counterexample_type: 'CounterexampleType | None' = None) -> PnRAppraisal:
     """반례 대응 → 라카토스 4-way 평가. 같은 hard core 라도 *대응 방식*이 판결을 가른다.
+
+    `counterexample_type`(선택)은 verdict 를 바꾸지 않고 *진단 근거*만 풍부화한다 — 반례가
+    추측(global)/증명단계(local) 중 무엇을 치는지(Lakatos 1976). LOCAL_NOT_GLOBAL/GLOBAL_NOT_LOCAL
+    은 숨은 보조정리 신호 → lemma-incorporation 권장. (기본 None → 기존 동작 byte-identical.)
+    """
+    a = _appraise_core(response, excess_content, novel_corroborated, in_heuristic_spirit,
+                       hard_core_preserved, proof_generated_concept)
+    note = _counterexample_note(counterexample_type)
+    return replace(a, reasons=a.reasons + (note,)) if note else a
+
+
+def _appraise_core(response: Response, excess_content: bool, novel_corroborated: bool,
+                   in_heuristic_spirit: 'bool | None', hard_core_preserved: bool,
+                   proof_generated_concept: 'ProofGeneratedConcept | None') -> PnRAppraisal:
+    """핵심 4-way 평가 (counterexample_type 무관 — 순수 대응방식 판정).
 
     순서(나생문 D1: surrender 가 hard_core 보다 먼저):
       1. surrender → withdrawn (추측 철회 — hard_core 무관).
