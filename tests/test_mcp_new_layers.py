@@ -116,3 +116,9 @@ def test_mcp_headers_bearer_when_env(monkeypatch):
     assert m._headers() == {'Authorization': 'Bearer tok'}     # REG-1
     monkeypatch.delenv('LAKATOS_API_TOKEN', raising=False)
     assert m._headers() == {}                                  # 미설정=헤더 없음(하위호환)
+
+
+def test_run_cycle_tool_routes(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.run_cycle('T', '{"tag":"e1","metric_name":"p95","baseline":0.5,"measured":0.4}'))
+    assert seen[0][0] == '/api/tree/T/cycle' and seen[0][1]['tag'] == 'e1'

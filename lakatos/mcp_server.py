@@ -100,6 +100,18 @@ def agm_revise(spec_json: str) -> str:
 
 
 @mcp.tool()
+def run_cycle(name: str, spec_json: str) -> str:
+    """한 연구 사이클 오케스트레이션(서버 in-process, **bash 미실행**) — spec_json=CycleIn 필드:
+    tag/metric_name/baseline/measured 필수 + 선택 parent/novel_*/credence/source_trust/critiques[].
+    build/judge(bash)가 필요하면 CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
+    try:
+        spec = json.loads(spec_json or '{}')
+    except json.JSONDecodeError as e:
+        return json.dumps({'error': 'invalid_spec_json', 'detail': str(e)}, ensure_ascii=False)
+    return json.dumps(_post(f'/api/tree/{name}/cycle', spec), ensure_ascii=False)
+
+
+@mcp.tool()
 def calibration(name: str) -> str:
     """예측 신뢰도 보정 — Brier/log/ECE proper scoring (gap2 완화 근거). 표본=credence 단 prediction 들."""
     return json.dumps(_get(f'/api/tree/{name}/calibration'), ensure_ascii=False)

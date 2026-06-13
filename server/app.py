@@ -126,13 +126,34 @@ def pg():
     return psycopg2.connect(**PG_KW)
 
 def hist(tree, op, node_tag=None, payload=None):
-    with pg() as c, c.cursor() as cur:
-        cur.execute('INSERT INTO history(tree, op, node_tag, payload) VALUES (%s,%s,%s,%s)',
-                    (tree, op, node_tag, json.dumps(payload or {}, ensure_ascii=False)))
+    # ROB-1: 이력(PG)은 best-effort audit, KG=truth. KG 커밋 후 PG 다운이 mutation 을 503 으로
+    # 되돌리면 그래프-이력 분기가 *더 나빠지므로*, PG 연결오류는 삼키고 경고만(이력만 유실).
+    try:
+        with pg() as c, c.cursor() as cur:
+            cur.execute('INSERT INTO history(tree, op, node_tag, payload) VALUES (%s,%s,%s,%s)',
+                        (tree, op, node_tag, json.dumps(payload or {}, ensure_ascii=False)))
+    except PgOperationalError as e:
+        print(f'[hist] PG 적재 실패(best-effort, KG 는 정상): {type(e).__name__}', file=sys.stderr)
 
 def kg(q, **kw):
     with NEO.session() as s:
         return s.run(q, **kw).data()
+
+def kg_tx(ops):
+    """여러 Cypher 를 단일 managed write 트랜잭션으로 (all-or-nothing) — KG-내부 부분쓰기
+    (노드만 생성·엣지 누락 등) 분기 차단 (ROB-1). ops = [(cypher, params), ...]."""
+    def _unit(tx):
+        return [tx.run(cypher, **params).data() for cypher, params in ops]
+    with NEO.session() as s:
+        return s.execute_write(_unit)
+
+def _file_sha(path, chunk=1 << 20):
+    """파일 sha256 을 청크 스트리밍 — GB(ZDF) 파일도 메모리 bounded (ROB-5). OSError 는 호출부."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for blk in iter(lambda: f.read(chunk), b''):
+            h.update(blk)
+    return h.hexdigest()
 
 NODE_LABELS = 'PrismExperiment|LakatosNode'
 
@@ -236,22 +257,24 @@ def add_node(name: str, n: NodeIn):
     missing = [e.tag for e in parent_edges if e.tag not in existing]
     if missing:
         raise HTTPException(400, f'부모 노드 없음: {missing}')
-    kg('''MATCH (t:LakatosTree {name:$tree})
-          MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+$tag})
-          SET e.tag=$tag, e.verdict=$verdict, e.script=$script, e.result_path=$result_path,
-              e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
-              e.open_question=$open_question, e.metric_name=$metric_name,
-              e.metric_value=$metric_value, e.metric_scope=$metric_scope,
-              e.recorded_at=$ts
-          MERGE (t)-[:HAS_NODE]->(e)''',
-       tree=name, ts=datetime.now(timezone.utc).isoformat(), **n.model_dump())
+    # ROB-1: 노드 생성 + 모든 부모엣지를 단일 트랜잭션으로 (부분쓰기=노드만/엣지누락 분기 차단)
+    ops = [('''MATCH (t:LakatosTree {name:$tree})
+               MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+$tag})
+               SET e.tag=$tag, e.verdict=$verdict, e.script=$script, e.result_path=$result_path,
+                   e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
+                   e.open_question=$open_question, e.metric_name=$metric_name,
+                   e.metric_value=$metric_value, e.metric_scope=$metric_scope,
+                   e.recorded_at=$ts
+               MERGE (t)-[:HAS_NODE]->(e)''',
+            dict(tree=name, ts=datetime.now(timezone.utc).isoformat(), **n.model_dump()))]
     for edge in parent_edges:
-        kg(f'''MATCH (t:LakatosTree {{name:$tree}})-[:HAS_NODE]->(e {{tag:$tag}})
-               MATCH (t)-[:HAS_NODE]->(p {{tag:$parent}})
-               MERGE (e)-[r:BRANCHED_FROM]->(p)
-               SET r.inferred=$inferred, r.relation_kind=$relation_kind, r.evidence_ref=$evidence_ref''',
-           tree=name, tag=n.tag, parent=edge.tag, inferred=edge.inferred,
-           relation_kind=edge.relation_kind, evidence_ref=edge.evidence_ref)
+        ops.append(('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                       MATCH (t)-[:HAS_NODE]->(p {tag:$parent})
+                       MERGE (e)-[r:BRANCHED_FROM]->(p)
+                       SET r.inferred=$inferred, r.relation_kind=$relation_kind, r.evidence_ref=$evidence_ref''',
+                    dict(tree=name, tag=n.tag, parent=edge.tag, inferred=edge.inferred,
+                         relation_kind=edge.relation_kind, evidence_ref=edge.evidence_ref)))
+    kg_tx(ops)
     hist(name, 'node_create', n.tag, n.model_dump())
     return {'ok': True, 'tag': n.tag}
 
@@ -873,7 +896,9 @@ def directions(name: str):
     qmeta = [dict(name=q['name'], body=(q['body'] or '')[:160],
                   expected_gain=_num(q, 'expected_gain', 0.1), cost=_num(q, 'cost', 1.0),
                   credence=cred, n_visits=_num(q, 'n_visits', 1)) for q in opens]
-    ranked = rank_questions(qmeta, total_visits=max(len(td['nodes']), 1))
+    # UCB N = 전체 pull 수 = 질문 방문 합(P5-D). 노드 수 proxy 대신 실제 n_visits 총합 → 탐색항 정합.
+    total_visits = max(sum(q['n_visits'] for q in qmeta), len(qmeta), 1)
+    ranked = rank_questions(qmeta, total_visits=total_visits)
     for q in ranked:
         q['branch_from'] = (can or {}).get('tag')
         q['suggested_tag'] = q['name'].replace('q-', 'exp-') + '-try1'
@@ -1078,6 +1103,54 @@ def agm_revise(req: AgmReviseIn):
         removed=list(r.removed), added=list(r.added),
         programme_shift_candidate=r.programme_shift_candidate,
         entrenchment_policy=r.entrenchment_policy)
+
+
+# ── 하네스 사이클 (P5-C) — 서버 in-process 오케스트레이션, bash 미실행(no RCE) ──
+
+class CycleIn(BaseModel):
+    """한 사이클 입력. 서버는 bash(build/judge)를 실행하지 않는다(RCE 회피) — client/CLI 가
+    build/judge 를 돌려 *사전계산 metric*(measured)을 준다. 서버는 graph 오케스트레이션만."""
+    tag: str = Field(min_length=1)
+    parent: str = ''
+    metric_name: str
+    baseline: float
+    direction: str = 'lower'
+    noise_band: float = Field(0.0, ge=0)
+    measured: float
+    script: str = 'inline'
+    script_sha: str | None = None
+    novel_metric: str | None = None
+    novel_direction: str | None = None
+    novel_threshold: float | None = None
+    novel_measured: float | None = None
+    credence: float | None = Field(None, ge=0, le=1)
+    source_trust: float = 1.0
+    algorithm: str = ''
+    comment: str = ''
+    closes_question: str = ''
+    critiques: list[CritiqueIn] = Field(default_factory=list)
+
+
+@app.post('/api/tree/{name}/cycle')
+def run_cycle(name: str, c: CycleIn):
+    """한 연구 사이클을 한 콜로 — node→prediction→test_result(judge)→critique→standing.
+    기존 핸들러 재사용(로직 단일출처). **bash 미실행**: build/judge 는 client(CLI `cycle`) 책임."""
+    add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),
+                          algorithm=c.algorithm, comment=c.comment))
+    register_prediction(name, c.tag, PredictionIn(
+        metric_name=c.metric_name, direction=c.direction, baseline_value=c.baseline,
+        noise_band=c.noise_band, novel_metric=c.novel_metric, novel_direction=c.novel_direction,
+        novel_threshold=c.novel_threshold, judge_script_sha=c.script_sha,
+        closes_question=c.closes_question, credence=c.credence))
+    res = submit_test_result(name, c.tag, TestResultIn(
+        metric_value=c.measured, script=c.script, script_sha=c.script_sha,
+        novel_measured=c.novel_measured, source_trust=c.source_trust))
+    for cr in c.critiques:
+        add_critique(name, c.tag, cr)
+    return dict(tree=name, tag=c.tag, verdict=res.get('verdict'), novel=res.get('novel'),
+                delta=res.get('delta'), critiques=len(c.critiques),
+                standing=standing(name, c.tag),
+                note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
 
 
 class ArtifactIn(BaseModel):
@@ -1371,16 +1444,21 @@ def get_lineage(artifact: str, stale: bool = False):
         cur = {}
         for d in ds:
             for path, _ in d.inputs:
-                if path not in cur and _os.path.isfile(path):
-                    cur[path] = _h.sha256(open(path, 'rb').read()).hexdigest()
-                elif path not in cur and _os.path.isdir(path):
-                    # source 가 디렉토리(ZDF lot) → 내용 파일들의 sha 합성
-                    h = _h.sha256()
-                    for f in sorted(_os.listdir(path)):
-                        fp = _os.path.join(path, f)
-                        if _os.path.isfile(fp):
-                            h.update(f.encode()); h.update(str(_os.path.getsize(fp)).encode())
-                    cur[path] = h.hexdigest()
+                if path in cur:
+                    continue
+                try:                              # ROB-5: 스트리밍 sha(GB 파일 메모리 bounded) + I/O 예외 graceful
+                    if _os.path.isfile(path):
+                        cur[path] = _file_sha(path)
+                    elif _os.path.isdir(path):
+                        # source 가 디렉토리(ZDF lot) → 내용 파일들의 (이름+크기) sha 합성(파일내용 미독)
+                        h = _h.sha256()
+                        for f in sorted(_os.listdir(path)):
+                            fp = _os.path.join(path, f)
+                            if _os.path.isfile(fp):
+                                h.update(f.encode()); h.update(str(_os.path.getsize(fp)).encode())
+                        cur[path] = h.hexdigest()
+                except OSError as e:
+                    cur[path] = f'__unreadable__:{type(e).__name__}'   # 읽기 실패 → stale 로 표면화(조용한 통과 금지)
         changed = {}
         for d in plan:
             bad = stale_inputs(d, cur)
