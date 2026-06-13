@@ -26,6 +26,9 @@ from .leaderboard import dominates
 from .lifecycle import DIVERGING, EXTINCT
 
 SUPERSESSION_WINDOW = GROUNDED['supersession_window']['value']
+# 연속 비진보 퇴행 임계 — grounding 레지스트리에서(매직넘버 금지, 나생문 T3-3).
+# abandon_k = 라우든 폐기 규칙①의 '연속 비진보 ≥ k' 와 동일 의미(tier policy_in_scale).
+DEGENERATION_K = GROUNDED['abandon_k']['value']
 
 NORMAL_SCIENCE, CRISIS, SHIFT_CANDIDATE = 'normal_science', 'crisis', 'shift_candidate'
 
@@ -40,10 +43,11 @@ class ParadigmAssessment:
     requires_human_oracle: bool  # shift 는 항상 True — 자동 교체 금지
 
 
-def incumbent_degenerating(lifecycle_states: list, consecutive_nonprogressive: int) -> bool:
-    """incumbent 퇴행 판정 — 최근 lifecycle 가 발산/소멸이거나 연속 비진보 누적."""
+def incumbent_degenerating(lifecycle_states: list, consecutive_nonprogressive: int,
+                           k: int = DEGENERATION_K) -> bool:
+    """incumbent 퇴행 판정 — 최근 lifecycle 가 발산/소멸이거나 연속 비진보 ≥ k (grounding)."""
     recent = lifecycle_states[-1] if lifecycle_states else None
-    return recent in (DIVERGING, EXTINCT) or consecutive_nonprogressive >= 3
+    return recent in (DIVERGING, EXTINCT) or consecutive_nonprogressive >= k
 
 
 def sustained_dominance(snapshots: list, rival: str, incumbent: str,

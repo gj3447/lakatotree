@@ -14,11 +14,18 @@
 | **베이즈** (중) | Bayesian confirmation: 신뢰도=판결 시퀀스 사후확률, BF=P(E|진보)/P(E|퇴행) | 자산가중 — 강한 가지는 반례 하나로 안 죽음 | `bayes.py` |
 | **라우든** (최약·실용) | 문제해결 효과성 = 해결−미해결 문제 | "언제 퇴행이냐" 명문 폐기 3규칙 | `laudan.py` |
 
-## 2. 보강 4층 (서버 강화 — "너무 얇다" 해소)
+> **판결 권위 정직 표기 (T3-2)**: 3층 스택이 *경보/메타규칙*을 주지만, 단일 노드의 최종 판결 권위는
+> `spine.py`(reconcile_verdict/dialectical_verdict — 메트릭 판결 + LakatosGate 질적 4기준을 단일화)와
+> `pnr.py`(Lakatos *Proofs & Refutations* 변증법 — 반례 *대응 방식*이 진보/퇴행을 가름, 자칭 '심장')가
+> 함께 진다. 3층은 그 위에서 가지/프로그램 수준 합의를 본다. (server `submit_test_result` 가 이 둘을 배선.)
+
+## 2. 보강층 (서버 강화 — "너무 얇다" 해소)
 
 | 층 | 이론 | 역할 | 모듈 |
 |---|---|---|---|
-| 신념개정 | AGM 1985 / Hansson 1993 base revision (Levi identity, entrenchment) | hard_core 개정 형식화(기본 PROTECTED, 동의 시 shift 신호), CANONICAL demote=revision | `agm.py` ✅ |
+| 판결 단일화 | reconcile (메트릭 + 질적 LakatosGate 4기준) | 노드 최종 판결 권위 단일 출처 — 메트릭만/질적만의 충돌 해소 | `spine.py` |
+| 증명-반박 변증법 | Lakatos 1976 P&R (surrender/monster-barring/lemma-incorporation…) | 반례 대응 방식 채점 — 양의 휴리스틱 정신·초과경험내용 | `pnr.py` |
+| 신념개정 | AGM 1985 / Hansson 1993 base revision (Levi identity, entrenchment) | hard_core 개정 형식화(기본 PROTECTED, 동의 시 shift 신호), CANONICAL demote=revision. `/api/agm/revise`+CLI/MCP 노출 | `agm.py` ✅ |
 | 출처추적 | W3C PROV-O (Entity/Activity/Agent) | "LLM 점수 금지·스크립트 채점"을 검증가능 계보로 | `prov.py` |
 | 탐색배분 | bandit UCB1 + VoI (Howard 1966) | frontier 질문 우선순위 = 신뢰도+미탐색보너스, 기대진보/비용 | `explore.py` |
 | 메타-종료 | Lakatos 프로그램 소멸 + regret | 수확/발산/소멸 3-상태 판정 (extinct 는 stack 정족수만 선고) | `lifecycle.py` ✅ |
@@ -40,7 +47,7 @@
 | # | gap | 상태 | 어떻게/왜 |
 |---|---|---|---|
 | 1 | novel 채점 (텍스트 존재만으로 차등) | ✅ 닫힘 | `judge.NovelTarget` 구조적 corroboration — 실측 대조 없으면 novel 불인정(F-CON-3) |
-| 2 | prior 주관성 (BF_BASE 보정 근거) | 🟡 완화 | grounding tier 공개 + `calibrate.py` Brier/ECE 로 경험 측정 — "problem of the priors" 자체는 원리상 미해결 |
+| 2 | prior 주관성 (BF_BASE 보정 근거) | 🟡 완화 | grounding tier 공개 + `calibrate.py` Brier/ECE 경험 측정. **2026-06-14**: `prediction.credence` write-path 배선(전엔 /calibration 영구 n=0=dead path → certify G4 영원히 fail 이었음, T3-1) → 경험루프 실제 작동. "problem of the priors" 자체는 원리상 미해결 |
 | 3 | 층간 통약불가 (침묵 OR) | ✅ 닫힘 | `stack.py` 명시 투표+정족수 2/3(Condorcet) + conflict 보고. 단 층 독립성은 근사(같은 판결 시퀀스 공유) — 정족수는 '렌즈 3개의 합의' |
 | 4 | 라우든 규칙③ dead (per-branch 질문귀속 미배선) | ✅ 닫힘 | `metrics.branch_inputs` 가 leaf→root chain 에서 `problem_balance_windowed`(per-branch 질문귀속)를 계산 → `/api/tree/{name}/stack`·`/lifecycle` 가 라우든 규칙③에 배선. CLI/MCP `stack`·`lifecycle` 로 노출 |
 | 5 | AGM entrenchment 유일해 없음 | ✅ 정책 선언으로 닫음 | `agm.py` — 해소가 아니라 사전식 순서를 *선언*하고 모든 결과에 entrenchment_policy 동봉(감사 가능) |
@@ -48,13 +55,14 @@
 | 7 | 단일 트리 한계 (Kuhn 정량모델 부재) | ✅ 닫힘(범위 한정) | `kuhn.py` — 기계화는 Lakatos-Zahar supersession 기준만, Kuhn 은 상태 어휘. shift 는 자동 아닌 인간 안건. CLI/MCP `leaderboard`·`paradigm` 으로 노출 |
 | 8 | 통계 표본 미반영 (다중비교 보정) | ✅ 닫힘 | `multiplicity.false_progressive_screen` (BH/FDR + Bonferroni/FWER) → `tree_metrics` 에 배선돼 `/api/tree/{name}/metrics` 가 family-level false-progressive 경보 노출. 정직 표기 3건(p=noise_band 1σ *근사*·noise_band=0 검정불가·보정은 판결 불변=family 경보) |
 
-## 5. 우선순위 (상태 갱신 2026-06-13)
+## 5. 우선순위 (상태 갱신 2026-06-14)
 
 - P0 ✅: 구조적 corroboration(gap1) + PROV-O 계보 + 스크립트 sha256 무결성
 - P1 ✅: VoI/UCB directions + AGM hardcore 개정(`agm.py`) + lifecycle 종료판정(`lifecycle.py`)
 - P2 ✅: 경쟁 가지 리더보드(`leaderboard.py`+`kuhn.py`) + 인증층(`certify.py`)
-- P3 ✅ (2026-06-14): gap4 per-branch 질문귀속 서버 배선(`branch_inputs`) + gap8 다중비교 보정(`multiplicity`) + 신규 층의 서버/CLI/MCP 노출 (stack/lifecycle/leaderboard/paradigm/certificate) + **oo LTDD 백본**(테스트 스위트 자체를 cid 트레이스로 oo `tests` 스트림에 적재 — `tests/conftest.py`+`oo_sink.test_outcome_records`, 게이트 OFF=no-op)
-- **P4 (신규 frontier)**: gap2 prior 보정 경험누적(calibrate 운영 데이터) + 12 웹-리서치 셀 재검증(rate-limit 재시도) + 대시보드(`/`)에 신규 층 위젯
+- P3 ✅: gap4/gap8 + 신규 층 server/CLI/MCP 노출 + **oo LTDD 백본**(`tests/conftest.py`+`oo_sink.test_outcome_records`)
+- **gap-audit 캠페인 ✅ (2026-06-14, 38 gap 5차원 감사)**: ①죽은기능 살리기(certify G4 calibration·VoI directions write-path) ②orphan 배선(AGM `/api/agm/revise`+CLI/MCP, harness `cycle` CLI + harness_run 스모크) ③대시보드 전면화(stack/lifecycle/bayes/fertility/multiplicity + per-node 링크 + 리더보드) ④운영 안전망(/healthz·503 graceful·opt-in bearer auth·입력검증) + 이론정직(kuhn 매직넘버→grounding·certify G5 tier값검증·PnR/spine 문서화)
+- **P5 (잔여 frontier, 정직)**: ROB-1 KG+PG 비원자성(2PC 필요, 부분실패 시 그래프/이력 분기) + ROB-5 대용량 파일 streaming sha/size cap + 12 웹-리서치 셀 재검증(rate-limit) + harness 서버/MCP 노출(현재 bash RCE 회피로 CLI-only) + 트리노드↔AGM belief 영구 매핑
 
 ## 6. 2차 prom 확장 — 인터넷·인간·agent·하계 엮기 (2026-06-12)
 

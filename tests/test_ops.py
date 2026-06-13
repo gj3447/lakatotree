@@ -1,0 +1,118 @@
+"""Cluster ④ — 운영 안전망 + 이론 정직성 (나생문 ROB-2/4/6, DEPLOY-1, T3-3/4).
+
+healthz/503 graceful/opt-in auth/input 검증/kuhn 매직넘버 제거/grounded tier 값 검증.
+"""
+import importlib
+import os
+
+from fastapi.testclient import TestClient
+
+
+def load_app():
+    os.environ.setdefault('NEO4J_URI', 'bolt://localhost:7687')
+    os.environ.setdefault('NEO4J_USER', 'neo4j')
+    os.environ.setdefault('NEO4J_PASSWORD', 'test')
+    return importlib.import_module('server.app')
+
+
+class _Cur:
+    def execute(self, *a): pass
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+class _Conn:
+    def cursor(self, *a, **k): return _Cur()
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+def _all_up(monkeypatch, app):
+    monkeypatch.setattr(app, 'kg', lambda *a, **k: [{'ok': 1}])
+    monkeypatch.setattr(app, 'pg', lambda: _Conn())
+    monkeypatch.setattr(app.MONGO, 'command', lambda *a, **k: {})
+
+
+# ── DEPLOY-1: /healthz ──
+
+def test_healthz_200_when_all_up(monkeypatch):
+    app = load_app()
+    _all_up(monkeypatch, app)
+    r = TestClient(app.app).get('/healthz')
+    assert r.status_code == 200 and r.json()['status'] == 'ok'
+
+
+def test_healthz_503_when_neo4j_down(monkeypatch):
+    app = load_app()
+    _all_up(monkeypatch, app)
+
+    def boom(*a, **k):
+        raise RuntimeError('unreachable')
+
+    monkeypatch.setattr(app, 'kg', boom)
+    r = TestClient(app.app).get('/healthz')
+    assert r.status_code == 503
+    assert 'down' in r.json()['services']['neo4j'] and r.json()['status'] == 'degraded'
+
+
+# ── ROB-4: opt-in bearer auth (mutating only) ──
+
+def test_auth_blocks_post_without_token(monkeypatch):
+    app = load_app()
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')
+    r = TestClient(app.app).post('/api/tree/T/question', json={'qname': 'q1'})
+    assert r.status_code == 401
+
+
+def test_auth_allows_get_and_correct_token(monkeypatch):
+    app = load_app()
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')
+    monkeypatch.setattr(app, 'kg', lambda *a, **k: [])
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    c = TestClient(app.app)
+    assert c.get('/api/trees').status_code == 200          # GET 은 무인증 통과
+    r = c.post('/api/tree/T/question', json={'qname': 'q1'},
+               headers={'authorization': 'Bearer secret'})
+    assert r.status_code == 200                            # 올바른 토큰 통과
+
+
+# ── ROB-6: 입력 검증 ──
+
+def test_empty_tag_rejected_422(monkeypatch):
+    app = load_app()
+    r = TestClient(app.app).post('/api/tree/T/node', json={'tag': ''})
+    assert r.status_code == 422                            # 빈 tag → Pydantic 422 (kg 도달 전)
+
+
+def test_history_limit_clamped(monkeypatch):
+    app = load_app()
+    captured = {}
+
+    class _RCur(_Cur):
+        def execute(self, sql, params): captured['limit'] = params[-1]
+        def fetchall(self): return []
+
+    class _RConn(_Conn):
+        def cursor(self, *a, **k): return _RCur()
+
+    monkeypatch.setattr(app, 'pg', lambda: _RConn())
+    app.history('T', limit=999999)
+    assert captured['limit'] == 1000                       # 무제한 → 1000 cap
+
+
+# ── T3-3: kuhn 매직넘버 → grounding ──
+
+def test_kuhn_degeneration_threshold_from_grounding():
+    from lakatos.kuhn import DEGENERATION_K, incumbent_degenerating
+    from lakatos.grounding import GROUNDED
+    assert DEGENERATION_K == GROUNDED['abandon_k']['value']   # bare 3 제거, 레지스트리 출처
+    assert incumbent_degenerating([], DEGENERATION_K) is True
+    assert incumbent_degenerating([], DEGENERATION_K - 1) is False
+
+
+# ── T3-4: grounded tier 값 유효성 ──
+
+def test_grounded_registry_tiers_all_valid():
+    from lakatos.grounding import GROUNDED
+    valid = {'literature', 'policy_in_scale', 'policy'}
+    assert GROUNDED and all(g.get('tier') in valid for g in GROUNDED.values())

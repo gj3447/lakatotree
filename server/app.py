@@ -44,12 +44,15 @@ from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_
                              reproducibility_gaps, stale_inputs, is_reproducible, script_history,
                              build_manifest, env_drift, RawRoot, RebuildManifest)
 from lakatos.envfp import environment_fingerprint, fingerprint_sha, env_matches
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 import psycopg2, psycopg2.extras
+from psycopg2 import OperationalError as PgOperationalError
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 NEO = GraphDatabase.driver(os.environ['NEO4J_URI'],
                            auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
@@ -60,6 +63,58 @@ PG_KW = dict(host=os.environ.get('LAKATOS_PG_HOST', 'localhost'),
              dbname=os.environ.get('LAKATOS_PG_DB', 'lakatos'))
 MONGO = MongoClient(os.environ.get('LAKATOS_MONGO_URI', 'mongodb://localhost:27017'))['lakatos']
 app = FastAPI(title='Lakatos Server', version='1.0')
+
+
+# ── 운영 안전망 (나생문 ROB-2/4, DEPLOY-1) ──
+
+@app.exception_handler(ServiceUnavailable)
+@app.exception_handler(SessionExpired)
+async def _neo4j_down(request: Request, exc):
+    # DB 다운이 500 으로 누수되지 않게 — graceful 503 (운영자가 의존성 문제로 식별)
+    return JSONResponse(status_code=503, content={'detail': f'Neo4j 연결 불가: {type(exc).__name__}'})
+
+
+@app.exception_handler(PgOperationalError)
+async def _pg_down(request: Request, exc):
+    return JSONResponse(status_code=503, content={'detail': f'PostgreSQL 연결 불가: {type(exc).__name__}'})
+
+
+@app.middleware('http')
+async def _bearer_auth(request: Request, call_next):
+    """opt-in 쓰기 보호 — LAKATOS_API_TOKEN 설정 시에만 mutating 요청에 Bearer 강제.
+    미설정이면 no-op(하위호환). 정본 연구그래프 무단 변조 방지(ROB-4)."""
+    token = os.environ.get('LAKATOS_API_TOKEN')
+    if token and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        if request.headers.get('authorization', '') != f'Bearer {token}':
+            return JSONResponse(status_code=401,
+                                content={'detail': '유효한 Bearer 토큰 필요 (LAKATOS_API_TOKEN)'})
+    return await call_next(request)
+
+
+@app.get('/healthz')
+def healthz():
+    """liveness/readiness — 의존성 도달성. 하나라도 down 이면 503 (LB/systemd 게이트용)."""
+    svc = {}
+    try:
+        kg('RETURN 1 AS ok')
+        svc['neo4j'] = 'ok'
+    except Exception as e:
+        svc['neo4j'] = f'down:{type(e).__name__}'
+    try:
+        with pg() as c, c.cursor() as cur:
+            cur.execute('SELECT 1')
+        svc['pg'] = 'ok'
+    except Exception as e:
+        svc['pg'] = f'down:{type(e).__name__}'
+    try:
+        MONGO.command('ping')
+        svc['mongo'] = 'ok'
+    except Exception as e:
+        svc['mongo'] = f'down:{type(e).__name__}'
+    healthy = all(v == 'ok' for v in svc.values())
+    return JSONResponse(status_code=200 if healthy else 503,
+                        content={'status': 'ok' if healthy else 'degraded', 'services': svc})
+
 
 def pg():
     return psycopg2.connect(**PG_KW)
@@ -138,7 +193,7 @@ class ParentEdgeIn(BaseModel):
 
 
 class NodeIn(BaseModel):
-    tag: str
+    tag: str = Field(min_length=1)   # ROB-6: 빈 tag 금지(KG 합성키 $tree+'/'+$tag 오염 방지)
     parent: str | None = None
     parents: list[str] = Field(default_factory=list)
     parent_edges: list[ParentEdgeIn] = Field(default_factory=list)
@@ -274,7 +329,7 @@ def set_verdict(name: str, tag: str, v: VerdictIn):
     return {'ok': True}
 
 class QuestionIn(BaseModel):
-    qname: str
+    qname: str = Field(min_length=1)   # ROB-6
     body: str = ''
     # 탐색배분(VoI/UCB) 입력 — 이게 write 안 되면 directions 가 전부 default 로 떨어져 dead (WIRE-1)
     expected_gain: float = Field(0.1, ge=0)   # 이 질문이 닫히면 기대되는 진보 이득
@@ -357,7 +412,7 @@ def register_prediction(name: str, tag: str, p: PredictionIn):
 class TestResultIn(BaseModel):
     """채점 스크립트 산출 — LLM 점수 금지, 판결은 규칙으로 자동."""
     metric_value: float
-    script: str                      # 채점 스크립트 경로 (재현 가능해야 함)
+    script: str = Field(min_length=1)   # 채점 스크립트 경로 (ROB-6/R2: 빈 script→cert 고무도장 차단)
     script_sha: str | None = None    # 제출 스크립트 sha256 (사전등록과 대조)
     novel_measured: float | None = None   # 구조적 novel 예측의 실측값
     source_trust: float = 1.0        # 상계(인터넷) 증거 신뢰 [0,1] — 베이즈 결합용
@@ -927,7 +982,9 @@ def node_certificate(name: str, tag: str):
     # G5 는 노드별이 아니라 *시스템 수준 불변식*: 채점 상수 전수 tier 공개. literal True 대신
     # 레지스트리에서 파생 → 미표기 상수 유입 시 게이트가 실제로 False 로 뒤집힌다 (나생문 F3).
     from lakatos.grounding import GROUNDED
-    grounded_ok = bool(GROUNDED) and all('tier' in g for g in GROUNDED.values())
+    # T3-4: tier *키 존재*만 보면 오타/빈 tier 가 통과 → tier *값*이 유효 enum 인지 검증
+    _VALID_TIERS = {'literature', 'policy_in_scale', 'policy'}
+    grounded_ok = bool(GROUNDED) and all(g.get('tier') in _VALID_TIERS for g in GROUNDED.values())
     checks.append(gate_check('grounded', grounded_ok,
                              'lakatos/grounding.py GROUNDED tier registry' if grounded_ok else '',
                              '시스템 수준 불변식 — 채점 상수 전부 tier 공개(노드별 아님)'
@@ -1126,6 +1183,7 @@ def get_foundation_requirements(name: str):
 
 @app.get('/api/tree/{name}/history')
 def history(name: str, limit: int = 100):
+    limit = max(1, min(limit, 1000))   # ROB-6: 무제한 limit 차단 (OOM/DoS)
     with pg() as c, c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute('SELECT ts, op, node_tag, payload FROM history WHERE tree=%s '
                     'ORDER BY id DESC LIMIT %s', (name, limit))
