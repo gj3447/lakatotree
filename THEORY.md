@@ -75,7 +75,7 @@
 
 | 모듈 | 이론 | 라카토트리 역할 |
 |---|---|---|
-| `trust.py` | TrustRank(시드전파)·EigenTrust(고유벡터) | **인터넷 증거에 정량 신뢰가중** → 베이즈 P(E|H) 결합. 골방 아님 |
+| `trust.py` | TrustRank(시드전파)·EigenTrust(고유벡터) | **인터넷 증거에 정량 신뢰가중** → 베이즈 P(E|H) 결합. ★배선 정직(LKT-T1): 런타임 trust→bayes 경로는 `evidence_weight(source_trust)`(bayes.bayes_factor 가 실사용). `trustrank`/`eigentrust`(그래프 고유벡터)는 citation 그래프용 *라이브러리* 함수 — 아직 런타임 미배선(P6). |
 | `argue.py` | Dung 추상 논증(grounded extension) | **인간+agent 비판 채널**: 의문=공격, 반박=재공격. 판결이 grounded extension 에 서야 정당 |
 | `calibrate.py` | proper scoring(Brier/log/ECE) | 예측 **신뢰도 보정** — prior 주관성 gap 경험적 측정, 정직성 강제 |
 

@@ -189,3 +189,29 @@ def test_sprt_abandonment_matches_k3_heuristic():
     # 약한 혼합 → 미결(더 관측)
     v3, _, _ = should_abandon_sprt([-0.5, 0.3])
     assert v3 == 'undecided'
+
+
+# ── B6 T-H-1/THR-2/LKT-T2: grounding single-source 소비 + wilson 입력검증 + UCB 정본 ──
+
+def test_grounding_single_source_consumed_by_modules():
+    import inspect
+    import lakatos.calibrate as cal, lakatos.trust as tr, lakatos.explore as ex
+    assert inspect.signature(cal.calibration_error).parameters['bins'].default == G.GROUNDED['ece_bins']['value']
+    assert inspect.signature(tr.trustrank).parameters['damping'].default == G.GROUNDED['pagerank_damping']['value']
+    assert inspect.signature(tr.eigentrust).parameters['alpha'].default == G.GROUNDED['eigentrust_alpha']['value']
+    assert ex.UCB_C == G.GROUNDED['ucb_c']['value']
+
+
+def test_ucb_c_grounded_precise():
+    import math
+    assert G.GROUNDED['ucb_c']['value'] == math.sqrt(2)        # 정밀 √2 (1.414 하드코딩 아님)
+    assert G.GROUNDED['ucb_c']['tier'] == 'literature'
+
+
+def test_wilson_lower_bound_rejects_k_out_of_range():
+    import pytest
+    with pytest.raises(ValueError):
+        G.wilson_lower_bound(11, 10)      # k>n → math domain error 대신 ValueError
+    with pytest.raises(ValueError):
+        G.wilson_lower_bound(-1, 5)
+    assert G.wilson_lower_bound(0, 0) == 0.0                   # n=0 가드 보존

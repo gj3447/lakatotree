@@ -8,7 +8,9 @@ arm = OpenQuestion/가지, reward = progressive 적중. 탐색(미탐색 질문)
 """
 import math
 
-UCB_C = 1.414   # 탐색계수 √2 (UCB1 표준)
+from .grounding import GROUNDED
+
+UCB_C = GROUNDED['ucb_c']['value']   # 탐색계수 √2 (UCB1, Auer 2002) — grounding 정본(전엔 1.414 하드코딩)
 
 
 def ucb_score(credence: float, n_visits: int, total_visits: int, c: float = UCB_C) -> float:

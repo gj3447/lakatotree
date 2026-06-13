@@ -8,6 +8,8 @@ ECE(보정오차). 베이즈 BF_BASE 의 주관성을 경험적으로 보정하�
 """
 import math
 
+from .grounding import GROUNDED   # T-H-1: ece_bins 단일 정본(하드코딩 10 금지 — drift/G5 우회 방지)
+
 
 def brier_score(forecasts: list) -> float:
     """평균 (p−o)^2. 0=완벽, 1=최악. strictly proper, calibration+resolution+uncertainty 분해."""
@@ -27,7 +29,7 @@ def log_score(forecasts: list, eps: float = 1e-9) -> float:
     return s / len(forecasts)
 
 
-def calibration_error(forecasts: list, bins: int = 10) -> float:
+def calibration_error(forecasts: list, bins: int = GROUNDED['ece_bins']['value']) -> float:
     """ECE = Σ (|bin| / N) × |평균예측 − 평균결과|. 0 에 가까울수록 보정 잘 됨."""
     if not forecasts:
         return 0.0

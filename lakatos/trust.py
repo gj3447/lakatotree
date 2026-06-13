@@ -7,7 +7,11 @@
 """
 
 
-def trustrank(graph: dict, seeds: dict, damping: float = 0.85, iters: int = 50) -> dict:
+from .grounding import GROUNDED   # T-H-1: damping/alpha 단일 정본(하드코딩 금지 — drift/G5 우회 방지)
+
+
+def trustrank(graph: dict, seeds: dict, damping: float = GROUNDED['pagerank_damping']['value'],
+              iters: int = 50) -> dict:
     """TrustRank — 시드(신뢰 페이지)에서 biased PageRank 로 신뢰 전파.
 
     graph = {node: [out-neighbors]}, seeds = {node: trust}. teleport = 시드 분포.
@@ -35,7 +39,8 @@ def trustrank(graph: dict, seeds: dict, damping: float = 0.85, iters: int = 50) 
     return tr
 
 
-def eigentrust(local_trust: dict, pre_trusted: dict, alpha: float = 0.15,
+def eigentrust(local_trust: dict, pre_trusted: dict,
+               alpha: float = GROUNDED['eigentrust_alpha']['value'],
                iters: int = 100) -> dict:
     """EigenTrust — 전이적 신뢰의 principal left eigenvector. 글로벌 신뢰 = 정규화 벡터.
 

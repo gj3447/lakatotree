@@ -6,7 +6,8 @@
   PostgreSQL      = append-only 이력 (lakatos.history, metric_snapshots) — 누가 언제 무엇을
   MongoDB         = 산출물 보관 (결과 json/지표 원본; db=lakatos, col=artifacts)
 
-env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_DSN, LAKATOS_MONGO_URI (run.sh 가 .env 에서 주입)
+env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB, LAKATOS_MONGO_URI,
+     (선택) LAKATOS_API_TOKEN (run.sh 가 .env 에서 주입)  # OPS-HON-4: LAKATOS_PG_DSN 은 미존재였음
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
 import html, json, os, secrets, sys
@@ -41,8 +42,8 @@ from lakatos.engine import (FoundationMap, FoundationRequirement, KnowledgeKind,
                             ResearchFrame, ResearchProject, LakatosGate, LakatosEvidence)
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
-                             reproducibility_gaps, stale_inputs, is_reproducible, script_history,
-                             build_manifest, env_drift, RawRoot, RebuildManifest)
+                             reproducibility_gaps, stale_inputs, script_history,
+                             build_manifest, env_drift)   # OPS-DEAD-5: is_reproducible/RawRoot/RebuildManifest 미사용 제거
 from lakatos.envfp import environment_fingerprint, fingerprint_sha, env_matches
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
