@@ -8,7 +8,12 @@
 # KG: span_lakatotree_promote / q-lkt-writepath-enforce
 """
 
-NON_PROMOTABLE = frozenset({'rejected'})   # 퇴행 가지는 CANONICAL 불가
+from .verdicts import SCRIPTED_VERDICTS, ADMIN_VERDICTS
+
+# ENG-CORR-1: deny-by-default allowlist (안전게이트는 fail-closed). 단일 'rejected' denylist 는
+# dialectical 'degenerating'/'withdrawn'/'ambiguous' + rebuild 실패 판결을 통과시켜 퇴행 노드가
+# CANONICAL 로 승격됐다. verdicts.py 정본서 derive → 미래 판결도 자동 차단(누락=차단).
+PROMOTABLE = (SCRIPTED_VERDICTS - {'rejected'}) | ADMIN_VERDICTS | {'progressive_conditional'}
 
 
 def promotion_gate(*, scripted_verdict: str, stands: bool,
@@ -16,8 +21,8 @@ def promotion_gate(*, scripted_verdict: str, stands: bool,
                    blocking_reasons: tuple = ()) -> tuple[bool, tuple]:
     """CANONICAL 승격 가능 여부 + 차단 사유. (ok, reasons)."""
     reasons = []
-    if scripted_verdict in NON_PROMOTABLE:
-        reasons.append(f'verdict_is_{scripted_verdict}')
+    if scripted_verdict not in PROMOTABLE:
+        reasons.append(f'verdict_not_promotable:{scripted_verdict}')
     if stands is False:
         reasons.append('unresolved_doubt')
     if reproducible is False:

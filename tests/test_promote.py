@@ -7,9 +7,9 @@ def test_progressive_stands_promotable():
     ok, reasons = promotion_gate(scripted_verdict='progressive', stands=True)
     assert ok and reasons == ()
 
-def test_rejected_blocked():   # F-CON-5: 퇴행 가지 CANONICAL 금지
+def test_rejected_blocked():   # F-CON-5: 퇴행 가지 CANONICAL 금지 (ENG-CORR-1: allowlist 로 전환, 사유 문구 변경)
     ok, reasons = promotion_gate(scripted_verdict='rejected', stands=True)
-    assert not ok and 'verdict_is_rejected' in reasons
+    assert not ok and 'verdict_not_promotable:rejected' in reasons
 
 def test_unresolved_doubt_blocks():   # F-CON-2: 막지못한 의문
     ok, reasons = promotion_gate(scripted_verdict='progressive', stands=False)

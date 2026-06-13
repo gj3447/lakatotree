@@ -9,7 +9,10 @@ from .bayes import branch_credence, should_abandon_bayes
 from .fertility import predictive_fertility, nobel_grade
 from .multiplicity import false_progressive_screen
 
-NONPROGRESSIVE = ('rejected', 'partial', 'equivalent')
+# THR-1: dialectical 판결(degenerating/withdrawn)도 비진보로 셈 — 전엔 NONPROGRESSIVE 밖이라
+# consec/stall 카운터를 리셋(진보로 오인)했다. progressive_conditional 은 (조건부)진보로 PROGRESS 측.
+NONPROGRESSIVE = ('rejected', 'partial', 'equivalent', 'degenerating', 'withdrawn')
+PROGRESS_VERDICTS = ('progressive', 'progressive_conditional', 'CANONICAL', 'former_canonical')
 
 
 def _primary_parent(row: dict) -> str | None:
@@ -57,15 +60,13 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
     return dict(
         leaf=leaf, window=window, verdicts=seq,
         consecutive_nonprogressive=consec, nodes_spent=len(chain),
-        prediction_hits=sum(1 for r in chain if r['verdict']
-                            in ('progressive', 'CANONICAL', 'former_canonical')),
+        prediction_hits=sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
                                                                  window=window),
         novel_registered_recent=sum(1 for r in recent if r.get('novel_registered')),
         # 'partial' 은 NONPROGRESSIVE(정체/퇴행 신호)이므로 '정본 개선' 으로 세면 안 됨 —
         # 그러면 diverging/harvesting 조기경보(lifecycle)를 부당하게 막는다 (나생문 F1).
-        canonical_improved_recent=any(
-            r['verdict'] in ('progressive', 'CANONICAL', 'former_canonical') for r in recent),
+        canonical_improved_recent=any(r['verdict'] in PROGRESS_VERDICTS for r in recent),
     )
 
 
@@ -132,7 +133,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             else:
                 break
         hits = sum(1 for r in chain
-                   if r['verdict'] in ('progressive', 'CANONICAL', 'former_canonical'))
+                   if r['verdict'] in PROGRESS_VERDICTS)
         # gap4: 규칙③ 가동 — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
         pb_windowed = branch_problem_balance_windowed(chain, frontier)
         ok, reason = should_abandon(consecutive_nonprogressive=consec,
