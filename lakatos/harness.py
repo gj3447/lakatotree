@@ -42,7 +42,7 @@ class CycleSpec:
 
 def _parse_metric(stdout: str) -> float:
     """채점 스크립트 stdout 에서 'metric = <수>' 추출 (LLM 점수 금지, 순수 파싱)."""
-    m = re.search(r'metric\s*[=:]\s*(-?\d+\.?\d*)', stdout)
+    m = re.search(r'metric\s*[=:]\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)', stdout)  # 과학적 표기 보존(OPS-COR-1)
     if not m:
         raise ValueError(f'채점 출력에 metric=<수> 없음: {stdout[:80]}')
     return float(m.group(1))

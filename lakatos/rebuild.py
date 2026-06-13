@@ -20,7 +20,7 @@ class RebuildResult:
 
 
 def _parse_metric(s):
-    m = re.search(r'metric\s*[=:]\s*(-?\d+\.?\d*)', s)
+    m = re.search(r'metric\s*[=:]\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)', s)  # 과학적 표기 보존(OPS-COR-1)
     return float(m.group(1)) if m else None
 
 
