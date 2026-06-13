@@ -116,3 +116,23 @@ def test_grounded_registry_tiers_all_valid():
     from lakatos.grounding import GROUNDED
     valid = {'literature', 'policy_in_scale', 'policy'}
     assert GROUNDED and all(g.get('tier') in valid for g in GROUNDED.values())
+
+
+def test_auth_blocks_get_snapshot_sideeffect(monkeypatch):
+    # AUTH-BYPASS 수정: GET ?snapshot=true 는 DB insert side-effect → 토큰 없으면 401
+    app = load_app()
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')
+    r = TestClient(app.app).get('/api/tree/T/metrics?snapshot=true')
+    assert r.status_code == 401
+
+
+def test_healthz_does_not_leak_exception_class(monkeypatch):
+    app = load_app()
+    _all_up(monkeypatch, app)
+
+    def boom(*a, **k):
+        raise RuntimeError('SecretDriverName')
+
+    monkeypatch.setattr(app, 'kg', boom)
+    r = TestClient(app.app).get('/healthz')
+    assert r.json()['services']['neo4j'] == 'down'   # 클래스명 'RuntimeError' 노출 안 함

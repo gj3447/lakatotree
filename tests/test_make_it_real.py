@@ -122,3 +122,21 @@ def test_testclient_trees_and_dashboard_serialize(monkeypatch):
     assert r.status_code == 200 and r.json() == []
     d = client.get('/')
     assert d.status_code == 200 and '라카토스 서버' in d.text
+
+
+def test_calibration_query_restricts_to_novel_registered(monkeypatch):
+    # CREDENCE-CALIBRATION-MISMATCH 수정: novel 없는 예측 오염 차단(novel_registered=true)
+    app = load_app()
+    calls = _capture_kg(monkeypatch, app, ret=[])
+    app.calibration('T')
+    assert 'novel_registered = true' in calls[0][0]
+
+
+def test_register_prediction_bumps_closed_question_visits(monkeypatch):
+    # WIRE1-UCB 수정: closes_question 예측이 그 질문 n_visits++ → UCB 탐색항 차등
+    app = load_app()
+    calls = _capture_kg(monkeypatch, app)
+    app.register_prediction('T', 'v', app.PredictionIn(
+        metric_name='p95', baseline_value=0.5, closes_question='q1'))
+    assert any('n_visits=coalesce(q.n_visits, 0) + 1' in q for q, _ in calls)
+    assert any(kw.get('cq') == 'q1' for _, kw in calls)

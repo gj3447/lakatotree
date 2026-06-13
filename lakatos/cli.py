@@ -35,9 +35,12 @@ BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
 
 
 def call(method, path, body=None):
+    headers = {'Content-Type': 'application/json'}
+    tok = os.environ.get('LAKATOS_API_TOKEN')   # 서버 auth 켜져 있으면 토큰 전달 (REG-1)
+    if tok:
+        headers['Authorization'] = f'Bearer {tok}'
     req = urllib.request.Request(BASE + path, method=method,
-        data=(json.dumps(body).encode() if body is not None else None),
-        headers={'Content-Type': 'application/json'})
+        data=(json.dumps(body).encode() if body is not None else None), headers=headers)
     try:
         return json.loads(urllib.request.urlopen(req, timeout=30).read())
     except urllib.error.HTTPError as e:

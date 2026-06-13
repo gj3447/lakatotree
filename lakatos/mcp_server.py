@@ -13,12 +13,17 @@ BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
 mcp = FastMCP('lakatotree')
 
 
+def _headers():
+    tok = os.environ.get('LAKATOS_API_TOKEN')   # 서버 auth 켜져 있으면 토큰 전달 (REG-1)
+    return {'Authorization': f'Bearer {tok}'} if tok else {}
+
+
 def _get(path):
-    r = httpx.get(BASE + path, timeout=30); r.raise_for_status(); return r.json()
+    r = httpx.get(BASE + path, headers=_headers(), timeout=30); r.raise_for_status(); return r.json()
 
 
 def _post(path, body):
-    r = httpx.post(BASE + path, json=body, timeout=30)
+    r = httpx.post(BASE + path, json=body, headers=_headers(), timeout=30)
     if r.status_code >= 400:
         return {'error': r.status_code, 'detail': r.text[:200]}
     return r.json()
@@ -132,7 +137,7 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
                         direction: str = 'lower', noise_band: float = 0.0,
                         novel_metric: str = '', novel_direction: str = '',
                         novel_threshold: float = 0.0, script_sha: str = '',
-                        credence: float = None) -> str:
+                        credence: float | None = None) -> str:
     """실행 전 사전등록 예측(의무). 구조적 novel(novel_metric/threshold) 권장 — 텍스트 아닌 실측 대조.
     credence[0,1]=예측 신뢰도 → calibration/certify G4(calibrated) 입력. 안 주면 인증서 G4 영구 미통과."""
     body = dict(metric_name=metric, direction=direction, baseline_value=baseline, noise_band=noise_band)

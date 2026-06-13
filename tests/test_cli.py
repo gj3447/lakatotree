@@ -162,3 +162,19 @@ def test_cycle_cli_invokes_harness_run(monkeypatch):
     monkeypatch.setattr(hr, 'main', lambda p: seen.append(p))
     cli.main(['cycle', '/tmp/spec.json'])
     assert seen == ['/tmp/spec.json']        # 하네스 러너로 위임(서버 RCE 회피, client-side)
+
+
+def test_cli_call_injects_bearer_when_env(monkeypatch):
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'tok')
+    captured = {}
+
+    class _R:
+        def read(self): return b'{}'
+
+    def fake_urlopen(req, timeout=None):
+        captured['auth'] = req.headers.get('Authorization')
+        return _R()
+
+    monkeypatch.setattr(cli.urllib.request, 'urlopen', fake_urlopen)
+    cli.call('GET', '/api/trees')
+    assert captured['auth'] == 'Bearer tok'        # REG-1: auth 켜지면 client 가 토큰 전달
