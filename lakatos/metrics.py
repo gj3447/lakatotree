@@ -84,21 +84,24 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     path = path[::-1]
     # 진보율 (같은 scope 의 정본경로 metric)
     prog = None
-    pm = [(t, by[t]['metric_value'], by[t].get('metric_scope')) for t in path
-          if by[t].get('metric_value') is not None]
+    # ENG-HON-1: pred_direction 동봉 — improvement_pct 가 방향 무시하면 higher-is-better 진보를
+    # 음수로 오보 + 가짜 정체경보 + leaderboard/kuhn 오염. (default 'lower' → 기존 동작 보존)
+    pm = [(t, by[t]['metric_value'], by[t].get('metric_scope'), by[t].get('pred_direction') or 'lower')
+          for t in path if by[t].get('metric_value') is not None]
     if len(pm) >= 2:
         scopes = defaultdict(list)
-        for t, m, sc in pm:
-            scopes[sc].append((t, m))
+        for t, m, sc, d in pm:
+            scopes[sc].append((t, m, d))
         sc = max(scopes.values(), key=len)
-        if len(sc) >= 2 and sc[0][1] != 0:   # 나생문 F-FG-8: first=0 ZeroDivision 가드
-            prog = dict(first={'tag': sc[0][0], 'm': sc[0][1]},
-                        last={'tag': sc[-1][0], 'm': sc[-1][1]},
-                        improvement_pct=round(100 * (sc[0][1] - sc[-1][1]) / sc[0][1], 1))
-        elif len(sc) >= 2:   # 기준 0 (예: 시작 tests=0) → 절대 증가량만
-            prog = dict(first={'tag': sc[0][0], 'm': sc[0][1]},
-                        last={'tag': sc[-1][0], 'm': sc[-1][1]},
-                        improvement_pct=None, abs_gain=round(sc[-1][1] - sc[0][1], 4))
+        if len(sc) >= 2:
+            first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
+            gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)  # 개선=양수
+            common = dict(first={'tag': sc[0][0], 'm': first_m},
+                          last={'tag': sc[-1][0], 'm': last_m}, direction=direction)
+            if first_m != 0:   # 나생문 F-FG-8: first=0 ZeroDivision 가드
+                prog = dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
+            else:              # 기준 0 → 절대 증가량(raw last-first, 부호보존)
+                prog = dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))
     children = defaultdict(list)
     for r in nodes:
         for parent in (r.get('parents') or ([r.get('parent')] if r.get('parent') else [])):
