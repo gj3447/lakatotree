@@ -168,9 +168,24 @@ def test_test_result_invalid_counterexample_type_422(monkeypatch):
 def test_test_result_accepts_valid_counterexample_type(monkeypatch):
     app = load_app()
     monkeypatch.setattr(app, 'kg', _pred_row)
+    monkeypatch.setattr(app, 'kg_tx', lambda ops: [[]])
     monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
     out = app.submit_test_result('T', 'v', app.TestResultIn(
         metric_value=0.4, script='j.py', counterexample_response='lemma_incorporation',
         ce_excess_content=True, ce_novel_corroborated=True, ce_in_heuristic_spirit=True,
         counterexample_type='local_not_global'))
     assert 'verdict' in out            # CounterexampleType 파싱+전달 배선 — 422 없이 판결 산출
+
+
+def test_test_result_writes_verdict_and_prov_in_single_tx(monkeypatch):
+    # P6-1b OPS-HON-2: 판결 SET + PROV-O 가 단일 kg_tx (부분쓰기 분기 차단)
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _pred_row)
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    txs = []
+    monkeypatch.setattr(app, 'kg_tx', lambda ops: txs.append(ops) or [[]])
+    app.submit_test_result('T', 'v', app.TestResultIn(metric_value=0.4, script='j.py'))
+    assert len(txs) == 1                                   # 단일 tx
+    cyphers = [c for c, _ in txs[0]]
+    assert any('e.verdict=$v' in c for c in cyphers)       # 판결 SET 포함
+    assert any('HAS_PROV' in c or 'PROV_REL' in c for c in cyphers)   # PROV 도 같은 tx

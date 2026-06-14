@@ -570,25 +570,27 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
     verdict = decided['verdict']
     lakatos_status = decided['lakatos']
     ts = datetime.now(timezone.utc).isoformat()
-    kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-          SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
-              e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
-              e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
-              e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat""",
-       tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-       script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel,
-       st=r.source_trust, lstat=lakatos_status)
-    # PROV-O 계보 기록 (W3C 표준 — 판결의 검증가능 출처그래프)
+    # OPS-HON-2: 판결 SET + PROV-O 계보(W3C) 를 단일 tx 로 — 부분쓰기(판결만 기록·PROV 누락) 분기 차단
+    ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+               SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
+                   e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
+                   e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
+                   e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat""",
+            dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
+                 script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel,
+                 st=r.source_trust, lstat=lakatos_status))]
     for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
         if tr.get('kind'):
-            kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   MERGE (p:ProvNode {id:$id}) SET p.kind=$kind, p.type=$type, p.sha256=$sha
                   MERGE (e)-[:HAS_PROV]->(p)""",
-               tree=name, tag=tag, id=tr['id'], kind=tr['kind'], type=tr.get('type'), sha=tr.get('sha256'))
+                        dict(tree=name, tag=tag, id=tr['id'], kind=tr['kind'],
+                             type=tr.get('type'), sha=tr.get('sha256'))))
         else:
-            kg("""MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
+            ops.append(("""MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
                   MERGE (a)-[rel:PROV_REL {kind:$rk}]->(b)""",
-               f=tr['from'], to=tr['to'], rk=tr['rel'])
+                        dict(f=tr['from'], to=tr['to'], rk=tr['rel'])))
+    kg_tx(ops)
     hist(name, 'test_result', tag, dict(value=r.metric_value, baseline=pr['b'],
                                         delta=round(delta, 4), verdict=verdict, script=r.script,
                                         novel=v.novel, script_sha=r.script_sha))
