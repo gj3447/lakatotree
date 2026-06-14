@@ -138,9 +138,9 @@ def main(argv=None):
     sp.add_argument('--kind', default='intermediate', choices=['source','intermediate','final'])
     sp = sub.add_parser('manifest-verify'); sp.add_argument('manifest')
     sp.add_argument('--current-sha', action='append', default=[], help='path:sha (반복)')
+    sp.add_argument('--no-require-environment', action='store_true')   # manifest-verify 전용 (merge 사고 복구)
     sp = sub.add_parser('longinus', help='코드↔KG ReferenceSite 바인딩 drift 감사 (로컬, 서버 불필요)')
     sp.add_argument('--json', action='store_true', help='JSON 출력')
-    sp.add_argument('--no-require-environment', action='store_true')
     # prom32 G-Web / G-WorldAction enforced gates
     sp = sub.add_parser('observation'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--url', default=''); sp.add_argument('--source-type', default='')
