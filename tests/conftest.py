@@ -51,18 +51,19 @@ def pytest_sessionfinish(session, exitstatus):
         print(f'\n[oo LTDD] trace ship skipped ({type(exc).__name__}: {exc}); 빌드 영향 없음')
         return
     # ★positive verify (write+verify 루프 — 적재 *보고*가 아니라 실제 oo 도착 확인. silent ingest loss 감지).
-    # AIRO_LOGS_VERIFY=0 으로 끌 수 있음(latency 회피). 실패는 경고만(판결 불변).
-    if os.getenv('AIRO_LOGS_VERIFY', '1') != '1':
+    # AIRO_LOGS_VERIFY: '1'(기본=경고) | 'strict'(미도착=세션 실패 exit 1) | '0'(off, latency 회피).
+    mode = os.getenv('AIRO_LOGS_VERIFY', '1')
+    if mode == '0':
         return
     try:
         n_total = len({r['nodeid'] for r in _REPORTS})
-        v = oo_sink.verify_trace(_CID, expect_total=n_total, retries=4, delay=1.5)
-        if v['ok']:
-            s = v['session']
-            print(f"[oo LTDD] ✅ oo 도착 확인 (session {s.get('passed')}/{s.get('total')}, "
-                  f"outcomes={v['outcomes']}, {v['attempts']} attempt)")
-        else:
-            print(f"[oo LTDD] ⚠️ oo 도착 *미확인* ({v['reasons']}) — silent ingest loss 의심. "
-                  f"재확인: python scripts/oo_positive_verify.py {_CID}")
+        retries = int(os.getenv('AIRO_LOGS_VERIFY_RETRIES', '8' if mode == 'strict' else '4'))
+        delay = float(os.getenv('AIRO_LOGS_VERIFY_DELAY', '2.0' if mode == 'strict' else '1.5'))
+        v = oo_sink.verify_trace(_CID, expect_total=n_total, retries=retries, delay=delay)
+        verdict = oo_sink.verify_policy(v, mode)
+        print(f"[oo LTDD] {verdict['message']}"
+              + ('' if v['ok'] else f" (cid={_CID})"))
+        if verdict['fail_build']:
+            session.exitstatus = 1   # strict: oo 미도착 = CI 실패 (테스트는 통과해도 관측 계약 위반)
     except Exception as exc:
         print(f'[oo LTDD] verify skipped ({type(exc).__name__}: {exc})')
