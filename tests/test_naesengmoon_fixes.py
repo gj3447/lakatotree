@@ -1,5 +1,5 @@
 """나생문 수정 회귀 — 수식 비정합/zero-trust/BLAS/ECE/text-novelty.
-# KG: VR_LakatoTree_naesengmoon_20260612
+# KG: VR_LakatoTree_naesengmoon_3lens_20260612
 """
 from lakatos.bayes import bayes_factor, branch_credence
 from lakatos.trust import evidence_weight
