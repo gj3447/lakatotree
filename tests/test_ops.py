@@ -5,6 +5,7 @@ healthz/503 graceful/opt-in auth/input 검증/kuhn 매직넘버 제거/grounded 
 import importlib
 import os
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -162,3 +163,42 @@ def test_parse_metric_sci_notation_rebuild():
     from lakatos.rebuild import _parse_metric
     assert _parse_metric('metric=1.5e-3') == 0.0015
     assert _parse_metric('metric=0.279') == 0.279
+
+
+# ── P6-1a OPS-DEAD-1: pg() ThreadedConnectionPool — 빌려/commit/반납, 예외 시 rollback ──
+
+def test_pg_pool_borrows_commits_and_returns(monkeypatch):
+    app = load_app()
+    events = []
+
+    class _C:
+        def commit(self): events.append('commit')
+        def rollback(self): events.append('rollback')
+
+    class _Pool:
+        def getconn(self): events.append('get'); return _C()
+        def putconn(self, c): events.append('put')
+
+    monkeypatch.setattr(app, '_pg_pool', lambda: _Pool())
+    with app.pg() as c:
+        events.append('use')
+    assert events == ['get', 'use', 'commit', 'put']     # 누수 없음(반드시 putconn)
+
+
+def test_pg_pool_rolls_back_on_error_and_returns(monkeypatch):
+    app = load_app()
+    events = []
+
+    class _C:
+        def commit(self): events.append('commit')
+        def rollback(self): events.append('rollback')
+
+    class _Pool:
+        def getconn(self): return _C()
+        def putconn(self, c): events.append('put')
+
+    monkeypatch.setattr(app, '_pg_pool', lambda: _Pool())
+    with pytest.raises(ValueError):
+        with app.pg() as c:
+            raise ValueError('boom')
+    assert events == ['rollback', 'put']                 # 예외→rollback+반납(commit 안 함)
