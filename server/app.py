@@ -11,6 +11,7 @@ env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB,
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
 import html, json, os, secrets, sys
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -50,7 +51,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, TypeAdapter
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
-import psycopg2, psycopg2.extras
+import psycopg2, psycopg2.extras, psycopg2.pool
 from psycopg2 import OperationalError as PgOperationalError
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -130,8 +131,27 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
+_PG_POOL = None
+
+def _pg_pool():
+    global _PG_POOL
+    if _PG_POOL is None:   # lazy init — import 시 미연결(테스트/오프라인 안전)
+        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(1, 16, **PG_KW)
+    return _PG_POOL
+
+@contextmanager
 def pg():
-    return psycopg2.connect(**PG_KW)
+    """OPS-DEAD-1: ThreadedConnectionPool 에서 빌려 쓰고 반납 — 매 요청 새 커넥션 생성·누수 방지.
+    성공 시 commit, 예외 시 rollback, 항상 putconn (psycopg2 conn 의 with 는 tx 만 닫고 conn 은 안 닫았음)."""
+    conn = _pg_pool().getconn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _pg_pool().putconn(conn)
 
 def hist(tree, op, node_tag=None, payload=None):
     # ROB-1: 이력(PG)은 best-effort audit, KG=truth. KG 커밋 후 PG 다운이 mutation 을 503 으로
