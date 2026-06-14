@@ -17,6 +17,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Iterable
 
+from .grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(spine 과 공유)
+
 from .lineage import (
     Derivation,
     by_output,
@@ -365,11 +367,11 @@ class SourceCredibilityScore:
     def tier(self) -> CredibilityTier:
         if self.explicit_tier is not None:
             return self.explicit_tier
-        if self.trust >= 0.70 and (
+        if self.trust >= GROUNDED['credibility_extracted_trust']['value'] and (
             self.primary_source_bonus >= 0.80 or self.provenance_score >= 0.95
         ):
             return CredibilityTier.EXTRACTED
-        if self.trust >= 0.35:
+        if self.trust >= GROUNDED['credibility_inferred_trust']['value']:
             return CredibilityTier.INFERRED
         return CredibilityTier.AMBIGUOUS
 

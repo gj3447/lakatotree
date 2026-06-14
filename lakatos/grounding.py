@@ -285,6 +285,28 @@ GROUNDED = {
         'rationale': 'explore.py bandit UCB1 탐색항 계수 c=√2 = Auer et al.(2002) 정본값(문헌 직접). '
                      '전엔 explore.py 에 1.414 하드코딩(부정확·G5 미감지) → grounding 정본화.',
     },
+    # 인터넷 출처신뢰 → credibility tier 문턱 (P6-3: spine.credibility_from_trust + engine.tier 가
+    # 0.70/0.35 를 각자 하드코딩=drift 위험 → 단일 정본. 엔지니어링 정책값).
+    'credibility_extracted_trust': {
+        'value': 0.70, 'source': 'policy', 'tier': 'policy',
+        'band': 'EXTRACTED 등급 trust 문턱',
+        'rationale': 'trust>=0.70 → 최강 등급 EXTRACTED(게이트 자명통과). spine+engine 공유 정책값.',
+    },
+    'credibility_inferred_trust': {
+        'value': 0.35, 'source': 'policy', 'tier': 'policy',
+        'band': 'INFERRED 등급 trust 문턱',
+        'rationale': 'trust>=0.35 → INFERRED, 미만 → AMBIGUOUS. spine+engine 공유 정책값.',
+    },
+    'claim_strong_confidence': {
+        'value': 0.75, 'source': 'policy', 'tier': 'policy',
+        'band': 'ClaimStanding strong 문턱',
+        'rationale': 'ClaimStandingPolicy: confidence>=0.75 = 강한 주장. 엔지니어링 정책값.',
+    },
+    'claim_min_confidence': {
+        'value': 0.50, 'source': 'policy', 'tier': 'policy',
+        'band': 'ClaimStanding 최소 문턱',
+        'rationale': 'ClaimStandingPolicy: confidence>=0.50 = 최소 standing. 엔지니어링 정책값.',
+    },
 }
 
 # Brier(1950)/Good(1952) = calibrate.py 의 brier_score/log_score *함수* 근거(상수 아님) — SOURCES 등록만.
