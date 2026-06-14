@@ -25,6 +25,7 @@ from lakatos.lifecycle import lifecycle_state
 from lakatos.leaderboard import Competitor, leaderboard as build_leaderboard
 from lakatos.kuhn import assess_paradigm
 from lakatos.certify import gate_check, certify_claim, next_actions as cert_next_actions
+from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate
 from lakatos.prov import prov_triples, replay_command
 from lakatos.explore import rank_questions
 from lakatos.argue import grounded_extension, verdict_stands
@@ -747,6 +748,103 @@ def add_research_event(name: str, tag: str, ev: ResearchEventIn):
         raise HTTPException(404, f'노드 없음: {tag}')
     hist(name, 'research_event', tag, {**engine_event.db_record(), 'id': event_id})
     return {'ok': True, 'id': event_id, 'event': engine_event.name}
+
+
+def _store_research_event(name, tag, event_id, realm, action, actor, evidence_refs, payload):
+    """gate 통과한 구조화 evidence 를 ResearchEvent(append-only)로 적재 — claim-standing 공급."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 MERGE (ev:ResearchEvent {id:$id})
+                 ON CREATE SET ev.name=$id, ev.realm=$realm, ev.actor=$actor,
+                               ev.action=$action, ev.target=$tag,
+                               ev.evidence_refs=$evidence_refs, ev.payload=$payload,
+                               ev.created_at=$ts
+                 MERGE (e)-[:HAS_RESEARCH_EVENT]->(ev)
+                 RETURN ev.id AS id""",
+              tree=name, tag=tag, id=event_id, realm=realm, actor=actor, action=action,
+              evidence_refs=list(evidence_refs or []),
+              payload=json.dumps(payload, ensure_ascii=False),
+              ts=datetime.now(timezone.utc).isoformat())
+    if not rows:
+        raise HTTPException(404, f'노드 없음: {tag}')
+    return event_id
+
+
+class ObservationIn(BaseModel):
+    """G-Web 인터넷 fetch 증거 — 게이트 통과해야 노드 evidence 로 적재(realm=internet)."""
+    event_id: str
+    url: str = ''
+    retrieved_at: str = ''
+    content_hash: str = ''
+    raw_snapshot_path: str = ''
+    source_type: str = ''
+    query: str = ''
+    fetch_tool: str = ''
+    trust: float | None = None
+    link_authority: float | None = None
+    lakatos_location: str = ''
+    content: str = ''                 # injection scan 대상 raw text
+    actor: str = ''
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+@app.post('/api/tree/{name}/node/{tag}/observation')
+def add_observation(name: str, tag: str, o: ObservationIn):
+    """G-Web 강제 — 인터넷 fetch 를 injection-scan + 체크리스트 통과시에만 적재. 미통과=422.
+    적재 evidence 는 claim-standing 상계(internet)로 흐르고, injection risk 가 동봉된다(F07)."""
+    injection = scan_prompt_injection(o.content)
+    obs = dict(url=o.url, retrieved_at=o.retrieved_at, content_hash=o.content_hash,
+               raw_snapshot_path=o.raw_snapshot_path, source_type=o.source_type,
+               trust=o.trust, link_authority=o.link_authority, lakatos_location=o.lakatos_location)
+    gate = web_gate(obs, injection=injection)
+    if not gate.passed:
+        raise HTTPException(422, f'G-Web 미통과 — 누락/위반: {list(gate.reasons)}')
+    payload = {k: str(v) for k, v in obs.items() if v not in (None, '')}
+    payload['injection_risk'] = str(injection['risk'])
+    payload['injection_signals'] = ','.join(injection['signals'])
+    payload.setdefault('confidence', str(o.trust if o.trust is not None else o.link_authority or ''))
+    eid = f'{name}/{tag}/obs/{o.event_id}'
+    _store_research_event(name, tag, eid, 'internet', 'fetch', o.actor, o.evidence_refs, payload)
+    hist(name, 'observation', tag, {'id': eid, 'url': o.url, 'injection_risk': injection['risk']})
+    return {'ok': True, 'id': eid, 'gate': 'G-Web', 'injection': injection}
+
+
+class WorldActionIn(BaseModel):
+    """G-WorldAction bash 실행 증거 — 게이트 통과해야 노드 evidence 로 적재(realm=bash)."""
+    event_id: str
+    command: str = ''
+    cwd: str = ''
+    exit_code: int | None = None
+    stdout_summary: str = ''
+    stderr_summary: str = ''
+    touched_files: list[str] = Field(default_factory=list)
+    git_diff_hash: str = ''
+    require_git_diff: bool = False
+    actor: str = ''
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+@app.post('/api/tree/{name}/node/{tag}/world-action')
+def add_world_action(name: str, tag: str, a: WorldActionIn):
+    """G-WorldAction 강제 — bash 실행을 command/cwd/exit/stdout|stderr(+git_diff) 통과시에만 적재.
+    미통과=422. 적재 evidence 는 claim-standing 하계(bash)로 흐른다(finding_06)."""
+    act = dict(command=a.command, cwd=a.cwd, exit_code=a.exit_code,
+               stdout_summary=a.stdout_summary, stderr_summary=a.stderr_summary,
+               touched_files=a.touched_files, git_diff_hash=a.git_diff_hash)
+    gate = world_action_gate(act, require_git_diff=a.require_git_diff)
+    if not gate.passed:
+        raise HTTPException(422, f'G-WorldAction 미통과 — 누락: {list(gate.reasons)}')
+    payload = {'command': a.command, 'cwd': a.cwd, 'exit_code': str(a.exit_code),
+               'stdout_summary': a.stdout_summary[:500], 'stderr_summary': a.stderr_summary[:500],
+               'touched_files': ','.join(a.touched_files)}
+    if a.git_diff_hash:
+        payload['git_diff_hash'] = a.git_diff_hash
+    payload['confidence'] = '0.8' if a.exit_code == 0 else '0.2'   # 성공/실패 증거강도
+    eid = f'{name}/{tag}/act/{a.event_id}'
+    _store_research_event(name, tag, eid, 'bash', a.command[:60] or 'bash_run',
+                          a.actor, a.evidence_refs, payload)
+    hist(name, 'world_action', tag, {'id': eid, 'exit_code': a.exit_code})
+    return {'ok': True, 'id': eid, 'gate': 'G-WorldAction'}
+
 
 @app.get('/api/tree/{name}/node/{tag}/standing')
 def standing(name: str, tag: str):
