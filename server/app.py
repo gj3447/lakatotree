@@ -461,6 +461,9 @@ def open_question(name: str, q: QuestionIn):
 
 @app.post('/api/tree/{name}/question/{qname}/close')
 def close_question(name: str, qname: str, closed_by: str = ''):
+    # closed_by 는 *그 질문을 닫은 노드 tag* 여야 한다 — 라우든 규칙③ per-branch 귀속(gap4)이
+    # closed_by∩노드tag 로 집계하므로, 비-노드 문자열로 닫으면 문제수지에 미집계(metrics.laudan.
+    # unattributed_closed 로 노출). 외부 증거로 닫을 땐 미귀속이 정상이나 가지 수지엔 안 들어간다.
     ts = datetime.now(timezone.utc).isoformat()
     closure_id = f'{name}/{qname}/closure/{closed_by or "unknown"}@{ts}'
     r = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})

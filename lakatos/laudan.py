@@ -27,7 +27,10 @@ def branch_problem_balance_windowed(chain: list, frontier: list,
 
     chain    = leaf→분기점 순 노드 dict 리스트. 노드의 'questions' = 그 노드가 연 질문 이름들
                (KG RAISES_QUESTION). window 개의 leaf 쪽 최근 노드만 본다 (윈도우=예산 규모 정책).
-    frontier = 질문 dict 리스트. 'closed_by' = 닫은 노드 tag 리스트 (없으면 미귀속=미집계 정직).
+    frontier = 질문 dict 리스트. ★'closed_by' = 그 질문을 *닫은 노드 tag* 리스트여야 per-branch
+               귀속(gap4)이 산다. 비-노드 문자열(사람이름·커밋 등)로 닫으면 어느 노드 tag 와도
+               안 걸려 closed 에 미집계 = 해당 가지 문제수지를 과소계상(조용한 false-abandon).
+               미귀속 폐쇄는 `unattributed_closures` 로 별도 가시화(정직 신호).
     opened   = 윈도우 노드가 연 질문 수 / closed = closed_by 가 윈도우 노드인 질문 수.
     같은 질문을 윈도우 안에서 열고 닫으면 자연히 수지 0.
     """
@@ -37,6 +40,24 @@ def branch_problem_balance_windowed(chain: list, frontier: list,
     closed = sum(1 for q in frontier
                  if recent_tags & set(q.get('closed_by') or []))
     return problem_balance(closed, opened)
+
+
+def unattributed_closures(node_tags, frontier: list) -> list:
+    """CLOSED 인데 closed_by 가 어떤 노드 tag 에도 안 걸리는 질문 이름들 = rule③(문제수지)이
+    어느 가지에도 credit 하지 못하는 '미귀속 폐쇄'.
+
+    closed_by 는 '닫은 노드 tag' 여야 branch_problem_balance_windowed 의 per-branch 귀속이 산다.
+    이 리스트가 비어있지 않으면 닫힌 질문이 문제수지에 과소계상 중 → 가지가 부당하게 퇴행으로
+    보일 수 있다(조용한 false-abandon). 메트릭에 노출해 운영자가 귀속을 교정하게 한다(정직).
+    """
+    tags = set(node_tags)
+    out = []
+    for q in frontier:
+        if q.get('status') != 'CLOSED':
+            continue
+        if not (set(q.get('closed_by') or []) & tags):
+            out.append(q.get('name') or q.get('qname') or q.get('question'))
+    return out
 
 
 def psr(closed: int, path_nodes: int) -> float:

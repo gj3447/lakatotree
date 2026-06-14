@@ -4,7 +4,8 @@
 # KG: span_lakatotree_S1_laudan_layer
 """
 from collections import defaultdict
-from .laudan import branch_problem_balance_windowed, problem_balance, psr, should_abandon
+from .laudan import (branch_problem_balance_windowed, problem_balance, psr, should_abandon,
+                     unattributed_closures)
 from .bayes import branch_credence, should_abandon_bayes
 from .fertility import predictive_fertility, nobel_grade
 from .multiplicity import false_progressive_screen
@@ -146,7 +147,9 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             abandon.append(dict(leaf=leaf, branch_len=len(chain), reason=reason))
     laudan = dict(frontier_balance=problem_balance(closed_q, open_q),
                   psr=round(psr(closed_q, len(path)), 3),
-                  abandon_candidates=abandon)
+                  abandon_candidates=abandon,
+                  # gap4 정직: closed_by 가 노드 tag 에 안 걸린 폐쇄 — rule③ 가 미집계(과소계상 신호)
+                  unattributed_closed=unattributed_closures([r['tag'] for r in nodes], frontier))
     # 베이즈 연속층: 정본 경로 신뢰도 + 저신뢰 가지 (판결 시퀀스 = 증거)
     def verdict_seq(tags):
         out = []
