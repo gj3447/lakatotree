@@ -25,8 +25,8 @@ def test_injection_scan_role_tag_and_concealment():
 
 # ── G-Web ────────────────────────────────────────────────────────────────────
 _OBS_OK = dict(url='https://w3.org/TR/prov-o/', retrieved_at='2026-06-14T00:00:00Z',
-               content_hash='abc123', source_type='standard', trust=0.9,
-               lakatos_location='hard_core')
+               content_hash='abc123', source_type='standard', source_class_weight=0.9,
+               lakatos_location='hard_core')   # G-Trust: 분해 성분(bare trust 아님)
 
 
 def test_web_gate_passes_complete_observation():

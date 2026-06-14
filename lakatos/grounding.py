@@ -309,6 +309,14 @@ GROUNDED = {
         'band': 'ClaimStanding 최소 문턱',
         'rationale': 'ClaimStandingPolicy: confidence>=0.50 = 최소 standing. 엔지니어링 정책값.',
     },
+    # F07 보안 floor: injection risk 가 이 이상이면 그 인터넷 증거의 tier 를 AMBIGUOUS 로 캡(인간판정 전
+    # EXTRACTED 불가). SourceCredibilityScore.injection_penalty(-0.15 가중)만으론 약하다는 나생문 지적 보강.
+    'injection_high_risk_floor': {
+        'value': 0.5, 'source': 'policy', 'tier': 'policy',
+        'band': '프롬프트 인젝션 위험 상한(>= → tier AMBIGUOUS 캡)',
+        'rationale': 'injection risk>=0.5(시그널 2+)면 상계 증거를 신뢰-추출 불가로 격리(F07 isolation). '
+                     '차단 아닌 tier 강등 — 인간판정(G-Human) 거쳐야 승격. 0.5 컷은 도메인 정책값.',
+    },
     # AGM CANONICAL 강등 여유폭 (P7-A/GROUND-1: agm.demote_canonical 가 0.1 하드코딩=drift 위험).
     'demote_canonical_penalty': {
         'value': 0.1, 'source': 'policy', 'tier': 'policy',
