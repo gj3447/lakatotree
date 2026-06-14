@@ -73,8 +73,13 @@ from .lifecycle import LifecycleState, lifecycle_state, regret_nodes
 from .leaderboard import Competitor, dominates, leaderboard, score_competitor
 from .kuhn import ParadigmAssessment, assess_paradigm, sustained_dominance
 from .certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
+from .world_gates import scan_prompt_injection, web_gate, world_action_gate, LAKATOS_LOCATIONS
 
 __all__ = [
+    "scan_prompt_injection",
+    "web_gate",
+    "world_action_gate",
+    "LAKATOS_LOCATIONS",
     "BashAct",
     "CredibilityPromotionGate",
     "CredibilityTier",
