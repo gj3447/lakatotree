@@ -178,3 +178,27 @@ def test_cli_call_injects_bearer_when_env(monkeypatch):
     monkeypatch.setattr(cli.urllib.request, 'urlopen', fake_urlopen)
     cli.call('GET', '/api/trees')
     assert captured['auth'] == 'Bearer tok'        # REG-1: auth 켜지면 client 가 토큰 전달
+
+
+# ── P6-2: CLI verdict / critique / standing (CLI↔MCP 비대칭 해소) ──
+
+def test_verdict_cli_routes(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['verdict', 'T', 'v', 'CANONICAL', '--note', 'best', '--human'])
+    method, path, body = calls[0]
+    assert (method, path) == ('POST', '/api/tree/T/node/v/verdict')
+    assert body['verdict'] == 'CANONICAL' and body['human_verdict'] is True
+
+
+def test_critique_cli_routes(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['critique', 'T', 'v', 'doubt:r1', 'v', '--kind', 'rebuttal'])
+    method, path, body = calls[0]
+    assert (method, path) == ('POST', '/api/tree/T/node/v/critique')
+    assert body['arg_id'] == 'doubt:r1' and body['kind'] == 'rebuttal'
+
+
+def test_standing_cli_routes(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['standing', 'T', 'v'])
+    assert calls[0] == ('GET', '/api/tree/T/node/v/standing', None)
