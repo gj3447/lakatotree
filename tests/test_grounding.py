@@ -215,3 +215,10 @@ def test_wilson_lower_bound_rejects_k_out_of_range():
     with pytest.raises(ValueError):
         G.wilson_lower_bound(-1, 5)
     assert G.wilson_lower_bound(0, 0) == 0.0                   # n=0 가드 보존
+
+
+def test_wilson_k_positive_n_zero_now_raises():
+    # 나생문 B6: (11,10)/(-1,5)는 전에도 math domain error 였음. 진짜 새로 닫힌 path =
+    # (k>0, n=0) — 전엔 n==0 단락으로 0.0 조용히 반환(silent wrong), 이제 ValueError.
+    with pytest.raises(ValueError):
+        G.wilson_lower_bound(5, 0)
