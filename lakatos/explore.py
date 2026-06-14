@@ -21,7 +21,11 @@ def ucb_score(credence: float, n_visits: int, total_visits: int, c: float = UCB_
 
 
 def voi(expected_gain: float, cost: float, floor: float = 1e-6) -> float:
-    """Value of Information ≈ 기대 진보이득 / 검증비용 (SKILL.md '가치' 정량화)."""
+    """Value of Information ≈ 기대 진보이득 / 검증비용 (Howard 1966, Information Value Theory).
+
+    질문 q 를 닫았을 때 기대되는 진보이득을 그 검증비용으로 나눈 의사결정 가치 — 비용 대비
+    정보가 큰 frontier 질문을 우선. grounding SOURCES['howard1966'] 가 출처 정본.
+    """
     return max(expected_gain, 0.0) / max(cost, floor)
 
 

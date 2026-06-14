@@ -16,6 +16,10 @@ from .grounding import GROUNDED   # P6-3: confidence 문턱 단일 정본
 UPPER_REALMS = {Realm.INTERNET, Realm.HUMAN, Realm.KG}
 LOWER_REALMS = {Realm.BASH, Realm.DATA, Realm.GIT, Realm.AGENT}
 
+# P7-A(GROUND-2/LKT-T3-1): 증거 confidence 기본값 단일 정본 (전엔 inline dict/literal 하드코딩).
+_ACT_CONF = GROUNDED['evidence_action_confidence']['value']
+_REALM_CONF = GROUNDED['evidence_realm_confidence']['value']
+
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
@@ -140,28 +144,19 @@ def _event_confidence(event: ResearchEvent) -> float:
 
     action = _action(event)
     if _is_doubt(event):
-        return 0.0
+        return _ACT_CONF["doubt"]
     if payload.get("exit_code") == "0":
-        return 0.80
+        return _ACT_CONF["pass"]
     if payload.get("exit_code") not in (None, "", "0"):
-        return 0.20
+        return _ACT_CONF["fail"]
     if any(token in action for token in ("fail", "reject", "error")):
-        return 0.20
+        return _ACT_CONF["fail"]
     if any(token in action for token in ("pass", "success", "replay")):
-        return 0.80
+        return _ACT_CONF["pass"]
     if any(token in action for token in ("verdict", "accept", "approve", "resolve")):
-        return 0.75
+        return _ACT_CONF["verdict"]
 
-    defaults = {
-        Realm.INTERNET: 0.35,
-        Realm.HUMAN: 0.50,
-        Realm.AGENT: 0.45,
-        Realm.BASH: 0.60,
-        Realm.DATA: 0.70,
-        Realm.KG: 0.50,
-        Realm.GIT: 0.60,
-    }
-    return defaults[event.realm]
+    return _REALM_CONF[event.realm.name]
 
 
 def _combine(scores: list[float]) -> float:

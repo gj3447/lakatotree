@@ -54,6 +54,7 @@ SOURCES = {
     'dunn1961': 'Dunn, O.J. (1961). Multiple Comparisons Among Means. JASA 56(293):52-64 (Bonferroni 보정의 정식화).',
     'fisher1925': 'Fisher, R.A. (1925). Statistical Methods for Research Workers (α=0.05 관행의 기원).',
     'auer2002': 'Auer, P., Cesa-Bianchi, N. & Fischer, P. (2002). Finite-time Analysis of the Multiarmed Bandit Problem. Machine Learning 47:235-256 (UCB1, c=√2).',
+    'howard1966': 'Howard, R.A. (1966). Information Value Theory. IEEE Trans. Systems Science and Cybernetics 2(1):22-26 (Value of Information).',
     'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
@@ -307,6 +308,33 @@ GROUNDED = {
         'value': 0.50, 'source': 'policy', 'tier': 'policy',
         'band': 'ClaimStanding 최소 문턱',
         'rationale': 'ClaimStandingPolicy: confidence>=0.50 = 최소 standing. 엔지니어링 정책값.',
+    },
+    # AGM CANONICAL 강등 여유폭 (P7-A/GROUND-1: agm.demote_canonical 가 0.1 하드코딩=drift 위험).
+    'demote_canonical_penalty': {
+        'value': 0.1, 'source': 'policy', 'tier': 'policy',
+        'band': 'former_canonical credence 를 새 정본보다 최소 이만큼 아래로',
+        'rationale': 'agm.demote_canonical(THEORY §2 revision): 옛 정본은 제거가 아니라 강등 — '
+                     'credence 를 새 정본보다 0.1 아래 floor. AGM revision *방법*(Levi identity)은 '
+                     '문헌(agm1985), 0.1 여유폭은 엔지니어링 정책값(도출 아님).',
+    },
+    # 증거 confidence 기본값 (P7-A/GROUND-2+LKT-T3-1: claim._event_confidence 가 realm/action 값을
+    # 하드코딩 dict 로 보유 → grounding 밖 중복. 명시 confidence/trust/score 부재 시 fallback).
+    'evidence_realm_confidence': {
+        'value': {'INTERNET': 0.35, 'HUMAN': 0.50, 'AGENT': 0.45, 'BASH': 0.60,
+                  'DATA': 0.70, 'KG': 0.50, 'GIT': 0.60},
+        'source': 'policy', 'tier': 'policy',
+        'band': 'realm 별 기본 증거신뢰 (명시값 부재 시)',
+        'rationale': 'payload 에 명시 confidence 없을 때 realm 기본 신뢰. 서열 DATA(0.70)>BASH/GIT(0.60)>'
+                     'HUMAN/KG(0.50)>AGENT(0.45)>INTERNET(0.35) = 재현가능측정>실행로그/git>인간/그래프주장>'
+                     'agent>웹 의 도메인 신뢰서열. trust.py realm 영감, 값은 정책(문헌 도출 아님).',
+    },
+    'evidence_action_confidence': {
+        'value': {'pass': 0.80, 'fail': 0.20, 'verdict': 0.75, 'doubt': 0.0},
+        'source': 'policy', 'tier': 'policy',
+        'band': 'action 토큰 기반 증거신뢰 (realm 기본값보다 우선)',
+        'rationale': 'exit_code 0 / pass·success·replay → 0.80, exit≠0 / fail·reject·error → 0.20, '
+                     'verdict·accept·approve·resolve → 0.75, doubt → 0.0(정의적: 의문=신뢰 0). '
+                     '성공/실패/판결의 증거강도 도메인 정책값(튜너블).',
     },
 }
 

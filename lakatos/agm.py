@@ -20,7 +20,10 @@ AGM(1985)은 그 '바뀜'을 공준으로 형식화한다: expansion(+), contrac
 """
 from dataclasses import dataclass, field, replace
 
+from .grounding import GROUNDED   # P7-A: demote 여유폭 단일 정본
+
 ENTRENCHMENT_POLICY = 'lexicographic(kind>credence>problem_balance>connectivity) — 정책 선언(gap5: 유일해 없음)'
+DEMOTE_PENALTY = GROUNDED['demote_canonical_penalty']['value']   # 0.1 (정책) — 전엔 하드코딩
 
 
 class HardCoreProtected(Exception):
@@ -152,6 +155,6 @@ def demote_canonical(base: list, old_canonical_id: str, new_canonical: Belief) -
     by_id = {b.belief_id: b for b in base}
     if old_canonical_id in by_id:
         old = by_id[old_canonical_id]
-        demoted = replace(old, credence=min(old.credence, max(new_canonical.credence - 0.1, 0.0)))
+        demoted = replace(old, credence=min(old.credence, max(new_canonical.credence - DEMOTE_PENALTY, 0.0)))
         base = [demoted if b.belief_id == old_canonical_id else b for b in base]
     return expansion(base, new_canonical)
