@@ -99,3 +99,12 @@ def test_expansion_non_hardcore_replace_unaffected():
     r = expansion(BASE, Belief('b2', 'updated belt', credence=0.8))   # b2=protective_belt
     assert r.programme_shift_candidate is False
     assert sum(1 for b in r.base if b.belief_id == 'b2') == 1
+
+
+def test_revision_result_order_invariant():
+    # 나생문 B3: entrenchment 정렬은 *결정성*용 — success 공준상 최종 결과는 contradicts 순서 불변
+    new = Belief('nb', 'n', credence=0.9)
+    r1 = revision(BASE, new, contradicts=['b1', 'b2'])
+    r2 = revision(BASE, new, contradicts=['b2', 'b1'])
+    assert {b.belief_id for b in r1.base} == {b.belief_id for b in r2.base}
+    assert r1.removed == r2.removed == ('b1', 'b2')

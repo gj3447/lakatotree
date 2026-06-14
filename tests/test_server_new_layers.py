@@ -191,3 +191,35 @@ def test_certificate_empty_script_does_not_thinly_pass_prereg(monkeypatch):
     assert prereg['passed'] is False           # bare ':' 고무도장 우회 차단
     assert prereg['evidence_ref'] == ''
     assert 'preregistered' in out['missing']
+
+
+def test_paradigm_bounds_mongo_find_to_50(monkeypatch):
+    # 나생문 B5: paradigm 의 leaderboard_snapshots find 가 무제한이면 안 됨 — .limit(50) 고정
+    app = load_app()
+    captured = {}
+
+    class _Cur:
+        def __init__(self, ds): self.ds = ds
+        def sort(self, k, asc): self.ds = sorted(self.ds, key=lambda d: d[k], reverse=(asc < 0)); return self
+        def limit(self, n): captured['limit'] = n; self.ds = self.ds[:n]; return self
+        def __iter__(self): return iter(self.ds)
+
+    class _Coll:
+        def __init__(self): self.docs = []
+        def insert_one(self, d): self.docs.append(d)
+        def find(self, q): return _Cur([d for d in self.docs if d['key'] == q['key']])
+
+    class _M(dict):
+        def __getitem__(self, k):
+            if k not in self: super().__setitem__(k, _Coll())
+            return super().get(k)
+
+    m = _M()
+    for i in range(60):                         # 60 스냅샷 적재 → 최신 50 만 로드돼야
+        m['leaderboard_snapshots'].insert_one(dict(
+            key='T,U', at=f'2026-06-14T00:00:{i:02d}',
+            board={'rows': [{'name': 'T'}, {'name': 'U'}], 'pareto_front': []}))
+    monkeypatch.setattr(app, 'MONGO', m)
+    patch_tree(monkeypatch, app, {'T': HEALTHY_TD, 'U': HEALTHY_TD})
+    app.paradigm_view(incumbent='T', rivals='U')
+    assert captured['limit'] == 50              # 무제한 아님(전수 메모리 로드 차단)

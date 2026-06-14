@@ -131,7 +131,9 @@ def revision(base: list, new: Belief, contradicts: list = (),
     """
     cur = list(base)
     removed_all, shift = [], False
-    # 덜 굳건한 것부터 contraction (entrenchment_key 오름차순) — 선언된 정책을 실제 적용.
+    # entrenchment_key 오름차순으로 contraction *순서*를 정한다(덜 굳건한 것 먼저, 결정성/감사).
+    # ★정직(나생문 B3): success 공준이 contradicts 를 *전부* 제거하고 removed=sorted(set)·base 는 set 의미라
+    # 최종 결과(base/removed)는 순서 *불변* — 이 정렬은 관측가능한 효과가 아니라 결정적 순서 보장이다.
     by = {b.belief_id: b for b in base}
     ordered = sorted(contradicts, key=lambda cid: entrenchment_key(by[cid]) if cid in by else (-1, -1, -1, -1))
     for cid in ordered:
