@@ -28,7 +28,10 @@ def ship(records: list, stream: str = 'tests', *, opener=None, timeout: float = 
         return None
     user = _cfg('OO_USER', 'root@airo.local')
     org = _cfg('OO_ORG', 'default')
-    base = _cfg('OO_URL', 'http://10.147.17.7:5080')
+    base = _cfg('OO_URL', '')
+    if not base:   # OPS-INIT-1: 내부 IP baked default 금지(외부배포 깨짐) — env 명시 강제
+        raise ValueError('OO_URL 필수 — AIRO_LOGS_E2E=1 이면 oo 엔드포인트를 .env 의 OO_URL 로 명시 '
+                         '(예: OO_URL=http://<oo-host>:5080). 코드/문서 baked default 금지.')
     auth = 'Basic ' + base64.b64encode(f"{user}:{os.environ['OO_PASS']}".encode()).decode()
     req = urllib.request.Request(
         f'{base}/api/{org}/{stream}/_json', data=json.dumps(records).encode(),

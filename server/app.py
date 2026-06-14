@@ -10,8 +10,8 @@ env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB,
      (선택) LAKATOS_API_TOKEN (run.sh 가 .env 에서 주입)  # OPS-HON-4: LAKATOS_PG_DSN 은 미존재였음
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
-import html, json, os, secrets, sys
-from contextlib import contextmanager
+import html, json, logging, os, secrets, sys
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -65,7 +65,34 @@ PG_KW = dict(host=os.environ.get('LAKATOS_PG_HOST', 'localhost'),
              password=os.environ.get('LAKATOS_PG_PASSWORD', ''),
              dbname=os.environ.get('LAKATOS_PG_DB', 'lakatos'))
 MONGO = MongoClient(os.environ.get('LAKATOS_MONGO_URI', 'mongodb://localhost:27017'))['lakatos']
-app = FastAPI(title='Lakatos Server', version='1.0')
+
+logger = logging.getLogger('lakatotree.server')   # OPS-OBSERVABILITY-1: print → 구조화 logger
+
+
+def _close_resources() -> list:
+    """OPS-LIFECYCLE-1: 종료 시 Neo4j 드라이버 / Mongo 클라이언트 / PG 풀을 명시적으로 닫는다.
+    각각 best-effort — 하나가 실패해도 나머지는 닫고, 실패 목록을 반환(감사)."""
+    errs = []
+    for name, closer in (
+        ('neo4j', lambda: NEO.close()),
+        ('mongo', lambda: MONGO.client.close()),
+        ('pg_pool', lambda: _PG_POOL.closeall() if _PG_POOL is not None else None),
+    ):
+        try:
+            closer()
+        except Exception as e:   # noqa: BLE001 — 종료 정리는 어떤 예외도 다음 리소스를 막지 않는다
+            errs.append(f'{name}:{type(e).__name__}:{e}')
+    return errs
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    yield                                    # startup: 지연연결(드라이버 lazy) — 별도 작업 없음
+    for e in _close_resources():             # shutdown: 커넥션 누수 차단
+        logger.warning('shutdown 리소스 close 실패: %s', e)
+
+
+app = FastAPI(title='Lakatos Server', version='1.0', lifespan=_lifespan)
 _BOOL = TypeAdapter(bool)   # FastAPI bool 쿼리 강제와 동일 파싱(미들웨어 snapshot 게이트용, OPS-ROB-1)
 
 
@@ -162,7 +189,7 @@ def hist(tree, op, node_tag=None, payload=None):
             cur.execute('INSERT INTO history(tree, op, node_tag, payload) VALUES (%s,%s,%s,%s)',
                         (tree, op, node_tag, json.dumps(payload or {}, ensure_ascii=False)))
     except PgOperationalError as e:
-        print(f'[hist] PG 적재 실패(best-effort, KG 는 정상): {type(e).__name__}', file=sys.stderr)
+        logger.error('hist PG 적재 실패(best-effort, KG 는 정상): %s', type(e).__name__)
 
 def kg(q, **kw):
     with NEO.session() as s:
