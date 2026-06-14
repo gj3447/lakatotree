@@ -549,6 +549,10 @@ class TestResultIn(BaseModel):
     lakatos_excess: bool | None = None         # excess_empirical_content
     lakatos_hardcore: bool | None = None       # hard_core_preserved
     implementation_complete: bool = True
+    # ENG-DU-2: data branch 게이트(LakatosGate) — 게이트가 평가하나 전엔 미주입(dead). 이제 배선.
+    data_branch: bool = False              # 데이터 재생성에 의존하는 분기인가 (4 질적기준과 함께 줘야 conditional 반영)
+    data_replay_passed: bool = True        # 그 데이터 재현(zdf→masks→result replay)이 통과됐나
+    human_verdict_required: bool = False   # 인간 판정 필요 → 자동 진보 보류(AMBIGUOUS, 질적기준 없이도 강제)
     # 증명과반박 변증법(PnR) — 이 노드가 반례에 대응한 것이면 *대응 방식*이 진보/퇴행을 가른다
     counterexample_response: str | None = None  # surrender|monster_barring|exception_barring|monster_adjustment|lemma_incorporation|proofs_and_refutations
     counterexample_type: str | None = None       # (선택) global|local|local_and_global|local_not_global|global_not_local — 숨은 보조정리 진단
@@ -590,13 +594,18 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
     delta = v.delta
     # 엔진 spine: judge(메트릭) + LakatosGate(질적) 합의 — F-ARCH-1 두 엔진 통합
     lak_result = None
-    if None not in (r.lakatos_anomaly, r.lakatos_consequence, r.lakatos_excess, r.lakatos_hardcore):
+    have_qual = None not in (r.lakatos_anomaly, r.lakatos_consequence, r.lakatos_excess, r.lakatos_hardcore)
+    # ENG-DU-2: human_verdict_required 는 질적기준 없이도 게이트를 켜서 AMBIGUOUS 를 강제(인간보류).
+    if have_qual or r.human_verdict_required:
         lak_result = LakatosGate.evaluate(LakatosEvidence(
-            theory_laden_anomaly=r.lakatos_anomaly,
-            independent_testable_consequence=r.lakatos_consequence,
-            excess_empirical_content=r.lakatos_excess,
-            hard_core_preserved=r.lakatos_hardcore,
-            implementation_complete=r.implementation_complete))
+            theory_laden_anomaly=bool(r.lakatos_anomaly),
+            independent_testable_consequence=bool(r.lakatos_consequence),
+            excess_empirical_content=bool(r.lakatos_excess),
+            hard_core_preserved=bool(r.lakatos_hardcore),
+            implementation_complete=r.implementation_complete,
+            data_branch=r.data_branch,
+            data_replay_passed=r.data_replay_passed,
+            human_verdict_required=r.human_verdict_required))
     # PnR 변증법: 반례 대응이면 *대응 방식*이 판결을 가른다(monster-barring 은 메트릭 진보도 강등)
     pnr_appraisal = None
     if r.counterexample_response:
@@ -653,6 +662,7 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
                                         novel=v.novel, script_sha=r.script_sha))
     return {'ok': True, 'verdict': verdict, 'delta': round(delta, 4), 'novel': v.novel,
             'lakatos': lakatos_status, 'metric_verdict': v.verdict,
+            'requires_human': bool(decided.get('requires_human')),   # ENG-DU-2: 인간판정 보류 신호
             'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}
 
 @app.get('/api/tree/{name}/node/{tag}/provenance')

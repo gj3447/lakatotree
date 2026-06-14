@@ -167,9 +167,15 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
 
 @mcp.tool()
 def submit_result(name: str, tag: str, value: float, script: str,
-                  script_sha: str = '', novel_measured: float = None) -> str:
-    """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected."""
-    body = dict(metric_value=value, script=script)
+                  script_sha: str = '', novel_measured: float = None,
+                  data_branch: bool = False, data_replay_passed: bool = True,
+                  human_verdict_required: bool = False) -> str:
+    """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected.
+    ENG-DU-2: data_branch(데이터 재생성 의존)+data_replay_passed=false → progressive_conditional;
+    human_verdict_required=true → ambiguous(인간 판정 보류)."""
+    body = dict(metric_value=value, script=script,
+                data_branch=data_branch, data_replay_passed=data_replay_passed,
+                human_verdict_required=human_verdict_required)
     if script_sha:
         body['script_sha'] = script_sha
     if novel_measured is not None:
