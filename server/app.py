@@ -1434,6 +1434,13 @@ class DerivationIn(BaseModel):
 
 @app.post('/api/lineage/derivation')
 def record_derivation(d: DerivationIn):
+    # ★OPS-ROB-4(알려진 한계, 별도 sprint): DataArtifact 는 {path} *전역* 키 — tree-scope namespace 없음.
+    #  두 트리가 같은 path(예: 'out.json')로 서로 다른 내용을 기록하면 같은 노드에 MERGE(교차오염).
+    #  파일 path 는 보통 전역 유일해 실무 충돌은 드물지만, 일반 path 재사용 시 위험.
+    #  올바른 수정 = DerivationIn 에 namespace 추가 + DataArtifact {path,namespace} 복합키 +
+    #  _load_lineage/get_lineage/artifact_prov/claim-standing 에 namespace 배선 + PG lineage 테이블
+    #  namespace 컬럼 마이그레이션. 계약변경+스키마변경 = 별도 sprint(반쪽 배선은 orphan 유발로 금지).
+    #  KG: nsp-lakatotree-p7-20260614 cluster p8-hygiene-and-invasive (OPS-ROB-4 deferred).
     # 나생문 CON-2: 계보 DAG 불변식 — 비-source 산출물은 반드시 입력에서 파생.
     #  inputs 빈 비-source = dangling leaf(재현불가)를 기록단계서 차단(write-path 게이트).
     if d.kind != 'source' and not d.inputs:
