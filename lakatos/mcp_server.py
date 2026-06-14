@@ -379,5 +379,13 @@ def add_world_action(name: str, tag: str, event_id: str, command: str = '', cwd:
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/world-action', body), ensure_ascii=False)
 
 
+@mcp.tool()
+def longinus_audit() -> str:
+    """Longinus 바인딩 drift 감사 — 코드↔KG ReferenceSite 정합성(L4 심볼소멸/L6 시그니처변경).
+    로컬 파일(docs/longinus_bindings.json + 소스) 기반, 서버 불필요. 결과 JSON."""
+    from lakatos.longinus import audit
+    return json.dumps(audit(), ensure_ascii=False)
+
+
 if __name__ == '__main__':
     mcp.run()
