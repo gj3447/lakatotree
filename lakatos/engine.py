@@ -461,7 +461,7 @@ class InternetObservation:
 
 @dataclass
 class ObservationLedger:
-    """인터넷 재수집 append-only 원장."""
+    """인터넷 재수집 append-only 원장. (순수 in-memory 참조 모델 — 프로덕션 계보는 KG/adapters.)"""
 
     _items: dict[str, InternetObservation] = field(default_factory=dict)
 
@@ -623,7 +623,8 @@ class LakatosTree:
 
 @dataclass(frozen=True)
 class BashAct:
-    """하계 bash 실행. 실패도 기록 가능한 evidence 이지만, 성공 claim 은 별도 요구한다."""
+    """하계 bash 실행. 실패도 기록 가능한 evidence 이지만, 성공 claim 은 별도 요구한다.
+    (순수 in-memory 참조 모델 — 프로덕션 실행은 harness_run/_bash, 계보는 PROV/adapters.)"""
 
     name: str
     command: str
