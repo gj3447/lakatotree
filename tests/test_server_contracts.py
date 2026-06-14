@@ -283,7 +283,7 @@ def test_research_event_is_appended_to_claim_without_overwriting(monkeypatch):
         "p1",
         app.ResearchEventIn(
             event_id="evt-web-1",
-            realm="internet",
+            realm="kg",   # internet/bash 는 게이트 경로 전용(/observation,/world-action) — 여기선 비게이트 realm
             actor="agent:researcher",
             action="fetch_source",
             evidence_refs=["obs:paper"],
@@ -297,7 +297,7 @@ def test_research_event_is_appended_to_claim_without_overwriting(monkeypatch):
     query, params = event_calls[0]
     assert "MERGE (ev:ResearchEvent" in query
     assert "HAS_RESEARCH_EVENT" in query
-    assert params["realm"] == "internet"
+    assert params["realm"] == "kg"
     assert params["payload"] == '{"trust": "0.82"}'
     assert any(c[0] == "hist" and c[1][1] == "research_event" for c in calls)
 

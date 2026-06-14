@@ -730,6 +730,10 @@ def add_critique(name: str, tag: str, c: CritiqueIn):
 @app.post('/api/tree/{name}/node/{tag}/event')
 def add_research_event(name: str, tag: str, ev: ResearchEventIn):
     engine_event = ev.to_engine(tag)
+    # ★나생문 bypass 차단: internet/bash 증거는 게이트 강제 경로로만 — generic /event 우회 금지.
+    if engine_event.realm in (Realm.INTERNET, Realm.BASH):
+        raise HTTPException(422, f'{engine_event.realm.value} 증거는 generic /event 우회 불가 — '
+                                 f'POST /observation(G-Web) 또는 /world-action(G-WorldAction) 게이트 경로 사용')
     ts = ev.created_at or datetime.now(timezone.utc).isoformat()
     event_id = f'{name}/{tag}/event/{engine_event.name}'
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -801,7 +805,10 @@ def add_observation(name: str, tag: str, o: ObservationIn):
     payload = {k: str(v) for k, v in obs.items() if v not in (None, '')}
     payload['injection_risk'] = str(injection['risk'])
     payload['injection_signals'] = ','.join(injection['signals'])
-    payload.setdefault('confidence', str(o.trust if o.trust is not None else o.link_authority or ''))
+    # ★나생문 dead-wiring 차단: injection risk 가 *실제로* claim-standing confidence 를 derate.
+    # base = trust(또는 link_authority) × (1−risk) → 인젝션 신호 많을수록 그 증거의 신뢰 하락.
+    base = o.trust if o.trust is not None else (o.link_authority if o.link_authority is not None else 0.5)
+    payload['confidence'] = str(round(max(0.0, min(1.0, base)) * (1.0 - injection['risk']), 4))
     eid = f'{name}/{tag}/obs/{o.event_id}'
     _store_research_event(name, tag, eid, 'internet', 'fetch', o.actor, o.evidence_refs, payload)
     hist(name, 'observation', tag, {'id': eid, 'url': o.url, 'injection_risk': injection['risk']})
