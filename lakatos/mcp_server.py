@@ -338,5 +338,39 @@ def manifest_verify(manifest_path: str, current_sha_csv: str = '',
     return json.dumps(res.as_dict(), ensure_ascii=False)
 
 
+# ── prom32 G-Web / G-WorldAction enforced gates ──────────────────────────────
+
+@mcp.tool()
+def add_observation(name: str, tag: str, event_id: str, url: str = '', source_type: str = '',
+                    lakatos_location: str = '', retrieved_at: str = '', content_hash: str = '',
+                    raw_snapshot_path: str = '', trust: float = None, link_authority: float = None,
+                    content: str = '') -> str:
+    """G-Web 강제 — 인터넷 fetch 증거 적재. url/retrieved_at/content_hash|snapshot/source_type/
+    trust/lakatos_location(hard_core|protective_belt|positive_heuristic|negative_heuristic) 전수 +
+    content 는 프롬프트 인젝션 스캔 대상(F07). 미통과=422. 통과시 claim-standing 상계(internet) 공급."""
+    body = dict(event_id=event_id, url=url, source_type=source_type, lakatos_location=lakatos_location,
+                retrieved_at=retrieved_at, content_hash=content_hash,
+                raw_snapshot_path=raw_snapshot_path, content=content)
+    if trust is not None:
+        body['trust'] = trust
+    if link_authority is not None:
+        body['link_authority'] = link_authority
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/observation', body), ensure_ascii=False)
+
+
+@mcp.tool()
+def add_world_action(name: str, tag: str, event_id: str, command: str = '', cwd: str = '',
+                     exit_code: int = None, stdout_summary: str = '', stderr_summary: str = '',
+                     git_diff_hash: str = '', require_git_diff: bool = False) -> str:
+    """G-WorldAction 강제 — bash 실행 증거 적재. command/cwd/exit_code/stdout|stderr 전수
+    (+git_diff_hash if require_git_diff). 미통과=422. 통과시 claim-standing 하계(bash) 공급."""
+    body = dict(event_id=event_id, command=command, cwd=cwd, stdout_summary=stdout_summary,
+                stderr_summary=stderr_summary, git_diff_hash=git_diff_hash,
+                require_git_diff=require_git_diff)
+    if exit_code is not None:
+        body['exit_code'] = exit_code
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/world-action', body), ensure_ascii=False)
+
+
 if __name__ == '__main__':
     mcp.run()
