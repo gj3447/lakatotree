@@ -24,8 +24,8 @@ def load_app():
 def test_gweb_enforced_rejects_incomplete():
     assert web_gate({}, injection={'scanned': True}).passed is False        # 빈 obs 거부
     assert web_gate({'url': 'u', 'retrieved_at': 't', 'content_hash': 'h',
-                     'source_type': 's', 'trust': 0.9, 'lakatos_location': 'hard_core'},
-                    injection=scan_prompt_injection('x')).passed is True
+                     'source_type': 's', 'source_class_weight': 0.9, 'lakatos_location': 'hard_core'},
+                    injection=scan_prompt_injection('x')).passed is True     # 분해 성분
 
 
 def test_gweb_endpoint_exists():

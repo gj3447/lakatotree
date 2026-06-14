@@ -44,7 +44,7 @@ from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from lakatos.engine import (FoundationMap, FoundationRequirement, KnowledgeKind,
                             LineageReplayGate, Possibility, Realm, ResearchEvent,
                             ResearchFrame, ResearchProject, LakatosGate, LakatosEvidence,
-                            SourceCredibilityScore)
+                            SourceCredibilityScore, CredibilityTier)
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
                              reproducibility_gaps, stale_inputs, script_history,
@@ -801,8 +801,17 @@ class ObservationIn(BaseModel):
 
 @app.post('/api/tree/{name}/node/{tag}/observation')
 def add_observation(name: str, tag: str, o: ObservationIn):
-    """G-Web 강제 — 인터넷 fetch 를 injection-scan + 체크리스트 통과시에만 적재. 미통과=422.
-    적재 evidence 는 claim-standing 상계(internet)로 흐르고, injection risk 가 동봉된다(F07)."""
+    """G-Web 강제 — 인터넷 fetch 증거 적재(미통과=422).
+
+    ★G-Trust(나생문 후 강화): bare trust 스칼라는 거부 — 신뢰는 *분해 성분*(source_class/link_authority/
+    primary_source/provenance/corroboration/recency/supply_chain) 중 1+ 양수여야('단일 점수 不可').
+    SourceCredibilityScore 가 trust(엔진 정본 가중)+tier 계산. injection 은 injection_penalty(-0.15)로
+    trust 에 흐르고(F07), risk>=injection_high_risk_floor 면 tier 를 AMBIGUOUS 로 격리(인간판정 전 EXTRACTED 불가).
+
+    *소비 범위 정직표기*: 분해→trust **scalar** 가 claim-standing 상계(internet) confidence 로 소비된다
+    (F02 link_authority·F04 supply_chain 이 그 scalar 에 기여). tier/개별성분은 *설명가능 적재*(audit)이며
+    별도 게이트 입력 아님. 노드 CANONICAL 승격은 TestResultIn.source_trust 라는 *별개 노드축*(미연결, P+이월)."""
+    from lakatos.grounding import GROUNDED
     injection = scan_prompt_injection(o.content)
     comps = dict(source_class_weight=o.source_class_weight, link_authority=o.link_authority,
                  primary_source_bonus=o.primary_source_bonus, provenance_score=o.provenance_score,
@@ -810,27 +819,27 @@ def add_observation(name: str, tag: str, o: ObservationIn):
                  supply_chain_score=o.supply_chain_score)
     obs = dict(url=o.url, retrieved_at=o.retrieved_at, content_hash=o.content_hash,
                raw_snapshot_path=o.raw_snapshot_path, source_type=o.source_type,
-               trust=o.trust, lakatos_location=o.lakatos_location, **comps)
+               lakatos_location=o.lakatos_location, **comps)   # bare trust 는 게이트 신호 아님(제외)
     gate = web_gate(obs, injection=injection)
     if not gate.passed:
-        raise HTTPException(422, f'G-Web 미통과 — 누락/위반: {list(gate.reasons)}')
+        detail = list(gate.reasons)
+        if 'trust_components' in detail:
+            detail.append('G-Trust: 분해 신뢰 성분 1+ 양수 필요 (bare trust 미지원)')
+        raise HTTPException(422, f'G-Web 미통과 — 누락/위반: {detail}')
     payload = {k: str(v) for k, v in obs.items() if v not in (None, '')}
     payload['injection_risk'] = str(injection['risk'])
     payload['injection_signals'] = ','.join(injection['signals'])
-    if any(v is not None for v in comps.values()):
-        # ★G-Trust 분해(SourceCredibilityScore 활성화): trust 가 성분에서 계산되고 injection_penalty
-        # (-0.15 가중)가 엔진 정본 공식으로 흐른다. tier+성분 전부 적재(설명가능, F02/F04/F07).
-        score = SourceCredibilityScore(injection_penalty=injection['risk'],
-                                       **{k: (v or 0.0) for k, v in comps.items()})
-        payload.update({k: str(round(v, 4)) for k, v in score.as_components().items()})
-        payload['tier'] = score.tier.value
-        payload['credibility_decomposed'] = 'true'
-        payload['confidence'] = str(round(score.trust, 4))
-    else:
-        # 레거시 bare trust(분해 없음 = lower-assurance) — injection*(1−risk) 평면 derate.
-        base = o.trust if o.trust is not None else 0.5
-        payload['credibility_decomposed'] = 'false'
-        payload['confidence'] = str(round(max(0.0, min(1.0, base)) * (1.0 - injection['risk']), 4))
+    # G-Trust 분해 — SourceCredibilityScore 가 정본. trust/tier/성분 전부 적재(설명가능).
+    score = SourceCredibilityScore(injection_penalty=injection['risk'],
+                                   **{k: (v or 0.0) for k, v in comps.items()})
+    payload.update({k: str(round(v, 4)) for k, v in score.as_components().items()})
+    tier = score.tier
+    if injection['risk'] >= GROUNDED['injection_high_risk_floor']['value'] and tier.value == 'EXTRACTED':
+        tier = CredibilityTier.AMBIGUOUS                       # F07 격리: 고위험 인젝션 → 신뢰-추출 불가
+        payload['injection_tier_capped'] = 'true'
+    payload['tier'] = tier.value
+    payload['credibility_decomposed'] = 'true'
+    payload['confidence'] = str(round(score.trust, 4))
     eid = f'{name}/{tag}/obs/{o.event_id}'
     _store_research_event(name, tag, eid, 'internet', 'fetch', o.actor, o.evidence_refs, payload)
     hist(name, 'observation', tag, {'id': eid, 'url': o.url, 'injection_risk': injection['risk']})
