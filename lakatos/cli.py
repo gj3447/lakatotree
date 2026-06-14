@@ -28,6 +28,8 @@
   claim-standing <name> <tag>    상계/하계 confidence + blocking reason
   foundation <name>              기반지식 requirement 목록
   manifest-verify <manifest.json> [--current-sha path:sha]
+  observation <name> <tag> <event_id> --url U --source-type T --lakatos-location L [...]  G-Web 강제 인터넷증거
+  world-action <name> <tag> <event_id> --command C --cwd D --exit-code N [...]            G-WorldAction 강제 bash증거
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
 # KG: span_lakatotree_cli
 """
@@ -137,6 +139,18 @@ def main(argv=None):
     sp = sub.add_parser('manifest-verify'); sp.add_argument('manifest')
     sp.add_argument('--current-sha', action='append', default=[], help='path:sha (반복)')
     sp.add_argument('--no-require-environment', action='store_true')
+    # prom32 G-Web / G-WorldAction enforced gates
+    sp = sub.add_parser('observation'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
+    sp.add_argument('--url', default=''); sp.add_argument('--source-type', default='')
+    sp.add_argument('--lakatos-location', default='', choices=['', 'hard_core', 'protective_belt',
+                                                               'positive_heuristic', 'negative_heuristic'])
+    sp.add_argument('--retrieved-at', default=''); sp.add_argument('--content-hash', default='')
+    sp.add_argument('--snapshot', default=''); sp.add_argument('--trust', type=float)
+    sp.add_argument('--link-authority', type=float); sp.add_argument('--content', default='', help='injection scan 대상')
+    sp = sub.add_parser('world-action'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
+    sp.add_argument('--command', default=''); sp.add_argument('--cwd', default='')
+    sp.add_argument('--exit-code', type=int); sp.add_argument('--stdout', default=''); sp.add_argument('--stderr', default='')
+    sp.add_argument('--git-diff', default=''); sp.add_argument('--require-git-diff', action='store_true')
     a = p.parse_args(argv)
 
     if a.cmd == 'trees':
@@ -282,6 +296,21 @@ def main(argv=None):
             current_shas=(current_shas or None),
             require_environment=not a.no_require_environment,
         ).as_dict()
+    elif a.cmd == 'observation':
+        body = dict(event_id=a.event_id, url=a.url, source_type=a.source_type,
+                    lakatos_location=a.lakatos_location, retrieved_at=a.retrieved_at,
+                    content_hash=a.content_hash, raw_snapshot_path=a.snapshot, content=a.content)
+        if a.trust is not None:
+            body['trust'] = a.trust
+        if a.link_authority is not None:
+            body['link_authority'] = a.link_authority
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/observation', body)
+    elif a.cmd == 'world-action':
+        body = dict(event_id=a.event_id, command=a.command, cwd=a.cwd, stdout_summary=a.stdout,
+                    stderr_summary=a.stderr, git_diff_hash=a.git_diff, require_git_diff=a.require_git_diff)
+        if a.exit_code is not None:
+            body['exit_code'] = a.exit_code
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/world-action', body)
     print(json.dumps(out, ensure_ascii=False, indent=1))
 
 
