@@ -51,6 +51,9 @@ def scan_prompt_injection(text: str) -> dict:
 
 # ── G-Web: 인터넷 fetch 게이트 ───────────────────────────────────────────────
 LAKATOS_LOCATIONS = ('hard_core', 'protective_belt', 'positive_heuristic', 'negative_heuristic')
+# G-Trust: 신뢰는 *분해된* 성분이어야("단일 최종 점수는 不可", AXIS_gates G-Trust). 아래 중 1+ 필요.
+_CREDIBILITY_KEYS = ('trust', 'link_authority', 'source_class_weight', 'primary_source_bonus',
+                     'provenance_score', 'corroboration_score', 'recency_score', 'supply_chain_score')
 
 
 # KG: rs-wg-web-gate (Longinus ReferenceSite) — prom32 G-Web
@@ -70,7 +73,7 @@ def web_gate(obs: dict, *, injection: dict | None = None) -> GateResult:
         miss.append('content_hash_or_snapshot')
     if not obs.get('source_type'):
         miss.append('source_type')
-    if obs.get('trust') is None and obs.get('link_authority') is None:
+    if all(obs.get(k) is None for k in _CREDIBILITY_KEYS):
         miss.append('trust_components')
     if not (injection and injection.get('scanned')):
         miss.append('injection_scan')

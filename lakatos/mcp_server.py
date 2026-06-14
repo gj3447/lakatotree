@@ -344,17 +344,24 @@ def manifest_verify(manifest_path: str, current_sha_csv: str = '',
 def add_observation(name: str, tag: str, event_id: str, url: str = '', source_type: str = '',
                     lakatos_location: str = '', retrieved_at: str = '', content_hash: str = '',
                     raw_snapshot_path: str = '', trust: float = None, link_authority: float = None,
+                    source_class_weight: float = None, primary_source_bonus: float = None,
+                    provenance_score: float = None, corroboration_score: float = None,
+                    recency_score: float = None, supply_chain_score: float = None,
                     content: str = '') -> str:
     """G-Web 강제 — 인터넷 fetch 증거 적재. url/retrieved_at/content_hash|snapshot/source_type/
-    trust/lakatos_location(hard_core|protective_belt|positive_heuristic|negative_heuristic) 전수 +
-    content 는 프롬프트 인젝션 스캔 대상(F07). 미통과=422. 통과시 claim-standing 상계(internet) 공급."""
+    lakatos_location(hard_core|protective_belt|positive_heuristic|negative_heuristic) + 신뢰성분 전수.
+    ★G-Trust: 신뢰는 *분해* 권장(source_class_weight/link_authority/primary_source_bonus/
+    provenance_score/corroboration_score/recency_score/supply_chain_score) — bare trust 는 lower-assurance.
+    content 는 인젝션 스캔 대상(F07, injection_penalty 로 흐름). 미통과=422 → claim-standing 상계 공급."""
     body = dict(event_id=event_id, url=url, source_type=source_type, lakatos_location=lakatos_location,
                 retrieved_at=retrieved_at, content_hash=content_hash,
                 raw_snapshot_path=raw_snapshot_path, content=content)
-    if trust is not None:
-        body['trust'] = trust
-    if link_authority is not None:
-        body['link_authority'] = link_authority
+    for k, v in dict(trust=trust, link_authority=link_authority, source_class_weight=source_class_weight,
+                     primary_source_bonus=primary_source_bonus, provenance_score=provenance_score,
+                     corroboration_score=corroboration_score, recency_score=recency_score,
+                     supply_chain_score=supply_chain_score).items():
+        if v is not None:
+            body[k] = v
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/observation', body), ensure_ascii=False)
 
 
