@@ -271,5 +271,64 @@ def add_foundation(name: str, requirement_name: str, kind: str,
              risk_if_missing=risk_if_missing)), ensure_ascii=False)
 
 
+# ── P7-B: CLI↔MCP 대칭 — lineage/rebuild/manifest 계열(전엔 CLI-only) ──────────
+
+@mcp.tool()
+def get_tree(name: str) -> str:
+    """나무 전체 구조(노드/엣지/판결) — metrics 가 아닌 raw 트리. CLI `tree` 대칭."""
+    return json.dumps(_get(f'/api/tree/{name}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def get_lineage(artifact: str, stale: bool = False) -> str:
+    """artifact 의 데이터 계보(DERIVED_FROM 그래프). stale=True 면 sha 불일치 입력도 표시."""
+    import urllib.parse as up
+    suffix = '?stale=true' if stale else ''
+    return json.dumps(_get(f'/api/lineage/{up.quote(artifact)}{suffix}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def script_history(producer: str) -> str:
+    """채점/생성 스크립트(producer) 의 sha 이력 — 무결성 추적. CLI `script-history` 대칭."""
+    import urllib.parse as up
+    return json.dumps(_get(f'/api/lineage-script/{up.quote(producer)}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def rebuild_verify(artifact: str) -> str:
+    """artifact 를 raw 로부터 재생성할 수 있는지 검증(manifest+env_sha). 실행 아닌 검증만.
+    실제 재실행(bash)은 RCE 회피로 CLI `rebuild-run` 전용 — MCP 미노출."""
+    import urllib.parse as up
+    return json.dumps(_get(f'/api/rebuild-verify/{up.quote(artifact)}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def record_derivation(output: str, output_sha: str, producer: str = '', producer_sha: str = '',
+                      inputs_csv: str = '', kind: str = 'intermediate') -> str:
+    """데이터 계보 기록 — output 이 어느 raw/intermediate 에서 파생됐는지. CLI `lineage-record` 대칭.
+    inputs_csv = 'path:sha, path:sha' (쉼표구분). kind=source|intermediate|final."""
+    inputs = [[p.rsplit(':', 1)[0].strip(), p.rsplit(':', 1)[1].strip()]
+              for p in inputs_csv.split(',') if ':' in p]
+    return json.dumps(_post('/api/lineage/derivation',
+        dict(output=output, output_sha=output_sha, producer=producer,
+             producer_sha=producer_sha, inputs=inputs, kind=kind)), ensure_ascii=False)
+
+
+@mcp.tool()
+def manifest_verify(manifest_path: str, current_sha_csv: str = '',
+                    require_environment: bool = True) -> str:
+    """데이터셋 manifest 무결성 검증 — **로컬** 파일 read+검증(서버 무관). CLI `manifest-verify` 대칭.
+    current_sha_csv = 'path:sha, ...' (현재 파일 sha; 안 주면 manifest 기록값만 검사)."""
+    from .lineage import load_dataset_manifest, verify_dataset_manifest
+    current = {p.rsplit(':', 1)[0].strip(): p.rsplit(':', 1)[1].strip()
+               for p in current_sha_csv.split(',') if ':' in p}
+    res = verify_dataset_manifest(
+        load_dataset_manifest(manifest_path),
+        current_shas=(current or None),
+        require_environment=require_environment,
+    )
+    return json.dumps(res.as_dict(), ensure_ascii=False)
+
+
 if __name__ == '__main__':
     mcp.run()
