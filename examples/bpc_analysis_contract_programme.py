@@ -67,9 +67,16 @@ NODES = [
                '(per-view fitted center를 물리 truth로 안 씀, hard core 정렬)',
        limitation='DC375 authoritative measure_lot per-view snr 운반 미배선(W2-prod)'),
     _n('cup_tab_z', 'progressive', 'feature_rel', m=8, base=6,
-       nr=True, nc=True, q=['q_tab_seat'],
-       comment='#11 cup z단차(CAD band, nadir-only z) + #12 TAB_BOLT 3층(base_tab/washer_top/head_top) glyph',
-       limitation='TAB 2.1mm=볼트안착 가설(belt), CMM 미검증'),
+       nr=True, nc=True, q=['q_tab_seat', 'q_tab_threshold', 'q_tab_coverage'],
+       comment='#11 cup z단차(CAD band, nadir-only z) + #12 TAB_BOLT 3층(base_tab/washer_top/head_top) glyph. '
+               'TAB_BOLT measurand=washer_h=z_washer_top−z_base_tab(상대 Δz, lot-common z~0.46mm 대수상쇄, '
+               '절대z 경로 없음 panel_plane.py:15) — 모델 견고, 큰 결함(WASHER_055 0.8mm 결손 36/36 lot) 확실 검출',
+       limitation='2026-06-15 TAB_BOLT 0.5 다방면검증(7-agent): (belt반증) 2.1mm 볼트안착 가설 데이터 반증 '
+                  '— NG 73건 전부 low-side, high-side 0. (0.5공차) 도면근거 없는 임의값(DC375 PMI 0, awaiting-decision). '
+                  '(capability) view-평균 σ0.024 P/T24% 이나 production gate min_ng_views=1 → single-view σ0.061 지배 '
+                  '→ P/T 63% UNACCEPTABLE, σ는 ±0.4 clamp 안 측정이라 경계판별 미검증. (WASHER_002 borderline: '
+                  'pipeline 버전간 0.94↔1.40 swing=공차 92%, CMM 없이 판가름 불가). gross-defect catcher로만 OK, '
+                  'production-ready 아님 (q_tab_threshold/q_tab_coverage OPEN). 검증=BPC scripts tab_bolt 0p5 workflow'),
     _n('barcode', 'progressive', 'cup_tab_z', m=9, base=8,
        nr=True, nc=True,
        comment='W4: #16 v16 DataMatrix decode → DT HUD. LABEL=ROI helper, decoded truth=v16 policy',
@@ -84,6 +91,16 @@ NODES = [
        comment='XC: PLC forced-NG(cycle error→fail-closed NG verdict) + NG threshold 활성 — 필드안전 hard core. '
                'Python은 PLC 제어 loop 안 닫음(verdict 전달만)',
        limitation='threshold 정책=Mongo ng_thresholds repo(현장 튜닝 여지)'),
+    _n('field_dc375_128_deploy', 'progressive', 'safety_forced_ng', m=10, base=10,
+       nr=True, nc=False, q=['q_dc375_spec128'],
+       comment='2026-06-15 현장 enablement: capture-svc dimconfig(20뷰 frozen pose_cam_to_world, lot-불변, '
+               'sha256 9048abd5) 배선 LIVE → inspection merge backend=concat_by_transform(free-ICP collapse 탈출, '
+               'registered cloud, capture log fs2.bpc_a110 loaded 21 view poses 확인). + feature spec 정정 '
+               '123 A110(boss10+washer80 phantom9)→128 DC375(big10+washer71+plate33+outer14, bpc_dc375.yaml, '
+               'source feature_positions_master_v4_zlayers). watchdog respawn, .ps1 .bak revert 가능.',
+       limitation='measurand 신규 0(기존 산출 enablement). 실 prismv2 M5(frozen-only+128): det 83/128 '
+                  '(big10/10·plate31/33·outer6/14·washer36/71) — washer in-plane refine(E_v) 갭. '
+                  'recipe_v2 배선+field cutover는 washer coverage 해소 전 보류(라인 전건 NG 방지). q_w2prod 와 연계'),
 
     # 기각/퇴행 가지(보존) — 운반·아키텍처 연구사 교훈
     _n('proto_bytes_bulk', 'rejected', 'merged_dt',
@@ -111,6 +128,15 @@ FRONTIER = [
          body='#15 YOLO11m-seg 2D position/coarse production 배선(ultralytics infra)', closed_by=None),
     dict(name='q_label_weight', status='OPEN',
          body='#14 label AI 실 weight(ontable pointnet_best.pt) MinIO upload + 배선', closed_by=None),
+    dict(name='q_dc375_spec128', status='CLOSED',
+         body='feature spec 123 A110(washer80 phantom9, outer 없음) → 정본 128 DC375(big10+washer71+plate33+outer14) 정정·빌드',
+         closed_by=['field_dc375_128_deploy']),
+    dict(name='q_tab_threshold', status='OPEN',
+         body='TAB_BOLT 0.5 공차 spec 근거(Mobis/EO 도면 또는 CMM) 확정 + single-view σ0.061 기준 P/T 63% UNACCEPTABLE 해소(min_ng_views≥3 default 또는 공차 재산정). 현 0.5=임의값',
+         closed_by=None),
+    dict(name='q_tab_coverage', status='OPEN',
+         body='TAB_BOLT washer 36/71 검출 — calib in-plane refine(E_v, lot-공유 보정) prismv2 per-cycle 포팅으로 coverage↑ + missing_is_defect=True specular false-NG 해소',
+         closed_by=None),
 ]
 
 
