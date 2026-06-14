@@ -184,6 +184,36 @@
       "sha256": "5d3cb4204664049c",
       "layer": "implementation",
       "frege_sinn": "LTDD 오케스트레이터 build→ship→verify→policy"
+    },
+    {
+      "sourceId": "examples.bpc_inspection_groundtruth.ground_truth_verdict",
+      "file": "examples/bpc_inspection_groundtruth.py",
+      "symbol": "ground_truth_verdict",
+      "kind": "def",
+      "line_hint": 48,
+      "sha256": "307793d177226e32",
+      "layer": "applications",
+      "frege_sinn": "ZDF 측정 dev→사전등록 공차 judge→정답 PASS/FAIL(B 해결)"
+    },
+    {
+      "sourceId": "examples.bpc_inspection_groundtruth.check_against_pipeline",
+      "file": "examples/bpc_inspection_groundtruth.py",
+      "symbol": "check_against_pipeline",
+      "kind": "def",
+      "line_hint": 57,
+      "sha256": "40bdf30c0c780d1e",
+      "layer": "applications",
+      "frege_sinn": "파이프라인 verdict(oo) vs 정답 — 전체-ZDF drift 탐지"
+    },
+    {
+      "sourceId": "examples.bpc_inspection_groundtruth.preregister",
+      "file": "examples/bpc_inspection_groundtruth.py",
+      "symbol": "preregister",
+      "kind": "def",
+      "line_hint": 37,
+      "sha256": "5e90470d284c5de6",
+      "layer": "applications",
+      "frege_sinn": "공차를 잠긴 Prediction 으로 사전등록=ground-truth contract"
     }
   ]
 }
