@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .engine import FoundationGate, FoundationMap, LineageReplayResult, Realm, ResearchEvent, ResearchFrame
+from .grounding import GROUNDED   # P6-3: confidence 문턱 단일 정본
 
 
 UPPER_REALMS = {Realm.INTERNET, Realm.HUMAN, Realm.KG}
@@ -28,8 +29,8 @@ class ClaimStandingPolicy:
     require_lower: bool = True
     require_foundation: bool = True
     require_replay: bool = False
-    min_confidence: float = 0.50
-    strong_confidence: float = 0.75
+    min_confidence: float = GROUNDED['claim_min_confidence']['value']
+    strong_confidence: float = GROUNDED['claim_strong_confidence']['value']
 
 
 @dataclass(frozen=True)

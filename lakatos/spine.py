@@ -10,6 +10,10 @@
 from .promote import promotion_gate
 from .engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
 from .pnr import PnRAppraisal
+from .grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(engine 과 공유)
+
+_CRED_EXT = GROUNDED['credibility_extracted_trust']['value']   # 0.70
+_CRED_INF = GROUNDED['credibility_inferred_trust']['value']    # 0.35
 
 
 def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False,
@@ -22,16 +26,16 @@ def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False
     즉 게이트는 source_trust<0.70 인 진짜 저신뢰 인터넷 영향 노드만 직접출처/인간판정 없이 차단.
     엔진 SourceCredibilityScore.tier 의 trust 임계와 동형 (provenance 미상이라 trust-only 보수 매핑).
     """
-    if source_trust >= 0.70:
+    if source_trust >= _CRED_EXT:
         current = CredibilityTier.EXTRACTED
-    elif source_trust >= 0.35:
+    elif source_trust >= _CRED_INF:
         current = CredibilityTier.INFERRED
     else:
         current = CredibilityTier.AMBIGUOUS
     return {
         'current': current,
         'target': CredibilityTier.EXTRACTED,   # CANONICAL = 최강 주장
-        'has_direct_source': source_trust >= 0.70,
+        'has_direct_source': source_trust >= _CRED_EXT,
         'has_independent_corroboration': bool(novel_confirmed),
         'has_human_verdict': bool(has_human_verdict),
     }

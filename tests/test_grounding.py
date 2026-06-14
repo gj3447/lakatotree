@@ -222,3 +222,18 @@ def test_wilson_k_positive_n_zero_now_raises():
     # (k>0, n=0) — 전엔 n==0 단락으로 0.0 조용히 반환(silent wrong), 이제 ValueError.
     with pytest.raises(ValueError):
         G.wilson_lower_bound(5, 0)
+
+
+def test_p6_3_credibility_and_claim_thresholds_grounded():
+    # P6-3: spine/engine 가 0.70/0.35 를 각자 하드코딩하던 것 → GROUNDED 단일 정본. claim 도.
+    from lakatos import spine
+    from lakatos.claim import ClaimStandingPolicy
+    from lakatos.engine import CredibilityTier
+    assert spine._CRED_EXT == G.GROUNDED['credibility_extracted_trust']['value'] == 0.70
+    assert spine._CRED_INF == G.GROUNDED['credibility_inferred_trust']['value'] == 0.35
+    p = ClaimStandingPolicy()
+    assert p.min_confidence == G.GROUNDED['claim_min_confidence']['value']
+    assert p.strong_confidence == G.GROUNDED['claim_strong_confidence']['value']
+    # 경계가 grounded 값을 실제로 씀(spine·engine 공유)
+    assert spine.credibility_from_trust(0.70)['current'] == CredibilityTier.EXTRACTED
+    assert spine.credibility_from_trust(0.34)['current'] == CredibilityTier.AMBIGUOUS
