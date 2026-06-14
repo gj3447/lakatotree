@@ -12,6 +12,7 @@ env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB,
 """
 import html, json, logging, os, secrets, sys
 from contextlib import asynccontextmanager, contextmanager
+from urllib.parse import quote   # UX-005: 대시보드 artifact 추적 링크 URL 인코딩
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -92,7 +93,14 @@ async def _lifespan(app):
         logger.warning('shutdown 리소스 close 실패: %s', e)
 
 
-app = FastAPI(title='Lakatos Server', version='1.0', lifespan=_lifespan)
+app = FastAPI(
+    title='Lakatos Server', version='1.0', lifespan=_lifespan,
+    description=(  # UX-004: OpenAPI 메타 — /docs(Swagger)·/redoc 기본 활성. 응답모델 전면화는 P8.
+        '연구 프로그램 트리(Lakatos/Laudan/Bayesian)의 KG+DB 백엔드. '
+        'Neo4j(나무 그래프)+PostgreSQL(append-only 이력)+MongoDB(산출물). '
+        '판결은 스크립트 채점 전용(LLM 점수 금지) · 행정판결은 /verdict(ADMIN_VERDICTS). '
+        '계보=W3C PROV-O, 재현=rebuild-verify, 탐색=VoI/UCB directions.'),
+)
 _BOOL = TypeAdapter(bool)   # FastAPI bool 쿼리 강제와 동일 파싱(미들웨어 snapshot 게이트용, OPS-ROB-1)
 
 
@@ -902,7 +910,11 @@ def research_events(name: str, tag: str):
 
 @app.get('/api/tree/{name}/node/{tag}/claim-standing')
 def claim_standing(name: str, tag: str, require_replay: bool = True):
-    """상계/하계 evidence + foundation + lineage 를 합친 claim standing."""
+    """상계/하계 evidence + foundation + lineage 를 합친 claim standing.
+
+    쿼리 파라미터:
+      require_replay (bool, 기본 true): false 면 재현(lineage replay) 게이트를 standing 판정에서 제외한다.
+    """
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                  OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                  RETURN e.tag AS tag, e.verdict AS verdict, e.source_trust AS source_trust,
@@ -1493,7 +1505,11 @@ def artifact_dvc(artifact: str):
 @app.get('/api/prov/{artifact:path}')
 def artifact_prov(artifact: str, format: str | None = None):
     """완성본 계보의 W3C PROV 문서 (Entity/Activity/Agent, F-ARCH-5).
-    ?format=prov-json 으로 표준 W3C PROV-JSON 직렬화(ENG-DU-3: 전엔 내부 dict 를 'W3C PROV'라 반환)."""
+
+    쿼리 파라미터:
+      format (str|None, 기본 None): 'prov-json' 이면 표준 W3C PROV-JSON 직렬화
+        (prefix/entity/activity/agent/관계). 미지정 시 내부 dict (ENG-DU-3: 전엔 내부 dict 를 'W3C PROV'라 오칭).
+    """
     ds = _load_lineage(); bo = by_output(ds)
     if artifact not in bo:
         raise HTTPException(404, f'산출물 미기록: {artifact}')
@@ -1552,7 +1568,11 @@ def get_script_history(producer: str):
 
 @app.get('/api/lineage/{artifact:path}')
 def get_lineage(artifact: str, stale: bool = False):
-    """완성본의 계보 — source(ZDF) 추적 + 재빌드 플랜 + 재현 가능성 + 끊긴 링크."""
+    """완성본의 계보 — source(ZDF) 추적 + 재빌드 플랜 + 재현 가능성 + 끊긴 링크.
+
+    쿼리 파라미터:
+      stale (bool, 기본 false): true 면 입력 sha 불일치(stale_inputs)도 포함해 표시한다.
+    """
     ds = _load_lineage()
     bo = by_output(ds)
     if artifact not in bo:
@@ -1685,6 +1705,11 @@ def dashboard():
             links = (f"<a class=api href='/api/tree/{nm}/node/{et}/certificate'>cert</a>"
                      f"<a class=api href='/api/tree/{nm}/node/{et}/claim-standing'>standing</a>"
                      f"<a class=api href='/api/tree/{nm}/node/{et}/provenance'>prov</a>")
+            rp = r.get('result_path')
+            if rp:   # UX-005: 결과파일 있으면 artifact 계보/재현 추적 링크(전엔 대시보드서 추적 불가)
+                qrp = quote(rp, safe='')
+                links += (f"<a class=api href='/api/lineage/{qrp}'>lineage</a>"
+                          f"<a class=api href='/api/rebuild-verify/{qrp}'>rebuild</a>")
             out.append(f"<div class='n' style='margin-left:{depth*26}px'>"
                        f"<span style='color:{col}'>●</span> <b>{et}</b> "
                        f"<span style='color:{col}'>{html.escape(r['verdict'])}</span>{mv}{links}"
