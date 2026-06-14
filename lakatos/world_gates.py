@@ -27,14 +27,23 @@ _INJECTION_PATTERNS = [
 ]
 
 
+_ZERO_WIDTH = re.compile('[​-‏‪-‮﻿]')   # zero-width/방향제어 문자
+
+
 def scan_prompt_injection(text: str) -> dict:
-    """인터넷 content 의 프롬프트 인젝션/exfiltration 위험 휴리스틱 (F07).
+    """인터넷 content 의 프롬프트 인젝션/exfiltration 위험 *휴리스틱* (F07).
 
     반환 {scanned: True, signals: [...], risk: [0,1]}. risk = min(1, 0.34×시그널 수).
-    게이트는 *스캔 수행* 자체를 요구(결과 보존), risk 는 credibility 의 injection_penalty 로 흐른다.
-    완벽 차단이 아닌 신호 부착(상계는 untrusted — 숨기지 말고 표시, finding_07 negative_heuristic).
+    risk 는 add_observation 에서 그 증거의 confidence 를 derate(trust×(1−risk))해 claim-standing 에
+    실제 반영된다(엔진 SourceCredibilityScore.injection_penalty 는 별도 참조모델).
+
+    ★정직 한계(나생문): 정규식 휴리스틱은 *바닥선*이지 보증이 아니다 — word-splitting('ig nore'),
+    심한 난독화는 놓칠 수 있다(false negative). 그래서 차단이 아닌 risk 부착 + confidence derate 로
+    설계(상계는 untrusted, 숨기지 말고 표시). 고위험 content 의 최종 수용은 인간판정(G-Human) 몫.
+    전처리로 zero-width/과다공백 정규화해 사소한 회피만 차단.
     """
-    t = (text or '').lower()
+    t = _ZERO_WIDTH.sub('', (text or '').lower())
+    t = re.sub(r'[ \t]{2,}', ' ', t)
     signals = sorted({name for pat, name in _INJECTION_PATTERNS if re.search(pat, t)})
     return {'scanned': True, 'signals': signals, 'risk': round(min(1.0, 0.34 * len(signals)), 3)}
 
