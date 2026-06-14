@@ -144,12 +144,12 @@
   "lakatotree_bindings": [
     {
       "sourceId": "LakatosGate.evaluate",
-      "sourcePath": "lakatos/engine.py:268",
+      "sourcePath": "lakatos/engine.py:533",
       "purpose": "progressive_or_conditional_gate_for_bpc_segmentation_branch"
     },
     {
       "sourceId": "LineageReplayGate.evaluate",
-      "sourcePath": "lakatos/engine.py:416",
+      "sourcePath": "lakatos/engine.py:683",
       "purpose": "zdf_to_masks_to_result_replay_gate"
     },
     {
@@ -169,7 +169,7 @@
     },
     {
       "sourceId": "lineage.Derivation",
-      "sourcePath": "lakatos/lineage.py:14",
+      "sourcePath": "lakatos/lineage.py:20",
       "purpose": "source_intermediate_final_artifact_derivation_record"
     }
   ],
@@ -220,6 +220,11 @@
       "purpose": "model_catalog_entry_point"
     }
   ],
+  "consumer_a_binding_state": {
+    "state": "POINT_IN_TIME_20260612",
+    "ci_validated": false,
+    "note": "consumer_a consumer_b adapter 들은 별도 repo 로 독립 진화 — 본 cross-repo refs 는 작성시점(2026-06-12) 스냅샷이며 line/file drift 허용. lakatotree CI 는 in-repo lakatotree_bindings 만 Longinus 강제(test_p7e), consumer_a refs 는 구조형태(sourceId/sourcePath)만 검사하고 존재/라인은 검증 안 함(브리틀 cross-repo 결합 회피). 2026-06-14 확인: consumer_a 가 consumer_b adapter 리팩터(bpc_feature_contract.py/label_decode_policy.py 제거, tab_bolt_policy.py 신설)로 consumer_a refs 다수 stale — 재동기화는 consumer_a 측 작업 동반 시 별도 수행."
+  },
   "workspace_evidence": [
     {
       "sourceId": "PROMPTS.20260611.geometry_truth_request",
