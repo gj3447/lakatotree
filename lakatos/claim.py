@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .engine import FoundationGate, FoundationMap, LineageReplayResult, Realm, ResearchEvent, ResearchFrame
@@ -103,9 +104,12 @@ def _payload_float(payload: dict[str, str], *keys: str) -> float | None:
         if value is None or value == "":
             continue
         try:
-            return _clamp01(float(value))
+            parsed = float(value)
         except (TypeError, ValueError):
             continue
+        if not math.isfinite(parsed):    # NaN/inf = malformed → realm default 로 폴백
+            continue                     # (전엔 _clamp01(nan)=1.0 = 조용한 최대신뢰 버그)
+        return _clamp01(parsed)
     return None
 
 
