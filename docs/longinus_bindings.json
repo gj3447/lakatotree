@@ -254,6 +254,16 @@
       "sha256": "469c01faca6273e6",
       "layer": "implementation",
       "frege_sinn": "per-test 판정 수집(ooptdd 로그 원천)"
+    },
+    {
+      "sourceId": "longinus.audit",
+      "file": "lakatos/longinus.py",
+      "symbol": "audit",
+      "kind": "def",
+      "line_hint": 41,
+      "sha256": "e240aa98a40aaaee",
+      "layer": "implementation",
+      "frege_sinn": "Longinus drift 감사기(코드↔KG 바인딩 정합)"
     }
   ]
 }
