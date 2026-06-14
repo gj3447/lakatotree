@@ -1,13 +1,15 @@
-"""oo(OpenObserve) 적재 — LTDD: cid 구조화 trace 를 외부 정본에 ship (out-of-band, 개발머신 밖).
+"""oo(OpenObserve) write 절반 — LTDD: cid 구조화 trace 를 외부 정본에 ship (out-of-band).
 
-게이트: CONSUMER_LOGS_E2E=1 ∧ OO_PASS env. 없으면 no-op(로컬 테스트는 emit 캡처/opener 주입으로 검증).
-시크릿은 env 로만(코드/문서 baked default 금지). marquez_sink 와 동형(opener 주입 = 네트워크 없이 검증).
+LTDD 파이프라인: reports ─build(test_outcome_records)─▶ records ─ship─▶ oo. read/verify 절반은
+oo_verify.py (verify_trace/verify_policy/session_finish). 공용 config/auth(_endpoint)는 여기 정본.
+
+게이트: CONSUMER_LOGS_E2E=1 ∧ OO_PASS env. 없으면 no-op(로컬 = opener 주입으로 검증, 네트워크 없이).
+시크릿은 env 로만(코드/문서 baked default 금지). marquez_sink 와 동형(opener 주입 패턴).
 # KG: lesson-agent-log-tdd-methodology-20260610 / span_lakatotree_oo_sink
 """
 import base64
 import json
 import os
-import time
 import urllib.request
 
 
@@ -48,71 +50,6 @@ def ship(records: list, stream: str = 'tests', *, opener=None, timeout: float = 
         method='POST', headers={'Authorization': auth, 'Content-Type': 'application/json'})
     with (opener or _open_default)(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
-
-
-def verify_trace(cid: str, *, stream: str = 'tests', expect_total: int | None = None,
-                 retries: int = 6, delay: float = 2.0, minutes_back: int = 60,
-                 opener=None, timeout: float = 15.0) -> dict:
-    """★LTDD 의 빠진 절반 — ship 의 '예외 없음' 보고가 아니라 *실제 oo 도착*을 positive 단언.
-
-    cid 의 test_session trace 가 oo `stream` 에 실재하는지 retries×delay 폴링(ingestion latency 흡수).
-    logs = ground truth. silent ingest loss(적재 보고됐으나 실제 미도착)를 감지한다.
-    반환 {ok, attempts, records, outcomes, session{...}, reasons[]}. opener 주입 = 네트워크 없이 테스트.
-    """
-    if not _cfg('OO_URL', ''):
-        return {'ok': False, 'attempts': 0, 'records': 0, 'outcomes': 0, 'session': {},
-                'reasons': ['OO_URL_unset']}
-    base, org, auth = _endpoint()
-    sql = ("SELECT event, passed, failed, total, skipped, service FROM " + stream +
-           f" WHERE cycle_id = '{cid}'")
-    _open = opener or _open_default
-    for attempt in range(1, max(retries, 1) + 1):
-        # ★창은 매 폴링마다 갱신 + 미래 버퍼(+5min). 방금 적재된 레코드의 oo _timestamp 가 verify
-        #  시작시각보다 *뒤*(수신시각/클럭 스큐)면 고정창에서 영영 누락되던 race 버그 수정.
-        now_us = int(time.time() * 1_000_000)
-        body = json.dumps({'query': {'sql': sql, 'start_time': now_us - minutes_back * 60_000_000,
-                                     'end_time': now_us + 300_000_000, 'size': 1000}}).encode()
-        req = urllib.request.Request(f'{base}/api/{org}/_search', data=body, method='POST',
-                                     headers={'Authorization': auth, 'Content-Type': 'application/json'})
-        try:
-            with _open(req, timeout=timeout) as r:
-                hits = json.loads(r.read().decode()).get('hits', [])
-        except Exception:
-            hits = []
-        sessions = [h for h in hits if h.get('event') == 'test_session']
-        if sessions:
-            s = sessions[0]
-            outcomes = sum(1 for h in hits if h.get('event') == 'test_outcome')
-            reasons = []
-            if expect_total is not None and s.get('total') != expect_total:
-                reasons.append(f"total={s.get('total')}!=expect{expect_total}")
-            if expect_total is not None and outcomes < expect_total:   # 부분 적재 유실 감지
-                reasons.append(f"outcomes={outcomes}<total{expect_total}_partial_loss")
-            return {'ok': not reasons, 'attempts': attempt, 'records': len(hits), 'outcomes': outcomes,
-                    'session': {k: s.get(k) for k in ('service', 'passed', 'failed', 'total', 'skipped')},
-                    'reasons': reasons}
-        if attempt < retries:
-            time.sleep(delay)
-    return {'ok': False, 'attempts': max(retries, 1), 'records': 0, 'outcomes': 0, 'session': {},
-            'reasons': ['no_test_session_trace_in_oo_after_poll']}
-
-
-def verify_policy(v: dict, mode: str) -> dict:
-    """verify_trace 결과 + 모드 → 빌드 판정 (순수, 테스트 가능). conftest/CI 정책 단일 정본.
-
-    mode: '1'(기본=경고, '관측은 판결을 바꾸지 않는다' 보존) | 'strict'(미도착=세션 실패) | '0'(off, 호출 전 처리).
-    반환 {level, fail_build, message}. strict 에서만 fail_build=True → conftest 가 exitstatus=1.
-    """
-    if v.get('ok'):
-        s = v.get('session', {})
-        return {'level': 'ok', 'fail_build': False,
-                'message': f"✅ oo 도착 확인 (session {s.get('passed')}/{s.get('total')}, "
-                           f"outcomes={v.get('outcomes')}, {v.get('attempts')} attempt)"}
-    fail = (mode == 'strict')
-    return {'level': 'error' if fail else 'warn', 'fail_build': fail,
-            'message': f"{'❌' if fail else '⚠️'} oo 도착 *미확인* ({v.get('reasons')}) — silent ingest loss 의심"
-                       + (' — ★strict: 세션 실패(exit 1)' if fail
-                          else f". 재확인: python scripts/oo_positive_verify.py")}
 
 
 def _corr(cid: str) -> dict:

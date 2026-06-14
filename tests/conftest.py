@@ -12,7 +12,7 @@ cid 는 LAKATOS_TEST_CID env 로 부모 dev-loop 와 공유 가능(없으면 세
 import os
 import uuid
 
-from lakatos import oo_sink
+from lakatos import oo_verify
 
 _REPORTS: list = []
 _CID = os.getenv('LAKATOS_TEST_CID') or ('pytest-' + uuid.uuid4().hex[:12])
@@ -37,33 +37,17 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """세션 종료 → oo 적재 (게이트 OFF 면 no-op). 실패가 빌드를 깨지 않도록 흡수."""
-    if not oo_sink.enabled() or not _REPORTS:
-        return
-    try:
-        recs = oo_sink.test_outcome_records(
-            _REPORTS, cid=_CID,
-            meta={'exit_status': int(exitstatus), 'suite': 'lakatotree'})
-        oo_sink.ship(recs, stream='tests')
-        print(f'\n[oo LTDD] {len(_REPORTS)} test traces shipped → oo tests stream '
-              f'(cid={_CID}; RCA: trace_cycle("{_CID}"))')
-    except Exception as exc:   # 관측은 판결을 바꾸지 않는다 — ship 실패는 경고만
-        print(f'\n[oo LTDD] trace ship skipped ({type(exc).__name__}: {exc}); 빌드 영향 없음')
-        return
-    # ★positive verify (write+verify 루프 — 적재 *보고*가 아니라 실제 oo 도착 확인. silent ingest loss 감지).
-    # AIRO_LOGS_VERIFY: '1'(기본=경고) | 'strict'(미도착=세션 실패 exit 1) | '0'(off, latency 회피).
-    mode = os.getenv('AIRO_LOGS_VERIFY', '1')
-    if mode == '0':
-        return
-    try:
-        n_total = len({r['nodeid'] for r in _REPORTS})
-        retries = int(os.getenv('AIRO_LOGS_VERIFY_RETRIES', '8' if mode == 'strict' else '4'))
-        delay = float(os.getenv('AIRO_LOGS_VERIFY_DELAY', '2.0' if mode == 'strict' else '1.5'))
-        v = oo_sink.verify_trace(_CID, expect_total=n_total, retries=retries, delay=delay)
-        verdict = oo_sink.verify_policy(v, mode)
-        print(f"[oo LTDD] {verdict['message']}"
-              + ('' if v['ok'] else f" (cid={_CID})"))
-        if verdict['fail_build']:
-            session.exitstatus = 1   # strict: oo 미도착 = CI 실패 (테스트는 통과해도 관측 계약 위반)
-    except Exception as exc:
-        print(f'[oo LTDD] verify skipped ({type(exc).__name__}: {exc})')
+    """세션 종료 → LTDD 오케스트레이터(build→ship→verify→policy)에 위임. 훅은 plumbing 만.
+
+    AIRO_LOGS_VERIFY: '1'(기본=경고) | 'strict'(oo 미도착=세션 실패 exit 1) | '0'(off).
+    poll 튜닝: AIRO_LOGS_VERIFY_RETRIES / _DELAY (환경별 oo latency).
+    """
+    _r, _d = os.getenv('AIRO_LOGS_VERIFY_RETRIES'), os.getenv('AIRO_LOGS_VERIFY_DELAY')
+    res = oo_verify.session_finish(
+        _REPORTS, _CID, mode=os.getenv('AIRO_LOGS_VERIFY', '1'),
+        retries=int(_r) if _r else None, delay=float(_d) if _d is not None else None,
+        meta={'exit_status': int(exitstatus), 'suite': 'lakatotree'})
+    for m in res['messages']:
+        print(f'\n[oo LTDD] {m}')
+    if res['fail_build']:
+        session.exitstatus = 1   # strict: oo 미도착 = CI 실패 (테스트는 통과해도 관측 계약 위반)
