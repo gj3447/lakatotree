@@ -73,7 +73,8 @@ def main(argv=None):
     sp.add_argument('--body', default=''); sp.add_argument('--gain', type=float, default=0.1)
     sp.add_argument('--cost', type=float, default=1.0)
     sp = sub.add_parser('question-close'); sp.add_argument('name'); sp.add_argument('qname')
-    sp.add_argument('--by', default='')
+    sp.add_argument('--by', default='', help='닫은 *노드 tag* (라우든 규칙③ per-branch 귀속; '
+                                             '비-노드면 문제수지 미집계=metrics.unattributed_closed)')
     sp = sub.add_parser('agm'); sp.add_argument('spec', help='AgmReviseIn JSON 파일(신념개정)')
     sp = sub.add_parser('cycle'); sp.add_argument('spec', help='CycleSpec JSON 파일(하네스 한 사이클)')
     # P6-2: CLI↔MCP 비대칭 해소 — verdict(행정판결)/critique(Dung 의문)/standing(정당성) 추가

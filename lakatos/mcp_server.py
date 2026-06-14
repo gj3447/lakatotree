@@ -127,7 +127,9 @@ def open_question(name: str, qname: str, body: str = '',
 
 @mcp.tool()
 def close_question(name: str, qname: str, closed_by: str = '') -> str:
-    """frontier 질문 닫기 — append-only QuestionClosure 이벤트 + n_visits 증가(UCB 탐색)."""
+    """frontier 질문 닫기 — append-only QuestionClosure 이벤트 + n_visits 증가(UCB 탐색).
+    closed_by 는 *닫은 노드 tag* 여야 라우든 규칙③ per-branch 귀속(gap4)에 집계된다
+    (비-노드면 metrics.laudan.unattributed_closed 로 노출, 가지 문제수지엔 미집계)."""
     import urllib.parse as up
     q = ('?' + up.urlencode({'closed_by': closed_by})) if closed_by else ''
     return json.dumps(_post(f'/api/tree/{name}/question/{qname}/close{q}', {}), ensure_ascii=False)
