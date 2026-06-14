@@ -65,11 +65,13 @@ def verify_trace(cid: str, *, stream: str = 'tests', expect_total: int | None = 
     base, org, auth = _endpoint()
     sql = ("SELECT event, passed, failed, total, skipped, service FROM " + stream +
            f" WHERE cycle_id = '{cid}'")
-    now_us = int(time.time() * 1_000_000)
-    body = json.dumps({'query': {'sql': sql, 'start_time': now_us - minutes_back * 60_000_000,
-                                 'end_time': now_us, 'size': 1000}}).encode()
     _open = opener or _open_default
     for attempt in range(1, max(retries, 1) + 1):
+        # ★창은 매 폴링마다 갱신 + 미래 버퍼(+5min). 방금 적재된 레코드의 oo _timestamp 가 verify
+        #  시작시각보다 *뒤*(수신시각/클럭 스큐)면 고정창에서 영영 누락되던 race 버그 수정.
+        now_us = int(time.time() * 1_000_000)
+        body = json.dumps({'query': {'sql': sql, 'start_time': now_us - minutes_back * 60_000_000,
+                                     'end_time': now_us + 300_000_000, 'size': 1000}}).encode()
         req = urllib.request.Request(f'{base}/api/{org}/_search', data=body, method='POST',
                                      headers={'Authorization': auth, 'Content-Type': 'application/json'})
         try:
@@ -93,6 +95,24 @@ def verify_trace(cid: str, *, stream: str = 'tests', expect_total: int | None = 
             time.sleep(delay)
     return {'ok': False, 'attempts': max(retries, 1), 'records': 0, 'outcomes': 0, 'session': {},
             'reasons': ['no_test_session_trace_in_oo_after_poll']}
+
+
+def verify_policy(v: dict, mode: str) -> dict:
+    """verify_trace 결과 + 모드 → 빌드 판정 (순수, 테스트 가능). conftest/CI 정책 단일 정본.
+
+    mode: '1'(기본=경고, '관측은 판결을 바꾸지 않는다' 보존) | 'strict'(미도착=세션 실패) | '0'(off, 호출 전 처리).
+    반환 {level, fail_build, message}. strict 에서만 fail_build=True → conftest 가 exitstatus=1.
+    """
+    if v.get('ok'):
+        s = v.get('session', {})
+        return {'level': 'ok', 'fail_build': False,
+                'message': f"✅ oo 도착 확인 (session {s.get('passed')}/{s.get('total')}, "
+                           f"outcomes={v.get('outcomes')}, {v.get('attempts')} attempt)"}
+    fail = (mode == 'strict')
+    return {'level': 'error' if fail else 'warn', 'fail_build': fail,
+            'message': f"{'❌' if fail else '⚠️'} oo 도착 *미확인* ({v.get('reasons')}) — silent ingest loss 의심"
+                       + (' — ★strict: 세션 실패(exit 1)' if fail
+                          else f". 재확인: python scripts/oo_positive_verify.py")}
 
 
 def _corr(cid: str) -> dict:

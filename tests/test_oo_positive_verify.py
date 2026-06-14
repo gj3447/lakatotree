@@ -64,10 +64,45 @@ def test_verify_red_on_partial_outcome_loss(_oo_env):
     assert r['ok'] is False and any('partial_loss' in x for x in r['reasons'])
 
 
+def test_verify_window_has_forward_buffer(_oo_env):
+    # ★race 버그 회귀: 검색창 end_time 은 *미래 버퍼* 포함 — 방금 적재된(_timestamp 가 verify 시작보다
+    #  뒤일 수 있는) 레코드를 고정창에서 누락하던 버그 수정. 실제 search body 를 캡처해 검증.
+    import time as _time
+    captured = {}
+
+    def opener(request, timeout):
+        captured['body'] = json.loads(request.data.decode())
+        return _FakeResp([{'event': 'test_session', 'total': 1, 'service': 'lakatotree.tests'},
+                          {'event': 'test_outcome'}])
+
+    oo_sink.verify_trace('cid', expect_total=1, retries=1, delay=0, opener=opener)
+    q = captured['body']['query']
+    now_us = int(_time.time() * 1_000_000)
+    assert q['end_time'] > now_us       # 미래로 열린 창(현재시각보다 뒤) = 방금 적재분 포함
+    assert q['start_time'] < now_us
+
+
 def test_verify_oo_url_unset_is_red(monkeypatch):
     monkeypatch.delenv('OO_URL', raising=False)
     r = oo_sink.verify_trace('cid', retries=1, delay=0, opener=_opener([]))
     assert r['ok'] is False and r['reasons'] == ['OO_URL_unset']
+
+
+# ── verify_policy: 빌드 판정 정책 (기본=경고 / strict=실패) ──────────────────
+def test_policy_ok_never_fails_build():
+    r = oo_sink.verify_policy({'ok': True, 'session': {'passed': 3, 'total': 3},
+                               'outcomes': 3, 'attempts': 1}, 'strict')
+    assert r['fail_build'] is False and r['level'] == 'ok' and '✅' in r['message']
+
+
+def test_policy_default_mode_warns_not_fails():
+    r = oo_sink.verify_policy({'ok': False, 'reasons': ['no_test_session_trace_in_oo_after_poll']}, '1')
+    assert r['fail_build'] is False and r['level'] == 'warn' and '⚠️' in r['message']
+
+
+def test_policy_strict_mode_fails_build():
+    r = oo_sink.verify_policy({'ok': False, 'reasons': ['no_test_session_trace_in_oo_after_poll']}, 'strict')
+    assert r['fail_build'] is True and r['level'] == 'error' and 'exit 1' in r['message']
 
 
 def test_cli_wrapper_exit_codes(monkeypatch):
