@@ -120,7 +120,7 @@
       "file": "lakatos/oo_sink.py",
       "symbol": "ship",
       "kind": "def",
-      "line_hint": 37,
+      "line_hint": 39,
       "sha256": "138423ed6c22330c",
       "layer": "implementation",
       "frege_sinn": "P7-D OO_URL 강제"
@@ -156,14 +156,34 @@
       "frege_sinn": "BPC/ICP 실연구 라카토스 모델 dogfood"
     },
     {
-      "sourceId": "oo_sink.verify_trace",
-      "file": "lakatos/oo_sink.py",
+      "sourceId": "oo_verify.verify_trace",
+      "file": "lakatos/oo_verify.py",
       "symbol": "verify_trace",
       "kind": "def",
-      "line_hint": 53,
+      "line_hint": 19,
       "sha256": "bbad741597dd9d7b",
       "layer": "implementation",
-      "frege_sinn": "oo positive verify — 실 도착 단언(LTDD 빠진 절반)"
+      "frege_sinn": "oo positive verify — 실 도착 단언(poll)"
+    },
+    {
+      "sourceId": "oo_verify.verify_policy",
+      "file": "lakatos/oo_verify.py",
+      "symbol": "verify_policy",
+      "kind": "def",
+      "line_hint": 65,
+      "sha256": "3c96ae4100a4215e",
+      "layer": "implementation",
+      "frege_sinn": "경고 vs strict 빌드판정 정책"
+    },
+    {
+      "sourceId": "oo_verify.session_finish",
+      "file": "lakatos/oo_verify.py",
+      "symbol": "session_finish",
+      "kind": "def",
+      "line_hint": 87,
+      "sha256": "5d3cb4204664049c",
+      "layer": "implementation",
+      "frege_sinn": "LTDD 오케스트레이터 build→ship→verify→policy"
     }
   ]
 }
