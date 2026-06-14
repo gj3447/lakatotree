@@ -138,6 +138,8 @@ def main(argv=None):
     sp.add_argument('--kind', default='intermediate', choices=['source','intermediate','final'])
     sp = sub.add_parser('manifest-verify'); sp.add_argument('manifest')
     sp.add_argument('--current-sha', action='append', default=[], help='path:sha (반복)')
+    sp = sub.add_parser('longinus', help='코드↔KG ReferenceSite 바인딩 drift 감사 (로컬, 서버 불필요)')
+    sp.add_argument('--json', action='store_true', help='JSON 출력')
     sp.add_argument('--no-require-environment', action='store_true')
     # prom32 G-Web / G-WorldAction enforced gates
     sp = sub.add_parser('observation'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
@@ -156,6 +158,12 @@ def main(argv=None):
     sp.add_argument('--exit-code', type=int); sp.add_argument('--stdout', default=''); sp.add_argument('--stderr', default='')
     sp.add_argument('--git-diff', default=''); sp.add_argument('--require-git-diff', action='store_true')
     a = p.parse_args(argv)
+
+    if a.cmd == 'longinus':   # 로컬 감사 — 서버 호출 안 함 (코드↔KG 바인딩 정합성)
+        from lakatos.longinus import audit, report
+        res = audit()
+        print(json.dumps(res, ensure_ascii=False, indent=2) if a.json else report(res))
+        sys.exit(0 if res['ok'] else 1)
 
     if a.cmd == 'trees':
         out = call('GET', '/api/trees')
