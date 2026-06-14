@@ -201,6 +201,14 @@ def _path_sha(path):
         return f'__unreadable__:{type(e).__name__}'
     return None
 
+def _safe_rebuild_plan(artifact, bo):
+    """ENGINE-ROB-3: 계보 사이클이면 rebuild_plan 이 ValueError → 500 누수 대신 빈 plan(재현불가).
+    reproducibility_gaps 도 사이클을 갭으로 보므로 reproducible=False 와 일관."""
+    try:
+        return rebuild_plan(artifact, bo)
+    except ValueError:
+        return []
+
 NODE_LABELS = 'PrismExperiment|LakatosNode'
 
 def tree_data(name):
@@ -1447,7 +1455,7 @@ def artifact_dvc(artifact: str):
     ds = _load_lineage(); bo = by_output(ds)
     if artifact not in bo:
         raise HTTPException(404, f'산출물 미기록: {artifact}')
-    plan = rebuild_plan(artifact, bo)
+    plan = _safe_rebuild_plan(artifact, bo)
     return {'artifact': artifact, 'dvc_yaml': derivations_to_dvc_pipeline(plan),
             'dvc_lock': derivations_to_dvc_lock(plan)}
 
@@ -1457,7 +1465,7 @@ def artifact_prov(artifact: str):
     ds = _load_lineage(); bo = by_output(ds)
     if artifact not in bo:
         raise HTTPException(404, f'산출물 미기록: {artifact}')
-    plan = rebuild_plan(artifact, bo)
+    plan = _safe_rebuild_plan(artifact, bo)
     return {'artifact': artifact, 'prov': derivations_to_prov_document(plan)}
 
 @app.get('/api/rebuild-verify/{artifact:path}')
@@ -1478,7 +1486,7 @@ def rebuild_verify(artifact: str):
                 if s is not None:
                     cur[path] = s
     cur_env = fingerprint_sha(environment_fingerprint())
-    plan = rebuild_plan(artifact, bo)
+    plan = _safe_rebuild_plan(artifact, bo)
     stale = {d.output: True for d in plan if stale_inputs(d, cur)}
     env_changed = {d.output: {'recorded': d.env[:12], 'current': cur_env[:12]}
                    for d in plan if env_drift(d, cur_env)}
@@ -1517,7 +1525,7 @@ def get_lineage(artifact: str, stale: bool = False):
     src = {d.output for d in ds if d.kind == 'source'} | \
           {r for r in lin_roots(artifact, bo) if bo.get(r) is None or not bo[r].inputs}
     gaps = reproducibility_gaps(artifact, bo, src)
-    plan = rebuild_plan(artifact, bo)
+    plan = _safe_rebuild_plan(artifact, bo)
     out = dict(artifact=artifact, roots=sorted(lin_roots(artifact, bo)),
                reproducible=(not gaps), gaps=sorted(gaps),
                rebuild_plan=[dict(output=d.output, producer=d.producer,
@@ -1625,6 +1633,8 @@ def dashboard():
             out.append(f"<p style='color:#cf222e'>⚠ {a}</p>")
         kids = {}
         for r in td['nodes']:
+            # OPS-HON-5: 대시보드는 DAG 를 단일-부모(첫 엣지) 투영으로 렌더(다중부모 노드는 첫 부모 아래만).
+            # 전체 N:N DAG(parents/parent_edges)는 /api/tree 참조 — 시각적 트리는 가독성 위해 단일부모 투영.
             kids.setdefault(r.get('parent'), []).append(r)
 
         def render(tag, depth, seen):

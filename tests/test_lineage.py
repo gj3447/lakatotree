@@ -193,3 +193,17 @@ def test_fingerprint_environment_hashes_lock_files_and_selected_env(tmp_path):
     assert fp.package_locks[str(lock)]
     assert fp.env_vars == {"CUDA_VISIBLE_DEVICES": "0"}
     assert fp.tool_versions["halcon"] == "24.11"
+
+
+def test_reproducibility_gaps_and_plan_consistent_on_cycle():
+    # ENGINE-ROB-3: 사이클 = 재현불가(gap) 로 일관 + rebuild_plan 은 ValueError, 둘이 안 어긋남
+    from lakatos.lineage import (reproducibility_gaps, is_reproducible, rebuild_plan,
+                                 Derivation, by_output)
+    import pytest
+    a = Derivation('a', 'sa', 'p', 'ps', [('b', 'sb')], kind='final')
+    b = Derivation('b', 'sb', 'p', 'ps', [('a', 'sa')], kind='intermediate')
+    bo = by_output([a, b])
+    assert reproducibility_gaps('a', bo, set())            # 사이클 → 갭(전엔 빈 set=재현가능 오보)
+    assert is_reproducible('a', bo, set()) is False        # rebuild_plan(아래)과 일관
+    with pytest.raises(ValueError):
+        rebuild_plan('a', bo)                              # 사이클은 topo 불가
