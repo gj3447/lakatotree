@@ -59,6 +59,41 @@ After consumer_a implementation starts, replace the metric with result-level jud
 - `defect_flag_recall_BIG_02_09`: higher is better; expected `1.0`.
 - `normal_washer_cup_z_lot_repeat_p95`: lower is better; target `<= 0.1`.
 
+## 최신 파이프라인 — analysis-contract 측정·운반·DT (2026-06-14)
+
+이 팩의 정합(`bpc_icp_programme.py`, registration scope)은 sub-1mm 까지 끝났다. 그 **하류**
+측정·운반·DT 파이프라인을 별도 measurement-scope 연구 프로그램으로 모델링한다(다른 축 = 다른 tree).
+
+- 프로그램: `examples/bpc_analysis_contract_programme.py` (canonical=`dt_render`, 진보 1→9 output 800%).
+- dogfood 회귀: `tests/test_dogfood_bpc_analysis_contract.py` (5 pin, registration dogfood 와 별개).
+- 실 작업사: consumer_b `user` LTDD 캠페인 W1~W5 (2026-06-14), Windows tester PC(tester-pc) 133 pytest green.
+
+**Hard core 추가(운반·안전):**
+
+- bulk numpy(30MB+)는 proto bytes 금지 — `ShmHandle`(`/dev/shm/consumer_a/<uuid>.npz` + shape/dtype/sha256).
+- 운반 3-way 수렴: **same-host=ShmHandle / cross-host merged=MinIO `.bin` proxy / cross-host per-view=Arrow Flight(`:50090`, wire-compat)**. MinIO presigned URL 브라우저 직접 금지(host baked-in).
+- >2s RPC 는 Job pattern(async ack + stream) — sync 는 Next.js dev proxy socket hang up.
+- PLC 제어 loop 은 Python 이 안 닫는다 — cycle error → fail-closed NG(forced-NG), verdict 전달만.
+
+**analysis-contract 출력 ↔ consumer_b 산출(progressive 노드):**
+
+| # | 출력 | 노드 | consumer_b surface |
+|---|---|---|---|
+| 1,2 | distortion grid 히트맵 | `panel_geom` | `bpc/.../panel_distortion_grid` |
+| 3,4 | panel plane fit(상/하판 z·기울기) | `panel_geom` | `bpc/ui/digitaltwin/dt_cycle_wire._render_panels` |
+| 6,7 | panel-relative feature 위치 | `feature_rel` | parent plane void boundary center XY + base Z |
+| 11 | cup z단차(nadir-only) | `cup_tab_z` | `_render_feature_zstep_bars` |
+| 12 | TAB_BOLT 3층(base_tab/washer_top/head_top) | `cup_tab_z` | `add_feature_zstep_bar` |
+| 14 | label AI(weight 대기) | `q_label_weight` OPEN | ontable `pointnet_best.pt` |
+| 15 | seg AI(YOLO11m-seg, infra 대기) | `q_seg` OPEN | ultralytics |
+| 16 | v16 DataMatrix barcode HUD | `barcode` | `update_hud_label` |
+| 운반 | merged cloud bytes → DT | `merged_dt` | `bpc/connector/merged_bytes.py` |
+| 안전 | PLC forced-NG + NG threshold | `safety_forced_ng` | `bpc/connector/safety_guards.py`, `ng_reeval.py` |
+
+**OPEN frontier = 실 잔여(가짜 green 아님):** `q_flight_consumer`(per-view Flight 실시간 라우팅, consumer_a F4),
+`q_w2prod`(part_375 authoritative measure_lot per-view snr 운반), `q_seg`, `q_label_weight`.
+인증 게이트: `dt_render` 는 `certified=False`, missing=`{stands, calibrated}` — W4 미해소 + credence 보정 이력 부재(정직).
+
 ## PrismV2 Source Binding
 
 Primary implementation surfaces:
