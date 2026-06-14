@@ -319,8 +319,10 @@ def roots(artifact: str, bo: dict, _seen=None) -> set:
 def reproducibility_gaps(final: str, bo: dict, sources: set, _seen=None) -> set:
     """완성본→source 사이에 derivation 없는 비-source 산출물(끊긴 링크). 비면 재현 가능."""
     _seen = _seen or set()
-    if final in _seen or final in sources:
+    if final in sources:
         return set()
+    if final in _seen:
+        return {final}              # ENGINE-ROB-3: 사이클 = 재현 불가 갭 (rebuild_plan 의 raise 와 일관)
     _seen = _seen | {final}
     d = bo.get(final)
     if d is None:
