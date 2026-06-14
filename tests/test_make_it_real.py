@@ -189,3 +189,43 @@ def test_test_result_writes_verdict_and_prov_in_single_tx(monkeypatch):
     cyphers = [c for c, _ in txs[0]]
     assert any('e.verdict=$v' in c for c in cyphers)       # 판결 SET 포함
     assert any('HAS_PROV' in c or 'PROV_REL' in c for c in cyphers)   # PROV 도 같은 tx
+
+
+# ── P6-2b: ENG-DU-1 ProofGeneratedConcept reachable + F2 /cycle PnR 배선 ──
+
+def _pred_novel(q, **kw):   # novel target 등록된 pred → 적중 시 metric_verdict=progressive
+    if 'RETURN e.pred_metric' in q:
+        return [dict(m='p95', d='lower', b=0.5, nb=0.05, novel='x', vsrc=None,
+                     nmet='nm', ndir='higher', nthr=0.5, psha=None)]
+    return []
+
+
+def test_proof_generated_concept_reaches_appraisal(monkeypatch):
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _pred_novel)
+    monkeypatch.setattr(app, 'kg_tx', lambda ops: [[]])
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    base = dict(metric_value=0.4, script='j.py', novel_measured=0.9,   # 0.9>0.5 → novel 적중
+                counterexample_response='proofs_and_refutations',
+                ce_excess_content=True, ce_novel_corroborated=True, ce_in_heuristic_spirit=True)
+    with_pgc = app.submit_test_result('T', 'v', app.TestResultIn(
+        **base, ce_proof_concept_name='단순연결', ce_proof_born_from='속빈정육면체',
+        ce_proof_incorporated_lemma='convexity'))
+    without = app.submit_test_result('T', 'v', app.TestResultIn(**base))
+    assert with_pgc['verdict'] == 'progressive'                # 증명-생성 개념 → 성숙 진보 확정
+    assert without['verdict'] == 'progressive_conditional'     # 없으면 조건부(PnR 성숙 미완)
+
+
+def test_run_cycle_carries_pnr_fields(monkeypatch):
+    # F2: 전엔 /cycle 이 dialectic 우회 — 이제 PnR/lakatos 필드를 test_result 로 전달
+    app = load_app()
+    captured = {}
+    monkeypatch.setattr(app, 'add_node', lambda n, x: {'ok': True})
+    monkeypatch.setattr(app, 'register_prediction', lambda n, t, x: {'ok': True})
+    monkeypatch.setattr(app, 'submit_test_result',
+                        lambda n, t, r: (captured.__setitem__('r', r), {'verdict': 'progressive', 'novel': None, 'delta': -0.2})[1])
+    monkeypatch.setattr(app, 'standing', lambda n, t: {'stands': True})
+    app.run_cycle('T', app.CycleIn(tag='e1', metric_name='p95', baseline=0.5, measured=0.4,
+                                   counterexample_response='monster_barring', lakatos_hardcore=False))
+    assert captured['r'].counterexample_response == 'monster_barring'
+    assert captured['r'].lakatos_hardcore is False

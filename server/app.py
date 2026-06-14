@@ -30,7 +30,7 @@ from lakatos.argue import grounded_extension, verdict_stands
 from lakatos.promote import promotion_gate
 from lakatos.spine import (reconcile_verdict, promotion_decision, synthesize_promotion,
                            credibility_from_trust, dialectical_verdict)
-from lakatos.pnr import appraise_response, Response, CounterexampleType
+from lakatos.pnr import appraise_response, Response, CounterexampleType, ProofGeneratedConcept
 from lakatos.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected, ENTRENCHMENT_POLICY)
 from lakatos.adapters import (lineage_result_to_openlineage_events, derivations_to_dvc_pipeline,
@@ -508,6 +508,10 @@ class TestResultIn(BaseModel):
     ce_excess_content: bool = False             # 대응이 초과 경험내용을 더했나
     ce_novel_corroborated: bool = False         # 그 초과내용 중 확증된 novel 사실
     ce_in_heuristic_spirit: bool | None = None  # 양의 휴리스틱 정신 내인가(미지정=미검증)
+    # 증명-생성 개념(ENG-DU-1) — PnR 성숙 진보 표식. 3 필드 다 주면 progressive 확정(없으면 conditional)
+    ce_proof_concept_name: str | None = None
+    ce_proof_born_from: str | None = None        # 어느 반례가 낳았나
+    ce_proof_incorporated_lemma: str | None = None  # 어느 숨은 보조정리를 조건화했나
 
 @app.post('/api/tree/{name}/node/{tag}/test_result')
 def submit_test_result(name: str, tag: str, r: TestResultIn):
@@ -561,11 +565,17 @@ def submit_test_result(name: str, tag: str, r: TestResultIn):
             except ValueError:
                 raise HTTPException(422, f'알 수 없는 반례유형: {r.counterexample_type} — '
                                          f'{[e.value for e in CounterexampleType]} 중 하나')
+        pgc = None   # ENG-DU-1: 증명-생성 개념(있으면 PnR 성숙 진보로 확정)
+        if r.ce_proof_concept_name:
+            pgc = ProofGeneratedConcept(
+                name=r.ce_proof_concept_name,
+                born_from_counterexample=r.ce_proof_born_from or '',
+                incorporated_lemma=r.ce_proof_incorporated_lemma or '')
         pnr_appraisal = appraise_response(
             resp, excess_content=r.ce_excess_content, novel_corroborated=r.ce_novel_corroborated,
             in_heuristic_spirit=r.ce_in_heuristic_spirit,
             hard_core_preserved=(r.lakatos_hardcore if r.lakatos_hardcore is not None else True),
-            counterexample_type=ce_type)
+            counterexample_type=ce_type, proof_generated_concept=pgc)
     decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
     verdict = decided['verdict']
     lakatos_status = decided['lakatos']
@@ -1187,6 +1197,16 @@ class CycleIn(BaseModel):
     comment: str = ''
     closes_question: str = ''
     critiques: list[CritiqueIn] = Field(default_factory=list)
+    # PnR/Lakatos 질적 증거(F2) — 전엔 /cycle 이 dialectical heart 를 우회했음(반례 대응이 판결에 미반영)
+    counterexample_response: str | None = None
+    counterexample_type: str | None = None
+    ce_excess_content: bool = False
+    ce_novel_corroborated: bool = False
+    ce_in_heuristic_spirit: bool | None = None
+    lakatos_anomaly: bool | None = None
+    lakatos_consequence: bool | None = None
+    lakatos_excess: bool | None = None
+    lakatos_hardcore: bool | None = None
 
 
 @app.post('/api/tree/{name}/cycle')
@@ -1202,7 +1222,12 @@ def run_cycle(name: str, c: CycleIn):
         closes_question=c.closes_question, credence=c.credence))
     res = submit_test_result(name, c.tag, TestResultIn(
         metric_value=c.measured, script=c.script, script_sha=c.script_sha,
-        novel_measured=c.novel_measured, source_trust=c.source_trust))
+        novel_measured=c.novel_measured, source_trust=c.source_trust,
+        counterexample_response=c.counterexample_response, counterexample_type=c.counterexample_type,
+        ce_excess_content=c.ce_excess_content, ce_novel_corroborated=c.ce_novel_corroborated,
+        ce_in_heuristic_spirit=c.ce_in_heuristic_spirit,
+        lakatos_anomaly=c.lakatos_anomaly, lakatos_consequence=c.lakatos_consequence,
+        lakatos_excess=c.lakatos_excess, lakatos_hardcore=c.lakatos_hardcore))
     for cr in c.critiques:
         add_critique(name, c.tag, cr)
     return dict(tree=name, tag=c.tag, verdict=res.get('verdict'), novel=res.get('novel'),
