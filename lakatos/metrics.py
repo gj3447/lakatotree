@@ -93,12 +93,16 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         scopes = defaultdict(list)
         for t, m, sc, d in pm:
             scopes[sc].append((t, m, d))
-        sc = max(scopes.values(), key=len)
+        # dogfood 발견: 다중 scope 중 노드 최다 scope 를 측정하면서 *어느 scope 인지* 미공개였음
+        # → 정직 표기. tie 면 결정성 위해 이름순 우선(같은 len 일 때 안정 선택).
+        scope_name = max(scopes, key=lambda k: (len(scopes[k]), str(k)))
+        sc = scopes[scope_name]
         if len(sc) >= 2:
             first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
             gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)  # 개선=양수
             common = dict(first={'tag': sc[0][0], 'm': first_m},
-                          last={'tag': sc[-1][0], 'm': last_m}, direction=direction)
+                          last={'tag': sc[-1][0], 'm': last_m}, direction=direction,
+                          scope=scope_name)
             if first_m != 0:   # 나생문 F-FG-8: first=0 ZeroDivision 가드
                 prog = dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
             else:              # 기준 0 → 절대 증가량(raw last-first, 부호보존)
