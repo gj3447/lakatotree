@@ -108,6 +108,9 @@ def main(argv=None):
     sp = sub.add_parser('result'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
+    sp.add_argument('--data-branch', action='store_true', help='데이터 재생성 의존 분기(ENG-DU-2)')
+    sp.add_argument('--no-data-replay', action='store_true', help='데이터 재현 미통과 → progressive_conditional')
+    sp.add_argument('--human-verdict', action='store_true', help='인간 판정 보류 → ambiguous')
     sp = sub.add_parser('provenance'); sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('element'); sp.add_argument('name'); sp.add_argument('element_name')
     sp.add_argument('--definition', default=''); sp.add_argument('--implication', default='')
@@ -220,7 +223,9 @@ def main(argv=None):
                         judge_script_sha=a.sha, credence=a.credence))
     elif a.cmd == 'result':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result',
-                   dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured))
+                   dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured,
+                        data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
+                        human_verdict_required=a.human_verdict))
     elif a.cmd == 'provenance':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/provenance')
     elif a.cmd == 'element':
