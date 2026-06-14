@@ -65,3 +65,47 @@ def test_line_hint_is_cache_not_anchor():
     bindings = _load()["bindings"]
     resolved = sum(1 for b in bindings if _resolve(b["file"], b["symbol"])[0] is not None)
     assert resolved == len(bindings), "모든 심볼이 resolve 되어야(=anchor 유효)"
+
+
+# ── reverse-orphan 가드: 코드 # KG: anchor → manifest kg_anchors 레지스트리에 선언돼야 ──
+_ANCHOR_PREFIX = ('span_lakatotree_', 'rs-', 'CT_', 'SA_', 'VR_', 'Doctrine_', 'lesson-', 'q-lkt-')
+
+
+def _code_anchor_tokens() -> set:
+    """전 .py 의 # KG: 주석에서 anchor 형태(노드명) 토큰 수집. (P1/THEORY 류 인라인 주석은 제외.)"""
+    toks = set()
+    for sub in ('lakatos', 'tests', 'examples', 'scripts', 'server'):
+        for f in (ROOT / sub).glob('*.py'):
+            for m in re.findall(r'#\s*KG:\s*([A-Za-z0-9_/.\- ,]+)', f.read_text(encoding='utf-8')):
+                for t in re.split(r'[,/]', m):
+                    t = t.strip()
+                    if t.startswith(_ANCHOR_PREFIX):
+                        toks.add(t)
+    return toks
+
+
+def test_no_undeclared_kg_anchor_in_code():
+    """★reverse-orphan 가드(forward 와 양방향 닫음): 코드의 모든 # KG: anchor 가 manifest
+    kg_anchors 레지스트리에 선언돼 있어야. 미선언 = KG 노드 누락 위험(35 orphan 누적의 원천) → 실패.
+    새 # KG: 노드 추가 시 kg_anchors 등록 강제 → KG 노드 생성을 잊지 않게. (존재확인=longinus.audit online)
+    """
+    declared = set(_load()['kg_anchors'])
+    undeclared = _code_anchor_tokens() - declared
+    assert not undeclared, (
+        f"미선언 # KG: anchor (reverse-orphan 위험): {sorted(undeclared)}. "
+        f"KG 노드 생성 후 docs/longinus_bindings.json 'kg_anchors' 에 등록할 것.")
+
+
+def test_reverse_orphan_guard_catches_undeclared():
+    """가드 메커니즘 자체 검증 — 미선언 토큰을 실제로 잡는가(synthetic)."""
+    declared = {'span_lakatotree_real', 'rs-real'}
+    code = {'span_lakatotree_real', 'rs-real', 'span_lakatotree_FAKE_undeclared'}
+    assert (code - declared) == {'span_lakatotree_FAKE_undeclared'}
+
+
+def test_kg_anchors_registry_nonempty_and_covers_known():
+    """레지스트리 sanity — 비어있지 않고, 이번 세션 핵심 anchor 들을 포함."""
+    declared = set(_load()['kg_anchors'])
+    assert len(declared) >= 50
+    assert {'span_lakatotree_oo_sink', 'span_lakatotree_oo_conftest',
+            'span_lakatotree_bpc_inspection_gt', 'rs-wg-web-gate'} <= declared
