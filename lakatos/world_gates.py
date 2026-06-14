@@ -30,6 +30,7 @@ _INJECTION_PATTERNS = [
 _ZERO_WIDTH = re.compile('[​-‏‪-‮﻿]')   # zero-width/방향제어 문자
 
 
+# KG: rs-wg-scan-injection (Longinus ReferenceSite) — prom32 F07
 def scan_prompt_injection(text: str) -> dict:
     """인터넷 content 의 프롬프트 인젝션/exfiltration 위험 *휴리스틱* (F07).
 
@@ -52,6 +53,7 @@ def scan_prompt_injection(text: str) -> dict:
 LAKATOS_LOCATIONS = ('hard_core', 'protective_belt', 'positive_heuristic', 'negative_heuristic')
 
 
+# KG: rs-wg-web-gate (Longinus ReferenceSite) — prom32 G-Web
 def web_gate(obs: dict, *, injection: dict | None = None) -> GateResult:
     """G-Web: 인터넷 fetch 증거가 승격 자격을 갖췄나 (AXIS_gates G-Web 전수).
 
@@ -78,6 +80,7 @@ def web_gate(obs: dict, *, injection: dict | None = None) -> GateResult:
 
 
 # ── G-WorldAction: bash 실행 게이트 ──────────────────────────────────────────
+# KG: rs-wg-world-action-gate (Longinus ReferenceSite) — prom32 G-WorldAction
 def world_action_gate(act: dict, *, require_git_diff: bool = False) -> GateResult:
     """G-WorldAction: bash 실행이 증거 자격을 갖췄나 (finding_06).
 
