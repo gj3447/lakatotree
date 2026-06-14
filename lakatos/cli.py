@@ -10,6 +10,9 @@
   leaderboard <a,b,..> [--snapshot]  경쟁 트리 Pareto+Borda 리더보드(P2)
   paradigm <incumbent> <a,b>     정상과학/위기/shift_candidate(gap7, shift=인간 안건)
   certificate <name> <tag>       5게이트 AND 인증서(P2)
+  verdict <name> <tag> <verdict> [--note --scope --human]  행정판결(CANONICAL 승격 등, 게이트 통과 필요)
+  critique <name> <tag> <arg_id> <attacks> [--by --kind --body]  Dung 의문/반박 등재
+  standing <name> <tag>          판결 정당성(grounded extension)
   calibration <name>             예측 신뢰도 보정 Brier/log/ECE (gap2 완화 근거)
   question <name> <qname> [--body B --gain G --cost C]  frontier 질문 열기(VoI 메타 포함)
   question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
@@ -73,6 +76,15 @@ def main(argv=None):
     sp.add_argument('--by', default='')
     sp = sub.add_parser('agm'); sp.add_argument('spec', help='AgmReviseIn JSON 파일(신념개정)')
     sp = sub.add_parser('cycle'); sp.add_argument('spec', help='CycleSpec JSON 파일(하네스 한 사이클)')
+    # P6-2: CLI↔MCP 비대칭 해소 — verdict(행정판결)/critique(Dung 의문)/standing(정당성) 추가
+    sp = sub.add_parser('verdict'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('verdict')
+    sp.add_argument('--note', default=''); sp.add_argument('--scope', default='')
+    sp.add_argument('--human', action='store_true', help='인간이 직접 vouch')
+    sp = sub.add_parser('critique'); sp.add_argument('name'); sp.add_argument('tag')
+    sp.add_argument('arg_id'); sp.add_argument('attacks')
+    sp.add_argument('--by', default=''); sp.add_argument('--body', default='')
+    sp.add_argument('--kind', default='doubt', choices=['doubt', 'comment', 'rebuttal', 'evaluation'])
+    sp = sub.add_parser('standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
@@ -160,6 +172,14 @@ def main(argv=None):
         import urllib.parse as up
         q = ('?' + up.urlencode({'closed_by': a.by})) if a.by else ''
         out = call('POST', f'/api/tree/{a.name}/question/{a.qname}/close{q}')
+    elif a.cmd == 'verdict':
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/verdict',
+                   dict(verdict=a.verdict, note=a.note, scope=a.scope, human_verdict=a.human))
+    elif a.cmd == 'critique':
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/critique',
+                   dict(arg_id=a.arg_id, attacks=a.attacks, by=a.by, kind=a.kind, body=a.body))
+    elif a.cmd == 'standing':
+        out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/standing')
     elif a.cmd == 'agm':
         out = call('POST', '/api/agm/revise', json.loads(open(a.spec).read()))
     elif a.cmd == 'cycle':

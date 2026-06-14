@@ -122,3 +122,11 @@ def test_run_cycle_tool_routes(monkeypatch):
     seen = _cap_post(monkeypatch)
     json.loads(m.run_cycle('T', '{"tag":"e1","metric_name":"p95","baseline":0.5,"measured":0.4}'))
     assert seen[0][0] == '/api/tree/T/cycle' and seen[0][1]['tag'] == 'e1'
+
+
+def test_set_verdict_tool_routes(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.set_verdict('T', 'v', 'CANONICAL', human_verdict=True))
+    path, body = seen[0]
+    assert path == '/api/tree/T/node/v/verdict'
+    assert body['verdict'] == 'CANONICAL' and body['human_verdict'] is True

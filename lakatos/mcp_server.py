@@ -182,6 +182,15 @@ def provenance(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def set_verdict(name: str, tag: str, verdict: str, note: str = '', scope: str = '',
+                human_verdict: bool = False) -> str:
+    """행정 판결 지정 — CANONICAL 승격 등(ADMIN_VERDICTS 만; scripted 판결은 submit_result 전용).
+    CANONICAL 은 승격 게이트(헌법+Foundation+Credibility) 통과해야 — 퇴행/미해소 의문 노드는 409."""
+    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/verdict',
+        dict(verdict=verdict, note=note, scope=scope, human_verdict=human_verdict)), ensure_ascii=False)
+
+
+@mcp.tool()
 def critique(name: str, tag: str, arg_id: str, attacks: str, by: str = '',
              kind: str = 'doubt', body: str = '') -> str:
     """인간/agent 의 의문·코멘트·반박 등재(Dung attack). kind=doubt|comment|rebuttal|evaluation."""
