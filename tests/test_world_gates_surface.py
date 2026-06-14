@@ -36,6 +36,16 @@ def test_mcp_tools_exist():
     assert callable(m.add_observation) and callable(m.add_world_action)
 
 
+def test_mcp_add_observation_passes_credibility_components(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.add_observation('T', 'v', 'o2', url='https://x', source_type='standard',
+                                 lakatos_location='hard_core', content_hash='h',
+                                 source_class_weight=0.9, supply_chain_score=0.7, provenance_score=0.95))
+    _, body = seen[0]
+    assert body['source_class_weight'] == 0.9 and body['supply_chain_score'] == 0.7
+    assert body['provenance_score'] == 0.95 and 'trust' not in body   # 분해 성분(bare trust 아님)
+
+
 # ── CLI dispatch ─────────────────────────────────────────────────────────────
 def _cap_call(monkeypatch):
     seen = []

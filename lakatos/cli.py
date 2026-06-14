@@ -145,8 +145,12 @@ def main(argv=None):
     sp.add_argument('--lakatos-location', default='', choices=['', 'hard_core', 'protective_belt',
                                                                'positive_heuristic', 'negative_heuristic'])
     sp.add_argument('--retrieved-at', default=''); sp.add_argument('--content-hash', default='')
-    sp.add_argument('--snapshot', default=''); sp.add_argument('--trust', type=float)
+    sp.add_argument('--snapshot', default=''); sp.add_argument('--trust', type=float, help='레거시 집계(분해 권장)')
     sp.add_argument('--link-authority', type=float); sp.add_argument('--content', default='', help='injection scan 대상')
+    # G-Trust 분해 신뢰 성분(권장 — bare trust 는 lower-assurance)
+    sp.add_argument('--source-class', type=float); sp.add_argument('--primary-source', type=float)
+    sp.add_argument('--provenance', type=float); sp.add_argument('--corroboration', type=float)
+    sp.add_argument('--recency', type=float); sp.add_argument('--supply-chain', type=float, help='F04 supply-chain 축')
     sp = sub.add_parser('world-action'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--command', default=''); sp.add_argument('--cwd', default='')
     sp.add_argument('--exit-code', type=int); sp.add_argument('--stdout', default=''); sp.add_argument('--stderr', default='')
@@ -300,10 +304,12 @@ def main(argv=None):
         body = dict(event_id=a.event_id, url=a.url, source_type=a.source_type,
                     lakatos_location=a.lakatos_location, retrieved_at=a.retrieved_at,
                     content_hash=a.content_hash, raw_snapshot_path=a.snapshot, content=a.content)
-        if a.trust is not None:
-            body['trust'] = a.trust
-        if a.link_authority is not None:
-            body['link_authority'] = a.link_authority
+        for k, v in dict(trust=a.trust, link_authority=a.link_authority, source_class_weight=a.source_class,
+                         primary_source_bonus=a.primary_source, provenance_score=a.provenance,
+                         corroboration_score=a.corroboration, recency_score=a.recency,
+                         supply_chain_score=a.supply_chain).items():
+            if v is not None:
+                body[k] = v
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/observation', body)
     elif a.cmd == 'world-action':
         body = dict(event_id=a.event_id, command=a.command, cwd=a.cwd, stdout_summary=a.stdout,

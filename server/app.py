@@ -43,7 +43,8 @@ from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from lakatos.engine import (FoundationMap, FoundationRequirement, KnowledgeKind,
                             LineageReplayGate, Possibility, Realm, ResearchEvent,
-                            ResearchFrame, ResearchProject, LakatosGate, LakatosEvidence)
+                            ResearchFrame, ResearchProject, LakatosGate, LakatosEvidence,
+                            SourceCredibilityScore)
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.lineage import (Derivation, by_output, roots as lin_roots, rebuild_plan,
                              reproducibility_gaps, stale_inputs, script_history,
@@ -783,8 +784,15 @@ class ObservationIn(BaseModel):
     source_type: str = ''
     query: str = ''
     fetch_tool: str = ''
-    trust: float | None = None
+    trust: float | None = None        # 레거시 집계 trust(분해 없음 = lower-assurance)
+    # G-Trust 분해 성분(SourceCredibilityScore) — 하나라도 주면 분해된 신뢰로 계산(권장)
     link_authority: float | None = None
+    source_class_weight: float | None = None
+    primary_source_bonus: float | None = None
+    provenance_score: float | None = None
+    corroboration_score: float | None = None
+    recency_score: float | None = None
+    supply_chain_score: float | None = None   # F04: supply-chain 별도 신뢰축(git/SBOM/SLSA roll-up)
     lakatos_location: str = ''
     content: str = ''                 # injection scan 대상 raw text
     actor: str = ''
@@ -796,23 +804,41 @@ def add_observation(name: str, tag: str, o: ObservationIn):
     """G-Web 강제 — 인터넷 fetch 를 injection-scan + 체크리스트 통과시에만 적재. 미통과=422.
     적재 evidence 는 claim-standing 상계(internet)로 흐르고, injection risk 가 동봉된다(F07)."""
     injection = scan_prompt_injection(o.content)
+    comps = dict(source_class_weight=o.source_class_weight, link_authority=o.link_authority,
+                 primary_source_bonus=o.primary_source_bonus, provenance_score=o.provenance_score,
+                 corroboration_score=o.corroboration_score, recency_score=o.recency_score,
+                 supply_chain_score=o.supply_chain_score)
     obs = dict(url=o.url, retrieved_at=o.retrieved_at, content_hash=o.content_hash,
                raw_snapshot_path=o.raw_snapshot_path, source_type=o.source_type,
-               trust=o.trust, link_authority=o.link_authority, lakatos_location=o.lakatos_location)
+               trust=o.trust, lakatos_location=o.lakatos_location, **comps)
     gate = web_gate(obs, injection=injection)
     if not gate.passed:
         raise HTTPException(422, f'G-Web 미통과 — 누락/위반: {list(gate.reasons)}')
     payload = {k: str(v) for k, v in obs.items() if v not in (None, '')}
     payload['injection_risk'] = str(injection['risk'])
     payload['injection_signals'] = ','.join(injection['signals'])
-    # ★나생문 dead-wiring 차단: injection risk 가 *실제로* claim-standing confidence 를 derate.
-    # base = trust(또는 link_authority) × (1−risk) → 인젝션 신호 많을수록 그 증거의 신뢰 하락.
-    base = o.trust if o.trust is not None else (o.link_authority if o.link_authority is not None else 0.5)
-    payload['confidence'] = str(round(max(0.0, min(1.0, base)) * (1.0 - injection['risk']), 4))
+    if any(v is not None for v in comps.values()):
+        # ★G-Trust 분해(SourceCredibilityScore 활성화): trust 가 성분에서 계산되고 injection_penalty
+        # (-0.15 가중)가 엔진 정본 공식으로 흐른다. tier+성분 전부 적재(설명가능, F02/F04/F07).
+        score = SourceCredibilityScore(injection_penalty=injection['risk'],
+                                       **{k: (v or 0.0) for k, v in comps.items()})
+        payload.update({k: str(round(v, 4)) for k, v in score.as_components().items()})
+        payload['tier'] = score.tier.value
+        payload['credibility_decomposed'] = 'true'
+        payload['confidence'] = str(round(score.trust, 4))
+    else:
+        # 레거시 bare trust(분해 없음 = lower-assurance) — injection*(1−risk) 평면 derate.
+        base = o.trust if o.trust is not None else 0.5
+        payload['credibility_decomposed'] = 'false'
+        payload['confidence'] = str(round(max(0.0, min(1.0, base)) * (1.0 - injection['risk']), 4))
     eid = f'{name}/{tag}/obs/{o.event_id}'
     _store_research_event(name, tag, eid, 'internet', 'fetch', o.actor, o.evidence_refs, payload)
     hist(name, 'observation', tag, {'id': eid, 'url': o.url, 'injection_risk': injection['risk']})
-    return {'ok': True, 'id': eid, 'gate': 'G-Web', 'injection': injection}
+    cred = {'decomposed': payload.get('credibility_decomposed') == 'true',
+            'confidence': float(payload['confidence']), 'tier': payload.get('tier'),
+            'components': {k: float(payload[k]) for k in SourceCredibilityScore().as_components()
+                          if k in payload}}
+    return {'ok': True, 'id': eid, 'gate': 'G-Web', 'injection': injection, 'credibility': cred}
 
 
 class WorldActionIn(BaseModel):
