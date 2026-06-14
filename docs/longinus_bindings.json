@@ -5,20 +5,165 @@
   "kg_mirror": "ReferenceSite:Longinus (commit baseline 7723a4c, HAS_REFERENCE_SITE)",
   "commit_baseline": "7723a4c",
   "bindings": [
-    {"sourceId": "world_gates.web_gate", "file": "lakatos/world_gates.py", "symbol": "web_gate", "kind": "def", "line_hint": 57, "sha256": "85f49c5eb6b09492", "layer": "positive_heuristic", "frege_sinn": "G-Web 강제 게이트"},
-    {"sourceId": "world_gates.world_action_gate", "file": "lakatos/world_gates.py", "symbol": "world_action_gate", "kind": "def", "line_hint": 84, "sha256": "d3f02fd37164bfe2", "layer": "positive_heuristic", "frege_sinn": "G-WorldAction 강제 게이트"},
-    {"sourceId": "world_gates.scan_prompt_injection", "file": "lakatos/world_gates.py", "symbol": "scan_prompt_injection", "kind": "def", "line_hint": 34, "sha256": "6dd260ef75b560d1", "layer": "negative_heuristic", "frege_sinn": "F07 인젝션 스캔 휴리스틱"},
-    {"sourceId": "app.add_observation", "file": "server/app.py", "symbol": "add_observation", "kind": "def", "line_hint": 795, "sha256": "7dbaa3624c6bf530", "layer": "positive_heuristic", "frege_sinn": "/observation G-Web enforced endpoint"},
-    {"sourceId": "app.add_world_action", "file": "server/app.py", "symbol": "add_world_action", "kind": "def", "line_hint": 834, "sha256": "8ce460f1910728f0", "layer": "positive_heuristic", "frege_sinn": "/world-action G-WorldAction enforced endpoint"},
-    {"sourceId": "app.add_research_event", "file": "server/app.py", "symbol": "add_research_event", "kind": "def", "line_hint": 731, "sha256": "c4c8ccb9b34f3c08", "layer": "negative_heuristic", "frege_sinn": "generic /event bypass 차단"},
-    {"sourceId": "app._store_research_event", "file": "server/app.py", "symbol": "_store_research_event", "kind": "def", "line_hint": 757, "sha256": "75f55700362b2a6b", "layer": "implementation", "frege_sinn": "gate-passed evidence append-only 적재"},
-    {"sourceId": "app.submit_test_result", "file": "server/app.py", "symbol": "submit_test_result", "kind": "def", "line_hint": 569, "sha256": "18f6c4941151478a", "layer": "hard_core", "frege_sinn": "LakatosGate data_branch/human_verdict 배선(ENG-DU-2)"},
-    {"sourceId": "laudan.unattributed_closures", "file": "lakatos/laudan.py", "symbol": "unattributed_closures", "kind": "def", "line_hint": 45, "sha256": "6900152af158d6c8", "layer": "positive_heuristic", "frege_sinn": "P7-F closed_by 미귀속 가시화"},
-    {"sourceId": "claim._payload_float", "file": "lakatos/claim.py", "symbol": "_payload_float", "kind": "def", "line_hint": 98, "sha256": "bf9bd7ab74dcf26f", "layer": "negative_heuristic", "frege_sinn": "P7-C NaN/inf 거부(math.isfinite)"},
-    {"sourceId": "agm.demote_canonical", "file": "lakatos/agm.py", "symbol": "demote_canonical", "kind": "def", "line_hint": 152, "sha256": "255358423de81dab", "layer": "protective_belt", "frege_sinn": "P7-A DEMOTE_PENALTY grounded"},
-    {"sourceId": "oo_sink.ship", "file": "lakatos/oo_sink.py", "symbol": "ship", "kind": "def", "line_hint": 21, "sha256": "138423ed6c22330c", "layer": "implementation", "frege_sinn": "P7-D OO_URL 강제"},
-    {"sourceId": "app._close_resources", "file": "server/app.py", "symbol": "_close_resources", "kind": "def", "line_hint": 74, "sha256": "561e2a9b0e90d365", "layer": "implementation", "frege_sinn": "P7-D shutdown close"},
-    {"sourceId": "metrics.tree_metrics", "file": "lakatos/metrics.py", "symbol": "tree_metrics", "kind": "def", "line_hint": 74, "sha256": "51466666e59c217c", "layer": "implementation", "frege_sinn": "dogfood 갭 progress.scope 공개"},
-    {"sourceId": "examples.bpc_icp_programme.run", "file": "examples/bpc_icp_programme.py", "symbol": "run", "kind": "def", "line_hint": 100, "sha256": "cccceec311f96125", "layer": "applications", "frege_sinn": "consumer_b/ICP 실연구 라카토스 모델 dogfood"}
+    {
+      "sourceId": "world_gates.web_gate",
+      "file": "lakatos/world_gates.py",
+      "symbol": "web_gate",
+      "kind": "def",
+      "line_hint": 57,
+      "sha256": "85f49c5eb6b09492",
+      "layer": "positive_heuristic",
+      "frege_sinn": "G-Web 강제 게이트"
+    },
+    {
+      "sourceId": "world_gates.world_action_gate",
+      "file": "lakatos/world_gates.py",
+      "symbol": "world_action_gate",
+      "kind": "def",
+      "line_hint": 84,
+      "sha256": "d3f02fd37164bfe2",
+      "layer": "positive_heuristic",
+      "frege_sinn": "G-WorldAction 강제 게이트"
+    },
+    {
+      "sourceId": "world_gates.scan_prompt_injection",
+      "file": "lakatos/world_gates.py",
+      "symbol": "scan_prompt_injection",
+      "kind": "def",
+      "line_hint": 34,
+      "sha256": "6dd260ef75b560d1",
+      "layer": "negative_heuristic",
+      "frege_sinn": "F07 인젝션 스캔 휴리스틱"
+    },
+    {
+      "sourceId": "app.add_observation",
+      "file": "server/app.py",
+      "symbol": "add_observation",
+      "kind": "def",
+      "line_hint": 795,
+      "sha256": "7dbaa3624c6bf530",
+      "layer": "positive_heuristic",
+      "frege_sinn": "/observation G-Web enforced endpoint"
+    },
+    {
+      "sourceId": "app.add_world_action",
+      "file": "server/app.py",
+      "symbol": "add_world_action",
+      "kind": "def",
+      "line_hint": 834,
+      "sha256": "8ce460f1910728f0",
+      "layer": "positive_heuristic",
+      "frege_sinn": "/world-action G-WorldAction enforced endpoint"
+    },
+    {
+      "sourceId": "app.add_research_event",
+      "file": "server/app.py",
+      "symbol": "add_research_event",
+      "kind": "def",
+      "line_hint": 731,
+      "sha256": "c4c8ccb9b34f3c08",
+      "layer": "negative_heuristic",
+      "frege_sinn": "generic /event bypass 차단"
+    },
+    {
+      "sourceId": "app._store_research_event",
+      "file": "server/app.py",
+      "symbol": "_store_research_event",
+      "kind": "def",
+      "line_hint": 757,
+      "sha256": "75f55700362b2a6b",
+      "layer": "implementation",
+      "frege_sinn": "gate-passed evidence append-only 적재"
+    },
+    {
+      "sourceId": "app.submit_test_result",
+      "file": "server/app.py",
+      "symbol": "submit_test_result",
+      "kind": "def",
+      "line_hint": 569,
+      "sha256": "18f6c4941151478a",
+      "layer": "hard_core",
+      "frege_sinn": "LakatosGate data_branch/human_verdict 배선(ENG-DU-2)"
+    },
+    {
+      "sourceId": "laudan.unattributed_closures",
+      "file": "lakatos/laudan.py",
+      "symbol": "unattributed_closures",
+      "kind": "def",
+      "line_hint": 45,
+      "sha256": "6900152af158d6c8",
+      "layer": "positive_heuristic",
+      "frege_sinn": "P7-F closed_by 미귀속 가시화"
+    },
+    {
+      "sourceId": "claim._payload_float",
+      "file": "lakatos/claim.py",
+      "symbol": "_payload_float",
+      "kind": "def",
+      "line_hint": 98,
+      "sha256": "bf9bd7ab74dcf26f",
+      "layer": "negative_heuristic",
+      "frege_sinn": "P7-C NaN/inf 거부(math.isfinite)"
+    },
+    {
+      "sourceId": "agm.demote_canonical",
+      "file": "lakatos/agm.py",
+      "symbol": "demote_canonical",
+      "kind": "def",
+      "line_hint": 152,
+      "sha256": "255358423de81dab",
+      "layer": "protective_belt",
+      "frege_sinn": "P7-A DEMOTE_PENALTY grounded"
+    },
+    {
+      "sourceId": "oo_sink.ship",
+      "file": "lakatos/oo_sink.py",
+      "symbol": "ship",
+      "kind": "def",
+      "line_hint": 37,
+      "sha256": "138423ed6c22330c",
+      "layer": "implementation",
+      "frege_sinn": "P7-D OO_URL 강제"
+    },
+    {
+      "sourceId": "app._close_resources",
+      "file": "server/app.py",
+      "symbol": "_close_resources",
+      "kind": "def",
+      "line_hint": 74,
+      "sha256": "561e2a9b0e90d365",
+      "layer": "implementation",
+      "frege_sinn": "P7-D shutdown close"
+    },
+    {
+      "sourceId": "metrics.tree_metrics",
+      "file": "lakatos/metrics.py",
+      "symbol": "tree_metrics",
+      "kind": "def",
+      "line_hint": 74,
+      "sha256": "51466666e59c217c",
+      "layer": "implementation",
+      "frege_sinn": "dogfood 갭 progress.scope 공개"
+    },
+    {
+      "sourceId": "examples.bpc_icp_programme.run",
+      "file": "examples/bpc_icp_programme.py",
+      "symbol": "run",
+      "kind": "def",
+      "line_hint": 100,
+      "sha256": "cccceec311f96125",
+      "layer": "applications",
+      "frege_sinn": "consumer_b/ICP 실연구 라카토스 모델 dogfood"
+    },
+    {
+      "sourceId": "oo_sink.verify_trace",
+      "file": "lakatos/oo_sink.py",
+      "symbol": "verify_trace",
+      "kind": "def",
+      "line_hint": 53,
+      "sha256": "bbad741597dd9d7b",
+      "layer": "implementation",
+      "frege_sinn": "oo positive verify — 실 도착 단언(LTDD 빠진 절반)"
+    }
   ]
 }
