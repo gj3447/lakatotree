@@ -196,8 +196,9 @@ GROUNDED = {
         'band': 'Wald SPRT 하한 lnB(α=β=0.05)=−2.944 의 정수 휴리스틱',
         'rationale': '★정직: K=3 은 *휴리스틱 정수*. SPRT 방법(Wald)은 문헌 근거지만 노드당 LLR 은 '
                      '판결별로 다름(BF 모델: rejected=ln(1/6)=−1.79 nat → ~2 노드서 lnB 교차; partial=0 nat). '
-                     'K=3 = 보수적 정수 근사(SPRT 영역). 엄밀판 = should_abandon_sprt(실제 LLR 누적). '
-                     '"노드당 0.98 nat" 류 역산 정밀 주장 철회.',
+                     'K=3 = 보수적 정수 근사(SPRT 영역). ★정직(LKT-T3): should_abandon_sprt(실제 LLR 누적)은 '
+                     '*참조 구현*이며 production 폐기경로(laudan.should_abandon 의 K=3 규칙)에 미배선 — '
+                     '"엄밀판이 돌고 있다"는 주장 아님. "노드당 0.98 nat" 류 역산 정밀 주장 철회.',
     },
     'abandon_budget': {
         'value': 5, 'source': 'policy', 'tier': 'policy',

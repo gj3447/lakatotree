@@ -229,3 +229,17 @@ def test_run_cycle_carries_pnr_fields(monkeypatch):
                                    counterexample_response='monster_barring', lakatos_hardcore=False))
     assert captured['r'].counterexample_response == 'monster_barring'
     assert captured['r'].lakatos_hardcore is False
+
+
+# ── P6-5 ENG-DU-3: /api/prov ?format=prov-json → 표준 W3C PROV-JSON (직렬기 배선) ──
+
+def test_artifact_prov_format_prov_json(monkeypatch):
+    app = load_app()
+    from lakatos.lineage import Derivation
+    src = Derivation('raw', 'rs', '', '', [], kind='source')
+    fin = Derivation('out', 'os', 'build.py', 'bs', [('raw', 'rs')], kind='final')
+    monkeypatch.setattr(app, '_load_lineage', lambda: [src, fin])
+    plain = app.artifact_prov('out')
+    pj = app.artifact_prov('out', format='prov-json')
+    assert 'prov' in plain                          # format 없으면 내부 dict
+    assert 'prefix' in pj and 'entity' in pj and 'activity' in pj   # 표준 W3C PROV-JSON 키

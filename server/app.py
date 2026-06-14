@@ -34,7 +34,8 @@ from lakatos.pnr import appraise_response, Response, CounterexampleType, ProofGe
 from lakatos.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected, ENTRENCHMENT_POLICY)
 from lakatos.adapters import (lineage_result_to_openlineage_events, derivations_to_dvc_pipeline,
-                              derivations_to_dvc_lock, derivations_to_prov_document)
+                              derivations_to_dvc_lock, derivations_to_prov_document,
+                              prov_document_to_prov_json)
 from lakatos.calibrate import brier_score, log_score, calibration_error
 from lakatos.trust import evidence_weight
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
@@ -1460,13 +1461,17 @@ def artifact_dvc(artifact: str):
             'dvc_lock': derivations_to_dvc_lock(plan)}
 
 @app.get('/api/prov/{artifact:path}')
-def artifact_prov(artifact: str):
-    """완성본 계보의 W3C PROV 문서 (Entity/Activity/Agent, F-ARCH-5)."""
+def artifact_prov(artifact: str, format: str | None = None):
+    """완성본 계보의 W3C PROV 문서 (Entity/Activity/Agent, F-ARCH-5).
+    ?format=prov-json 으로 표준 W3C PROV-JSON 직렬화(ENG-DU-3: 전엔 내부 dict 를 'W3C PROV'라 반환)."""
     ds = _load_lineage(); bo = by_output(ds)
     if artifact not in bo:
         raise HTTPException(404, f'산출물 미기록: {artifact}')
     plan = _safe_rebuild_plan(artifact, bo)
-    return {'artifact': artifact, 'prov': derivations_to_prov_document(plan)}
+    doc = derivations_to_prov_document(plan)
+    if format == 'prov-json':
+        return prov_document_to_prov_json(doc)   # 표준 PROV-JSON(prefix/entity/activity/agent/관계)
+    return {'artifact': artifact, 'prov': doc}
 
 @app.get('/api/rebuild-verify/{artifact:path}')
 def rebuild_verify(artifact: str):
