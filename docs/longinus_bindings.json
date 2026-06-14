@@ -10,7 +10,7 @@
       "file": "lakatos/world_gates.py",
       "symbol": "web_gate",
       "kind": "def",
-      "line_hint": 57,
+      "line_hint": 61,
       "sha256": "85f49c5eb6b09492",
       "layer": "positive_heuristic",
       "frege_sinn": "G-Web 강제 게이트"
@@ -20,7 +20,7 @@
       "file": "lakatos/world_gates.py",
       "symbol": "world_action_gate",
       "kind": "def",
-      "line_hint": 84,
+      "line_hint": 88,
       "sha256": "d3f02fd37164bfe2",
       "layer": "positive_heuristic",
       "frege_sinn": "G-WorldAction 강제 게이트"
@@ -40,7 +40,7 @@
       "file": "server/app.py",
       "symbol": "add_observation",
       "kind": "def",
-      "line_hint": 795,
+      "line_hint": 803,
       "sha256": "7dbaa3624c6bf530",
       "layer": "positive_heuristic",
       "frege_sinn": "/observation G-Web enforced endpoint"
@@ -50,7 +50,7 @@
       "file": "server/app.py",
       "symbol": "add_world_action",
       "kind": "def",
-      "line_hint": 834,
+      "line_hint": 869,
       "sha256": "8ce460f1910728f0",
       "layer": "positive_heuristic",
       "frege_sinn": "/world-action G-WorldAction enforced endpoint"
@@ -60,7 +60,7 @@
       "file": "server/app.py",
       "symbol": "add_research_event",
       "kind": "def",
-      "line_hint": 731,
+      "line_hint": 732,
       "sha256": "c4c8ccb9b34f3c08",
       "layer": "negative_heuristic",
       "frege_sinn": "generic /event bypass 차단"
@@ -70,7 +70,7 @@
       "file": "server/app.py",
       "symbol": "_store_research_event",
       "kind": "def",
-      "line_hint": 757,
+      "line_hint": 758,
       "sha256": "75f55700362b2a6b",
       "layer": "implementation",
       "frege_sinn": "gate-passed evidence append-only 적재"
@@ -80,7 +80,7 @@
       "file": "server/app.py",
       "symbol": "submit_test_result",
       "kind": "def",
-      "line_hint": 569,
+      "line_hint": 570,
       "sha256": "18f6c4941151478a",
       "layer": "hard_core",
       "frege_sinn": "LakatosGate data_branch/human_verdict 배선(ENG-DU-2)"
@@ -130,7 +130,7 @@
       "file": "server/app.py",
       "symbol": "_close_resources",
       "kind": "def",
-      "line_hint": 74,
+      "line_hint": 75,
       "sha256": "561e2a9b0e90d365",
       "layer": "implementation",
       "frege_sinn": "P7-D shutdown close"
