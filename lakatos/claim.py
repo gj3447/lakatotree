@@ -10,7 +10,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .engine import FoundationGate, FoundationMap, LineageReplayResult, Realm, ResearchEvent, ResearchFrame
+from .engine import (FoundationGate, FoundationMap, LineageReplayResult, Realm,
+                     ResearchEvent, ResearchFrame, _clamp01)   # P8: _clamp01 단일 정본(engine)
 from .grounding import GROUNDED   # P6-3: confidence 문턱 단일 정본
 
 
@@ -20,10 +21,6 @@ LOWER_REALMS = {Realm.BASH, Realm.DATA, Realm.GIT, Realm.AGENT}
 # P7-A(GROUND-2/LKT-T3-1): 증거 confidence 기본값 단일 정본 (전엔 inline dict/literal 하드코딩).
 _ACT_CONF = GROUNDED['evidence_action_confidence']['value']
 _REALM_CONF = GROUNDED['evidence_realm_confidence']['value']
-
-
-def _clamp01(value: float) -> float:
-    return max(0.0, min(1.0, float(value)))
 
 
 @dataclass(frozen=True)
