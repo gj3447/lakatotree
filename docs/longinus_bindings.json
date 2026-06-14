@@ -214,6 +214,46 @@
       "sha256": "5e90470d284c5de6",
       "layer": "applications",
       "frege_sinn": "공차를 잠긴 Prediction 으로 사전등록=ground-truth contract"
+    },
+    {
+      "sourceId": "oo_sink.test_outcome_records",
+      "file": "lakatos/oo_sink.py",
+      "symbol": "test_outcome_records",
+      "kind": "def",
+      "line_hint": 64,
+      "sha256": "49487ad8782b8526",
+      "layer": "implementation",
+      "frege_sinn": "★ooptdd 로그 빌더 — pytest 결과→oo 구조화 trace(cid 묶음, ground truth)"
+    },
+    {
+      "sourceId": "oo_sink.enabled",
+      "file": "lakatos/oo_sink.py",
+      "symbol": "enabled",
+      "kind": "def",
+      "line_hint": 20,
+      "sha256": "a2c4233c037bab4a",
+      "layer": "negative_heuristic",
+      "frege_sinn": "ooptdd 게이트 CONSUMER_LOGS_E2E∧OO_PASS (OFF=no-op, 시크릿 env)"
+    },
+    {
+      "sourceId": "conftest.pytest_sessionfinish",
+      "file": "tests/conftest.py",
+      "symbol": "pytest_sessionfinish",
+      "kind": "def",
+      "line_hint": 39,
+      "sha256": "40c36f3a590b458b",
+      "layer": "implementation",
+      "frege_sinn": "LTDD 세션종료 entry — session_finish 오케스트레이터 위임"
+    },
+    {
+      "sourceId": "conftest.pytest_runtest_logreport",
+      "file": "tests/conftest.py",
+      "symbol": "pytest_runtest_logreport",
+      "kind": "def",
+      "line_hint": 21,
+      "sha256": "469c01faca6273e6",
+      "layer": "implementation",
+      "frege_sinn": "per-test 판정 수집(ooptdd 로그 원천)"
     }
   ]
 }
