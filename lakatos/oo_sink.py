@@ -7,6 +7,7 @@
 import base64
 import json
 import os
+import time
 import urllib.request
 
 
@@ -18,6 +19,21 @@ def enabled() -> bool:
     return os.getenv('AIRO_LOGS_E2E') == '1' and bool(os.getenv('OO_PASS'))
 
 
+def _endpoint():
+    """oo (base, org, auth) — ship/verify 공용(DRY). OO_URL 미설정 시 ValueError(baked default 금지)."""
+    base = _cfg('OO_URL', '')
+    if not base:   # OPS-INIT-1: 내부 IP baked default 금지(외부배포 깨짐) — env 명시 강제
+        raise ValueError('OO_URL 필수 — AIRO_LOGS_E2E=1 이면 oo 엔드포인트를 .env 의 OO_URL 로 명시 '
+                         '(예: OO_URL=http://<oo-host>:5080). 코드/문서 baked default 금지.')
+    auth = 'Basic ' + base64.b64encode(
+        f"{_cfg('OO_USER', 'root@airo.local')}:{os.environ['OO_PASS']}".encode()).decode()
+    return base.rstrip('/'), _cfg('OO_ORG', 'default'), auth
+
+
+def _open_default(request, timeout):
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
 def ship(records: list, stream: str = 'tests', *, opener=None, timeout: float = 10.0):
     """구조화 로그 리스트를 oo stream 으로 POST (게이트 OFF 면 no-op=None).
 
@@ -26,19 +42,57 @@ def ship(records: list, stream: str = 'tests', *, opener=None, timeout: float = 
     """
     if not enabled() or not records:
         return None
-    user = _cfg('OO_USER', 'root@airo.local')
-    org = _cfg('OO_ORG', 'default')
-    base = _cfg('OO_URL', '')
-    if not base:   # OPS-INIT-1: 내부 IP baked default 금지(외부배포 깨짐) — env 명시 강제
-        raise ValueError('OO_URL 필수 — AIRO_LOGS_E2E=1 이면 oo 엔드포인트를 .env 의 OO_URL 로 명시 '
-                         '(예: OO_URL=http://<oo-host>:5080). 코드/문서 baked default 금지.')
-    auth = 'Basic ' + base64.b64encode(f"{user}:{os.environ['OO_PASS']}".encode()).decode()
+    base, org, auth = _endpoint()
     req = urllib.request.Request(
         f'{base}/api/{org}/{stream}/_json', data=json.dumps(records).encode(),
         method='POST', headers={'Authorization': auth, 'Content-Type': 'application/json'})
-    _open = opener or (lambda request, timeout: urllib.request.urlopen(request, timeout=timeout))
-    with _open(req, timeout=timeout) as r:
+    with (opener or _open_default)(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
+
+
+def verify_trace(cid: str, *, stream: str = 'tests', expect_total: int | None = None,
+                 retries: int = 6, delay: float = 2.0, minutes_back: int = 60,
+                 opener=None, timeout: float = 15.0) -> dict:
+    """★LTDD 의 빠진 절반 — ship 의 '예외 없음' 보고가 아니라 *실제 oo 도착*을 positive 단언.
+
+    cid 의 test_session trace 가 oo `stream` 에 실재하는지 retries×delay 폴링(ingestion latency 흡수).
+    logs = ground truth. silent ingest loss(적재 보고됐으나 실제 미도착)를 감지한다.
+    반환 {ok, attempts, records, outcomes, session{...}, reasons[]}. opener 주입 = 네트워크 없이 테스트.
+    """
+    if not _cfg('OO_URL', ''):
+        return {'ok': False, 'attempts': 0, 'records': 0, 'outcomes': 0, 'session': {},
+                'reasons': ['OO_URL_unset']}
+    base, org, auth = _endpoint()
+    sql = ("SELECT event, passed, failed, total, skipped, service FROM " + stream +
+           f" WHERE cycle_id = '{cid}'")
+    now_us = int(time.time() * 1_000_000)
+    body = json.dumps({'query': {'sql': sql, 'start_time': now_us - minutes_back * 60_000_000,
+                                 'end_time': now_us, 'size': 1000}}).encode()
+    _open = opener or _open_default
+    for attempt in range(1, max(retries, 1) + 1):
+        req = urllib.request.Request(f'{base}/api/{org}/_search', data=body, method='POST',
+                                     headers={'Authorization': auth, 'Content-Type': 'application/json'})
+        try:
+            with _open(req, timeout=timeout) as r:
+                hits = json.loads(r.read().decode()).get('hits', [])
+        except Exception:
+            hits = []
+        sessions = [h for h in hits if h.get('event') == 'test_session']
+        if sessions:
+            s = sessions[0]
+            outcomes = sum(1 for h in hits if h.get('event') == 'test_outcome')
+            reasons = []
+            if expect_total is not None and s.get('total') != expect_total:
+                reasons.append(f"total={s.get('total')}!=expect{expect_total}")
+            if expect_total is not None and outcomes < expect_total:   # 부분 적재 유실 감지
+                reasons.append(f"outcomes={outcomes}<total{expect_total}_partial_loss")
+            return {'ok': not reasons, 'attempts': attempt, 'records': len(hits), 'outcomes': outcomes,
+                    'session': {k: s.get(k) for k in ('service', 'passed', 'failed', 'total', 'skipped')},
+                    'reasons': reasons}
+        if attempt < retries:
+            time.sleep(delay)
+    return {'ok': False, 'attempts': max(retries, 1), 'records': 0, 'outcomes': 0, 'session': {},
+            'reasons': ['no_test_session_trace_in_oo_after_poll']}
 
 
 def _corr(cid: str) -> dict:
