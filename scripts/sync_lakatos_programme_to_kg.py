@@ -1,0 +1,489 @@
+#!/usr/bin/env python3
+"""Sync a Lakatos research-programme python module → Neo4j KG (idempotent, MERGE-only).
+
+WHY THIS EXISTS
+---------------
+The sibling registration hub `LakatosTree_BPC_20View_20260612` in the KG was
+HAND-AUTHORED and drifted (50 KG nodes vs 14 python nodes). Hand-curation of KG
+prose for a programme that ALSO lives in a python module is a drift factory.
+
+This script makes the **python module the single source of truth**: it imports
+NODES / FRONTIER / RIVAL_NODES / RIVAL_FRONTIER / canonical from a given examples
+module and emits idempotent Cypher (MERGE-only, never DELETE) so that:
+
+  * re-running is safe (idempotent) and never duplicates,
+  * concurrent hand-curation in the KG is NOT clobbered (no DELETE),
+  * `--verify` asserts the KG counts == python source counts (drift alarm).
+
+The default module is `examples.bpc_analysis_contract_programme` — the consumer_b
+MEASUREMENT (analysis-contract: 측정·운반·DT) Lakatos programme, a different
+*scope* from the registration programme (`bpc_icp_programme`). The two never
+alias: this hub uses the node-name prefix `lk-bpc-ac-` (analysis-contract),
+distinct from the registration hub's `lk-bpc-hist-`.
+
+MODES
+-----
+  --dry-run  (default)  parse the module, print the Cypher + parsed counts.
+                        DOES NOT connect to any database.
+  --verify              connect (NEO4J_* from env), assert KG node/frontier
+                        counts == python source counts; exit 1 on mismatch.
+                        DOES NOT write.
+  --apply               run the MERGEs (KG write — confirm/escalate gated).
+
+ENV (for --verify / --apply only):
+    set -a && source .env && set +a
+    NEO4J_URI       (e.g. bolt://localhost:55013)   [also accepts NEO4J_URL]
+    NEO4J_USERNAME  (e.g. neo4j)                       [also accepts NEO4J_USER]
+    NEO4J_PASSWORD
+
+USAGE
+-----
+    python scripts/sync_lakatos_programme_to_kg.py --dry-run
+    python scripts/sync_lakatos_programme_to_kg.py --dry-run --module examples.bpc_icp_programme
+    set -a && source .env && set +a
+    python scripts/sync_lakatos_programme_to_kg.py --verify
+    python scripts/sync_lakatos_programme_to_kg.py --apply       # KG write — user GO required
+
+The metadata of the target hub (name, scope, hard_core, anchor) is for the consumer_b
+analysis-contract programme. If you point --module elsewhere, also override
+--hub-name / --node-prefix / --anchor so you do not collide with this hub.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib
+import os
+import sys
+from dataclasses import dataclass, field
+from typing import Any
+
+# Make the repo root importable so `examples.*` / `lakatos.*` resolve regardless
+# of cwd (this file lives in <repo>/scripts/). Mirrors what `python -m` does.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+
+# ── target identity (consumer_b analysis-contract programme) ──────────────────────────
+DEFAULT_MODULE = 'examples.bpc_analysis_contract_programme'
+DEFAULT_HUB_NAME = 'LakatosTree_BPC_AnalysisContract_20260615'
+DEFAULT_NODE_PREFIX = 'lk-bpc-ac-'          # never aliases registration 'lk-bpc-hist-'
+DEFAULT_FRONTIER_PREFIX = 'q-bpc-ac-'
+DEFAULT_RIVAL_INFIX = 'rival-'              # name = <prefix>rival-<tag>
+DEFAULT_ANCHOR = 'SA_BpcAnalysisContract_Prismv2DtChain_20260614'
+
+HUB_SCOPE = 'measurement (analysis-contract: geometry 측정 + AI + 운반 + DT/PLC verdict)'
+HUB_PART = 'consumer_b/part_375'
+HUB_METRIC_RULE = ('contract_output_count (end-to-end LTDD-green + Windows-verified '
+                   'analysis-contract output 누적; higher=progress; scope=measurement)')
+HUB_HARD_CORE = ('2D seg=위치/coarse만; 치수=3D geometry/RecipeV2/HALCON; hole 3종=parent '
+                 'plane void boundary(center XY + parent/base Z); CUP=CAD band z+nadir; '
+                 'TAB_BOLT/washer=3층(base_tab/washer_top/head_top) 보존; LABEL=ROI helper '
+                 '(decoded truth=v16 policy); bulk numpy proto-bytes 금지(ShmHandle); '
+                 'PLC 제어 loop은 Python이 안 닫음(verdict NG=fail-closed)')
+HUB_NAMED_BY = 'sync_lakatos_programme_to_kg.py'
+HUB_CREATED_AT = '2026-06-15'
+
+# constant per-node measurement-axis metadata (whole hub is one scope)
+METRIC_NAME = 'contract_output_count'
+METRIC_DIRECTION = 'higher'
+METRIC_SCOPE = 'measurement'
+
+RIVAL_BRANCH = 'rival_monolithic'
+
+
+# ── parsed-programme container (derived purely from the python module) ─────────
+@dataclass
+class Programme:
+    module_name: str
+    nodes: list[dict[str, Any]]
+    frontier: list[dict[str, Any]]
+    rival_nodes: list[dict[str, Any]]
+    rival_frontier: list[dict[str, Any]]
+    canonical_tag: str | None
+    certified: bool | None = None
+    canonical_imp_pct: float | None = None
+
+    # ----- derived counts -----
+    @property
+    def total_nodes(self) -> int:
+        return len(self.nodes) + len(self.rival_nodes)
+
+    @property
+    def total_frontiers(self) -> int:
+        return len(self.frontier) + len(self.rival_frontier)
+
+    @property
+    def total_branched_from(self) -> int:
+        return (sum(1 for n in self.nodes if n.get('parent'))
+                + sum(1 for n in self.rival_nodes if n.get('parent')))
+
+
+def load_programme(module_name: str) -> Programme:
+    """Import the examples module and read its programme constants.
+
+    The module is the single source of truth — nothing is duplicated here.
+    """
+    mod = importlib.import_module(module_name)
+
+    def _req(attr: str) -> list:
+        if not hasattr(mod, attr):
+            sys.exit(f"ERROR: module {module_name!r} has no {attr!r} "
+                     f"(not a lakatos programme module?)")
+        return list(getattr(mod, attr))
+
+    nodes = _req('NODES')
+    frontier = _req('FRONTIER')
+    rival_nodes = list(getattr(mod, 'RIVAL_NODES', []) or [])
+    rival_frontier = list(getattr(mod, 'RIVAL_FRONTIER', []) or [])
+
+    # canonical = the (single) node whose verdict == 'CANONICAL', derived from module
+    canon = [n['tag'] for n in nodes if n.get('verdict') == 'CANONICAL']
+    canonical_tag = canon[0] if canon else None
+    if len(canon) > 1:
+        print(f"WARN: module has {len(canon)} CANONICAL nodes {canon}; using first.",
+              file=sys.stderr)
+
+    # certified / improvement — best-effort, only if the module exposes run()
+    certified: bool | None = None
+    canonical_imp_pct: float | None = None
+    # We intentionally DO NOT call run() here (it prints a banner). The hub's
+    # certified flag is a programme fact recorded as a static literal below;
+    # we still surface the module's certify result if cheaply available via the
+    # certify gate without side effects.
+    try:
+        from lakatos.metrics import tree_metrics  # type: ignore
+        m = tree_metrics(nodes, frontier)
+        prog = m.get('progress') or {}
+        canonical_imp_pct = prog.get('improvement_pct')
+    except Exception:  # pragma: no cover - metrics are advisory only
+        pass
+
+    return Programme(
+        module_name=module_name,
+        nodes=nodes, frontier=frontier,
+        rival_nodes=rival_nodes, rival_frontier=rival_frontier,
+        canonical_tag=canonical_tag,
+        certified=certified,
+        canonical_imp_pct=canonical_imp_pct,
+    )
+
+
+# ── Cypher emission (parameterized; MERGE-only) ────────────────────────────────
+@dataclass
+class CypherBatch:
+    statements: list[tuple[str, dict]] = field(default_factory=list)
+
+    def add(self, cypher: str, params: dict | None = None) -> None:
+        self.statements.append((cypher.strip(), params or {}))
+
+    def __len__(self) -> int:
+        return len(self.statements)
+
+
+def _node_records(prog: Programme, node_prefix: str, rival_infix: str) -> list[dict]:
+    """Flatten main + rival nodes into KG-row dicts (single source = module)."""
+    rows: list[dict] = []
+    for n in prog.nodes:
+        rows.append(_node_row(n, name=f"{node_prefix}{n['tag']}",
+                              branch='canonical_path'))
+    for n in prog.rival_nodes:
+        rows.append(_node_row(n, name=f"{node_prefix}{rival_infix}{n['tag']}",
+                              branch=RIVAL_BRANCH))
+    return rows
+
+
+def _node_row(n: dict, *, name: str, branch: str) -> dict:
+    return dict(
+        name=name,
+        tag=n.get('tag'),
+        verdict=n.get('verdict'),
+        comment=n.get('comment', ''),
+        limitation=n.get('limitation', ''),
+        algorithm=n.get('algorithm', ''),
+        metric_value=n.get('metric_value'),
+        metric_name=METRIC_NAME,
+        metric_direction=METRIC_DIRECTION,
+        metric_scope=METRIC_SCOPE,
+        branch=branch,
+        parent_tag=n.get('parent'),
+    )
+
+
+def _lineage_records(prog: Programme, node_prefix: str, rival_infix: str) -> list[dict]:
+    """(child_name, parent_name) for every non-null parent — BRANCHED_FROM edges."""
+    rows: list[dict] = []
+    for n in prog.nodes:
+        if n.get('parent'):
+            rows.append(dict(child=f"{node_prefix}{n['tag']}",
+                             parent=f"{node_prefix}{n['parent']}"))
+    for n in prog.rival_nodes:
+        if n.get('parent'):
+            rows.append(dict(child=f"{node_prefix}{rival_infix}{n['tag']}",
+                             parent=f"{node_prefix}{rival_infix}{n['parent']}"))
+    return rows
+
+
+def _frontier_records(prog: Programme, frontier_prefix: str) -> list[dict]:
+    rows: list[dict] = []
+    for q in (list(prog.frontier) + list(prog.rival_frontier)):
+        rows.append(dict(
+            name=f"{frontier_prefix}{q['name']}",
+            status=q.get('status'),
+            body=q.get('body', ''),
+            domain='measurement',
+            closed_by=q.get('closed_by') or [],
+        ))
+    return rows
+
+
+def build_cypher(prog: Programme, *, hub_name: str, node_prefix: str,
+                 frontier_prefix: str, rival_infix: str, anchor: str) -> CypherBatch:
+    b = CypherBatch()
+
+    # 1) hub — MERGE on name, set programme facts (ON CREATE + ON MATCH so re-run refreshes)
+    hub_props = dict(
+        scope=HUB_SCOPE,
+        part=HUB_PART,
+        metric_rule=HUB_METRIC_RULE,
+        hard_core=HUB_HARD_CORE,
+        canonical_node=prog.canonical_tag or 'dt_render',
+        certified=False,
+        status='ACTIVE',
+        source_python=prog.module_name,
+        named_by=HUB_NAMED_BY,
+        created_at=HUB_CREATED_AT,
+    )
+    b.add(
+        """
+MERGE (h:KnowledgeHub:LakatosTree {name:$hub_name})
+ON CREATE SET h += $props
+ON MATCH  SET h += $props
+""",
+        dict(hub_name=hub_name, props=hub_props),
+    )
+
+    # 2) nodes — UNWIND, MERGE on name, SET props, MERGE (h)-[:HAS_NODE]->(n)
+    b.add(
+        """
+MATCH (h:KnowledgeHub:LakatosTree {name:$hub_name})
+UNWIND $rows AS row
+MERGE (n:LakatosNode {name:row.name})
+SET n.tag = row.tag,
+    n.verdict = row.verdict,
+    n.comment = row.comment,
+    n.limitation = row.limitation,
+    n.algorithm = row.algorithm,
+    n.metric_value = row.metric_value,
+    n.metric_name = row.metric_name,
+    n.metric_direction = row.metric_direction,
+    n.metric_scope = row.metric_scope,
+    n.branch = row.branch
+MERGE (h)-[:HAS_NODE]->(n)
+""",
+        dict(hub_name=hub_name, rows=_node_records(prog, node_prefix, rival_infix)),
+    )
+
+    # 3) lineage — BRANCHED_FROM (child)->(parent), MERGE-only
+    b.add(
+        """
+UNWIND $rows AS row
+MATCH (c:LakatosNode {name:row.child})
+MATCH (p:LakatosNode {name:row.parent})
+MERGE (c)-[:BRANCHED_FROM]->(p)
+""",
+        dict(rows=_lineage_records(prog, node_prefix, rival_infix)),
+    )
+
+    # 4) frontier — PrismFinding:OpenQuestion, MERGE on name, MERGE (h)-[:HAS_FRONTIER]->(q)
+    b.add(
+        """
+MATCH (h:KnowledgeHub:LakatosTree {name:$hub_name})
+UNWIND $rows AS row
+MERGE (q:PrismFinding:OpenQuestion {name:row.name})
+SET q.status = row.status,
+    q.body = row.body,
+    q.domain = row.domain,
+    q.closed_by = row.closed_by
+MERGE (h)-[:HAS_FRONTIER]->(q)
+""",
+        dict(hub_name=hub_name, rows=_frontier_records(prog, frontier_prefix)),
+    )
+
+    # 5) grounding to existing SemanticAnchor (MERGE-only; never create new prose)
+    b.add(
+        """
+MATCH (h:KnowledgeHub:LakatosTree {name:$hub_name})
+MERGE (a:SemanticAnchor {name:$anchor})
+MERGE (h)-[:DOCUMENTS]->(a)
+""",
+        dict(hub_name=hub_name, anchor=anchor),
+    )
+
+    return b
+
+
+# ── cypher rendering (dry-run; params inlined for human reading only) ──────────
+def _render_param(v: Any) -> str:
+    if isinstance(v, str):
+        return repr(v)
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if v is None:
+        return 'null'
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, list):
+        return '[' + ', '.join(_render_param(x) for x in v) + ']'
+    if isinstance(v, dict):
+        return '{' + ', '.join(f'{k}: {_render_param(val)}' for k, val in v.items()) + '}'
+    return repr(v)
+
+
+def print_cypher(batch: CypherBatch) -> None:
+    print('=' * 78)
+    print(f'  CYPHER (MERGE-only, idempotent) — {len(batch)} statement(s)')
+    print('=' * 78)
+    for i, (cypher, params) in enumerate(batch.statements, 1):
+        print(f'\n--- statement {i}/{len(batch)} ---')
+        print(cypher)
+        if params:
+            print('  -- params --')
+            for k, v in params.items():
+                rendered = _render_param(v)
+                if len(rendered) > 2000:
+                    rendered = rendered[:2000] + f'  ... (+{len(rendered) - 2000} chars)'
+                print(f'  ${k} = {rendered}')
+
+
+def print_counts(prog: Programme) -> None:
+    print('=' * 78)
+    print(f'  PARSED PROGRAMME — source: {prog.module_name} (single source of truth)')
+    print('=' * 78)
+    print(f'  NODES (canonical-path) : {len(prog.nodes)}')
+    print(f'  FRONTIER               : {len(prog.frontier)}')
+    print(f'  RIVAL_NODES            : {len(prog.rival_nodes)}')
+    print(f'  RIVAL_FRONTIER         : {len(prog.rival_frontier)}')
+    print(f'  canonical node         : {prog.canonical_tag}')
+    print(f'  certified (hub flag)   : {False}')
+    if prog.canonical_imp_pct is not None:
+        print(f'  improvement_pct        : {prog.canonical_imp_pct}%')
+    print('  ---- expected KG totals ----')
+    print(f'  :LakatosNode (HAS_NODE)        : {prog.total_nodes}')
+    print(f'  :OpenQuestion (HAS_FRONTIER)   : {prog.total_frontiers}')
+    print(f'  :BRANCHED_FROM edges           : {prog.total_branched_from}')
+
+
+# ── env / driver helpers (only used by --verify / --apply) ────────────────────
+def _neo4j_config() -> tuple[str, str, str]:
+    uri = os.environ.get('NEO4J_URI') or os.environ.get('NEO4J_URL')
+    user = os.environ.get('NEO4J_USERNAME') or os.environ.get('NEO4J_USER')
+    pw = os.environ.get('NEO4J_PASSWORD')
+    missing = [k for k, v in (('NEO4J_URI', uri), ('NEO4J_USERNAME', user),
+                              ('NEO4J_PASSWORD', pw)) if not v]
+    if missing:
+        sys.exit('ERROR: missing env: ' + ', '.join(missing)
+                 + '  (hint: set -a && source .env && set +a)')
+    return uri, user, pw  # type: ignore[return-value]
+
+
+def _driver():
+    try:
+        from neo4j import GraphDatabase  # type: ignore
+    except ImportError:
+        sys.exit('ERROR: neo4j python driver not installed (pip install neo4j)')
+    uri, user, pw = _neo4j_config()
+    return GraphDatabase.driver(uri, auth=(user, pw))
+
+
+def do_apply(prog: Programme, batch: CypherBatch, hub_name: str) -> int:
+    drv = _driver()
+    try:
+        with drv.session() as s:
+            for cypher, params in batch.statements:
+                s.run(cypher, **params)
+    finally:
+        drv.close()
+    print(f'APPLIED {len(batch)} statement(s) to hub {hub_name!r}.')
+    return 0
+
+
+def do_verify(prog: Programme, hub_name: str) -> int:
+    drv = _driver()
+    try:
+        with drv.session() as s:
+            node_n = s.run(
+                'MATCH (:KnowledgeHub:LakatosTree {name:$h})-[:HAS_NODE]->(n:LakatosNode) '
+                'RETURN count(n) AS c', h=hub_name).single()['c']
+            front_n = s.run(
+                'MATCH (:KnowledgeHub:LakatosTree {name:$h})-[:HAS_FRONTIER]->'
+                '(q:OpenQuestion) RETURN count(q) AS c', h=hub_name).single()['c']
+            branch_n = s.run(
+                'MATCH (:KnowledgeHub:LakatosTree {name:$h})-[:HAS_NODE]->'
+                '(c:LakatosNode)-[:BRANCHED_FROM]->(:LakatosNode) '
+                'RETURN count(*) AS c', h=hub_name).single()['c']
+    finally:
+        drv.close()
+
+    ok = True
+    checks = [
+        ('LakatosNode (HAS_NODE)', node_n, prog.total_nodes),
+        ('OpenQuestion (HAS_FRONTIER)', front_n, prog.total_frontiers),
+        ('BRANCHED_FROM edges', branch_n, prog.total_branched_from),
+    ]
+    print('=' * 78)
+    print(f'  VERIFY — KG vs python source ({prog.module_name})')
+    print('=' * 78)
+    for label, got, want in checks:
+        mark = 'OK ' if got == want else 'MISMATCH'
+        if got != want:
+            ok = False
+        print(f'  [{mark}] {label:32s} KG={got}  source={want}')
+    if not ok:
+        print('\nVERIFY FAILED — KG drifted from python source. '
+              'Re-run --apply (after user GO) or reconcile hand-curation.')
+        return 1
+    print('\nVERIFY PASSED — KG matches python source.')
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument('--dry-run', action='store_true', default=True,
+                      help='(default) parse module, print cypher + counts, NO db connection')
+    mode.add_argument('--verify', action='store_true',
+                      help='connect, assert KG counts == python source counts (exit 1 on mismatch)')
+    mode.add_argument('--apply', action='store_true',
+                      help='run the MERGEs (KG WRITE — confirm/escalate gated)')
+    ap.add_argument('--module', default=DEFAULT_MODULE,
+                    help=f'examples programme module (default: {DEFAULT_MODULE})')
+    ap.add_argument('--hub-name', default=DEFAULT_HUB_NAME)
+    ap.add_argument('--node-prefix', default=DEFAULT_NODE_PREFIX)
+    ap.add_argument('--frontier-prefix', default=DEFAULT_FRONTIER_PREFIX)
+    ap.add_argument('--rival-infix', default=DEFAULT_RIVAL_INFIX)
+    ap.add_argument('--anchor', default=DEFAULT_ANCHOR)
+    args = ap.parse_args(argv)
+
+    prog = load_programme(args.module)
+    batch = build_cypher(prog, hub_name=args.hub_name, node_prefix=args.node_prefix,
+                         frontier_prefix=args.frontier_prefix,
+                         rival_infix=args.rival_infix, anchor=args.anchor)
+
+    if args.apply:
+        return do_apply(prog, batch, args.hub_name)
+    if args.verify:
+        return do_verify(prog, args.hub_name)
+
+    # default: dry-run — print counts + cypher, no connection
+    print_counts(prog)
+    print()
+    print_cypher(batch)
+    print(f'\nDRY-RUN ONLY — no database connection. '
+          f'Run --apply (KG write, user GO) then --verify against your NEO4J_URI.')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
