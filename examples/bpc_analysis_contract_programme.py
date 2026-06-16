@@ -170,7 +170,13 @@ FRONTIER = [
          body='feature spec 123 A110(washer80 phantom9, outer 없음) → 정본 128 DC375(big10+washer71+plate33+outer14) 정정·빌드',
          closed_by=['field_dc375_128_deploy']),
     dict(name='q_tab_threshold', status='OPEN',
-         body='TAB_BOLT 0.5 공차 spec 근거(Mobis/EO 도면 또는 CMM) 확정 + single-view σ0.061 기준 P/T 63% UNACCEPTABLE 해소(min_ng_views≥3 default 또는 공차 재산정). 현 0.5=임의값',
+         body='TAB_BOLT 0.5 공차 spec 근거(Mobis/EO 도면 또는 CMM) 확정 + single-view σ0.061 P/T 63% UNACCEPTABLE 해소. '
+              '★2026-06-16 분석: min_ng_views≥3 경로는 REFUTED — 71-washer×2lot 실측 coverage = 모든 washer good-view '
+              '1~2개(mean 1.4, ≥3 view 보유 washer=0개)이므로 min_ng_views≥3 default 시 ~100% abstain(missing_is_defect→전건 NG). '
+              'min_ng_views=2 도 1-view washer(다수) abstain. 즉 σ는 view-gate로 못 푼다(coverage-limited). 남은 viable 2경로: '
+              '①per-feature 공차 재도출(washer_h_sigma_estimation.py 이미 tol_dyn=max(0.5,5.15σ) 산출 → TabBoltStepPolicy '
+              'washer_h_nominals_mm/washer_h_tol_mm per-feature 배선) ②coverage 개선(overlap 캡처=q_tab_coverage)→multi-view→σ↓. '
+              '0.5=임의값은 여전히 도면/CMM 대기',
          closed_by=None),
     dict(name='q_tab_coverage', status='OPEN',
          body='TAB_BOLT washer detection coverage — "36/71"은 STALE. E_v in-plane refine 이미 배선(apply_lot_corrections L469)→실측 70-71/71(2026-06-16 measure_lot 전체경로 재현). 잔여=①σ/repeatability(single-view σ0.061, q_tab_threshold 연계) ②specular 맹목(WASHER_019 류, 3D blind→RGB-only 필요). detection 갭은 닫힘, σ+specular 가 진짜 OPEN',
