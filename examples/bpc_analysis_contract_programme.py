@@ -177,9 +177,13 @@ FRONTIER = [
               '①per-feature 공차 재도출 ✅코드 배선 LANDED(prismv2 develop 9473b1c): TabBoltStepPolicy.washer_h_tols_mm '
               '(fid→tol map) + _apply_tab_bolt_policy resolve + parser. seed 매핑=washer_h_sigma_per_feature.json '
               '(71feat {nominal_mm,sigma_lot_mm,tol_dyn_mm})→config washer_h_nominals_mm/washer_h_tols_mm. ⚠nuance: '
-              'tol_dyn=max(0.5,5.15σ)는 capability FLOOR — 대부분 0.5(σ작아 floor), σ높은 washer만 widen(false-NG 방지, '
-              'tighten 아님). 남은=json→Mongo bpc_thresholds seed(ops, 프로덕션 DB write). ②coverage 개선(overlap=q_tab_coverage)→σ↓. '
-              '0.5 절대값은 도면/CMM 대기',
+              'tol_dyn=max(0.5,5.15σ)는 capability FLOOR. ★★실측 결판(seed dry-run + single-view σ 재계산): 71/71 전부 '
+              'floor 0.5, widened 0개 — view-평균 σ_lot(~0.03)뿐 아니라 single-view σ(within-lot 잔차, max 0.056)로도 '
+              '5.15σ=0.29<0.5 → 어떤 washer도 안 widen. ⇒ path ① per-feature tol은 P/T 63%를 못 고친다(INERT): '
+              'P/T=5.15σ/0.5=63%는 측정불확실성이 공차의 63% 잠식이라 tol을 per-feature化해도 불변. 코드는 wired(future-ready: '
+              'feature σ가 0.097 넘으면 자동 widen)지만 현 데이터로 inert. 진짜 P/T 해법 2개뿐: (a)σ감소=coverage/multi-view '
+              '(q_tab_coverage,overlap) (b)공차 widening=DC375 도면/CMM(0.5 임의값). ⇒ q_tab_threshold P/T는 q_tab_coverage+spec데이터로 '
+              'reduce. min_ng_views≥3=REFUTED(coverage 1.4뷰). 코드로 풀 여지 소진.',
          closed_by=None),
     dict(name='q_tab_coverage', status='OPEN',
          body='TAB_BOLT washer detection coverage — "36/71"은 STALE. E_v in-plane refine 이미 배선(apply_lot_corrections L469)→실측 70-71/71(2026-06-16 measure_lot 전체경로 재현). 잔여=①σ/repeatability(single-view σ0.061, q_tab_threshold 연계) ②specular 맹목(WASHER_019 류, 3D blind→RGB-only 필요). detection 갭은 닫힘, σ+specular 가 진짜 OPEN',
