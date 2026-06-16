@@ -1,0 +1,198 @@
+"""Chunked KG writer for Lakatos tree mutations.
+
+# KG: seed-lkt-engine-mutation-writer-20260616
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
+from server.ports import KgTx
+
+
+@dataclass(frozen=True)
+class WriteSummary:
+    tx_count: int = 0
+    op_count: int = 0
+    rows: int = 0
+
+    def plus(self, other: "WriteSummary") -> "WriteSummary":
+        return WriteSummary(
+            tx_count=self.tx_count + other.tx_count,
+            op_count=self.op_count + other.op_count,
+            rows=self.rows + other.rows,
+        )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _chunks(items: Sequence, size: int):
+    size = max(1, size)
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
+
+
+def _node_row(node: NodeIn, ts: str) -> dict:
+    return {**node.model_dump(), "ts": ts}
+
+
+def _question_row(question: QuestionIn, ts: str) -> dict:
+    return {**question.model_dump(), "ts": ts}
+
+
+class TreeKgWriter:
+    """Owns Cypher write shape for the tree context."""
+
+    # KG: seed-lkt-engine-mutation-writer-20260616
+
+    def __init__(self, kg_tx: KgTx, *, chunk_size: int = 100):
+        self.kg_tx = kg_tx
+        self.chunk_size = max(1, chunk_size)
+
+    def add_node(self, tree: str, node: NodeIn, parent_edges: Sequence[ParentEdgeIn]) -> WriteSummary:
+        """Single-node compatibility path: node and branch edges share one tx."""
+        ops = [
+            (
+                """MATCH (t:LakatosTree {name:$tree})
+               MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+$tag})
+               SET e.tag=$tag, e.verdict=$verdict, e.script=$script, e.result_path=$result_path,
+                   e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
+                   e.open_question=$open_question, e.metric_name=$metric_name,
+                   e.metric_value=$metric_value, e.metric_scope=$metric_scope,
+                   e.recorded_at=$ts
+               MERGE (t)-[:HAS_NODE]->(e)""",
+                dict(tree=tree, ts=_utc_now(), **node.model_dump()),
+            )
+        ]
+        for edge in parent_edges:
+            ops.append(
+                (
+                    """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                       MATCH (t)-[:HAS_NODE]->(p {tag:$parent})
+                       MERGE (e)-[r:BRANCHED_FROM]->(p)
+                       SET r.inferred=$inferred, r.relation_kind=$relation_kind, r.evidence_ref=$evidence_ref""",
+                    dict(
+                        tree=tree,
+                        tag=node.tag,
+                        parent=edge.tag,
+                        inferred=edge.inferred,
+                        relation_kind=edge.relation_kind,
+                        evidence_ref=edge.evidence_ref,
+                    ),
+                )
+            )
+        self.kg_tx(ops)
+        return WriteSummary(tx_count=1, op_count=len(ops), rows=1)
+
+    def upsert_tree_meta(
+        self,
+        *,
+        name: str,
+        title: str = "",
+        hard_core: str = "",
+        frontier_rule: str = "",
+        doc: str = "",
+        coverage_backlog: Sequence[str] = (),
+        coverage_statement: str = "",
+    ) -> WriteSummary:
+        self.kg_tx([
+            (
+                """MERGE (t:LakatosTree {name:$tree})
+                   SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
+                       t.doc=$doc, t.coverage_backlog=$coverage_backlog,
+                       t.coverage_statement=$coverage_statement, t.updated_at=$ts""",
+                dict(
+                    tree=name,
+                    title=title,
+                    hard_core=hard_core,
+                    frontier_rule=frontier_rule,
+                    doc=doc,
+                    coverage_backlog=list(coverage_backlog),
+                    coverage_statement=coverage_statement,
+                    ts=_utc_now(),
+                ),
+            )
+        ])
+        return WriteSummary(tx_count=1, op_count=1, rows=1)
+
+    def upsert_nodes(self, tree: str, nodes: Sequence[NodeIn]) -> WriteSummary:
+        total = WriteSummary()
+        ts = _utc_now()
+        for chunk in _chunks(list(nodes), self.chunk_size):
+            rows = [_node_row(node, ts) for node in chunk]
+            self.kg_tx([
+                (
+                    """MATCH (t:LakatosTree {name:$tree})
+                       UNWIND $rows AS row
+                       MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+row.tag})
+                       SET e.tag=row.tag, e.verdict=row.verdict, e.script=row.script,
+                           e.result_path=row.result_path, e.algorithm=row.algorithm,
+                           e.comment=row.comment, e.limitation=row.limitation,
+                           e.open_question=row.open_question, e.metric_name=row.metric_name,
+                           e.metric_value=row.metric_value, e.metric_scope=row.metric_scope,
+                           e.recorded_at=row.ts
+                       MERGE (t)-[:HAS_NODE]->(e)""",
+                    dict(tree=tree, rows=rows),
+                )
+            ])
+            total = total.plus(WriteSummary(tx_count=1, op_count=1, rows=len(rows)))
+        return total
+
+    def link_branch_edges(
+        self,
+        tree: str,
+        parent_edges_by_tag: Mapping[str, Sequence[ParentEdgeIn]],
+    ) -> WriteSummary:
+        rows = [
+            {
+                "tag": tag,
+                "parent": edge.tag,
+                "inferred": edge.inferred,
+                "relation_kind": edge.relation_kind,
+                "evidence_ref": edge.evidence_ref,
+            }
+            for tag, edges in parent_edges_by_tag.items()
+            for edge in edges
+        ]
+        total = WriteSummary()
+        for chunk in _chunks(rows, self.chunk_size):
+            self.kg_tx([
+                (
+                    """MATCH (t:LakatosTree {name:$tree})
+                       UNWIND $rows AS row
+                       MATCH (t)-[:HAS_NODE]->(e {tag:row.tag})
+                       MATCH (t)-[:HAS_NODE]->(p {tag:row.parent})
+                       MERGE (e)-[r:BRANCHED_FROM]->(p)
+                       SET r.inferred=row.inferred,
+                           r.relation_kind=row.relation_kind,
+                           r.evidence_ref=row.evidence_ref""",
+                    dict(tree=tree, rows=list(chunk)),
+                )
+            ])
+            total = total.plus(WriteSummary(tx_count=1, op_count=1, rows=len(chunk)))
+        return total
+
+    def upsert_questions(self, tree: str, questions: Sequence[QuestionIn]) -> WriteSummary:
+        total = WriteSummary()
+        ts = _utc_now()
+        for chunk in _chunks(list(questions), self.chunk_size):
+            rows = [_question_row(question, ts) for question in chunk]
+            self.kg_tx([
+                (
+                    """MATCH (t:LakatosTree {name:$tree})
+                       UNWIND $rows AS row
+                       MERGE (qn:OpenQuestion {name:row.qname})
+                       SET qn.body=row.body, qn.status='OPEN', qn.created_at=row.ts,
+                           qn.expected_gain=row.expected_gain, qn.cost=row.cost,
+                           qn.n_visits=coalesce(qn.n_visits, 0)
+                       MERGE (t)-[:HAS_FRONTIER]->(qn)""",
+                    dict(tree=tree, rows=rows),
+                )
+            ])
+            total = total.plus(WriteSummary(tx_count=1, op_count=1, rows=len(rows)))
+        return total

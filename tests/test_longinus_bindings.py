@@ -68,14 +68,17 @@ def test_line_hint_is_cache_not_anchor():
 
 
 # ── reverse-orphan 가드: 코드 # KG: anchor → manifest kg_anchors 레지스트리에 선언돼야 ──
-_ANCHOR_PREFIX = ('span_lakatotree_', 'rs-', 'CT_', 'SA_', 'VR_', 'Doctrine_', 'lesson-', 'q-lkt-')
+_ANCHOR_PREFIX = (
+    'span_lakatotree_', 'rs-', 'CT_', 'SA_', 'VR_', 'Doctrine_', 'lesson-', 'q-lkt-',
+    'seed-lkt-', 'rf-lkt-', 'roadmap-', 'wave-', 'patch-lakatotree',
+)
 
 
 def _code_anchor_tokens() -> set:
     """전 .py 의 # KG: 주석에서 anchor 형태(노드명) 토큰 수집. (P1/THEORY 류 인라인 주석은 제외.)"""
     toks = set()
     for sub in ('lakatos', 'tests', 'examples', 'scripts', 'server'):
-        for f in (ROOT / sub).glob('*.py'):
+        for f in (ROOT / sub).rglob('*.py'):
             for m in re.findall(r'#\s*KG:\s*([A-Za-z0-9_/.\- ,]+)', f.read_text(encoding='utf-8')):
                 for t in re.split(r'[,/]', m):
                     t = t.strip()
