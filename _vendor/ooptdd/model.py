@@ -41,6 +41,65 @@ def correlation_keys(cid: str) -> dict:
     return {"cid": cid, "correlation_id": cid, "cycle_id": cid}
 
 
+# ── CloudEvents 1.0 floor ──────────────────────────────────────────────────────
+# CloudEvents (CNCF) is the vendor-neutral event envelope standard. We don't adopt
+# the whole spec — only its *required floor* (4 context attributes) — so an ooptdd
+# event is recognizable to any CloudEvents-aware store/router without us reinventing
+# id/source/type semantics. Mapping: event->type, service->source, cid->subject.
+CE_SPECVERSION = "1.0"
+CE_REQUIRED = ("id", "source", "specversion", "type")
+
+
+def cloudevents_envelope(rec: dict, *, source: str | None = None) -> dict:
+    """Project an ooptdd record onto the CloudEvents 1.0 floor (non-destructive copy).
+
+    ``id`` is a deterministic content hash, so re-shipping the same record yields the
+    same CloudEvents id (idempotent — no duplicate events on retry). ``source`` defaults
+    to the record's ``service``; ``subject`` carries the correlation id.
+    """
+    src = source or rec.get("service") or "ooptdd"
+    cid = rec.get("cid") or rec.get("correlation_id") or rec.get("cycle_id")
+    body = json.dumps(
+        rec, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str
+    ).encode()
+    out = dict(rec)
+    out.update({
+        "id": hashlib.sha256(body).hexdigest()[:32],
+        "source": str(src),
+        "specversion": CE_SPECVERSION,
+        "type": str(rec.get("event", "")),
+    })
+    if cid is not None:
+        out["subject"] = str(cid)
+    return out
+
+
+def with_trace_context(rec: dict, trace_id: str, span_id: str | None = None) -> dict:
+    """Attach W3C trace context (``trace_id``/``span_id``) to an event (non-destructive).
+
+    OTel log records carry these so a log line joins to its span; ooptdd uses them as a
+    *standard* correlation key alongside ``cid`` — binding an emitted event to the exact
+    run/span that produced it. Unlike ``gen_ai.*`` (experimental), trace context is stable.
+    """
+    out = dict(rec)
+    out["trace_id"] = str(trace_id)
+    if span_id is not None:
+        out["span_id"] = str(span_id)
+    return out
+
+
+def validate_cloudevents(rec: dict) -> list[str]:
+    """Violations against the CloudEvents 1.0 floor (each required attr a non-empty
+    string). Empty list = conforms. ``type`` must be present *and* non-empty — an event
+    with no name is not a valid CloudEvent."""
+    out: list[str] = []
+    for k in CE_REQUIRED:
+        v = rec.get(k)
+        if not isinstance(v, str) or not v:
+            out.append(f"missing/empty required CloudEvents attr '{k}'")
+    return out
+
+
 def _canonical(rec: dict) -> bytes:
     """Deterministic bytes for the signed-field projection (sig itself excluded)."""
     proj = {k: rec.get(k) for k in _SIGNED_FIELDS}
@@ -65,6 +124,67 @@ def signature_status(rec: dict, key: str | None) -> str:
     if not key:
         return "unverifiable"
     return "valid" if hmac.compare_digest(have, sign_record(rec, key)) else "invalid"
+
+
+# ── tamper-evident hash chain (Tier-3 #11) ─────────────────────────────────────
+# The single-record `sig` catches an edit to *that* record. A hash chain catches more:
+# deletion and reordering of receipts too — an agent can't silently drop an inconvenient
+# event. Each record's MAC folds in the previous MAC (Schneier-Kelsey / Crosby-Wallach
+# tamper-evident logging). With key evolution (k_{i+1}=H(k_i)) a leaked *current* key
+# can't forge *earlier* receipts (forward security). Scope to one writer per stream
+# (the xdist controller), since the chain needs a single ordered append.
+_CHAIN_EXCLUDE = ("sig_chain", "prev_sig")
+
+
+def _chain_canonical(rec: dict) -> bytes:
+    proj = {k: v for k, v in rec.items() if k not in _CHAIN_EXCLUDE}
+    return json.dumps(
+        proj, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str
+    ).encode()
+
+
+def _evolve(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def sign_chain(records: list[dict], key: str, *, evolve: bool = False) -> list[dict]:
+    """Return copies of ``records`` carrying a tamper-evident hash chain.
+
+    ``rec["sig_chain"] = HMAC(k_i, canonical(rec) || prev_mac)`` and ``rec["prev_sig"]``
+    links to the previous record. ``evolve=True`` ratchets the key forward per record.
+    """
+    out: list[dict] = []
+    prev, k = "", key
+    for rec in records:
+        r = dict(rec)
+        mac = hmac.new(k.encode(), _chain_canonical(r) + prev.encode(), hashlib.sha256).hexdigest()
+        r["prev_sig"] = prev
+        r["sig_chain"] = mac
+        out.append(r)
+        prev = mac
+        if evolve:
+            k = _evolve(k)
+    return out
+
+
+def verify_chain(records: list[dict], key: str, *, evolve: bool = False) -> dict:
+    """Verify a hash chain. Returns ``{ok, broken_index, reason}`` — ``broken_index`` is the
+    first record whose previous-link or MAC fails (``None`` if intact). A mismatch means an
+    edit, a deletion, or a reorder somewhere at or before that index."""
+    prev, k = "", key
+    for i, rec in enumerate(records):
+        if rec.get("prev_sig") != prev:
+            return {"ok": False, "broken_index": i,
+                    "reason": "prev_link_mismatch_possible_deletion_or_reorder"}
+        expect = hmac.new(
+            k.encode(), _chain_canonical(rec) + prev.encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(str(rec.get("sig_chain", "")), expect):
+            return {"ok": False, "broken_index": i, "reason": "chain_mac_mismatch_possible_tamper"}
+        prev = str(rec.get("sig_chain", ""))
+        if evolve:
+            k = _evolve(k)
+    return {"ok": True, "broken_index": None, "reason": None}
 
 
 def build_outcome_records(
