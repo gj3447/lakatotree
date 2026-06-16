@@ -64,6 +64,20 @@ NODES = [
                   'grpc single-shot(acc.views={})은 legacy RunInspection. per-view SYSTEMATIC residual(partial-arc 0.5-1.3mm '
                   'class-dep)은 E_v multi-lot solve로 흡수(sub-mm, collapse 아님). '
                   '회피=register_concat(frozen concat, ICP無) 강제 또는 FinalizeCycle 경로 Branch0 보장'),
+    _n('placement_pose_robust', 'progressive', 'v8_pipeline', m=0.90, base=0.90,
+       nr=True, nc=True,
+       comment='E2E placement/pose 강건성 (29_E2E_PLACEMENT_POSE_ROBUSTNESS.md, run_new_lot v12.2 oracle '
+               'bit-identical, 사전등록 채점). ★사용자 질문 답: 부품/디멘션이 "왓다갓다" 해도 washer_h 등 '
+               'RELATIVE 측정류는 datum-invariant라 강건. 실측: washer_h re-center 0.033mm; 상대측정'
+               '(washer_h/boss_h/r_eff) p95 0.060-0.103mm @ 1.4mm+0.15° placement 섭동 & σ0.1mm per-view pose '
+               'jitter(실측 lot-sd 0.02-0.065의 2-5배 가혹); **verdict flip 0**. 부품 z=z-net per-lot selfsolve '
+               '0.026-0.063. 부품 XY+회전=reanchor SE(2) P_l(prismv2 test_estimate_part_placement_recovers_se2 '
+               '0.01°/0.05mm 회복): 2-5mm/0.5° native ROBUST · 10-20mm RESCUED(rec≤0.05) · 1-3° MARGINAL(flip1) · '
+               '5°+ BREAK(한계=3°와5° 사이, seg inlier 끝단 절단). prismv2 fe653fa→2c1c4c1(reanchor)→b652c1a.',
+       limitation='절대 center 위치만 σ0.1+ pose jitter서 0.26-0.31mm(1뷰 feature yaw 레버) — 운영 스케일(lot-sd '
+                  '0.02-0.065)선 0.05-0.15mm 사실상 강건. per-view free XY selfsolve=REJECTED(계통 부분호 편향 교락 '
+                  '0.26→0.73 악화). 즉 측정값은 강건, 절대 위치만 1뷰 feature서 상속 — washer_h(상대) 0.04mm급 정밀도는 '
+                  '왓다갓다에 불변.'),
 
     # 퇴행 가지(보존) — per-view 6-DOF ICP 를 3회 시도, 매번 악화
     _n('pv6dof_a', 'degenerating', 'aruco_metric', m=1.80, base=0.93,
