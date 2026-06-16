@@ -356,24 +356,14 @@
       "frege_sinn": "application service owning evidence ingestion, standing, claim-standing, and certificate assembly"
     },
     {
-      "sourceId": "server.contexts.tree.programme.ProgrammeSurface",
-      "file": "server/contexts/tree/programme.py",
-      "symbol": "ProgrammeSurface",
-      "kind": "class",
-      "line_hint": 24,
-      "sha256": "36f8b573aefe5111",
-      "layer": "http-adapter",
-      "frege_sinn": "callback surface preserving server.app compatibility while programme routes move to tree context"
-    },
-    {
       "sourceId": "server.contexts.tree.programme.create_programme_router",
       "file": "server/contexts/tree/programme.py",
       "symbol": "create_programme_router",
       "kind": "def",
-      "line_hint": 39,
-      "sha256": "eaf22f135a8f54e5",
+      "line_hint": 22,
+      "sha256": "d1e895b504424853",
       "layer": "http-adapter",
-      "frege_sinn": "context-owned HTTP routes for calibration, directions, stack, lifecycle, cycle, elements, foundation, and history"
+      "frege_sinn": "context-owned HTTP routes calling ProgrammeService directly (no intermediate Surface) for calibration, directions, stack, lifecycle, cycle, elements, foundation, and history"
     },
     {
       "sourceId": "server.contexts.tree.programme_service.ProgrammeService",

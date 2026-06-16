@@ -6,11 +6,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any
 
 from fastapi import APIRouter
 
+from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.schemas import (
     ArtifactIn,
     CycleIn,
@@ -20,24 +19,9 @@ from server.contexts.tree.schemas import (
 )
 
 
-@dataclass(frozen=True)
-class ProgrammeSurface:
-    calibration: Callable[[str], dict]
-    directions: Callable[[str], dict]
-    stack_view: Callable[[str, str | None], dict]
-    lifecycle_view: Callable[[str, str | None], dict]
-    run_cycle: Callable[[str, CycleIn], dict]
-    add_artifact: Callable[[str, ArtifactIn], dict]
-    add_element: Callable[[str, ElementIn], dict]
-    attach_element: Callable[[str, str, str, ElementUseIn], dict]
-    add_foundation_requirement: Callable[[str, FoundationRequirementIn], dict]
-    get_foundation_requirements: Callable[[str], dict]
-    history: Callable[[str, int], list[dict[str, Any]]]
-    neo4j_constraint_diagnostics: Callable[[], dict]
-
-
-def create_programme_router(service_factory: Callable[[], ProgrammeSurface]) -> APIRouter:
-    """Create context-owned programme routes while server.app remains an import facade."""
+def create_programme_router(service_factory: Callable[[], ProgrammeService]) -> APIRouter:
+    """Create context-owned programme routes. Routes call the service directly —
+    no intermediate Surface of positional callables (one HTTP surface, SSOT)."""
 
     # KG: seed-lkt-engine-route-programme-extract-20260616
 
