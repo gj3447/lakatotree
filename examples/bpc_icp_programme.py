@@ -58,9 +58,11 @@ NODES = [
                'collapse(평판 rank-deficiency: 법선≈+Z→XY/yaw null space yaw고유값 1.4e-4, drift 90-98% null 방향; '
                '+ 주기 포켓 18mm 격자 aliasing 19 local-min STACK→2353mm 부품 876mm 수축). Branch0는 global merged '
                'cloud 자체를 안 만들어 구조적 우회. 실측 washer 71/71 검출 확증.',
-       limitation='GICP collapse 위험은 RecipeV2/legacy 경로 잔존: _load_merged_scan 가 GICP-merged global cloud 위 검출, '
-                  'grpc single-shot 경로(grpc_adapter:493 acc.views={})는 Branch0 미기동→RecipeV2 fallback. per-view '
-                  'SYSTEMATIC residual(partial-arc 0.5-1.3mm class-dep)은 E_v multi-lot solve로 흡수(sub-mm, collapse 아님). '
+       limitation='GICP collapse 노출=GATED/LATENT(정상 현장 0). 현장 5-RPC(CaptureView×N→acc.views[vid] 채움→FinalizeCycle)는 '
+                  'Branch0 기동 + _should_concat_by_transform(stage_merge.py) 게이트가 camera_transform real이면 concat(frozen). '
+                  'Branch0 verdict는 merge cloud와 독립. 노출=이중fault(FS2 unwired→silent GICP ∧ Branch0 fail→RecipeV2 GICP cloud). '
+                  'grpc single-shot(acc.views={})은 legacy RunInspection. per-view SYSTEMATIC residual(partial-arc 0.5-1.3mm '
+                  'class-dep)은 E_v multi-lot solve로 흡수(sub-mm, collapse 아님). '
                   '회피=register_concat(frozen concat, ICP無) 강제 또는 FinalizeCycle 경로 Branch0 보장'),
 
     # 퇴행 가지(보존) — per-view 6-DOF ICP 를 3회 시도, 매번 악화
@@ -94,7 +96,7 @@ FRONTIER = [
     dict(name='q_outer004', status='OPEN', body='OUTER_004 분기 — outer hole 검출 커버리지', closed_by=None),
     dict(name='q_washer_step', status='OPEN', body='washer step +0.83mm 진짜인가 artifact 인가', closed_by=None),
     dict(name='q_recipev2_gicp_risk', status='OPEN',
-         body='RecipeV2/legacy 검출이 GICP-merged global cloud(multiview_icp collapse-prone, free multi-view ICP) 위에서 수행 — grpc single-shot 경로는 acc.views={}라 Branch0 미기동→이 경로로 떨어짐. frozen concat(register_concat, ICP無) 강제 또는 모든 cycle 경로 Branch0 보장 필요',
+         body='GICP collapse 노출은 GATED/LATENT(정상 현장=노출0). 게이트=_should_concat_by_transform(stage_merge.py): views camera_transform real(FS2 dimconfig frozen pose)면 concat_by_transform(frozen,safe), all-identity(mock/FS2 unwired)면 legacy GICP merge_handles. 또 Branch0 verdict(per-view frozen)는 merge cloud와 독립이라 backend 무관. 노출=이중fault((a)FS2 unwired→silent GICP merge ∧ (b)Branch0 fail(bundle無)→RecipeV2가 GICP cloud로 verdict). 미티게이션=concat→GICP silent fallback 시 BPC part면 loud ERROR alarm(현재 무음)',
          closed_by=None),
 ]
 
