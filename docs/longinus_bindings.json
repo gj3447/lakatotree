@@ -336,22 +336,12 @@
       "frege_sinn": "tree context owns core HTTP routes while server.app remains compatibility facade"
     },
     {
-      "sourceId": "server.contexts.tree.evidence_claim.EvidenceClaimSurface",
-      "file": "server/contexts/tree/evidence_claim.py",
-      "symbol": "EvidenceClaimSurface",
-      "kind": "class",
-      "line_hint": 17,
-      "sha256": "9a99a7638a39828d",
-      "layer": "http-adapter",
-      "frege_sinn": "callback surface preserving server.app compatibility while evidence claim routes move to tree context"
-    },
-    {
       "sourceId": "server.contexts.tree.evidence_claim.create_evidence_claim_router",
       "file": "server/contexts/tree/evidence_claim.py",
       "symbol": "create_evidence_claim_router",
       "kind": "def",
-      "line_hint": 29,
-      "sha256": "4cc692f183e6ae5e",
+      "line_hint": 16,
+      "sha256": "5c80b14fcfdb7e25",
       "layer": "http-adapter",
       "frege_sinn": "context-owned HTTP routes for evidence, arguments, standing, claim-standing, and certificates"
     },
@@ -396,22 +386,12 @@
       "frege_sinn": "application service owning programme calibration, directions, cycles, foundation, history, and constraint diagnostics"
     },
     {
-      "sourceId": "server.contexts.tree.judgement.JudgementSurface",
-      "file": "server/contexts/tree/judgement.py",
-      "symbol": "JudgementSurface",
-      "kind": "class",
-      "line_hint": 17,
-      "sha256": "54c4206bf787a8eb",
-      "layer": "http-adapter",
-      "frege_sinn": "callback surface preserving server.app compatibility while judgement routes move to tree context"
-    },
-    {
       "sourceId": "server.contexts.tree.judgement.create_judgement_router",
       "file": "server/contexts/tree/judgement.py",
       "symbol": "create_judgement_router",
       "kind": "def",
-      "line_hint": 23,
-      "sha256": "4719cefd860e5e44",
+      "line_hint": 16,
+      "sha256": "fda5b8c63b935fe4",
       "layer": "http-adapter",
       "frege_sinn": "context-owned HTTP routes for verdict, prediction, and scripted test result judgement"
     },
@@ -424,6 +404,46 @@
       "sha256": "9b598a5a0143116e",
       "layer": "application",
       "frege_sinn": "application service owning verdict, prediction, and scripted test-result judgement mutations"
+    },
+    {
+      "sourceId": "server.app._lineage_service",
+      "file": "server/app.py",
+      "symbol": "_lineage_service",
+      "kind": "def",
+      "line_hint": 286,
+      "sha256": "5ea238baf00fd7bc",
+      "layer": "composition",
+      "frege_sinn": "composition-root factory wiring lineage service ports while preserving monkeypatch-compatible load-lineage facade"
+    },
+    {
+      "sourceId": "server.contexts.lineage.schemas.DerivationIn",
+      "file": "server/contexts/lineage/schemas.py",
+      "symbol": "DerivationIn",
+      "kind": "class",
+      "line_hint": 11,
+      "sha256": "c367722105cfbd84",
+      "layer": "schema",
+      "frege_sinn": "lineage context derivation recording request schema"
+    },
+    {
+      "sourceId": "server.contexts.lineage.service.LineageService",
+      "file": "server/contexts/lineage/service.py",
+      "symbol": "LineageService",
+      "kind": "class",
+      "line_hint": 49,
+      "sha256": "fc41ba72eceb813d",
+      "layer": "application",
+      "frege_sinn": "application service owning artifact lineage recording, replay checks, and export adapters"
+    },
+    {
+      "sourceId": "server.contexts.lineage.api.create_lineage_router",
+      "file": "server/contexts/lineage/api.py",
+      "symbol": "create_lineage_router",
+      "kind": "def",
+      "line_hint": 16,
+      "sha256": "53fc31be0f7fc291",
+      "layer": "http-adapter",
+      "frege_sinn": "context-owned HTTP routes for artifact lineage, rebuild verification, and ecosystem exports"
     },
     {
       "sourceId": "server.contexts.tree.schemas.ParentEdgeIn",
@@ -684,6 +704,7 @@
     "seed-lkt-engine-policy-canonical-frontier-20260616",
     "seed-lkt-engine-route-evidence-claim-extract-20260616",
     "seed-lkt-engine-route-judgement-extract-20260616",
+    "seed-lkt-engine-route-lineage-extract-20260616",
     "seed-lkt-engine-route-programme-extract-20260616",
     "seed-lkt-engine-schema-context-split-20260616",
     "seed-lkt-engine-semantic-validator-20260616",
