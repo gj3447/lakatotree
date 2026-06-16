@@ -9,11 +9,8 @@ from .laudan import (branch_problem_balance_windowed, problem_balance, psr, shou
 from .bayes import branch_credence, should_abandon_bayes
 from .fertility import predictive_fertility, nobel_grade
 from .multiplicity import false_progressive_screen
-
-# THR-1: dialectical 판결(degenerating/withdrawn)도 비진보로 셈 — 전엔 NONPROGRESSIVE 밖이라
-# consec/stall 카운터를 리셋(진보로 오인)했다. progressive_conditional 은 (조건부)진보로 PROGRESS 측.
-NONPROGRESSIVE = ('rejected', 'partial', 'equivalent', 'degenerating', 'withdrawn')
-PROGRESS_VERDICTS = ('progressive', 'progressive_conditional', 'CANONICAL', 'former_canonical')
+# verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
+from .verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE
 
 
 def _primary_parent(row: dict) -> str | None:

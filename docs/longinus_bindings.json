@@ -40,50 +40,80 @@
       "file": "server/app.py",
       "symbol": "add_observation",
       "kind": "def",
-      "line_hint": 803,
+      "line_hint": 380,
       "sha256": "7dbaa3624c6bf530",
       "layer": "positive_heuristic",
-      "frege_sinn": "/observation G-Web enforced endpoint"
+      "frege_sinn": "compatibility facade delegating G-Web observation ingestion to the tree evidence claim service"
     },
     {
       "sourceId": "app.add_world_action",
       "file": "server/app.py",
       "symbol": "add_world_action",
       "kind": "def",
-      "line_hint": 869,
+      "line_hint": 384,
       "sha256": "8ce460f1910728f0",
       "layer": "positive_heuristic",
-      "frege_sinn": "/world-action G-WorldAction enforced endpoint"
+      "frege_sinn": "compatibility facade delegating G-WorldAction ingestion to the tree evidence claim service"
     },
     {
       "sourceId": "app.add_research_event",
       "file": "server/app.py",
       "symbol": "add_research_event",
       "kind": "def",
-      "line_hint": 732,
+      "line_hint": 371,
       "sha256": "c4c8ccb9b34f3c08",
       "layer": "negative_heuristic",
-      "frege_sinn": "generic /event bypass 차단"
+      "frege_sinn": "compatibility facade delegating gated-realm bypass protection to the tree evidence claim service"
     },
     {
       "sourceId": "app._store_research_event",
       "file": "server/app.py",
       "symbol": "_store_research_event",
       "kind": "def",
-      "line_hint": 758,
+      "line_hint": 375,
       "sha256": "75f55700362b2a6b",
       "layer": "implementation",
-      "frege_sinn": "gate-passed evidence append-only 적재"
+      "frege_sinn": "compatibility facade delegating gate-passed evidence append-only storage to the tree evidence claim service"
+    },
+    {
+      "sourceId": "app.neo4j_constraint_diagnostics",
+      "file": "server/app.py",
+      "symbol": "neo4j_constraint_diagnostics",
+      "kind": "def",
+      "line_hint": 623,
+      "sha256": "d9bb6500b1bfc3d1",
+      "layer": "ops-diagnostics",
+      "frege_sinn": "compatibility facade delegating Neo4j constraint diagnostics to the tree programme service"
+    },
+    {
+      "sourceId": "app.set_verdict",
+      "file": "server/app.py",
+      "symbol": "set_verdict",
+      "kind": "def",
+      "line_hint": 346,
+      "sha256": "b4ff896af73da5db",
+      "layer": "hard_core",
+      "frege_sinn": "compatibility facade delegating administrative verdict mutation to the tree judgement service"
+    },
+    {
+      "sourceId": "app.register_prediction",
+      "file": "server/app.py",
+      "symbol": "register_prediction",
+      "kind": "def",
+      "line_hint": 358,
+      "sha256": "0e44b4709b7b23e7",
+      "layer": "hard_core",
+      "frege_sinn": "compatibility facade delegating preregistered prediction mutation to the tree judgement service"
     },
     {
       "sourceId": "app.submit_test_result",
       "file": "server/app.py",
       "symbol": "submit_test_result",
       "kind": "def",
-      "line_hint": 570,
+      "line_hint": 361,
       "sha256": "18f6c4941151478a",
       "layer": "hard_core",
-      "frege_sinn": "LakatosGate data_branch/human_verdict 배선(ENG-DU-2)"
+      "frege_sinn": "compatibility facade delegating scripted test-result judgement to the tree judgement service"
     },
     {
       "sourceId": "laudan.unattributed_closures",
@@ -130,7 +160,7 @@
       "file": "server/app.py",
       "symbol": "_close_resources",
       "kind": "def",
-      "line_hint": 75,
+      "line_hint": 84,
       "sha256": "561e2a9b0e90d365",
       "layer": "implementation",
       "frege_sinn": "P7-D shutdown close"
@@ -150,7 +180,7 @@
       "file": "examples/bpc_icp_programme.py",
       "symbol": "run",
       "kind": "def",
-      "line_hint": 100,
+      "line_hint": 119,
       "sha256": "cccceec311f96125",
       "layer": "applications",
       "frege_sinn": "consumer_b/ICP 실연구 라카토스 모델 dogfood"
@@ -236,24 +266,384 @@
       "frege_sinn": "ooptdd 게이트 CONSUMER_LOGS_E2E∧OO_PASS (OFF=no-op, 시크릿 env)"
     },
     {
-      "sourceId": "conftest.pytest_sessionfinish",
-      "file": "tests/conftest.py",
+      "sourceId": "_vendor.ooptdd.plugin.pytest_sessionfinish",
+      "file": "_vendor/ooptdd/plugin.py",
       "symbol": "pytest_sessionfinish",
       "kind": "def",
-      "line_hint": 39,
+      "line_hint": 124,
       "sha256": "40c36f3a590b458b",
       "layer": "implementation",
-      "frege_sinn": "LTDD 세션종료 entry — session_finish 오케스트레이터 위임"
+      "frege_sinn": "ooptdd session-finish hook that ships and verifies collected pytest outcomes"
     },
     {
-      "sourceId": "conftest.pytest_runtest_logreport",
-      "file": "tests/conftest.py",
-      "symbol": "pytest_runtest_logreport",
+      "sourceId": "_vendor.ooptdd.plugin.pytest_runtest_makereport",
+      "file": "_vendor/ooptdd/plugin.py",
+      "symbol": "pytest_runtest_makereport",
       "kind": "def",
-      "line_hint": 21,
-      "sha256": "469c01faca6273e6",
+      "line_hint": 79,
+      "sha256": "4d0fc4e70be05941",
       "layer": "implementation",
-      "frege_sinn": "per-test 판정 수집(ooptdd 로그 원천)"
+      "frege_sinn": "ooptdd per-test report hook that collects setup/call/teardown outcomes"
+    },
+    {
+      "sourceId": "server.settings.ServerSettings",
+      "file": "server/settings.py",
+      "symbol": "ServerSettings",
+      "kind": "class",
+      "line_hint": 13,
+      "sha256": "18ba5b1b5aa400ab",
+      "layer": "architecture",
+      "frege_sinn": "runtime configuration boundary; no import-time Neo4j requirement"
+    },
+    {
+      "sourceId": "server.adapters.neo4j.LazyNeo4jDriver",
+      "file": "server/adapters/neo4j.py",
+      "symbol": "LazyNeo4jDriver",
+      "kind": "class",
+      "line_hint": 15,
+      "sha256": "682d5d5376215ef6",
+      "layer": "infrastructure",
+      "frege_sinn": "Neo4j runtime adapter created lazily at port edge"
+    },
+    {
+      "sourceId": "server.composition.create_fastapi_app",
+      "file": "server/composition.py",
+      "symbol": "create_fastapi_app",
+      "kind": "def",
+      "line_hint": 11,
+      "sha256": "6a7482f3b5ea986c",
+      "layer": "composition",
+      "frege_sinn": "FastAPI app factory used as composition root"
+    },
+    {
+      "sourceId": "server.contexts.tree.service.TreeService",
+      "file": "server/contexts/tree/service.py",
+      "symbol": "TreeService",
+      "kind": "class",
+      "line_hint": 24,
+      "sha256": "31d38019f734b26e",
+      "layer": "application",
+      "frege_sinn": "vertical tree context service; explicit ports instead of app globals"
+    },
+    {
+      "sourceId": "server.contexts.tree.api.create_tree_router",
+      "file": "server/contexts/tree/api.py",
+      "symbol": "create_tree_router",
+      "kind": "def",
+      "line_hint": 16,
+      "sha256": "a4afee8d6dabda90",
+      "layer": "http-adapter",
+      "frege_sinn": "tree context owns core HTTP routes while server.app remains compatibility facade"
+    },
+    {
+      "sourceId": "server.contexts.tree.evidence_claim.EvidenceClaimSurface",
+      "file": "server/contexts/tree/evidence_claim.py",
+      "symbol": "EvidenceClaimSurface",
+      "kind": "class",
+      "line_hint": 17,
+      "sha256": "9a99a7638a39828d",
+      "layer": "http-adapter",
+      "frege_sinn": "callback surface preserving server.app compatibility while evidence claim routes move to tree context"
+    },
+    {
+      "sourceId": "server.contexts.tree.evidence_claim.create_evidence_claim_router",
+      "file": "server/contexts/tree/evidence_claim.py",
+      "symbol": "create_evidence_claim_router",
+      "kind": "def",
+      "line_hint": 29,
+      "sha256": "4cc692f183e6ae5e",
+      "layer": "http-adapter",
+      "frege_sinn": "context-owned HTTP routes for evidence, arguments, standing, claim-standing, and certificates"
+    },
+    {
+      "sourceId": "server.contexts.tree.evidence_claim_service.EvidenceClaimService",
+      "file": "server/contexts/tree/evidence_claim_service.py",
+      "symbol": "EvidenceClaimService",
+      "kind": "class",
+      "line_hint": 48,
+      "sha256": "9351226f61ddd7b1",
+      "layer": "application",
+      "frege_sinn": "application service owning evidence ingestion, standing, claim-standing, and certificate assembly"
+    },
+    {
+      "sourceId": "server.contexts.tree.programme.ProgrammeSurface",
+      "file": "server/contexts/tree/programme.py",
+      "symbol": "ProgrammeSurface",
+      "kind": "class",
+      "line_hint": 24,
+      "sha256": "36f8b573aefe5111",
+      "layer": "http-adapter",
+      "frege_sinn": "callback surface preserving server.app compatibility while programme routes move to tree context"
+    },
+    {
+      "sourceId": "server.contexts.tree.programme.create_programme_router",
+      "file": "server/contexts/tree/programme.py",
+      "symbol": "create_programme_router",
+      "kind": "def",
+      "line_hint": 39,
+      "sha256": "eaf22f135a8f54e5",
+      "layer": "http-adapter",
+      "frege_sinn": "context-owned HTTP routes for calibration, directions, stack, lifecycle, cycle, elements, foundation, and history"
+    },
+    {
+      "sourceId": "server.contexts.tree.programme_service.ProgrammeService",
+      "file": "server/contexts/tree/programme_service.py",
+      "symbol": "ProgrammeService",
+      "kind": "class",
+      "line_hint": 46,
+      "sha256": "426cf9858ec3da05",
+      "layer": "application",
+      "frege_sinn": "application service owning programme calibration, directions, cycles, foundation, history, and constraint diagnostics"
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement.JudgementSurface",
+      "file": "server/contexts/tree/judgement.py",
+      "symbol": "JudgementSurface",
+      "kind": "class",
+      "line_hint": 17,
+      "sha256": "54c4206bf787a8eb",
+      "layer": "http-adapter",
+      "frege_sinn": "callback surface preserving server.app compatibility while judgement routes move to tree context"
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement.create_judgement_router",
+      "file": "server/contexts/tree/judgement.py",
+      "symbol": "create_judgement_router",
+      "kind": "def",
+      "line_hint": 23,
+      "sha256": "4719cefd860e5e44",
+      "layer": "http-adapter",
+      "frege_sinn": "context-owned HTTP routes for verdict, prediction, and scripted test result judgement"
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement_service.JudgementService",
+      "file": "server/contexts/tree/judgement_service.py",
+      "symbol": "JudgementService",
+      "kind": "class",
+      "line_hint": 28,
+      "sha256": "9b598a5a0143116e",
+      "layer": "application",
+      "frege_sinn": "application service owning verdict, prediction, and scripted test-result judgement mutations"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.ParentEdgeIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "ParentEdgeIn",
+      "kind": "class",
+      "line_hint": 14,
+      "sha256": "a644c811f0852f09",
+      "layer": "schema",
+      "frege_sinn": "tree context parent edge request schema with inference and evidence metadata"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.NodeIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "NodeIn",
+      "kind": "class",
+      "line_hint": 21,
+      "sha256": "90fcbd335db814eb",
+      "layer": "schema",
+      "frege_sinn": "tree context node mutation request schema"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.QuestionIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "QuestionIn",
+      "kind": "class",
+      "line_hint": 48,
+      "sha256": "b0fe77de4c2b8657",
+      "layer": "schema",
+      "frege_sinn": "tree context frontier question request schema"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.ResearchEventIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "ResearchEventIn",
+      "kind": "class",
+      "line_hint": 109,
+      "sha256": "d1ce2227c575ae4a",
+      "layer": "schema",
+      "frege_sinn": "tree context append-only research event schema with engine conversion"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.ObservationIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "ObservationIn",
+      "kind": "class",
+      "line_hint": 136,
+      "sha256": "62344d403c4a9ef2",
+      "layer": "schema",
+      "frege_sinn": "tree context G-Web observation schema with decomposed credibility inputs"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.WorldActionIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "WorldActionIn",
+      "kind": "class",
+      "line_hint": 161,
+      "sha256": "ffad3f91ef5778f3",
+      "layer": "schema",
+      "frege_sinn": "tree context G-WorldAction execution evidence schema"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.CycleIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "CycleIn",
+      "kind": "class",
+      "line_hint": 177,
+      "sha256": "c21c7a77adaf1d84",
+      "layer": "schema",
+      "frege_sinn": "tree context no-RCE programme cycle orchestration schema"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.FoundationRequirementIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "FoundationRequirementIn",
+      "kind": "class",
+      "line_hint": 229,
+      "sha256": "273d3e9151d319ea",
+      "layer": "schema",
+      "frege_sinn": "tree context foundation requirement schema with engine conversion"
+    },
+    {
+      "sourceId": "server.contexts.tree.diagnostics.ConstraintSpec",
+      "file": "server/contexts/tree/diagnostics.py",
+      "symbol": "ConstraintSpec",
+      "kind": "class",
+      "line_hint": 13,
+      "sha256": "7bbef3a2497bcdac",
+      "layer": "ops-diagnostics",
+      "frege_sinn": "required Neo4j uniqueness constraint descriptor for tree KG operations"
+    },
+    {
+      "sourceId": "server.contexts.tree.diagnostics.diagnose_required_constraints",
+      "file": "server/contexts/tree/diagnostics.py",
+      "symbol": "diagnose_required_constraints",
+      "kind": "def",
+      "line_hint": 38,
+      "sha256": "e38ca915660aa8ec",
+      "layer": "ops-diagnostics",
+      "frege_sinn": "reports missing tree KG constraints and emits IF NOT EXISTS migration Cypher"
+    },
+    {
+      "sourceId": "server.contexts.tree.materialization.MaterializationPlan",
+      "file": "server/contexts/tree/materialization.py",
+      "symbol": "MaterializationPlan",
+      "kind": "class",
+      "line_hint": 15,
+      "sha256": "98e66ac6e0fa8257",
+      "layer": "application",
+      "frege_sinn": "dry-run tree materialization estimate for rows, operations, transactions, and chunks"
+    },
+    {
+      "sourceId": "server.contexts.tree.materialization.TreeMaterializationPlanner",
+      "file": "server/contexts/tree/materialization.py",
+      "symbol": "TreeMaterializationPlanner",
+      "kind": "class",
+      "line_hint": 52,
+      "sha256": "0245f2fab14d77b6",
+      "layer": "application",
+      "frege_sinn": "planner that predicts writer-compatible tree mutation chunks before KG writes"
+    },
+    {
+      "sourceId": "server.contexts.tree.repository.TreeKgRepository",
+      "file": "server/contexts/tree/repository.py",
+      "symbol": "TreeKgRepository",
+      "kind": "class",
+      "line_hint": 77,
+      "sha256": "67de842bad00c43a",
+      "layer": "repository",
+      "frege_sinn": "typed KG read boundary normalizing scalar/list/null property drift"
+    },
+    {
+      "sourceId": "server.contexts.tree.validation.LakatosSemanticValidator",
+      "file": "server/contexts/tree/validation.py",
+      "symbol": "LakatosSemanticValidator",
+      "kind": "class",
+      "line_hint": 137,
+      "sha256": "892f137f3525502a",
+      "layer": "domain-policy",
+      "frege_sinn": "fail-closed Lakatos write semantics before KG mutation"
+    },
+    {
+      "sourceId": "server.contexts.tree.validation.PolicyFinding",
+      "file": "server/contexts/tree/validation.py",
+      "symbol": "PolicyFinding",
+      "kind": "class",
+      "line_hint": 31,
+      "sha256": "79f9cbfd66280b85",
+      "layer": "domain-policy",
+      "frege_sinn": "structured Lakatos policy finding carrying code, message, and enforcement severity"
+    },
+    {
+      "sourceId": "server.contexts.tree.validation.PolicyDecision",
+      "file": "server/contexts/tree/validation.py",
+      "symbol": "PolicyDecision",
+      "kind": "class",
+      "line_hint": 38,
+      "sha256": "3679d7e147e6cd28",
+      "layer": "domain-policy",
+      "frege_sinn": "policy evaluation result that enforces strict mode while preserving warning mode findings"
+    },
+    {
+      "sourceId": "server.contexts.tree.validation.NodeValidationResult",
+      "file": "server/contexts/tree/validation.py",
+      "symbol": "NodeValidationResult",
+      "kind": "class",
+      "line_hint": 56,
+      "sha256": "edb8c0b598f0e5b7",
+      "layer": "domain-policy",
+      "frege_sinn": "node validation output combining normalized parent edges with Lakatos policy findings"
+    },
+    {
+      "sourceId": "server.contexts.tree.validation.LakatosPolicy",
+      "file": "server/contexts/tree/validation.py",
+      "symbol": "LakatosPolicy",
+      "kind": "class",
+      "line_hint": 62,
+      "sha256": "ae212036a322a132",
+      "layer": "domain-policy",
+      "frege_sinn": "executable canonical frontier evidence hard-core and provenance rules for Lakatos tree writes"
+    },
+    {
+      "sourceId": "server.contexts.tree.writer.WriteSummary",
+      "file": "server/contexts/tree/writer.py",
+      "symbol": "WriteSummary",
+      "kind": "class",
+      "line_hint": 17,
+      "sha256": "904858aaeca786f9",
+      "layer": "writer",
+      "frege_sinn": "tree KG write result summary for chunked mutation accounting"
+    },
+    {
+      "sourceId": "server.contexts.tree.writer.TreeKgWriter",
+      "file": "server/contexts/tree/writer.py",
+      "symbol": "TreeKgWriter",
+      "kind": "class",
+      "line_hint": 48,
+      "sha256": "348d14c5d4064d17",
+      "layer": "writer",
+      "frege_sinn": "chunked deterministic Cypher writer for Lakatos tree mutations"
+    },
+    {
+      "sourceId": "server.contexts.tree.mutations.TreeSpec",
+      "file": "server/contexts/tree/mutations.py",
+      "symbol": "TreeSpec",
+      "kind": "class",
+      "line_hint": 20,
+      "sha256": "692cd9d068331b6e",
+      "layer": "application",
+      "frege_sinn": "bulk tree mutation command carrying tree metadata, nodes, and frontier questions"
+    },
+    {
+      "sourceId": "server.contexts.tree.mutations.TreeMutationService",
+      "file": "server/contexts/tree/mutations.py",
+      "symbol": "TreeMutationService",
+      "kind": "class",
+      "line_hint": 32,
+      "sha256": "eab1f136610bf3c5",
+      "layer": "application",
+      "frege_sinn": "validated mutation API coordinating semantic policy, KG writer, and history"
     },
     {
       "sourceId": "longinus.audit",
@@ -279,10 +669,25 @@
     "q-lkt-quantitative-grounding",
     "q-lkt-rebuild-execute",
     "q-lkt-writepath-enforce",
+    "rf-lkt-engine-lakatos-semantic-validator-20260616",
+    "rf-lkt-engine-typed-kg-read-normalization-20260616",
     "rs-longinus-cli-audit",
     "rs-wg-scan-injection",
     "rs-wg-web-gate",
     "rs-wg-world-action-gate",
+    "seed-lkt-engine-architecture-ratchet-hardening-20260616",
+    "seed-lkt-engine-kg-read-normalizer-20260616",
+    "seed-lkt-engine-materialization-dryrun-20260616",
+    "seed-lkt-engine-mutation-service-20260616",
+    "seed-lkt-engine-mutation-writer-20260616",
+    "seed-lkt-engine-neo4j-index-diagnostics-20260616",
+    "seed-lkt-engine-policy-canonical-frontier-20260616",
+    "seed-lkt-engine-route-evidence-claim-extract-20260616",
+    "seed-lkt-engine-route-judgement-extract-20260616",
+    "seed-lkt-engine-route-programme-extract-20260616",
+    "seed-lkt-engine-schema-context-split-20260616",
+    "seed-lkt-engine-semantic-validator-20260616",
+    "seed-lkt-engine-tree-api-router-20260616",
     "span_lakatotree_S1_laudan_layer",
     "span_lakatotree_S2_judge_tdd",
     "span_lakatotree_adapters",
@@ -316,8 +721,10 @@
     "span_lakatotree_prov",
     "span_lakatotree_rebuild",
     "span_lakatotree_reproducibility_wire",
+    "span_lakatotree_server_architecture",
     "span_lakatotree_server_contracts",
     "span_lakatotree_server_endpoints_fcon1",
+    "span_lakatotree_server_tree_context",
     "span_lakatotree_spine",
     "span_lakatotree_stack_meta_rule",
     "span_lakatotree_trust",
