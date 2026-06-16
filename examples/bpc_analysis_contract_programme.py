@@ -174,9 +174,12 @@ FRONTIER = [
               '★2026-06-16 분석: min_ng_views≥3 경로는 REFUTED — 71-washer×2lot 실측 coverage = 모든 washer good-view '
               '1~2개(mean 1.4, ≥3 view 보유 washer=0개)이므로 min_ng_views≥3 default 시 ~100% abstain(missing_is_defect→전건 NG). '
               'min_ng_views=2 도 1-view washer(다수) abstain. 즉 σ는 view-gate로 못 푼다(coverage-limited). 남은 viable 2경로: '
-              '①per-feature 공차 재도출(washer_h_sigma_estimation.py 이미 tol_dyn=max(0.5,5.15σ) 산출 → TabBoltStepPolicy '
-              'washer_h_nominals_mm/washer_h_tol_mm per-feature 배선) ②coverage 개선(overlap 캡처=q_tab_coverage)→multi-view→σ↓. '
-              '0.5=임의값은 여전히 도면/CMM 대기',
+              '①per-feature 공차 재도출 ✅코드 배선 LANDED(prismv2 develop 9473b1c): TabBoltStepPolicy.washer_h_tols_mm '
+              '(fid→tol map) + _apply_tab_bolt_policy resolve + parser. seed 매핑=washer_h_sigma_per_feature.json '
+              '(71feat {nominal_mm,sigma_lot_mm,tol_dyn_mm})→config washer_h_nominals_mm/washer_h_tols_mm. ⚠nuance: '
+              'tol_dyn=max(0.5,5.15σ)는 capability FLOOR — 대부분 0.5(σ작아 floor), σ높은 washer만 widen(false-NG 방지, '
+              'tighten 아님). 남은=json→Mongo bpc_thresholds seed(ops, 프로덕션 DB write). ②coverage 개선(overlap=q_tab_coverage)→σ↓. '
+              '0.5 절대값은 도면/CMM 대기',
          closed_by=None),
     dict(name='q_tab_coverage', status='OPEN',
          body='TAB_BOLT washer detection coverage — "36/71"은 STALE. E_v in-plane refine 이미 배선(apply_lot_corrections L469)→실측 70-71/71(2026-06-16 measure_lot 전체경로 재현). 잔여=①σ/repeatability(single-view σ0.061, q_tab_threshold 연계) ②specular 맹목(WASHER_019 류, 3D blind→RGB-only 필요). detection 갭은 닫힘, σ+specular 가 진짜 OPEN',
