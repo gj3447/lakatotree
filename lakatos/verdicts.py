@@ -45,6 +45,33 @@ REBUILD_VERDICTS = frozenset({
 
 VERDICT_REGISTRY = SCRIPTED_VERDICTS | ADMIN_VERDICTS | ENGINE_VERDICTS | REBUILD_VERDICTS
 
+# 의미 분류(진보/비진보) — source-based 그룹(SCRIPTED/ADMIN/…)을 가로지르는 직교 축.
+# metrics 가 자체 튜플로 하드코딩하던 것을 단일 정본으로 흡수(SSOT). 새 어휘는 여기서만.
+# THR-1: dialectical 판결(degenerating/withdrawn)도 비진보로 셈 — 전엔 비진보 밖이라
+# consec/stall 카운터를 리셋(진보로 오인)했다. progressive_conditional 은 (조건부)진보 측.
+PROGRESS_VERDICTS = frozenset({
+    "progressive",
+    "progressive_conditional",
+    "CANONICAL",
+    "former_canonical",
+})
+
+NONPROGRESSIVE_VERDICTS = frozenset({
+    "rejected",
+    "partial",
+    "equivalent",
+    "degenerating",
+    "withdrawn",
+})
+
+
+def is_progress_verdict(verdict: str) -> bool:
+    return verdict in PROGRESS_VERDICTS
+
+
+def is_nonprogressive_verdict(verdict: str) -> bool:
+    return verdict in NONPROGRESSIVE_VERDICTS
+
 
 def is_admin_verdict(verdict: str) -> bool:
     return verdict in ADMIN_VERDICTS or verdict.startswith("repurposed_")
