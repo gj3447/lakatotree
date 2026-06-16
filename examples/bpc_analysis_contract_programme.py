@@ -91,7 +91,17 @@ NODES = [
                   'median washer_h 가 +0.04mm HIGH (1.56→1.53 at 6.2, 독립 section GT 1.522 와 ~0.005mm 일치), '
                   'lot-repeat 0.012→0.007. ✅ rr>=5.5→6.2 LANDED (112 bpc test green, golden 無gating). '
                   '잔caveat=tighter inner 가 marginal washer 의 abstain↑ 가능(missing_is_defect→NG, fail-safe이나 '
-                  'q_tab_coverage 와 상충) → field cutover 전 71-washer×multi-lot 회귀 필요'),
+                  'q_tab_coverage 와 상충) → 71-washer×2lot 실측 회귀 NEW abstain=0(view flip 0, coverage-neutral 확인)'),
+    _n('washer_ev_wired_verified', 'progressive', 'cup_tab_z', m=8, base=8,
+       nr=True, nc=True, q=['q_tab_coverage'],
+       comment='2026-06-16 Longinus 관통 + 실측: "washer 36/71 검출 / E_v 미배선 갭" claim 이 STALE 임을 확정. '
+               'E_v in-plane refine 은 dc375_lot_pipeline.apply_lot_corrections:469 에서 frozen v22_hyb3(bundle.ev_sol) '
+               '를 매 lot in-place 적용(measure_lot:1573, Branch0 flag ON). 실 measure_lot 전체경로 재현(SOLVER_PKG_v12 '
+               '번들+transform_camera_to_cad+E_v+feature_identity_recover=True): VFEZ0048 washer 71/71, VFEZ0049 70/71 '
+               'detected. 유일 누락 WASHER_019=알려진 specular 볼트솟음(3D blind). detection coverage 갭 닫힘.',
+       limitation='잔여 OPEN(detection 아님): σ/repeatability(single-view σ0.061→q_tab_threshold), specular 맹목(RGB-only). '
+                  'field 일반 lot 은 v8_composite fallback=VFEZ0049 키 → VFEZ0049 run(70/71)이 대표. E_v solve 품질 √N 은 '
+                  '연구repo 잔류(apply 절반만 prismv2 포트). ev_xy_correction.apply_frozen_view_xy 는 orphan(L469에 inline 복제)'),
     _n('barcode', 'progressive', 'cup_tab_z', m=9, base=8,
        nr=True, nc=True,
        comment='W4: #16 v16 DataMatrix decode → DT HUD. LABEL=ROI helper, decoded truth=v16 policy',
@@ -113,9 +123,12 @@ NODES = [
                'registered cloud, capture log fs2.bpc_a110 loaded 21 view poses 확인). + feature spec 정정 '
                '123 A110(boss10+washer80 phantom9)→128 DC375(big10+washer71+plate33+outer14, bpc_dc375.yaml, '
                'source feature_positions_master_v4_zlayers). watchdog respawn, .ps1 .bak revert 가능.',
-       limitation='measurand 신규 0(기존 산출 enablement). 실 prismv2 M5(frozen-only+128): det 83/128 '
-                  '(big10/10·plate31/33·outer6/14·washer36/71) — washer in-plane refine(E_v) 갭. '
-                  'recipe_v2 배선+field cutover는 washer coverage 해소 전 보류(라인 전건 NG 방지). q_w2prod 와 연계'),
+       limitation='measurand 신규 0(기존 산출 enablement). ⚠"washer36/71 E_v 갭"은 STALE(pre-E_v config) — '
+                  '2026-06-16 Longinus 관통 결과 E_v in-plane refine 은 이미 배선됨(dc375_lot_pipeline.apply_lot_corrections '
+                  'L469, measure_lot L1573 매 lot 호출, frozen v22_hyb3). 실 measure_lot 전체경로 재현(번들+E_v+'
+                  'feature_identity_recover): VFEZ0048 washer 71/71, VFEZ0049 70/71(유일 누락 WASHER_019=알려진 specular '
+                  '볼트솟음, coverage 아님). 즉 detection coverage 는 해소됨. 잔여 진짜 레버=σ/repeatability(q_tab_threshold '
+                  'single-view σ0.061) + specular 맹목(WASHER_019), detection 아님. q_w2prod 와 연계'),
 
     # 기각/퇴행 가지(보존) — 운반·아키텍처 연구사 교훈
     _n('proto_bytes_bulk', 'rejected', 'merged_dt',
@@ -150,7 +163,7 @@ FRONTIER = [
          body='TAB_BOLT 0.5 공차 spec 근거(Mobis/EO 도면 또는 CMM) 확정 + single-view σ0.061 기준 P/T 63% UNACCEPTABLE 해소(min_ng_views≥3 default 또는 공차 재산정). 현 0.5=임의값',
          closed_by=None),
     dict(name='q_tab_coverage', status='OPEN',
-         body='TAB_BOLT washer 36/71 검출 — calib in-plane refine(E_v, lot-공유 보정) prismv2 per-cycle 포팅으로 coverage↑ + missing_is_defect=True specular false-NG 해소',
+         body='TAB_BOLT washer detection coverage — "36/71"은 STALE. E_v in-plane refine 이미 배선(apply_lot_corrections L469)→실측 70-71/71(2026-06-16 measure_lot 전체경로 재현). 잔여=①σ/repeatability(single-view σ0.061, q_tab_threshold 연계) ②specular 맹목(WASHER_019 류, 3D blind→RGB-only 필요). detection 갭은 닫힘, σ+specular 가 진짜 OPEN',
          closed_by=None),
     dict(name='q_washer_tail_origin', status='CLOSED',
          body='TAB_BOLT washer_h 반복정밀도 꼬리(ring band [5.5,7.5] p90-p10 1.26mm)의 정체 — 센서노이즈 vs '
