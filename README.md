@@ -32,6 +32,7 @@ lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판
   mcp_server.py     MCP 도구 7종 (Claude/Codex 가 나무 조작)
 server/             FastAPI 박층 (:55170) — Neo4j(그래프 정본)+PG(append-only 이력)+Mongo(산출물)
 judges/             채점 스크립트 (결과 파일 → metric, LLM 무관)
+examples/           연구 프로그램 정의 — 미해결 연구 질문(open research questions)은 여기 FRONTIER/RIVAL_FRONTIER node-list 의 status='OPEN' 항목: bpc_icp_programme.py(정합 registration) + bpc_analysis_contract_programme.py(측정/analysis-contract)
 tests/              판결/엔진/서버계약 TDD — 규칙 변경은 RED 부터
 docs/BPC_CONSUMER_A_LONGINUS_20260612.md   consumer_b/consumer_a segmentation 기반지식 Longinus pack
 ```
