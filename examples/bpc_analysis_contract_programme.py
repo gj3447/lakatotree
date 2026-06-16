@@ -77,6 +77,21 @@ NODES = [
                   '→ P/T 63% UNACCEPTABLE, σ는 ±0.4 clamp 안 측정이라 경계판별 미검증. (WASHER_002 borderline: '
                   'pipeline 버전간 0.94↔1.40 swing=공차 92%, CMM 없이 판가름 불가). gross-defect catcher로만 OK, '
                   'production-ready 아님 (q_tab_threshold/q_tab_coverage OPEN). 검증=BPC scripts tab_bolt 0p5 workflow'),
+    _n('washer_roi_clean', 'progressive', 'cup_tab_z', m=8, base=8,
+       nr=True, nc=True, q=['q_washer_tail_origin'],
+       comment='2026-06-16 와샤 링 z ROI 무결성 감사(point-cloud + CAD): washer_h 반복정밀도 "꼬리"의 정체 규명. '
+               'TAB_BOLT 스크류=헥사 소켓헤드(flats r≈5.0, tips r≈5.77; CAD washer clean flat r≥5.9, OD r8.25). '
+               '현행 ring ROI inner(viz band 5.5 / doc-14 production annulus 5.8)가 r<6.2 의 헥사헤드 side-wall 을 '
+               '링에 포함 → side-wall band(r4.7~6.1) z-spread 가 clean ring 의 6~14배, ROI z-tail(>3MAD)의 '
+               '96.9%가 side-wall(r<6.2) 점(outer-wall/노이즈 반증). clean plateau 6.2~7.4(오염 0%, p90-p10 -64%, '
+               'MAD -32%)로 ROI inner 5.5→6.2 교정 → 273/274 viz LANDED(드로잉 링=measured plateau 정본, '
+               'rings_derived washer_top 5.5-7.5→6.2-7.4). novel 예측 확증: 꼬리=센서노이즈 아니라 헤드 옆면 기하 오염.',
+       limitation='production wired 경로 = dc375_lot_pipeline._measure_tab L578 wr band (rr>=5.5, NOT '
+                  'washer_ring.py 의 W_IN=5.8 — 그건 golden-tested 이나 unwired port). 실측 production delta: '
+                  'median washer_h 가 +0.04mm HIGH (1.56→1.53 at 6.2, 독립 section GT 1.522 와 ~0.005mm 일치), '
+                  'lot-repeat 0.012→0.007. ✅ rr>=5.5→6.2 LANDED (112 bpc test green, golden 無gating). '
+                  '잔caveat=tighter inner 가 marginal washer 의 abstain↑ 가능(missing_is_defect→NG, fail-safe이나 '
+                  'q_tab_coverage 와 상충) → field cutover 전 71-washer×multi-lot 회귀 필요'),
     _n('barcode', 'progressive', 'cup_tab_z', m=9, base=8,
        nr=True, nc=True,
        comment='W4: #16 v16 DataMatrix decode → DT HUD. LABEL=ROI helper, decoded truth=v16 policy',
@@ -137,6 +152,10 @@ FRONTIER = [
     dict(name='q_tab_coverage', status='OPEN',
          body='TAB_BOLT washer 36/71 검출 — calib in-plane refine(E_v, lot-공유 보정) prismv2 per-cycle 포팅으로 coverage↑ + missing_is_defect=True specular false-NG 해소',
          closed_by=None),
+    dict(name='q_washer_tail_origin', status='CLOSED',
+         body='TAB_BOLT washer_h 반복정밀도 꼬리(ring band [5.5,7.5] p90-p10 1.26mm)의 정체 — 센서노이즈 vs '
+              '헥사 볼트헤드 side-wall 기하 오염. 판정: 후자(꼬리의 96.9%=r<6.2 side-wall), ROI inner 5.5→6.2 교정',
+         closed_by=['washer_roi_clean']),
 ]
 
 
