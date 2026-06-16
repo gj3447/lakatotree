@@ -96,7 +96,7 @@ FRONTIER = [
     dict(name='q_outer004', status='OPEN', body='OUTER_004 분기 — outer hole 검출 커버리지', closed_by=None),
     dict(name='q_washer_step', status='OPEN', body='washer step +0.83mm 진짜인가 artifact 인가', closed_by=None),
     dict(name='q_recipev2_gicp_risk', status='OPEN',
-         body='GICP collapse 노출은 GATED/LATENT(정상 현장=노출0). 게이트=_should_concat_by_transform(stage_merge.py): views camera_transform real(FS2 dimconfig frozen pose)면 concat_by_transform(frozen,safe), all-identity(mock/FS2 unwired)면 legacy GICP merge_handles. 또 Branch0 verdict(per-view frozen)는 merge cloud와 독립이라 backend 무관. 노출=이중fault((a)FS2 unwired→silent GICP merge ∧ (b)Branch0 fail(bundle無)→RecipeV2가 GICP cloud로 verdict). 미티게이션 ✅LANDED(prismv2 develop bbb1b53): concat→GICP silent fallback 시 BPC면 loud logger.error(stage_merge.py:117, +2 test). 동작불변·알람만',
+         body='GICP collapse 노출은 GATED/LATENT(정상 현장=노출0). 게이트=_should_concat_by_transform(stage_merge.py): views camera_transform real(FS2 dimconfig frozen pose)면 concat_by_transform(frozen,safe), all-identity(mock/FS2 unwired)면 legacy GICP merge_handles. 또 Branch0 verdict(per-view frozen)는 merge cloud와 독립이라 backend 무관. 노출=이중fault((a)FS2 unwired→silent GICP merge ∧ (b)Branch0 fail(bundle無)→RecipeV2가 GICP cloud로 verdict). 미티게이션 ✅LANDED(ooptdd RED→GREEN, prismv2 develop 8549900): concat→GICP silent fallback 시 BPC면 구조화 event merge.gicp_fallback_bpc 방출(stage_merge.py). LTDD: RED=airo_trace L3 oo 라운드트립 미방출 FAIL→GREEN=assert_trace oo 도착확인(C3 구조화). 동작불변·알람만',
          closed_by=None),
 ]
 
