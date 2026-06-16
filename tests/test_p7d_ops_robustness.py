@@ -57,36 +57,36 @@ def test_oo_sink_uses_explicit_url(monkeypatch):
 
 # ── OPS-LIFECYCLE-1: shutdown 시 드라이버 close ─────────────────────────────
 def test_close_resources_closes_all(monkeypatch):
+    # _close_resources 는 합성 루트(_container)에 위임 — fake 자원 컨테이너로 위임 검증.
     app = load_app()
+    from server.container import AppContainer
     closed = []
-    monkeypatch.setattr(app, 'NEO', type('N', (), {'close': lambda s: closed.append('neo')})())
-    monkeypatch.setattr(app, 'MONGO', type('M', (), {
-        'client': type('C', (), {'close': lambda s: closed.append('mongo')})()})())
-    monkeypatch.setattr(app, '_PG_POOL', type('P', (), {'closeall': lambda s: closed.append('pool')})())
+    neo = type('N', (), {'close': lambda s: closed.append('neo')})()
+    mongo = type('M', (), {'client': type('C', (), {'close': lambda s: closed.append('mongo')})()})()
+    monkeypatch.setattr(app, '_container', AppContainer(neo=neo, mongo=mongo, pg_kw={}))
     errs = app._close_resources()
-    assert set(closed) == {'neo', 'mongo', 'pool'}
+    assert set(closed) == {'neo', 'mongo'}   # pg 풀 lazy 미초기화 → skip
     assert errs == []
 
 
 def test_close_resources_collects_errors(monkeypatch):
     app = load_app()
-    monkeypatch.setattr(app, 'NEO', type('N', (), {
-        'close': lambda s: (_ for _ in ()).throw(RuntimeError('boom'))})())
-    monkeypatch.setattr(app, 'MONGO', type('M', (), {
-        'client': type('C', (), {'close': lambda s: None})()})())
-    monkeypatch.setattr(app, '_PG_POOL', None)            # lazy 미초기화면 skip
+    from server.container import AppContainer
+    neo = type('N', (), {'close': lambda s: (_ for _ in ()).throw(RuntimeError('boom'))})()
+    mongo = type('M', (), {'client': type('C', (), {'close': lambda s: None})()})()
+    monkeypatch.setattr(app, '_container', AppContainer(neo=neo, mongo=mongo, pg_kw={}))
     errs = app._close_resources()
     assert any('neo4j' in e for e in errs)
 
 
 def test_lifespan_closes_on_shutdown(monkeypatch):
     from fastapi.testclient import TestClient
+    from server.container import AppContainer
     app = load_app()
     closed = []
-    monkeypatch.setattr(app, 'NEO', type('N', (), {'close': lambda s: closed.append('neo')})())
-    monkeypatch.setattr(app, 'MONGO', type('M', (), {
-        'client': type('C', (), {'close': lambda s: closed.append('mongo')})()})())
-    monkeypatch.setattr(app, '_PG_POOL', None)
+    neo = type('N', (), {'close': lambda s: closed.append('neo')})()
+    mongo = type('M', (), {'client': type('C', (), {'close': lambda s: closed.append('mongo')})()})()
+    monkeypatch.setattr(app, '_container', AppContainer(neo=neo, mongo=mongo, pg_kw={}))
     with TestClient(app.app):
         pass                                              # __exit__ → shutdown → _close_resources
     assert 'neo' in closed and 'mongo' in closed
