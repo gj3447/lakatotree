@@ -129,6 +129,16 @@ NODES = [
                   'feature_identity_recover): VFEZ0048 washer 71/71, VFEZ0049 70/71(유일 누락 WASHER_019=알려진 specular '
                   '볼트솟음, coverage 아님). 즉 detection coverage 는 해소됨. 잔여 진짜 레버=σ/repeatability(q_tab_threshold '
                   'single-view σ0.061) + specular 맹목(WASHER_019), detection 아님. q_w2prod 와 연계'),
+    _n('ltdd_verdict_source_obs', 'progressive', 'field_dc375_128_deploy', m=10, base=10,
+       nr=True, nc=True,
+       comment='2026-06-16 ooptdd(LTDD) 정식 RED→GREEN(airo_trace/assert_trace 실 oo 라운드트립): BPC 서빙 '
+               'verdict-source 4-event 관측화. bpc.measure_lot.applied(진짜)/fallthrough(canonical degrade=GICP '
+               'double-fault 전제)/synthetic_placeholder(가짜="검사되는게 없냐" silent-PASS 근원)/merge.gicp_fallback_bpc'
+               '(collapse 위험). 현장 oo 1-query로 진짜vs가짜 verdict-source 판별 → 도돌이표 불안에 관측 답. '
+               'commit 8549900/52aa68d/b22783f/fdcd664 develop. 정본도구=prism_core/testing/airo_trace.py.',
+       limitation='C5 log-free zone: washer_h mm 정밀수치는 L3 비대상(golden+71washer 회귀가 옳은 tier). verdict-source '
+                  'contract는 4 event로 완결(RecipeV2/legacy per-path 추가=source 필드 중복=over-instrument STOP). '
+                  '현장 첫 PLC 사이클 event 실관측은 배포 대기'),
 
     # 기각/퇴행 가지(보존) — 운반·아키텍처 연구사 교훈
     _n('proto_bytes_bulk', 'rejected', 'merged_dt',
