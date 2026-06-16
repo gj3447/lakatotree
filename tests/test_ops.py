@@ -179,7 +179,7 @@ def test_pg_pool_borrows_commits_and_returns(monkeypatch):
         def getconn(self): events.append('get'); return _C()
         def putconn(self, c): events.append('put')
 
-    monkeypatch.setattr(app, '_pg_pool', lambda: _Pool())
+    monkeypatch.setattr(app._container, 'pg_pool', lambda: _Pool())
     with app.pg() as c:
         events.append('use')
     assert events == ['get', 'use', 'commit', 'put']     # 누수 없음(반드시 putconn)
@@ -197,7 +197,7 @@ def test_pg_pool_rolls_back_on_error_and_returns(monkeypatch):
         def getconn(self): return _C()
         def putconn(self, c): events.append('put')
 
-    monkeypatch.setattr(app, '_pg_pool', lambda: _Pool())
+    monkeypatch.setattr(app._container, 'pg_pool', lambda: _Pool())
     with pytest.raises(ValueError):
         with app.pg() as c:
             raise ValueError('boom')

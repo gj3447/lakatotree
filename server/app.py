@@ -67,6 +67,7 @@ from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
+from server.container import AppContainer
 from server.settings import ServerSettings
 
 NEO = LazyNeo4jDriver()
@@ -75,21 +76,14 @@ MONGO = LazyMongoDatabase()
 
 logger = logging.getLogger('lakatotree.server')   # OPS-OBSERVABILITY-1: print → 구조화 logger
 
+# 합성 루트: 외부 자원(Neo4j/Mongo/PG) 생성·운용·종료를 한 객체가 소유(server.container).
+# 아래 모듈 API(kg/kg_tx/pg/hist/_close_resources)는 컨테이너로 위임만 — 하위호환 유지.
+_container = AppContainer(neo=NEO, mongo=MONGO, pg_kw=PG_KW, logger=logger)
+
 
 def _close_resources() -> list:
-    """OPS-LIFECYCLE-1: 종료 시 Neo4j 드라이버 / Mongo 클라이언트 / PG 풀을 명시적으로 닫는다.
-    각각 best-effort — 하나가 실패해도 나머지는 닫고, 실패 목록을 반환(감사)."""
-    errs = []
-    for name, closer in (
-        ('neo4j', lambda: NEO.close()),
-        ('mongo', lambda: MONGO.close() if hasattr(MONGO, 'close') else MONGO.client.close()),
-        ('pg_pool', lambda: _PG_POOL.closeall() if _PG_POOL is not None else None),
-    ):
-        try:
-            closer()
-        except Exception as e:   # noqa: BLE001 — 종료 정리는 어떤 예외도 다음 리소스를 막지 않는다
-            errs.append(f'{name}:{type(e).__name__}:{e}')
-    return errs
+    """OPS-LIFECYCLE-1: 종료 시 자원을 best-effort 로 닫고 실패목록 반환(→ AppContainer.close)."""
+    return _container.close()
 
 
 @asynccontextmanager
@@ -166,49 +160,19 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
-_PG_POOL = None
-
-def _pg_pool():
-    global _PG_POOL
-    if _PG_POOL is None:   # lazy init — import 시 미연결(테스트/오프라인 안전)
-        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(1, 16, **PG_KW)
-    return _PG_POOL
-
-@contextmanager
+# 자원 접근 모듈 API — AppContainer 위임(구현은 server.container, server.app 은 얇은 facade).
+# 모듈 전역 `global _PG_POOL` 변이 제거: 풀 lazy 상태가 컨테이너 인스턴스에 캡슐화됨.
 def pg():
-    """OPS-DEAD-1: ThreadedConnectionPool 에서 빌려 쓰고 반납 — 매 요청 새 커넥션 생성·누수 방지.
-    성공 시 commit, 예외 시 rollback, 항상 putconn (psycopg2 conn 의 with 는 tx 만 닫고 conn 은 안 닫았음)."""
-    conn = _pg_pool().getconn()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        _pg_pool().putconn(conn)
+    return _container.pg()
 
 def hist(tree, op, node_tag=None, payload=None):
-    # ROB-1: 이력(PG)은 best-effort audit, KG=truth. KG 커밋 후 PG 다운이 mutation 을 503 으로
-    # 되돌리면 그래프-이력 분기가 *더 나빠지므로*, PG 연결오류는 삼키고 경고만(이력만 유실).
-    try:
-        with pg() as c, c.cursor() as cur:
-            cur.execute('INSERT INTO history(tree, op, node_tag, payload) VALUES (%s,%s,%s,%s)',
-                        (tree, op, node_tag, json.dumps(payload or {}, ensure_ascii=False)))
-    except PgOperationalError as e:
-        logger.error('hist PG 적재 실패(best-effort, KG 는 정상): %s', type(e).__name__)
+    return _container.hist(tree, op, node_tag, payload)
 
 def kg(q, **kw):
-    with NEO.session() as s:
-        return s.run(q, **kw).data()
+    return _container.kg(q, **kw)
 
 def kg_tx(ops):
-    """여러 Cypher 를 단일 managed write 트랜잭션으로 (all-or-nothing) — KG-내부 부분쓰기
-    (노드만 생성·엣지 누락 등) 분기 차단 (ROB-1). ops = [(cypher, params), ...]."""
-    def _unit(tx):
-        return [tx.run(cypher, **params).data() for cypher, params in ops]
-    with NEO.session() as s:
-        return s.execute_write(_unit)
+    return _container.kg_tx(ops)
 
 def _safe_rebuild_plan(artifact, bo):
     """ENGINE-ROB-3: 계보 사이클이면 rebuild_plan 이 ValueError → 500 누수 대신 빈 plan(재현불가).
