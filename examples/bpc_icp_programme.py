@@ -48,6 +48,20 @@ NODES = [
        nr=True, nc=True, q=['q_dc375_tol', 'q_outer004', 'q_washer_step'],
        comment='v8: ZDF stride3 srgb+frozen calib+colfix+v7보정, mesh-exact QC, cross-lot 4.05mm',
        limitation='interior 0.90mm CMM 미검증(precision≠accuracy)'),
+    _n('prismv2_frozen_wiring', 'progressive', 'v8_pipeline', m=0.90, base=0.90,
+       nr=True, nc=True, q=['q_recipev2_gicp_risk'],
+       comment='2026-06-16 prismv2 production 배선 관통(Longinus + hitech-expert). v8 frozen-per-view 접근의 실 '
+               'materialization = measure_lot Branch0: bpc_inspector_registration._run_measure_lot:334 → '
+               'transform_camera_to_cad(frozen T_view_to_world + colfix + v8 + E_v apply_lot_corrections:469) → '
+               'per-view feature 검출 → cross-view median fusion, ICP 0회. 즉 사용자 우려 "global view 정합/feature '
+               '감지 문제" = GICP free multi-view ICP(prism_core/domain/multiview_icp.merge_views, small_gicp VGICP) '
+               'collapse(평판 rank-deficiency: 법선≈+Z→XY/yaw null space yaw고유값 1.4e-4, drift 90-98% null 방향; '
+               '+ 주기 포켓 18mm 격자 aliasing 19 local-min STACK→2353mm 부품 876mm 수축). Branch0는 global merged '
+               'cloud 자체를 안 만들어 구조적 우회. 실측 washer 71/71 검출 확증.',
+       limitation='GICP collapse 위험은 RecipeV2/legacy 경로 잔존: _load_merged_scan 가 GICP-merged global cloud 위 검출, '
+                  'grpc single-shot 경로(grpc_adapter:493 acc.views={})는 Branch0 미기동→RecipeV2 fallback. per-view '
+                  'SYSTEMATIC residual(partial-arc 0.5-1.3mm class-dep)은 E_v multi-lot solve로 흡수(sub-mm, collapse 아님). '
+                  '회피=register_concat(frozen concat, ICP無) 강제 또는 FinalizeCycle 경로 Branch0 보장'),
 
     # 퇴행 가지(보존) — per-view 6-DOF ICP 를 3회 시도, 매번 악화
     _n('pv6dof_a', 'degenerating', 'aruco_metric', m=1.80, base=0.93,
@@ -79,6 +93,9 @@ FRONTIER = [
     dict(name='q_dc375_tol', status='OPEN', body='interior 0.90mm 가 DC375 공차 T0 에 충분한가', closed_by=None),
     dict(name='q_outer004', status='OPEN', body='OUTER_004 분기 — outer hole 검출 커버리지', closed_by=None),
     dict(name='q_washer_step', status='OPEN', body='washer step +0.83mm 진짜인가 artifact 인가', closed_by=None),
+    dict(name='q_recipev2_gicp_risk', status='OPEN',
+         body='RecipeV2/legacy 검출이 GICP-merged global cloud(multiview_icp collapse-prone, free multi-view ICP) 위에서 수행 — grpc single-shot 경로는 acc.views={}라 Branch0 미기동→이 경로로 떨어짐. frozen concat(register_concat, ICP無) 강제 또는 모든 cycle 경로 Branch0 보장 필요',
+         closed_by=None),
 ]
 
 
