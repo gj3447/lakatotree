@@ -1,18 +1,21 @@
 {
   "files": {
-    "__init__.py": "3fe12a13274a5e5f9e44fd629cc5de473cd85ec3d23a2732e8c75c02d057be32",
-    "backends/__init__.py": "64782d3801e678b2c87e2b938c3ed5071e384ac99eb43074cafc36a9a23c2ea8",
-    "backends/base.py": "98d431234b761049aeedc507d2bc3e25e1c681a95f7fdd9c0b8bdc72a03b1447",
-    "backends/memory.py": "5bcb7e67428e6d0787a00dcdcb38a233ad12c5b4407064202d82045225d02db9",
-    "backends/openobserve.py": "a28d4c31ac0c208b358ce302daed2ea740ff7fdcb7b431a3ff0d03acc6c2fab1",
-    "backends/otel.py": "3e3ab352b07b78027097647ebabbc052ec9f37fe55f25341fb01e53293188972",
+    "__init__.py": "fd28d6f607e900428a40441a16c8e980bed386741f1210cd2700638d98a9687b",
+    "assertions.py": "127140102f1ce50e7491ef8b195e930a7d2b27fa246bf48432817dcc2a250512",
+    "backends/__init__.py": "1661b01a5c51ee79e50fc454e1363a70b402a546dfef2a3faed2bc0a2e36b288",
+    "backends/base.py": "89d68d5e80ea341e9f9d8c29950ed43fab7403dc0a2ae75acb598d276a6a0f2a",
+    "backends/clickhouse.py": "1094ea5dd0ee10d4e0e6a0894b5322e9970cc927c9ab5f055e7c86302241c86e",
+    "backends/memory.py": "2591e1a59fc16b45189e3d5967e5de1e3093569293581f28abaeb29c805df9ac",
+    "backends/openobserve.py": "5f9298b7ad59e8fd5a8962467901ecc24ae15f43dd0a6723a49c71adb8cab42f",
+    "backends/otel.py": "824764e8a61ea8ab7d548fbd2df359729214f81e8d65c4bdea1cacc87337ab8f",
     "cli.py": "cf986959f3222277d9d8e8ee066814c24fba95751e6920d95bf0f100a4f71823",
     "config.py": "92f1527a1d38b0f5ac6339e3ca763c25966ecb029bee27e4c0f5c95b4e97aa94",
-    "gate.py": "72fad65b8a69834f23418e55cf3cdc0601e7d0300647dba4437960649f6dbc17",
-    "model.py": "d8307868dd0c38d7769644b21a90931e179333b6f2a86e117892fe7f5a894d86",
-    "ontology.py": "91bb42843e66618ca9551aa884c039edb86d217d1eb29cdc613009cc4496f498",
+    "gate.py": "a8162556a8936626cf68e28f9172fe6c1d5981a819ea6facb0ef45272ed8c0bc",
+    "model.py": "e2a11737cbdab8f4576cff5337cdcd28dd4051151b51cd36ecbb7054cf30b478",
+    "ontology.py": "b4aac9812bd7aa897cb0d42606d7bac2adff996e247e414692609cb6ebb1b35c",
     "plugin.py": "83a8d486f8d2833222b5df9caa156088d49ac6e81f1bbdc158600b99d2ff5ce0",
-    "verify.py": "fa844982601e3b0f6feed84c4f70a030ea00a0769ffe3008c1d4bb0b7812ea07"
+    "semconv.py": "2f71fb00b3481a909675240b5606a595ec53c1ef4e95b88224533a43d04627c0",
+    "verify.py": "eb89a77c53ff51d2db653b46fe3db7426df9a9d85be0f1c0e533025eec039a84"
   },
-  "ooptdd_version": "0.1.0"
+  "ooptdd_version": "0.2.0"
 }
