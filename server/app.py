@@ -62,7 +62,7 @@ from server.contexts.tree.evidence_claim import create_evidence_claim_router
 from server.contexts.tree.evidence_claim_service import EvidenceClaimService
 from server.contexts.tree.judgement import create_judgement_router
 from server.contexts.tree.judgement_service import JudgementService
-from server.contexts.tree.programme import ProgrammeSurface, create_programme_router
+from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
@@ -220,23 +220,6 @@ def _programme_service():
     )
 
 
-def _programme_surface():
-    return ProgrammeSurface(
-        calibration,
-        directions,
-        stack_view,
-        lifecycle_view,
-        run_cycle,
-        add_artifact,
-        add_element,
-        attach_element,
-        add_foundation_requirement,
-        get_foundation_requirements,
-        history,
-        neo4j_constraint_diagnostics,
-    )
-
-
 def _judgement_service():
     return JudgementService(
         kg=kg,
@@ -261,7 +244,7 @@ def _lineage_service(*, use_load_facade: bool = True):
 
 app.include_router(create_tree_router(_tree_service))
 app.include_router(create_evidence_claim_router(_evidence_claim_service))
-app.include_router(create_programme_router(_programme_surface))
+app.include_router(create_programme_router(_programme_service))
 app.include_router(create_judgement_router(_judgement_service))
 app.include_router(create_lineage_router(_lineage_service))
 
