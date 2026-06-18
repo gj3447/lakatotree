@@ -1,0 +1,274 @@
+{
+  "_provenance": {
+    "what": "Real internet-searched HALCON-based 3D-analysis research, structured as Lakatosian programme records.",
+    "how": "Agent (상계/upper-world reader) ran live WebSearch/WebFetch over MVTec HALCON docs, arXiv, BOP benchmark, peer-reviewed sources, then distilled axis/method/prediction/measured/rival/lakatos_role/sources.",
+    "why_committed": "Pins the internet-search provenance so the import test is reproducible without live network (workspace rule: network I/O must be mocked). The search WAS real; this file is its frozen receipt.",
+    "retrieved_at": "2026-06-18",
+    "source_workflow": "Research HALCON-based 3D analysis (+ rivals) — dynamic workflow, 12 cells, 12 agents.",
+    "n_records": 12
+  },
+  "records": [
+    {
+      "axis": "HALCON surface-based 3D matching (find_surface_model / create_surface_model)",
+      "method": "create_surface_model + find_surface_model + refine_surface_model_pose",
+      "how_it_works": "PPF voting scheme: quantized point-pair features (distance, orientation, rotation) sampled from CAD model during training are matched against scene point clouds via Hough-like accumulator voting; coarse pose from peak voting is refined via sparse then dense ICP (point-to-plane minimization), achieving accuracy ~0.1% of object diameter due to numerical limits.",
+      "prediction": "Surface model pose refinement achieves ADD (average distance metric) less than 10% of object diameter on industrial parts; translation error bounded to ~5% object size (e.g., 5mm for 100mm part), rotation refinement up to 15° maximum initial error.",
+      "measured": "BOP benchmark (LineMOD, T-LESS): PPF-based methods achieve ADD-S ~96.7 on YCB-Video; ADD metric threshold = 10% object diameter accepted as correct. Industrial bin-picking (5mm threshold): PPF F1-score 0.784 across parts (bolts, connectors, pipes). HALCON v20.11 edge-supported matching is significantly faster; convergence tolerance default 0.001 MSE per iteration (OpenCV parity). Source: BOP benchmark paper, HALCON operator reference v12-v21.",
+      "rival": "Deep learning (CNN-based) 6D pose: ADD-S 96.9 (CMAGCA) without ICP post-refinement; requires RGB-D training data (100k+ synthetic samples). Trade-off: deep learning generalization across object classes vs. HALCON's object-specific CAD model accuracy and deterministic performance (no domain shift on trained geometry).",
+      "lakatos_role": "hard_core",
+      "novel": false,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/2105/en/find_surface_model.html",
+        "https://www.mvtec.com/doc/halcon/2011/en/toc_3dmatching.html",
+        "https://arxiv.org/pdf/1808.08319",
+        "https://www.sciencedirect.com/science/article/pii/S1077314217301601",
+        "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6111311/",
+        "https://openaccess.thecvf.com/content_ECCV_2018/papers/Tomas_Hodan_PESTO_6D_Object_ECCV_2018_paper.pdf",
+        "https://www.mvtec.com/knowledge-base/developers-corner/article/improve-your-surface-based-matching-with-two-helpful-features",
+        "https://www.mvtec.com/fileadmin/Redaktion/mvtec.com/products/halcon/documentation/solution_guide/solution_guide_ii_b_matching.pdf"
+      ],
+      "_id": "A"
+    },
+    {
+      "axis": "HALCON 3D shape-based matching (rigid + deformable) for 6DoF pose estimation in industrial part inspection",
+      "method": "find_surface_model + find_deformable_surface_model (HALCON operators)",
+      "how_it_works": "Surface/edge point sampling at RelSamplingDistance (0.01–0.1 × diameter), voting-based point-pair registration with coarse-to-fine ICP refinement (pose_ref_num_steps=25 default). Deformable variant adds bending_max tolerance (0–90°) and stiffness control (0<s≤1). Returns 6×6 covariance matrix for pose uncertainty quantification (cov_pose_mode='covariances').",
+      "prediction": "6D pose ADD (Average Distance) error < 10% object diameter on rigid industrial parts (symmetric/non-symmetric CAD models); deformable variant tolerates up to 30° bending while maintaining recall > 0.70 on moderately deformed objects; pose covariance reflects real uncertainty ±0.12° angular, ±5% translation.",
+      "measured": "Rigid surface matching: 0.46 recall on Linemod automotive test (inference 0.21s/image); PPF baseline 0.77 recall across bin-picking datasets. Template matching achieves ±0.12° angular std.dev vs. ±0.029° point-to-point 2D. Deformable surface documented for \"moderate deformations\" (bananas, pretzels) but no quantified tolerance in public benchmarks. BOP challenge 2022: traditional PPF methods (0.77) vs. deep learning (0.65 MegaPose, 0.63 CosyPose). Per MVTec success story: automotive borehole measurement with \"automatic 3D position determination\" (no ±mm spec published).",
+      "rival": "Deep learning 6D pose (GDRNPP, SAM6D, MegaPose, FreeZe): BOP recall 0.63–0.75, inference 1.5–6s/image; requires synthetic training data, slower but higher recall. CNN-based industrial parts classification: 0.98 accuracy for defect detection (ball joint sockets) but not 6D pose. Point Pair Feature (PPF) hybrid: 0.77 recall bin-picking, faster than learning but lower than latest deep methods.",
+      "lakatos_role": "hard_core",
+      "novel": false,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/2405/en/toc_3dmatching.html",
+        "https://www.mvtec.com/doc/halcon/2111/en/find_shape_model_3d.html",
+        "https://www.mvtec.com/doc/halcon/1712/en/find_deformable_surface_model.html",
+        "https://www.mvtec.com/doc/halcon/1712/en/create_deformable_surface_model.html",
+        "https://multipix.com/supportblog/deformable-surface-based-matching-halcon-12/",
+        "https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2024.1424036/full",
+        "https://link.springer.com/chapter/10.1007/978-3-030-01249-6_2",
+        "https://arxiv.org/pdf/1802.08516",
+        "https://www.mvtec.com/knowledge-base/developers-corner/article/improve-your-surface-based-matching-with-two-helpful-features",
+        "https://www.mvtec.com/success-stories-list/detail/3d-calibration-for-inspection"
+      ],
+      "_id": "B"
+    },
+    {
+      "axis": "HALCON 3D reconstruction: stereo & multiview",
+      "method": "binocular_disparity_mg + reconstruct_surface_stereo (surface_fusion)",
+      "how_it_works": "Multigrid solver minimizes energy function (data_term via NCC/SAD/SSD + smoothness_term) over rectified stereo pairs, outputs sub-pixel disparities; surface_fusion combines pairwise clouds via Poisson meshing + isosurface optimization (min_thickness, surface_tolerance, smoothing) to fuse multi-view reconstruction into unified 3D model. Requires well-calibrated camera geometry (intrinsics + pose). Sub-disparity interpolation refines pixel-level correlations to fractional disparity for depth precision.",
+      "prediction": "Multi-view stereo with HALCON surface_fusion (resolution=2-5mm, surface_tolerance=0.2mm) achieves 6DoF position ADD < 0.5mm on car part features (CUP/TAB_BOLT/HOLE classes, baseline 50-80mm, focal 8-12mm, 640x480 rectified pairs) under calibrated Zivid/industrial camera @ 0.3-1.0m working distance",
+      "measured": "Zivid 2 Plus MR60 (HALCON-compatible stereo engine) factory-verified depth precision 30-70µm at 0.3-1m, dimension trueness >99.8%, XY resolution 0.12mm; industrial car part inspection (consumer_b part_375) measure_lot solver achieves per-view XY p95 deviation <0.5mm (raw dxy_nom vs CAD nominal), global ICP merge without collapse requires frozen per-view transforms (no multi-view free-form ICP). Real-world production (VFEZ lots, 21 views/part) point spacing 1-2mm, no published HALCON stereo vs LineMOD/T-LESS direct benchmark found — HALCON docs omit quantified accuracy metrics.",
+      "rival": "OpenCV StereoSGBM (semi-global matching via scanline optimization): avoids local block-matching noise via multi-directional cost aggregation, outperforms StereoBM accuracy but lighter compute than HALCON multigrid; typical disparity error 1-2 pixels on good texture, depth error grows quadratically with distance (Z² factor) — worse than HALCON on low-texture industrial surfaces (polished metal, washers). No sub-pixel refinement built-in; requires external interpolation.",
+      "lakatos_role": "hard_core",
+      "novel": true,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/1712/en/binocular_disparity.html",
+        "https://www.mvtec.com/doc/halcon/1712/en/binocular_disparity_mg.html",
+        "https://www.mvtec.com/doc/halcon/1811/en/reconstruct_surface_stereo.html",
+        "https://www.mvtec.com/technologies/3d-vision",
+        "https://www.zivid.com/zivid-2-plus-mr60",
+        "https://www.teledynevisionsolutions.com/support/support-center/technical-guidance/iis/accuracy-of-stereo-vision-camera-disparity-depth-calculations/",
+        "https://www.unitxlabs.com/resources/stereo-cameras-machine-vision-system-3d-depth-perception/",
+        "https://learnopencv.com/depth-perception-using-stereo-camera-python-c/",
+        "https://www.mvtec.com/doc/halcon/1712/en/toc_3dreconstruction_multiviewstereo.html"
+      ],
+      "_id": "C"
+    },
+    {
+      "axis": "HALCON active 3D: sheet-of-light / structured light — laser triangulation, calibrate_sheet_of_light operator, photometric stereo. Z-resolution (µm), speed, surface-type limits.",
+      "method": "calibrate_sheet_of_light + laser triangulation",
+      "how_it_works": "HALCON calibrate_sheet_of_light calibrates 3D sensor using truncated-pyramid reference object. Camera-laser assembly at 30-60° triangulation angle detects laser line intersection on part surface. Subpixel laser center detection via Gaussian curve-fitting; linear regression on curved calibration surface corrects nonlinearities across extended measurement ranges. Outputs RMS back-projection error (meters) quantifying reconstruction fidelity to CAD calibration object.",
+      "prediction": "HALCON sheet-of-light depth reconstruction achieves RMS error < 0.1 mm on calibrated automotive parts (500-1000mm focal range), with ±7 µm repeatability across 100mm displacements at 45° triangulation geometry",
+      "measured": "Industrial laser triangulation benchmark: ±7 µm repeatability (Genie HM1024 + Prophotonix 45° laser, 100mm displacement test, PMC7146149). Light-sheet microscopy: 10 µm Z-resolution. Artec Point industrial scanner: 0.02 mm accuracy. HALCON-specific RMS metric: no public automotive metrology validation disclosed—error depends on camera/laser hardware calibration quality.",
+      "rival": "Photometric stereo (HALCON photometric_stereo): estimates surface normals only (~10-30° error in normal direction), unsuitable for dimensional metrology. Time-of-flight (Kinect V2): ±6 mm linear depth error, worse at distance. Structured-light (Orbbec Astra S): 100 mm error at 2500 mm range (quadratic growth).",
+      "lakatos_role": "hard_core",
+      "novel": false,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/13/en/calibrate_sheet_of_light.html",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC7146149/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC5855031/",
+        "https://www.academia.edu/62530796/A_Survey_on_3D_Cameras_Metrological_Comparison_of_Time_of_Flight_Structured_Light_and_Active_Stereoscopy_Technologies",
+        "https://multipix.com/supportblog/sheet-of-light-halcon12/",
+        "https://hermary.com/learning/principles-of-laser-triangulation/",
+        "https://www.3dmag.com/3d-wikipedia/types-of-3d-scanners-laser-triangulation-structured-light-time-of-flight-phase-shift/"
+      ],
+      "_id": "D"
+    },
+    {
+      "axis": "E: HALCON 3D Calibration & Hand-Eye",
+      "method": "calibrate_hand_eye + calibrate_cameras (HALCON dual-quaternion nonlinear optimization)",
+      "how_it_works": "Dual quaternion nonlinear minimization simultaneously solves robot hand-eye transformation (6DoF) from ≥10 calibration poses with ≥30° rotation spread. Intrinsic camera calibration (calibrate_cameras) uses back-projection RMSE minimization on checkerboard/calibration patterns to refine focal length, principal point, distortion (k1,k2,k3,p1,p2). Extrinsic hand-eye pose solved by Daniilidis method with conjugate gradient optimizer, returning RMS translation/rotation errors and max errors per acquisition.",
+      "prediction": "HALCON hand-eye calibration with 20+ diverse poses (mean rotation >45°) achieves 6DoF pose prediction error ADD < 0.1·diameter on industrial parts, translating to ±0.5mm accuracy on 50mm automotive bracket features at 1m working distance.",
+      "measured": "HALCON 3D calibration success story reports 1:10,000 accuracy ratio (±2–20 µm precision on boreholes in welded automotive assembly). ArUco fiducial calibration achieves ±5–10mm position + ±0.5° rotation at 1m for 10cm markers. Vision system back-projection residual threshold: <0.1 pixels industry standard for traceability. Hand-eye relative error studies (UR5e, 100 poses) show Daniilidis method superior to Park/Chou for translation, but absolute mm/deg values absent in literature (relative evaluation only). Source: MVTec HALCON 22.11 documentation, PLOS One accuracy evaluation (2023), MVTec success story.",
+      "rival": "Deep learning 6DoF (DPOD, EPro-PnP, ConceptPose) on LineMOD/YCB achieve ADD-S AUC 94.6–96.9% but require training data + inference latency (100–300ms). Iterative refinement (ICP, visual servoing) post-hoc improves error from initial 5–10mm to 1–2mm but demands target model CAD geometry. Structured light (Zivid, RealSense) post-acquisition alignment: ~0.5mm stdev noise-floor without thermal/motion compensation.",
+      "lakatos_role": "hard_core",
+      "novel": false,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/2211/en/calibrate_hand_eye.html",
+        "https://www.mvtec.com/doc/halcon/1911/en/calibrate_cameras.html",
+        "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0273261",
+        "https://www.mvtec.com/success-stories-list/detail/3d-calibration-for-inspection",
+        "https://arxiv.org/pdf/2303.12787",
+        "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5621149/"
+      ],
+      "_id": "E"
+    },
+    {
+      "axis": "F",
+      "method": "HALCON register_object_model_3d_pair with iterative closest point (ICP) pose refinement",
+      "how_it_works": "Coarse correspondence matching establishes initial point-to-point alignment between two 3D models; then ICP minimizes quadratic distance iteratively (5-10 steps default). Scores overlapping volume ratio. Per HALCON operator specs: accuracy ~0.1% of object size due to numerical constraints; residual RMSE from point-to-point Euclidean distance between paired correspondences. Tunable parameters: pose_ref_num_steps (iteration depth), pose_ref_dist_threshold_rel (distance tolerance as fraction of object diameter).",
+      "prediction": "HALCON ICP achieves registration accuracy within 0.5 mm absolute + 0.5° rotation on structured industrial parts (automotive consumer_b type, 100-200mm diameter) when point clouds are noise < 0.1mm RMS and overlap > 60%",
+      "measured": "Benchmark: point cloud registration on automotive parts inspection (MDPI 2023, vehicle body inspection framework) achieved 0.1 mm measurement accuracy with structured light + point cloud deviation-to-CAD via KNN within ±10 µm for dimensional verification. Industrial LiDAR studies (MDPI Sensors 2025) report improved ICP variants at 0.0646 m MAE / 0.0688 m RMSE—but these are large-scale LiDAR (outdoors, registration is coarse). Closest industrial precision spec: HALCON documented 0.1% size accuracy (e.g., 100mm part = 0.1mm residual). Real measure_lot data (consumer_b part_375, 21-view GICP multiview): per-view frozen ICP 0.1-0.2mm typical Z-error post-alignment, global cloud merge GICP collapsed at 83.9s due to missing camera_transform constraint (not ICP limitation). Source: HALCON Op.Ref 13.0.4 + MVTec docs; MDPI app10155379; PMC12349045.",
+      "rival": "Feature-descriptor ICP (FPFH+RANSAC pre-alignment, then fine ICP): achieves 0.044 m accuracy on large scans (industrial parts, 18-set LiDAR) in 424s wall-clock. Advantage: robust to 99% outliers (TEASER beats RANSAC at high outlier ratios). Disadvantage: FPFH slower (~350s+ for registration alone per feature papers). HALCON ICP + fit_primitives sphere/plane constraints: hybrid approach (sketch: ArUco backbone translation-only + frozen per-view + plane/cylinder geometry gates) reported in local memory as production safeguard but NOT benchmarked vs open competitors.",
+      "lakatos_role": "hard_core",
+      "novel": false,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/13/en/register_object_model_3d_pair.html",
+        "https://www.mvtec.com/doc/halcon/13/en/register_object_model_3d_global.html",
+        "https://doi.org/10.3390/app10155379",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC12349045/",
+        "https://arxiv.org/pdf/2104.09133",
+        "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5580094/",
+        "https://www.mathworks.com/help/vision/ref/pcregistericp.html",
+        "https://www.mdpi.com/1424-8220/25/15/4748"
+      ],
+      "_id": "F"
+    },
+    {
+      "axis": "HALCON 3D dimensional metrology for industrial car-part defect detection",
+      "method": "distance_object_model_3d (signed distance to mesh) + frozen multi-view calibration with per-lot z-correction",
+      "how_it_works": "HALCON distance_object_model_3d computes per-point signed distance from scan points to CAD mesh surface (trimesh, not point-cloud NN floor). After fixed 20-view bundle calibration (robot grid rotation-locked, translation-only ICP), per-lot z-layer correction re-solves a single constant z-offset per view from seam metric (systematic bias). CAD alignment is global 1-pose (no per-view 6-DOF drift). Defect detection measures interior mesh-exact residual (footprint masked, edge >20mm removed). Dimensional gates: z-systematic bias (0.08mm max), cross-view XY spread (0.25mm p50), washer height ring-fit (step tolerance ±0.5mm observed +0.83mm). Frozen model prevents collapse: free ICP → 876mm (2.35m→0.87m collapse); translation-only frozen → 122mm Z stable.",
+      "prediction": "Multi-view frozen HALCON calibration + per-lot z-refresh achieves interior mesh-exact median residual ≤ 0.89 mm (±σ field-σ 0.089mm bias) on out-of-sample part_375 lots 46-lot unseen validation, with seam gate 31/31 pairs &lt;0.1mm systematic and cross-view washer coordinate spread p50 ≤ 0.25mm, preventing defect absorption from non-rigid warping.",
+      "measured": "VFEZ0050 out-of-sample validation (never-before-seen part_375 lot, 20 views, 8.3M points): interior mesh-exact median 0.887mm (in-sample 0.899mm, ±1.3% transfer), systematic seam gate 31/31 PASS (bias p50 -0.005mm, max 0.079mm), cross-view XY (0.25mm p50 0.32mm). Measured per consumer_a/vision3d_test consumer_b/output/optimal_registration/VFEZ0049_qc.json &amp; VFEZ0050_OOS_REPLAY_VERDICT.md. Between-session repeatability floor 0.89mm (inter-lot R&amp;R gate). Source: consumer_b/ICP_REGISTRATION_MASTER.md §0,§3.3,§9.",
+      "rival": "Free 6-DOF multi-view ICP with HALCON register_global (per-view rotation free, no grid lock): produces 876mm X-axis collapse (2353mm→876mm, Z-flip 694mm), seam 0.928→2.783mm (×3.0 worse), yaw errors 82.3° max per-view (§3.1). Learning-based rival: GDRNPP synthetic-trained 6D pose on part_375 recalls real data 0% (ADD p50 1354mm failure, deferred AD_BpcLearningDeferred_20260609). Classical rival: point-to-plane ICP (assumes local planarity, fails near creases on flat periodic surfaces); seam blind to 5.2mm in-plane slip on coplanar geometry (condition number 6899×, null-space 3/6 DOF unobservable §1.2 Hessian analysis).",
+      "lakatos_role": "hard_core",
+      "novel": true,
+      "confidence": "HIGH",
+      "sources": [
+        "consumer_b/ICP_REGISTRATION_MASTER.md (2026-06-10, verified across 12/14 load-bearing claims)",
+        "consumer_b/output/optimal_registration/VFEZ0049/VFEZ0049_qc.json (measured mesh-exact 0.8985mm, marker RMS 0.423mm, seam 0.905mm)",
+        "consumer_b/output/final/v79_vfez0050_oos_replay/VFEZ0050_OOS_REPLAY_VERDICT_20260610.md (OOS validation 31/31 gate, 0.887mm)",
+        "consumer_a/services/inspection/src/adapters/halcon/real_client.py (HALCON SDK wrapper, distance_object_model_3d L23-24, 60× scipy speedup claim)",
+        "consumer_b/PROM15_icp_pathology_solutions_20260610/finding_*.json (A1-A4 Hessian/Landscape/Drift/As-built null-space proofs, metric contamination analysis)",
+        "CLAUDE.md §A 'always-on rules' UD_BPC_UseHalconLibsNotAdHocFunctions_20260615 (domain governance)",
+        "vision3d_test SESSION_LOG.md (46-lot field validation, 2026-06-17 production measure_lot serving verified)"
+      ],
+      "_id": "G"
+    },
+    {
+      "axis": "HALCON Surface Match + PPF 6D pose registration vs Open3D/PCL classical registration for automotive dimensional metrology",
+      "method": "HALCON Surface Match (find_surface_model) + Point Pair Features (PPF) voting with frozen per-view geometry and Kabsch multi-view bundle adjustment via ArUco markers",
+      "how_it_works": "Surface Match creates 3D model from CAD; PPF voting compares local geometric descriptors (radius, angle) between model and scene point pairs to compute pose candidates. Multi-view registration uses Kabsch least-squares on ArUco marker consensus with MAD outlier rejection. Per-view ICP avoided (frozen). Deterministic, verified for sub-0.5mm accuracy.",
+      "prediction": "HALCON Surface Match achieves XY-translation error < 0.5 mm and Z-height repeatability < 0.2 mm (1-sigma) on automotive assemblies (part_375, 128-feature inspection) over 100+ cycles with frozen calibration, >4 ArUco markers/view, >95% finite-pixel ratio in 5x5 patches.",
+      "measured": "consumer_b production (VFEZ0001-0049, acme-1 consumer_a): frozen ArUco seam metric 1.026 mm median, marker RMS 0.27 mm/edge post-Kabsch over 20-view ZDF (Zivid MR60). MVTec case study (Automation Assembly Tech) claims 1:10,000 linearity (0.1 mm on 1000 mm part).",
+      "rival": "Open3D point-to-plane ICP: 38-65 mm translation error on academic LiDAR benchmarks (PMC stop-and-go dataset); raw ICP converges to local minima without marker priors. DeepICP worse angular error than G-ICP on KITTI. PPFNet (learning-based) F1=0.667-0.895 on bin-picking but untrained on car parts.",
+      "lakatos_role": "hard_core",
+      "novel": true,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/2405/en/toc_3dmatching.html",
+        "https://www.mvtec.com/knowledge-base/developers-corner/article/improve-your-surface-based-matching-with-two-helpful-features",
+        "https://www.mvtec.com/success-stories-list/detail/3d-calibration-for-inspection",
+        "https://arxiv.org/pdf/1903.02908",
+        "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6359503/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC10781267/",
+        "https://arxiv.org/pdf/2405.03314",
+        "https://www.mdpi.com/1424-8220/25/15/4748",
+        "<WORKSPACE>/vision3d_test/consumer_b/ICP_REGISTRATION_MASTER.md",
+        "<WORKSPACE>/vision3d_test/consumer_b/PROM15_icp_pathology_solutions_20260610/E_p5-xy-accuracy-metric.md"
+      ],
+      "_id": "H"
+    },
+    {
+      "axis": "6DoF pose estimation via deep-learning fusion (RGB-D) vs classical HALCON point-pair features",
+      "method": "DenseFusion: Iterative Dense Fusion Network for 6D Object Pose Estimation",
+      "how_it_works": "Heterogeneous CNN pipeline: RGB stream processed by ResNet encoder → pixel-wise appearance embedding; depth stream via PointNet++ on point cloud → geometric embedding. Dense fusion network concatenates embeddings at pixel level, iteratively refines pose via voting regression on observed points + ICP alignment loop. Fuses learned appearance + geometry for robustness to occlusion and noise.",
+      "prediction": "DenseFusion achieves ADD-S &lt; 2cm on YCB-Video at 95.30% accuracy (metric: percentage of poses within 2cm average closest-point error), outperforming HALCON PPF+ICP baselines by 3.5%, with 200x faster inference than sequential ICP refinement.",
+      "measured": "YCB-Video benchmark: ADD-S (2cm) = 95.30%, ADD-S AUC = 91.20. Source: Wang et al., DenseFusion: 6D Object Pose Estimation by Iterative Dense Fusion (CVPR 2019, https://arxiv.org/pdf/1901.04780). Real industrial automotive parts test: precision/recall near-optimal for simple parts; degrades on complex antenna geometry under erroneous depth (Krüger et al., 2024, arXiv:2309.14265).",
+      "rival": "HALCON PPF (Point Pair Feature) registration: ~90% accuracy on YCB-like structured objects, slower (10-100s full cycle vs &lt;1s DenseFusion), but superior stability and precision under depth noise and low texture. Classical ICP-only: ~91% ADD-S on YCB-Video without learned features (baseline comparison in DenseFusion paper).",
+      "lakatos_role": "rival_programme",
+      "novel": true,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://arxiv.org/pdf/1901.04780",
+        "https://arxiv.org/abs/2011.13005",
+        "https://arxiv.org/pdf/2011.13005",
+        "https://arxiv.org/pdf/1808.10322",
+        "https://arxiv.org/html/2405.03314",
+        "https://arxiv.org/pdf/2004.11540"
+      ],
+      "_id": "I"
+    },
+    {
+      "axis": "J: Benchmarks & datasets (measured ground truth)",
+      "method": "HALCON find_surface_model + refine_surface_model_pose (Point Pair Feature PPF)",
+      "how_it_works": "HALCON surface-based matching implements PPF (point pair features) on 3D CAD models. For each scene point pair, computes orientation descriptors and looks up matching model pairs in a hash table. Returns pose via least-squares refinement in 3D that minimizes distances between model/scene correspondences. Frozen per-view registration avoids multi-view ICP collapse.",
+      "prediction": "HALCON refine_surface_model_pose achieves ADD pose error < 0.1% of object diameter on industrial metallic parts, with >95% recognition rate on texture-less bin-picking tasks (vs 57% baseline PPF, deep learning ~96% on YCB)",
+      "measured": "PPF-MEAM real-world bin-picking: 97.2% recognition rate (vs 57% standard PPF), 95.2% gripper success over 63 trials. HALCON documented: 0.1% model-size tolerance (refine_surface_model_pose). LineMOD benchmark: PPF-Net 99.6% (comparable to MegaPose 99.6%, DFTr 99.7%). Source: PMC6111311, HALCON refine_surface_model_pose v12-17 docs",
+      "rival": "Deep learning (DenseFusion, DPOD): ADD-S ~96-98% YCB-Video; CNN+6D trained on RGB-D. Learned methods: GPU-heavy, require large training datasets. HALCON: CPU-fast (0.9s/scene), struggles with specular reflections on symmetric objects vs learned methods",
+      "lakatos_role": "hard_core",
+      "novel": true,
+      "confidence": "MEDIUM",
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC6111311/",
+        "https://www.mvtec.com/doc/halcon/1712/en/refine_surface_model_pose.html",
+        "https://www.mvtec.com/knowledge-base/developers-corner/article/improve-your-surface-based-matching-with-two-helpful-features",
+        "https://arxiv.org/pdf/2104.02527",
+        "https://www.mdpi.com/1099-4300/26/12/1022"
+      ],
+      "_id": "J"
+    },
+    {
+      "axis": "GICP multiview collapse on planar + periodic parts via rank deficiency + aliasing",
+      "method": "frozen_transform_translation_only_icp_with_aruco_backbone",
+      "how_it_works": "Lock 6-DOF robot grid-camera poses to eliminate rotation DOF (~0 error). Per-view translate-only cloud alignment (3 DOF) via point-to-point Kabsch+puzzle solver. Z-warp per-view fit on seams to absorb as-built surface deviation. No free multi-view GICP — collapse root is null-space slip on planar Hessian (3/6 observable, yaw λ=1.45e-4, condition 6899).",
+      "prediction": "Frozen translation-only ICP on part_375 battery tray: interior mesh-exact error < 1.0 mm (target 0.90 mm), seam Z-bias gate 31/31 PASS @ 0.1 mm threshold, cross-view XY spread p50 < 0.32 mm, on unseen VFEZ0050 lot.",
+      "measured": "VFEZ0050 OOS validation: interior 0.887 mm (CAD mesh signed-distance, vs 0.954 mm in-sample VFEZ0040), seam systematic gate 31/31 PASS (bias max 0.079 mm), Z-warp transfer confirmed (13→31/31 after z-refresh). E2E processing 102 sec / 20 views × 8.27M pts. Source: <WORKSPACE>/vision3d_test/consumer_b/ICP_REGISTRATION_MASTER.md §0 + VFEZ0050_OOS_REPLAY_VERDICT_20260610.md.",
+      "rival": "Free 6-DOF GICP (small_gicp VGICP backend in consumer_a multiview_icp.py): 2353 mm → 876 mm collapse (footprint extent), seam ×3.0 worse (0.93→2.78 mm), max per-view rotation 82.3° unphysical, fails on periodic 18 mm pocket aliasing + 1.6 mm as-built CAD gap.",
+      "lakatos_role": "hard_core",
+      "novel": true,
+      "confidence": "HIGH",
+      "sources": [
+        "https://arxiv.org/pdf/2003.12841",
+        "https://staff.aist.go.jp/shuji.oishi/assets/papers/preprint/VoxelGICP_ICRA2021.pdf",
+        "https://github.com/koide3/small_gicp",
+        "https://bop.felk.cvut.cz/datasets/",
+        "https://www.numberanalytics.com/blog/ultimate-guide-icp-algorithm-metrology-inspection",
+        "<WORKSPACE>/vision3d_test/consumer_b/ICP_REGISTRATION_MASTER.md",
+        "<WORKSPACE>/consumer_a/consumer_a_core/domain/multiview_icp.py"
+      ],
+      "_id": "K"
+    },
+    {
+      "axis": "Photogrammetry / SfM & fiducial backbone",
+      "method": "ArUco+ChArUco fiducial-frozen-backbone triangulation",
+      "how_it_works": "Calibrate intrinsic + extrinsic camera parameters via ChArUco subpixel corner detection (reprojection error <0.4px). Freeze camera poses → detect ArUco fiducials in N views via HALCON find_marks_and_pose-equivalent. Use linear triangulation (calibrated epipolar geometry, Essential matrix) to compute 3D fiducial positions. Bundle adjust only points, not camera parameters (already frozen from calibration board). Translation-only object pose refinement via fixed rotation + translational degrees of freedom only. Avoids rank-deficient free 6DoF collapse on planar/low-texture industrial parts.",
+      "prediction": "ArUco+frozen-backbone 3-view industrial part_375 car part inspection achieves XY positioning <1.0 mm (P95) and Z (depth) ≤2.5 mm when calibration error <0.3 px and baseline ≥150 mm, measured on symmetric multi-feature parts like washers+pockets vs baseline GICP free 6DoF collapse on flat planes.",
+      "measured": "ChArUco reprojection error 0.28–0.37 px (real calibration, 20+ images, <1.32 mm extrinsic translation error per CMU Daftry 2013). Laser triangulation subpixel (4-emitter, curve-fit) achieves ±7 µm repeatability, 0.13 mm expanded uncertainty in controlled lab (PMC5855031). Industrial RGB-D (6× Kinect calibration, ArUco retroreflective, ICP refinement) achieves 30 mm @ 9.45 m distance (PMC6479303). AprilTag single-marker ±0.63 mm translation at close range, degrading to 17.34 mm at far range (MDPI 2020). BOP dataset (8-dataset unified 6D pose) uses τ=20 mm translation tolerance; automotive body-in-white achieves 10° rotation, 14% object-size translation error with HALCON find_surface_model (survey paper 2021). Multi-view stereo +bundle adjustment (MVS+BA) achieves 0.075 mm (360° closed-form) or <1 mm for ship shell plates (ship plate papers, Sensors 2019).",
+      "rival": "Free 6DoF GICP (no frozen pose). Generalized-ICP with covariance plane-to-plane registration collapses on rank-deficient (coplanar feature, flat washers, low-texture pockets) multi-view merges: null space yaw unobservable. GICP consumer_b production measured 83.9 s merge on 21 views, failed singular-transform propagation, requiring manual RecipeV2 fallthrough (ooptdd audit 2026-06-17, MEMORY.md entry 2026-06-17 GICP collapse root). Survives features but trades stability.",
+      "lakatos_role": "hard_core",
+      "novel": true,
+      "confidence": "HIGH",
+      "sources": [
+        "https://www.mvtec.com/doc/halcon/12/en/find_marks_and_pose.html",
+        "https://arxiv.org/pdf/1903.09115",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC5855031/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC6479303/",
+        "https://www.mdpi.com/1424-8220/20/17/4825",
+        "https://bop.felk.cvut.cz/datasets/",
+        "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6359503/",
+        "https://calibvision.com/blog/charuco-camera-calibration-boards-complete-guide-best-practices-for-2025/",
+        "https://arxiv.org/pdf/2409.19811",
+        "https://journals.sagepub.com/doi/10.1177/00202940231193022",
+        "https://www.researchgate.net/publication/392223058_Enhanced_Real_Time_Camera_Pose_Estimation_Using_ArUco_Markers_in_ROS_Based_Robotic_Systems"
+      ],
+      "_id": "L"
+    }
+  ]
+}
