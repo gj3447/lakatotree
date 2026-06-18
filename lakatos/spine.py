@@ -48,7 +48,14 @@ def reconcile_verdict(metric_verdict: str, lakatos_result=None) -> dict:
     (hard_core 위반·excess content 부재 = degenerating, 미완 = conditional). 증거 없으면 unverified.
     """
     if metric_verdict != 'progressive':
-        return {'verdict': metric_verdict, 'lakatos': 'n/a', 'status': 'metric_decided', 'reasons': ()}
+        # 메트릭 비진보면 metric 이 verdict 를 결정(개선 없으면 진보 아님). 단 질적 진단을 *버리지 않는다*
+        # (audit qual-fidelity bug fix 2026-06-18): 전엔 lakatos='n/a' 로 단락해 partial/equivalent/rejected
+        # 노드의 hard_core 위반·퇴행 belt 신호가 조용히 사라졌다. verdict 는 안 바꾸고 질적 진단을 동봉.
+        out = {'verdict': metric_verdict, 'lakatos': 'n/a', 'status': 'metric_decided', 'reasons': ()}
+        if lakatos_result is not None:
+            out['lakatos'] = lakatos_result.verdict.value
+            out['qualitative_reasons'] = tuple(lakatos_result.reasons)
+        return out
     if lakatos_result is None:
         return {'verdict': 'progressive', 'lakatos': 'unverified', 'status': 'qualitative_unverified',
                 'reasons': ('lakatos_evidence_missing',)}
@@ -68,7 +75,7 @@ def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None
     if pnr_appraisal is None:
         return base
     pv = pnr_appraisal.verdict
-    if pv in ('degenerating', 'withdrawn'):   # 변증법 우선 강등 (안 배움/철회)
+    if pv in ('degenerating', 'withdrawn', 'different_programme'):   # 변증법 우선 강등 (안 배움/철회/핵이탈)
         return {'verdict': pv, 'lakatos': base.get('lakatos', 'n/a'),
                 'status': 'dialectic_overrides', 'pnr': pv,
                 'ad_hoc': pnr_appraisal.ad_hoc, 'reasons': tuple(pnr_appraisal.reasons)}

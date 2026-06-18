@@ -15,9 +15,9 @@ def test_metric_progressive_plus_good_lakatos_stays_progressive():
     r = reconcile_verdict('progressive', LakatosGate.evaluate(GOOD))
     assert r['verdict'] == 'progressive' and r['status'] == 'reconciled'
 
-def test_metric_progressive_but_hardcore_violated_downgrades():   # 핵심: 질적 게이트가 메트릭 진보를 강등
+def test_metric_progressive_but_hardcore_violated_is_different_programme():   # AXIS-CORR: 핵 이탈=다른 프로그램
     r = reconcile_verdict('progressive', LakatosGate.evaluate(HARDCORE_VIOLATED))
-    assert r['verdict'] == 'degenerating' and 'hard_core_preserved' in r['reasons']
+    assert r['verdict'] == 'different_programme' and 'hard_core_violated' in r['reasons']
 
 def test_metric_progressive_incomplete_conditional():
     r = reconcile_verdict('progressive', LakatosGate.evaluate(INCOMPLETE))
@@ -31,6 +31,13 @@ def test_missing_lakatos_evidence_flags_unverified():   # 정직: 질적 미검�
 def test_metric_not_progressive_governs():   # 메트릭 비진보는 질적 무관하게 그대로
     r = reconcile_verdict('partial', LakatosGate.evaluate(GOOD))
     assert r['verdict'] == 'partial'
+
+def test_metric_nonprogressive_surfaces_qualitative_diagnosis():
+    # audit qual-fidelity bug fix: 비진보 metric 이어도 질적 진단(hard_core 위반 등)을 버리지 않는다
+    r = reconcile_verdict('partial', LakatosGate.evaluate(HARDCORE_VIOLATED))
+    assert r['verdict'] == 'partial'                 # metric 이 verdict 결정(개선 없으면 진보 아님)
+    assert r['lakatos'] == 'different_programme'      # 질적 진단은 동봉 — 전엔 'n/a' 로 사라졌음
+    assert any('hard_core' in q for q in r['qualitative_reasons'])
 
 def test_promotion_decision_composes_all_gates():
     ok, reasons = promotion_decision(scripted_verdict='progressive', stands=True,

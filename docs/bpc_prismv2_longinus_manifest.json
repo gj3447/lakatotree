@@ -144,12 +144,12 @@
   "lakatotree_bindings": [
     {
       "sourceId": "LakatosGate.evaluate",
-      "sourcePath": "lakatos/engine.py:533",
+      "sourcePath": "lakatos/engine.py:534",
       "purpose": "progressive_or_conditional_gate_for_bpc_segmentation_branch"
     },
     {
       "sourceId": "LineageReplayGate.evaluate",
-      "sourcePath": "lakatos/engine.py:684",
+      "sourcePath": "lakatos/engine.py:689",
       "purpose": "zdf_to_masks_to_result_replay_gate"
     },
     {

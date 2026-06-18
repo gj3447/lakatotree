@@ -115,11 +115,12 @@ def test_proofs_and_refutations_requires_proof_generated_concept_for_full_progre
 
 
 # ── 음의 휴리스틱: hard core 위반 = 다른 프로그램 ─────────────────────
-def test_hard_core_violation_is_degenerating_regardless():
-    # 보조정리 통합 + 내용 다 있어도 hard core 치면 퇴행(다른 프로그램)
+def test_hard_core_violation_is_different_programme():
+    # AXIS-CORR (audit qual-fidelity): 보조정리 통합 + 내용 다 있어도 hard core 치면
+    # *다른 프로그램*(정체성 축) — degenerating(belt 내용-비진보, 진보 축)이 아님.
     a = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
                           novel_corroborated=True, hard_core_preserved=False)
-    assert a.verdict == 'degenerating'
+    assert a.verdict == 'different_programme'
     assert any('hard_core' in r for r in a.reasons)
 
 

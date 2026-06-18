@@ -5,8 +5,10 @@
 
 ★4-way 판정(나생문 라카토스-충실도 후 — 2-way 는 라카토스 곡해였음):
   - withdrawn      : surrender(추측 철회) — 진보/퇴행 축 밖
+  - different_programme : hard core 위반(음의 휴리스틱) — 핵을 치면 *다른 프로그램*으로 떠난 것.
+                     진보/퇴행 축이 아니라 정체성 축 (AXIS-CORR: 전엔 degenerating 으로 곡해).
   - degenerating   : 안 배움(monster-barring/adjustment, 조각적 exception-barring) ∨ 무내용(ad hoc₁)
-                     ∨ 휴리스틱 위배(ad hoc₃) ∨ hard core 위반(음의 휴리스틱)
+                     ∨ 휴리스틱 위배(ad hoc₃)
   - conditional    : *배웠으나* 아직 진보 미확정 — ad hoc₂(초과내용 있으나 미확증 = 이론적 진보·경험적 대기)
                      또는 휴리스틱 정신 미검증. 라카토스의 '이론적 진보 ≠ 경험적 진보' 구분.
   - progressive    : 배움 + 초과내용 + 확증 + 휴리스틱 정합 (PnR 성숙법은 증명-생성 개념까지)
@@ -184,7 +186,7 @@ def _appraise_core(response: Response, excess_content: bool, novel_corroborated:
 
     순서(나생문 D1: surrender 가 hard_core 보다 먼저):
       1. surrender → withdrawn (추측 철회 — hard_core 무관).
-      2. hard_core 위반 → degenerating (음의 휴리스틱: 핵을 치면 다른 프로그램).
+      2. hard_core 위반 → different_programme (음의 휴리스틱: 핵을 치면 다른 프로그램 — 정체성 축, 퇴행 아님).
       3. monster-barring/adjustment → degenerating (반례 진지하게 안 받음 = 안 배움).
       4. exception-barring → 전략적 후퇴(초과내용 ∧ in_spirit=True)면 배움→ad hoc 평가, 아니면 조각적=degenerating.
       5. lemma-incorporation/PnR → 배움 → ad hoc 평가(progressive/conditional/degenerating).
@@ -193,8 +195,10 @@ def _appraise_core(response: Response, excess_content: bool, novel_corroborated:
     if response == Response.SURRENDER:
         return PnRAppraisal('withdrawn', False, 'n/a', direction, ('conjecture_surrendered',))
     if not hard_core_preserved:
-        return PnRAppraisal('degenerating', False, 'n/a', direction,
-                            ('hard_core_violated: 음의 휴리스틱 위반 — 다른 프로그램',))
+        # AXIS-CORR (audit qual-fidelity): 핵을 치면 진보/퇴행이 아니라 *다른 프로그램*으로 떠난 것
+        # (정체성 축). degenerating(belt 내용-비진보, 진보 축)과 구분 — 안 그러면 MSRP 곡해.
+        return PnRAppraisal('different_programme', False, 'n/a', direction,
+                            ('hard_core_violated: 음의 휴리스틱 위반 — 다른 프로그램(정체성 축, 퇴행 아님)',))
     if response in _NEVER_LEARNS:
         return PnRAppraisal('degenerating', False, 'n/a', direction,
                             (f'{response.value}: 반례 재정의/재해석으로 회피 — 안 배움',))
