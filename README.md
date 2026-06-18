@@ -48,6 +48,8 @@ cd formal && lake build      # 12 theorems, sorry=0
 | `progressive_requires_novel` | progressive ⟹ a corroborated **novel** prediction | `judge.py` (F-CON-3: text alone ≠ novel) |
 | `progressive_requires_improved` | progressive ⟹ real improvement past the noise band | `judge.py` |
 | `no_novel_no_progressive` | improvement *without* novelty caps at `partial` (Lakatos's ad-hoc patch) | `judge.py` |
+| `judge_total` | the verdict is total/exhaustive over the 4 outcomes (closed-world; nothing falls through) | `judge.py` |
+| `rung_is_receipt` / `progressive_rung_is_novel` | a rung's verdict *is* the scorer's output, and a progressive rung carries novelty | `Rung` + `judge.py` |
 | `rung_verdict_unique` | one verdict per evidence — **no second, negotiated re-score** | server `submit_test_result` lock |
 | `reconfirm_idempotent` | re-confirming the same target adds nothing (use-novelty) | `bayes.branch_credence` content-dedup |
 | `confirm_order_independent` | credence is independent of confirmation order (Bayesian coherence) | `bayes.branch_credence` |
@@ -104,37 +106,47 @@ hypothesis was falsified and pruned — the project applies its own method to it
 ---
 
 ## Module map
+Pure modules (zero I/O, same ruling anywhere — theory = `THEORY.md`) live under `lakatos/`,
+grouped by role (subpackages: `verdict/` · `quant/` · `io/` · `programme/`):
+
+**Verdict kernel** — the scorer (the modeled subset is in `formal/Pidna.lean`)
+- `judge` [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
+- `verdicts` verdict-vocabulary single source of truth (registry)
+- `pnr` [Proofs & Refutations] counterexample-response dialectic (monster-barring … lemma-incorporation)
+- `spine` `dialectical_verdict` — reconcile metric + qualitative + PnR into one verdict
+- `promote` fail-closed CANONICAL allowlist (deny-by-default promotion gate)
+- `engine` sparse research frame — possibilities / event log / credence promotion / reproducibility contract
+
+**Quantitative** [`quant/`]
+- `bayes` branch credence = posterior over verdict sequence; use-novelty dedup; eigentrust source weighting
+- `laudan` problem balance / PSR / comparative score / `should_abandon` (3 rules)
+- `metrics` tree metrics (progress / rejection / degeneration / Bayes / fertility + Laudan)
+- `multiplicity` BH/FDR + Bonferroni family-level false-progressive screen
+- `fertility` novel-prediction hit record — science = predictive power, `nobel_grade`
+- `calibrate` Brier/log/ECE proper scoring — predictive honesty
+- `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
+
+**Exploration & meta-policy**
+- `explore` bandit UCB + VoI — frontier question priority (which branch next)
+- `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`: ABANDON/PUSH/PROBE/PRIORITIZE)
+- `stack` inter-layer explicit vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `leaderboard` Pareto+Borda
+- `kuhn` Lakatos–Zahar supersession (shift = human agenda) · `agm` AGM/Levi hard-core revision (PROTECTED default)
+
+**Evidence, provenance & I/O** [`io/`]
+- `prov` W3C PROV-O triples — verifiable lineage + replay command · `lineage` manifest + env fingerprint + root-replay
+- `rebuild` "receipts not claims" rebuild-from-raw · `trust` TrustRank/EigenTrust over the observation graph
+- `claim` ClaimStanding (upper/lower-realm confidence + blocking reasons) · `argue` Dung AF grounded-extension justification
+- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export · `world_gates` G-Web/G-WorldAction
+- `certify` 5-gate AND certificate (verifiable lineage bundle)
+
+**Surface**: `cli` (`python -m lakatos.cli`) · `mcp_server` (MCP tools) · `harness`/`harness_run` (ports & adapters).
+
 ```
-lakatos/            pure verdict/metric modules (zero I/O, same ruling anywhere) — theory = THEORY.md
-  judge.py          [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
-  engine.py         sparse research frame — possibilities / event log / credence promotion / reproducibility contract
-  heuristic.py      [MSRP heuristics] negative (hard-core protection) + positive (generate_moves: ABANDON/PUSH/PROBE/PRIORITIZE)
-  bayes.py          [Bayes] branch credence = posterior over verdict sequence; use-novelty dedup; eigentrust source weighting
-  laudan.py         [Laudan] problem balance / PSR / comparative score / should_abandon (3 rules)
-  explore.py        [exploration] bandit UCB + VoI — frontier question priority (which branch next)
-  prov.py           [provenance] W3C PROV-O triples — verifiable lineage + replay command
-  fertility.py      [theoretical fertility] novel-prediction hit record — science = predictive power, nobel_grade
-  trust.py          [web trust] TrustRank/EigenTrust over the observation graph → Bayes weighting (P6 wired)
-  adapters.py       external lineage adapter — OpenLineage/DVC/PROV plain-dict export
-  claim.py          ClaimStanding — upper/lower-realm confidence + foundation/lineage/doubt blocking reasons
-  argue.py          [argumentation] Dung AF — human+agent doubt/rebuttal, grounded-extension justification (stands)
-  calibrate.py      [calibration] Brier/log/ECE proper scoring — predictive honesty
-  stack.py          [meta-rule] inter-layer explicit vote + 2/3 quorum (gap3)
-  agm.py            [belief revision] AGM/Levi hard-core revision — PROTECTED by default, entrenchment policy
-  lifecycle.py      [meta-termination] harvest/diverge/extinct + regret
-  leaderboard.py    [comparison] Pareto+Borda multi-criteria — no single-score reduction (P2)
-  kuhn.py           [programme replacement] Lakatos–Zahar supersession — shift is a human agenda (gap7)
-  certify.py        [certification] 5-gate AND certificate — verifiable lineage bundle (P2)
-  metrics.py        tree metrics (progress rate / rejection rate / degeneration / Bayes / fertility + Laudan)
-  lineage.py        data lineage — manifest + env fingerprint + root-replay verification. LINEAGE.md
-  harness.py        harness — upper/lower/human/agent one cycle (ports & adapters). HARNESS.md
-  cli.py            CLI (python -m lakatos.cli)
-  mcp_server.py     MCP tools (Claude/Codex operate the tree)
-formal/             ★Lean 4 formal kernel — machine-checked verdict theory (lake build, sorry=0)
-server/             FastAPI shell (:55170) — Neo4j (graph SoT) + PG (append-only history) + Mongo (artifacts)
-judges/             scoring scripts (result file → metric, LLM-independent)
-examples/           research-programme definitions; euler_polyhedron_programme.py = engine-generated verdicts (no hand-typed verdict)
-tests/              verdict/engine/server-contract TDD — rule changes start from RED
+formal/    ★Lean 4 formal kernel — machine-checked verdict theory (lake build, sorry=0)
+server/    FastAPI shell (:55170) — Neo4j (graph SoT) + PG (append-only history) + Mongo (artifacts)
+judges/    scoring scripts (result file → metric, LLM-independent)
+examples/  research programmes; euler_polyhedron_programme.py = engine-generated verdicts (no hand-typed verdict)
+tests/     verdict/engine/server-contract TDD — rule changes start from RED
 ```
 
 ## Build & verify

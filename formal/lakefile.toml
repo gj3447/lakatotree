@@ -1,0 +1,8 @@
+name = "pidna"
+defaultTargets = ["Pidna"]
+
+# PIDNA formal kernel — core Lean 4 only (no Mathlib), so `lake build` is offline + fast.
+# Ground-truth gate for LakatoTree's verdict theory: error=0, sorry=0.
+
+[[lean_lib]]
+name = "Pidna"
