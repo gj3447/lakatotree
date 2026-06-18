@@ -63,9 +63,52 @@ euler/HALCON-3D 도그푸딩은 좋은 신호지만 "이 엔진을 통과한 연
 - [x] (P0) `requirements.txt`에 `httpx`, `mcp`, `lxml`, `rdflib` 추가 — **이 커밋에서 수정**
 - [x] (P0) 의존성 버전 핀(`==`) — **이 커밋에서 수정**. clean venv + `pip install -r requirements.txt`만으로 762 passed 재현 확인
 - [x] (P1) `test_server_architecture` + `test_make_it_real` 인트로스펙션을 `_IncludedRouter` 평탄화 헬퍼로 버전-비결합화 — **이 커밋에서 수정** (7→0 fail)
-- [ ] (P1) clean-container CI로 deps/런타임 드리프트 차단 — *미착수(인프라)*
-- [ ] (P2) README 첫 문단에 Lean 범위 한계 명시 (B-1) — *문서 톤, 저자 판단 영역*
-- [ ] (P2) 각 rigor 층의 "판결 뒤집은 횟수" 지표 노출 (B-3) — *기능 추가, 별도 작업*
+- [x] (P1) clean-container CI로 deps/런타임 드리프트 차단 — **수정**: `.github/workflows/ci.yml` 2-job(engine: lint-imports+pytest@py3.14 / formal: lake build@lean4.27.0)
+- [x] (P2) README 첫 문단에 Lean 범위 한계 명시 (B-1) — **수정**: 오프닝 blockquote 에 "Scope (read this first)" 추가(깊은 "Scope, honestly" 단락은 보존)
+- [x] (P2) 각 rigor 층의 "판결 뒤집은 횟수" 지표 노출 (B-3) — **수정**: `lakatos/programme/flip.py` + `metrics.layer_flips`(반사실적 피벗 정의), 대시보드 렌더, 테스트 6건
+
+---
+
+## E. 2차 작업 — 남은 액션 아이템 구현 (2026-06-18)
+
+### E-1. (P1) clean-container CI
+`.github/workflows/ci.yml` — README "Build & verify" 3대 게이트를 fresh checkout + `requirements.txt` 만으로 강제:
+- **engine** job: `setup-python@3.14` → `pip install -r requirements.txt` → `lint-imports`(정적 먼저) → `pytest`
+- **formal** job: elan 부트스트랩(`lean-toolchain`=v4.27.0) → `cd formal && lake build`
+- `import-linter==2.11` 를 `requirements.txt` 에 추가(README 가 `lint-imports` 를 권위 명령으로 명시하나 설치 명세에 없었음).
+
+### E-2. (P2b) 층별 verdict-flip 지표 — `layer_flips`
+**정의(조작적)**: 한 가지(leaf)의 `StackVerdict` 에서 한 층의 표를 빼고 메타규칙을 재계산했을 때
+`decision` 이 바뀌면 그 층이 그 가지의 판결을 *뒤집었다*(반사실적 피벗). 단순 '소수 의견' 휴리스틱은
+정족수 2 하에서 과대계상하므로 기각. 기존 `StackVerdict.votes` + 정족수 규칙만으로 계산(새 저장소·LLM 불필요).
+- **층 배치(.importlinter 준수)**: `quant.metrics` 에 넣으면 `quant→programme` 상향 import 라 lint-imports 위반.
+  → `lakatos/programme/flip.py`(programme 은 quant 를 하향 import 가능)에 두고, 서버 read-model 이음매
+  (`compute_tree_metrics`)에서 1회 합성 → HTTP/CLI/MCP/대시보드 전 surface 가 한 번에 노출.
+- 결과: `metrics.layer_flips = {branches_evaluated, popper/bayes/laudan:{flips,branches}, note}`.
+
+### E-3. (P2a) README B-1
+오프닝 blockquote(라인 13 직후)에 "Scope (read this first)" 1단락 — Lean 은 *모델*을 검증하지 코드가 아님.
+깊은 "Scope, honestly"(formal foundation)는 보존.
+
+### E-4. ⚠ 신규 발견 (A-3) — `lint-imports` 가 clean checkout 에서 깨져 있었다 (이번에 수정)
+CI 를 붙이며 드러난 사실: README 가 권위 명령으로 명시한 `lint-imports` 가 **원본 상태에서 실패**했다.
+- 체인: `lakatos.quant.metrics → lakatos.eureka → lakatos.verdict.promote` (`quant→verdict` 상향).
+- 즉 `lake build`/`pytest` 와 달리 **세 번째 권위 게이트는 통과한 적이 없었다**(requirements.txt 누락과 동류의
+  "선언했으나 성립 안 하는 게이트").
+- **수정**: `eureka` 는 `eureka.py` docstring 과 `.importlinter` 헤더가 **명시적으로 foundation(계약 면제)**
+  로 선언한 모듈이고, 설계상 verdict/quant primitive 를 *합성*한다(promotion_gate 는 metrics 경로에선
+  애초에 호출조차 안 됨 — `require_promotion=False`). 그 문서화된 면제를 `.importlinter` 의 `ignore_imports`
+  로 인코딩(그 한 edge 만). 다른 상향 import 는 여전히 전수 차단. *더 순수한 대안(eureka 의존성 주입)은
+  공개 API 변경 + 광범위 테스트 churn 이라 후속 frontier 로 남김.*
+
+### F. 2차 수정 후 실측 (2026-06-18, this branch)
+| 게이트 | before(원본) | after(this branch) |
+|---|---|---|
+| `lint-imports` | ❌ **broken** (quant→verdict via eureka) | ✅ 1 kept, 0 broken |
+| `pytest tests/ -q` | 762 passed | ✅ **768 passed / 0 failed / 1 skipped** (+flip 테스트 6) |
+| `lake build` | success, sorry=0 | ✅ success, sorry=0 (불변) |
+| clean venv `pip install -r requirements.txt` → lint-imports+pytest | (import-linter 미명세) | ✅ 둘 다 green |
+| `metrics.layer_flips` 노출 | 없음 | ✅ HTTP/CLI/MCP/대시보드 |
 
 ### 수정 후 실측 (2026-06-18, this branch)
 | 항목 | before | after |

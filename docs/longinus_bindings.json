@@ -1555,6 +1555,7 @@
     "span_lakatotree_harness",
     "span_lakatotree_heuristic",
     "span_lakatotree_kuhn",
+    "span_lakatotree_layer_flips",
     "span_lakatotree_leaderboard",
     "span_lakatotree_lifecycle",
     "span_lakatotree_lineage",

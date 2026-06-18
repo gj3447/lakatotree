@@ -11,6 +11,12 @@
 > **Three views of the same system.** Engineering spec = this file. Conceptual model =
 > [`docs/PIDNA.md`](docs/PIDNA.md). Vision/rationale (prose) = [`TOUCH_THE_SKY.md`](TOUCH_THE_SKY.md).
 > Machine-checked theory = [`formal/Pidna.lean`](formal/Pidna.lean) (`lake build`, sorry=0).
+>
+> **Scope (read this first).** The Lean theorems certify the design *model* (`formal/Pidna.lean`),
+> **not** the runtime Python: Lean rules out design errors (e.g. "progressive without novelty",
+> non-commutative credence); `tests/` rule out implementation bugs in `judge.py`/`bayes.py`.
+> "Machine-checked *theory*", not "verified engine" — full account in
+> [Formal foundation → Scope, honestly](#formal-foundation).
 
 ---
 
@@ -159,8 +165,9 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
 ### `programme/` — programme-level / comparative / meta-policy
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip`
 - `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
+- `flip` per-layer verdict-flip metric — counterfactual pivotality: how often each rigor layer (Popper/Bayes/Laudan) actually *changed* the `stack` decision (composes `quant.metrics.branch_inputs` + `stack`; surfaced in `metrics.layer_flips`)
 - `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
 - `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
 

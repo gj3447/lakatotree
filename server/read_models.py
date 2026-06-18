@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from fastapi import HTTPException
 
+from lakatos.programme.flip import layer_flips
 from lakatos.quant.metrics import tree_metrics
 
 
@@ -56,8 +57,14 @@ def load_tree_data(name: str, *, kg: KgQuery) -> dict:
 
 
 def compute_tree_metrics(td: dict) -> dict:
-    """Compute report metrics from a projected tree read model."""
-    return tree_metrics(
+    """Compute report metrics from a projected tree read model.
+
+    `layer_flips` is merged here (not inside `tree_metrics`) on purpose: it lives in
+    `lakatos.programme` and `tree_metrics` lives in `lakatos.quant` — folding it in there
+    would be an upward `quant → programme` import that `.importlinter` forbids. The server
+    read-model is outside the layered contract, so it is the clean seam to compose them.
+    """
+    m = tree_metrics(
         td["nodes"],
         td["frontier"],
         cfg={
@@ -65,4 +72,6 @@ def compute_tree_metrics(td: dict) -> dict:
             "coverage_statement": td.get("coverage_statement") or "",
         },
     )
+    m["layer_flips"] = layer_flips(td["nodes"], td["frontier"])
+    return m
 
