@@ -64,6 +64,35 @@ def reconcile_verdict(metric_verdict: str, lakatos_result=None) -> dict:
             'requires_human': bool(getattr(lakatos_result, 'requires_human_verdict', False))}
 
 
+def reconcile_standing(verdict: str, *, stands: bool, valid_until_rebutted: bool = True) -> dict:
+    """새 반박이 grounded standing 을 깼을 때의 *대칭* 판결 — certify.py:13 의 '자동 철회' 이행.
+
+    승격이 stands 를 *요구*했듯(synthesize_promotion), 비판 등재 후 stands=False 가 되면 CANONICAL 의
+    '현재 최선' 자격을 철회한다(→ former_canonical). 결정론 grounded_extension 사실에만 근거(스코어
+    게이트 승격 아님). 강등은 verdict_source='engine' 으로 인간 행정판결과 구분하며, 반박이 해소돼
+    stands 가 회복되면 별도 인간/승격 경로로 되돌릴 수 있다(영구 기각 아님).
+
+    인간경계 존중(DON'T): `valid_until_rebutted`(승격 시 인간이 설정, schema default True)가
+    - True  → '반박되면 무효'에 *동의*한 노드 → 자동 강등 대상.
+    - False → 인간이 반박-자동무효를 *끈* 노드(더 강한 잠금) → 자동 강등 제외(human_locked).
+    CANONICAL 이 아닌 노드는 자동 강등 대상이 아니다(현재최선 철회만 자동; 일반 노드 stands=False 는
+    standing 진단으로만 노출 — judgement 은 순수 agent/인간 몫).
+
+    반환: {verdict, demoted, reason, [current_best_pointer, verdict_source, standing_broken]}.
+    """
+    if stands:
+        return {'verdict': verdict, 'demoted': False, 'reason': 'stands'}
+    if verdict != 'CANONICAL':
+        return {'verdict': verdict, 'demoted': False, 'reason': 'not_canonical',
+                'standing_broken': True}
+    if not valid_until_rebutted:
+        return {'verdict': verdict, 'demoted': False, 'standing_broken': True,
+                'reason': 'human_locked_not_valid_until_rebutted'}
+    return {'verdict': 'former_canonical', 'demoted': True, 'current_best_pointer': False,
+            'verdict_source': 'engine', 'standing_broken': True,
+            'reason': 'unanswered_rebuttal_breaks_grounded_standing'}
+
+
 def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None' = None,
                         lakatos_result=None) -> dict:
     """judge(메트릭) + 증명과반박 변증법 + LakatosGate 합성 — 라카토스의 심장.
