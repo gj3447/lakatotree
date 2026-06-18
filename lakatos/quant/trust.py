@@ -7,7 +7,7 @@
 """
 
 
-from .grounding import GROUNDED   # T-H-1: damping/alpha 단일 정본(하드코딩 금지 — drift/G5 우회 방지)
+from lakatos.grounding import GROUNDED   # T-H-1: damping/alpha 단일 정본(하드코딩 금지 — drift/G5 우회 방지)
 
 
 def trustrank(graph: dict, seeds: dict, damping: float = GROUNDED['pagerank_damping']['value'],

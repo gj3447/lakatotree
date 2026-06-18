@@ -19,7 +19,7 @@
 import math
 from dataclasses import dataclass
 
-from .grounding import GROUNDED
+from lakatos.grounding import GROUNDED
 
 FDR_Q = GROUNDED['fdr_q']['value']
 

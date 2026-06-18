@@ -12,7 +12,7 @@ cid 는 LAKATOS_TEST_CID env 로 부모 dev-loop 와 공유 가능(없으면 세
 import os
 import uuid
 
-from lakatos import oo_verify
+from lakatos.io import oo_verify
 
 _REPORTS: list = []
 _CID = os.getenv('LAKATOS_TEST_CID') or ('pytest-' + uuid.uuid4().hex[:12])

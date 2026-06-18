@@ -17,9 +17,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Iterable
 
-from .grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(spine 과 공유)
+from lakatos.grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(spine 과 공유)
 
-from .lineage import (
+from lakatos.io.lineage import (
     Derivation,
     by_output,
     rebuild_plan,
@@ -27,7 +27,7 @@ from .lineage import (
     roots,
     stale_inputs,
 )
-from .trust import evidence_weight
+from lakatos.quant.trust import evidence_weight
 
 
 def _clamp01(value: float) -> float:

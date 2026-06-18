@@ -1,9 +1,9 @@
 """P1 lifecycle 종료판정 — 수확/발산/소멸/활성 4분기 + regret 검증."""
-from lakatos.lifecycle import (
+from lakatos.programme.lifecycle import (
     ACTIVE, DIVERGING, EXTINCT, HARVESTING,
     lifecycle_state, regret_nodes,
 )
-from lakatos.stack import evaluate_stack
+from lakatos.programme.stack import evaluate_stack
 
 PROG = {'verdict': 'progressive', 'delta': -0.5, 'noise_band': 0.05}
 REJ = {'verdict': 'rejected', 'delta': 0.5, 'noise_band': 0.05}
@@ -68,8 +68,8 @@ def test_branch_inputs_partial_does_not_mask_diverging():
     """나생문 F1 회귀: recent 윈도우가 전부 partial(NONPROGRESSIVE)이고 progressive 가
     윈도우 밖으로 밀려나면 canonical_improved_recent=False 여야 diverging 조기경보가 산다.
     어댑터(branch_inputs)→소비자(lifecycle_state) 통합 경로를 실제로 관통해 검증."""
-    from lakatos.metrics import branch_inputs
-    from lakatos.stack import evaluate_stack
+    from lakatos.quant.metrics import branch_inputs
+    from lakatos.programme.stack import evaluate_stack
 
     def n(tag, verdict, parent=None, mv=None, base=None, nb=None, qs=None):
         return dict(tag=tag, verdict=verdict, parent=parent,

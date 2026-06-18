@@ -12,7 +12,7 @@ prom32 사이클이 PROGRESSIVE_CONDITIONAL 로 남은 이유 = "automated G-Web
 """
 import re
 
-from .engine import GateResult, BashAct
+from lakatos.engine import GateResult, BashAct
 
 # ── F07: 프롬프트 인젝션/exfiltration 휴리스틱 시그널 ──────────────────────────
 _INJECTION_PATTERNS = [

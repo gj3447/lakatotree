@@ -3,7 +3,7 @@
 """
 import json
 import pytest
-from lakatos.lineage import (
+from lakatos.io.lineage import (
     DatasetManifest,
     Derivation,
     EnvironmentFingerprint,
@@ -70,7 +70,7 @@ def test_cycle_guard():
 
 # === 스크립트 버전 이력 (생산 코드도 중간에 바뀐다) ===
 def test_script_history_tracks_versions():
-    from lakatos.lineage import script_history
+    from lakatos.io.lineage import script_history
     # 생산 스크립트가 수정되면 각 버전이 만든 산출물을 시간순으로 추적
     ds = [
         Derivation('cache://run-A', 'rA', 'extract.py', 'sha_v1', [('raw://lot','raw0')], {}, 'intermediate', 't1'),
@@ -84,7 +84,7 @@ def test_script_history_tracks_versions():
     assert h[0]['first_seen'] < h[1]['first_seen']   # 시간순
 
 def test_script_history_empty():
-    from lakatos.lineage import script_history
+    from lakatos.io.lineage import script_history
     assert script_history([], 'x.py') == []
 
 
@@ -197,7 +197,7 @@ def test_fingerprint_environment_hashes_lock_files_and_selected_env(tmp_path):
 
 def test_reproducibility_gaps_and_plan_consistent_on_cycle():
     # ENGINE-ROB-3: 사이클 = 재현불가(gap) 로 일관 + rebuild_plan 은 ValueError, 둘이 안 어긋남
-    from lakatos.lineage import (reproducibility_gaps, is_reproducible, rebuild_plan,
+    from lakatos.io.lineage import (reproducibility_gaps, is_reproducible, rebuild_plan,
                                  Derivation, by_output)
     import pytest
     a = Derivation('a', 'sa', 'p', 'ps', [('b', 'sb')], kind='final')

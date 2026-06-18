@@ -10,12 +10,12 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
-from lakatos.argue import grounded_extension
+from lakatos.verdict.argue import grounded_extension
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
-from lakatos.judge import NovelTarget, Prediction, PredictionMissing, judge
-from lakatos.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
-from lakatos.prov import prov_triples, replay_command
-from lakatos.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
+from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, judge
+from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
+from lakatos.io.prov import prov_triples, replay_command
+from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.ports import HistoryAppend, KgQuery, KgTx

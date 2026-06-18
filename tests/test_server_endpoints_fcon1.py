@@ -9,8 +9,8 @@ import os
 import pytest
 from fastapi import HTTPException
 
-from lakatos.lineage import Derivation
-from lakatos.adapters import MarquezClientError
+from lakatos.io.lineage import Derivation
+from lakatos.io.adapters import MarquezClientError
 
 
 def load_app():
@@ -60,7 +60,7 @@ def test_marquez_endpoint_502_on_client_error(monkeypatch):
     app = load_app()
     monkeypatch.setenv("MARQUEZ_URL", "http://marquez:5000")
     monkeypatch.setattr(app, "_load_lineage", lambda: ART)
-    from lakatos import marquez_sink
+    from lakatos.io import marquez_sink
     monkeypatch.setattr(marquez_sink, "ship",
                         lambda events, **k: (_ for _ in ()).throw(MarquezClientError("conn refused")))
     with pytest.raises(HTTPException) as e:
@@ -83,7 +83,7 @@ def test_marquez_sends_same_events_as_openlineage_endpoint(monkeypatch):
     monkeypatch.setenv("MARQUEZ_URL", "http://marquez:5000")
     monkeypatch.setattr(app, "_load_lineage", lambda: ART)
     captured = {}
-    from lakatos import marquez_sink
+    from lakatos.io import marquez_sink
     monkeypatch.setattr(marquez_sink, "ship", lambda events, **k: captured.update(events=events) or [{"status": 200}])
     read_events = app.artifact_openlineage("final.json")["events"]   # GET 직렬화
     app.send_artifact_to_marquez("final.json")                       # POST 전송

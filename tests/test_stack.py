@@ -1,7 +1,7 @@
 """gap3 층간 통약불가 메타규칙 — 침묵 OR 제거, 명시 정족수 검증."""
 import pytest
 
-from lakatos.stack import (
+from lakatos.programme.stack import (
     ABANDON, RETAIN, UNDECIDED,
     LayerVote, bayes_vote, evaluate_stack, laudan_vote, popper_vote, stack_verdict,
 )

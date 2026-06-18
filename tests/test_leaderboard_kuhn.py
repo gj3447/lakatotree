@@ -1,10 +1,10 @@
 """P2 리더보드 + gap7 패러다임 전환 — Pareto/Borda 서열과 대체 판정 검증."""
-from lakatos.kuhn import (
+from lakatos.programme.kuhn import (
     CRISIS, NORMAL_SCIENCE, SHIFT_CANDIDATE,
     assess_paradigm, sustained_dominance,
 )
-from lakatos.leaderboard import Competitor, dominates, leaderboard, score_competitor
-from lakatos.lifecycle import ACTIVE, DIVERGING
+from lakatos.programme.leaderboard import Competitor, dominates, leaderboard, score_competitor
+from lakatos.programme.lifecycle import ACTIVE, DIVERGING
 
 PROG = {'verdict': 'progressive', 'delta': -0.5, 'noise_band': 0.05}
 REJ = {'verdict': 'rejected', 'delta': 0.5, 'noise_band': 0.05}

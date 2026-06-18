@@ -117,7 +117,7 @@
     },
     {
       "sourceId": "laudan.unattributed_closures",
-      "file": "lakatos/laudan.py",
+      "file": "lakatos/quant/laudan.py",
       "symbol": "unattributed_closures",
       "kind": "def",
       "line_hint": 45,
@@ -137,7 +137,7 @@
     },
     {
       "sourceId": "agm.demote_canonical",
-      "file": "lakatos/agm.py",
+      "file": "lakatos/programme/agm.py",
       "symbol": "demote_canonical",
       "kind": "def",
       "line_hint": 152,
@@ -147,7 +147,7 @@
     },
     {
       "sourceId": "oo_sink.ship",
-      "file": "lakatos/oo_sink.py",
+      "file": "lakatos/io/oo_sink.py",
       "symbol": "ship",
       "kind": "def",
       "line_hint": 39,
@@ -167,7 +167,7 @@
     },
     {
       "sourceId": "metrics.tree_metrics",
-      "file": "lakatos/metrics.py",
+      "file": "lakatos/quant/metrics.py",
       "symbol": "tree_metrics",
       "kind": "def",
       "line_hint": 74,
@@ -187,7 +187,7 @@
     },
     {
       "sourceId": "oo_verify.verify_trace",
-      "file": "lakatos/oo_verify.py",
+      "file": "lakatos/io/oo_verify.py",
       "symbol": "verify_trace",
       "kind": "def",
       "line_hint": 19,
@@ -197,7 +197,7 @@
     },
     {
       "sourceId": "oo_verify.verify_policy",
-      "file": "lakatos/oo_verify.py",
+      "file": "lakatos/io/oo_verify.py",
       "symbol": "verify_policy",
       "kind": "def",
       "line_hint": 65,
@@ -207,7 +207,7 @@
     },
     {
       "sourceId": "oo_verify.session_finish",
-      "file": "lakatos/oo_verify.py",
+      "file": "lakatos/io/oo_verify.py",
       "symbol": "session_finish",
       "kind": "def",
       "line_hint": 87,
@@ -247,7 +247,7 @@
     },
     {
       "sourceId": "oo_sink.test_outcome_records",
-      "file": "lakatos/oo_sink.py",
+      "file": "lakatos/io/oo_sink.py",
       "symbol": "test_outcome_records",
       "kind": "def",
       "line_hint": 64,
@@ -257,7 +257,7 @@
     },
     {
       "sourceId": "oo_sink.enabled",
-      "file": "lakatos/oo_sink.py",
+      "file": "lakatos/io/oo_sink.py",
       "symbol": "enabled",
       "kind": "def",
       "line_hint": 20,
@@ -667,7 +667,7 @@
     },
     {
       "sourceId": "judge.judge",
-      "file": "lakatos/judge.py",
+      "file": "lakatos/verdict/judge.py",
       "symbol": "judge",
       "kind": "def",
       "line_hint": 65,
@@ -678,7 +678,7 @@
     },
     {
       "sourceId": "judge.Prediction",
-      "file": "lakatos/judge.py",
+      "file": "lakatos/verdict/judge.py",
       "symbol": "Prediction",
       "kind": "class",
       "line_hint": 20,
@@ -689,7 +689,7 @@
     },
     {
       "sourceId": "judge.NovelTarget",
-      "file": "lakatos/judge.py",
+      "file": "lakatos/verdict/judge.py",
       "symbol": "NovelTarget",
       "kind": "class",
       "line_hint": 39,
@@ -700,7 +700,7 @@
     },
     {
       "sourceId": "pnr.appraise_response",
-      "file": "lakatos/pnr.py",
+      "file": "lakatos/verdict/pnr.py",
       "symbol": "appraise_response",
       "kind": "def",
       "line_hint": 163,
@@ -711,7 +711,7 @@
     },
     {
       "sourceId": "pnr.Response",
-      "file": "lakatos/pnr.py",
+      "file": "lakatos/verdict/pnr.py",
       "symbol": "Response",
       "kind": "class",
       "line_hint": 41,
@@ -722,7 +722,7 @@
     },
     {
       "sourceId": "pnr.CounterexampleType",
-      "file": "lakatos/pnr.py",
+      "file": "lakatos/verdict/pnr.py",
       "symbol": "CounterexampleType",
       "kind": "class",
       "line_hint": 32,
@@ -733,7 +733,7 @@
     },
     {
       "sourceId": "pnr.ad_hoc_class",
-      "file": "lakatos/pnr.py",
+      "file": "lakatos/verdict/pnr.py",
       "symbol": "ad_hoc_class",
       "kind": "def",
       "line_hint": 66,
@@ -744,7 +744,7 @@
     },
     {
       "sourceId": "pnr.PositiveHeuristic",
-      "file": "lakatos/pnr.py",
+      "file": "lakatos/verdict/pnr.py",
       "symbol": "PositiveHeuristic",
       "kind": "class",
       "line_hint": 82,
@@ -755,7 +755,7 @@
     },
     {
       "sourceId": "pnr.ProofGeneratedConcept",
-      "file": "lakatos/pnr.py",
+      "file": "lakatos/verdict/pnr.py",
       "symbol": "ProofGeneratedConcept",
       "kind": "class",
       "line_hint": 104,
@@ -766,7 +766,7 @@
     },
     {
       "sourceId": "spine.dialectical_verdict",
-      "file": "lakatos/spine.py",
+      "file": "lakatos/verdict/spine.py",
       "symbol": "dialectical_verdict",
       "kind": "def",
       "line_hint": 60,
@@ -777,7 +777,7 @@
     },
     {
       "sourceId": "spine.reconcile_verdict",
-      "file": "lakatos/spine.py",
+      "file": "lakatos/verdict/spine.py",
       "symbol": "reconcile_verdict",
       "kind": "def",
       "line_hint": 6,
@@ -788,7 +788,7 @@
     },
     {
       "sourceId": "spine.synthesize_promotion",
-      "file": "lakatos/spine.py",
+      "file": "lakatos/verdict/spine.py",
       "symbol": "synthesize_promotion",
       "kind": "def",
       "line_hint": 96,
@@ -799,7 +799,7 @@
     },
     {
       "sourceId": "spine.credibility_from_trust",
-      "file": "lakatos/spine.py",
+      "file": "lakatos/verdict/spine.py",
       "symbol": "credibility_from_trust",
       "kind": "def",
       "line_hint": 19,
@@ -876,7 +876,7 @@
     },
     {
       "sourceId": "certify.certify_claim",
-      "file": "lakatos/certify.py",
+      "file": "lakatos/verdict/certify.py",
       "symbol": "certify_claim",
       "kind": "def",
       "line_hint": 48,
@@ -887,7 +887,7 @@
     },
     {
       "sourceId": "certify.gate_check",
-      "file": "lakatos/certify.py",
+      "file": "lakatos/verdict/certify.py",
       "symbol": "gate_check",
       "kind": "def",
       "line_hint": 40,
@@ -898,7 +898,7 @@
     },
     {
       "sourceId": "certify.Certificate",
-      "file": "lakatos/certify.py",
+      "file": "lakatos/verdict/certify.py",
       "symbol": "Certificate",
       "kind": "class",
       "line_hint": 30,
@@ -909,7 +909,7 @@
     },
     {
       "sourceId": "promote.promotion_gate",
-      "file": "lakatos/promote.py",
+      "file": "lakatos/verdict/promote.py",
       "symbol": "promotion_gate",
       "kind": "def",
       "line_hint": 19,
@@ -920,7 +920,7 @@
     },
     {
       "sourceId": "argue.grounded_extension",
-      "file": "lakatos/argue.py",
+      "file": "lakatos/verdict/argue.py",
       "symbol": "grounded_extension",
       "kind": "def",
       "line_hint": 20,
@@ -997,7 +997,7 @@
     },
     {
       "sourceId": "bayes.bayes_factor",
-      "file": "lakatos/bayes.py",
+      "file": "lakatos/quant/bayes.py",
       "symbol": "bayes_factor",
       "kind": "def",
       "line_hint": 51,
@@ -1008,7 +1008,7 @@
     },
     {
       "sourceId": "bayes.branch_credence",
-      "file": "lakatos/bayes.py",
+      "file": "lakatos/quant/bayes.py",
       "symbol": "branch_credence",
       "kind": "def",
       "line_hint": 63,
@@ -1019,7 +1019,7 @@
     },
     {
       "sourceId": "laudan.should_abandon",
-      "file": "lakatos/laudan.py",
+      "file": "lakatos/quant/laudan.py",
       "symbol": "should_abandon",
       "kind": "def",
       "line_hint": 75,
@@ -1030,7 +1030,7 @@
     },
     {
       "sourceId": "laudan.should_abandon_sprt",
-      "file": "lakatos/laudan.py",
+      "file": "lakatos/quant/laudan.py",
       "symbol": "should_abandon_sprt",
       "kind": "def",
       "line_hint": 93,
@@ -1041,7 +1041,7 @@
     },
     {
       "sourceId": "multiplicity.false_progressive_screen",
-      "file": "lakatos/multiplicity.py",
+      "file": "lakatos/quant/multiplicity.py",
       "symbol": "false_progressive_screen",
       "kind": "def",
       "line_hint": 82,
@@ -1052,7 +1052,7 @@
     },
     {
       "sourceId": "fertility.predictive_fertility",
-      "file": "lakatos/fertility.py",
+      "file": "lakatos/quant/fertility.py",
       "symbol": "predictive_fertility",
       "kind": "def",
       "line_hint": 18,
@@ -1063,7 +1063,7 @@
     },
     {
       "sourceId": "heuristic.generate_moves",
-      "file": "lakatos/heuristic.py",
+      "file": "lakatos/programme/heuristic.py",
       "symbol": "generate_moves",
       "kind": "def",
       "line_hint": 124,
@@ -1074,7 +1074,7 @@
     },
     {
       "sourceId": "heuristic.negative_heuristic",
-      "file": "lakatos/heuristic.py",
+      "file": "lakatos/programme/heuristic.py",
       "symbol": "negative_heuristic",
       "kind": "def",
       "line_hint": 81,
@@ -1085,7 +1085,7 @@
     },
     {
       "sourceId": "heuristic.appraise_and_plan",
-      "file": "lakatos/heuristic.py",
+      "file": "lakatos/programme/heuristic.py",
       "symbol": "appraise_and_plan",
       "kind": "def",
       "line_hint": 225,
@@ -1096,7 +1096,7 @@
     },
     {
       "sourceId": "heuristic.expected_progress_gain",
-      "file": "lakatos/heuristic.py",
+      "file": "lakatos/programme/heuristic.py",
       "symbol": "expected_progress_gain",
       "kind": "def",
       "line_hint": 51,
@@ -1107,7 +1107,7 @@
     },
     {
       "sourceId": "kuhn.assess_paradigm",
-      "file": "lakatos/kuhn.py",
+      "file": "lakatos/programme/kuhn.py",
       "symbol": "assess_paradigm",
       "kind": "def",
       "line_hint": 69,
@@ -1118,7 +1118,7 @@
     },
     {
       "sourceId": "leaderboard.leaderboard",
-      "file": "lakatos/leaderboard.py",
+      "file": "lakatos/programme/leaderboard.py",
       "symbol": "leaderboard",
       "kind": "def",
       "line_hint": 53,
@@ -1129,7 +1129,7 @@
     },
     {
       "sourceId": "lifecycle.lifecycle_state",
-      "file": "lakatos/lifecycle.py",
+      "file": "lakatos/programme/lifecycle.py",
       "symbol": "lifecycle_state",
       "kind": "def",
       "line_hint": 46,
@@ -1140,7 +1140,7 @@
     },
     {
       "sourceId": "trust.evidence_weight",
-      "file": "lakatos/trust.py",
+      "file": "lakatos/quant/trust.py",
       "symbol": "evidence_weight",
       "kind": "def",
       "line_hint": 77,
@@ -1151,7 +1151,7 @@
     },
     {
       "sourceId": "trust.trustrank",
-      "file": "lakatos/trust.py",
+      "file": "lakatos/quant/trust.py",
       "symbol": "trustrank",
       "kind": "def",
       "line_hint": 13,
@@ -1162,7 +1162,7 @@
     },
     {
       "sourceId": "trust.eigentrust",
-      "file": "lakatos/trust.py",
+      "file": "lakatos/quant/trust.py",
       "symbol": "eigentrust",
       "kind": "def",
       "line_hint": 42,
@@ -1173,7 +1173,7 @@
     },
     {
       "sourceId": "agm.HardCoreProtected",
-      "file": "lakatos/agm.py",
+      "file": "lakatos/programme/agm.py",
       "symbol": "HardCoreProtected",
       "kind": "class",
       "line_hint": 29,

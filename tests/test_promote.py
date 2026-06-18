@@ -1,7 +1,7 @@
 """승격 게이트 TDD — CANONICAL 승격 전 헌법 강제 (나생문 F-CON-1/2/5).
 # KG: span_lakatotree_promote / q-lkt-writepath-enforce
 """
-from lakatos.promote import promotion_gate
+from lakatos.verdict.promote import promotion_gate
 
 def test_progressive_stands_promotable():
     ok, reasons = promotion_gate(scripted_verdict='progressive', stands=True)

@@ -1,7 +1,7 @@
 """MSRP 휴리스틱 정책층 TDD — 두 휴리스틱이 정책으로 산다(집계만 X).
 # KG: span_lakatotree_heuristic
 """
-from lakatos.heuristic import (
+from lakatos.programme.heuristic import (
     expected_progress_gain,
     realized_reward,
     negative_heuristic,

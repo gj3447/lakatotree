@@ -201,7 +201,7 @@ def test_unknown_foundation_kind_is_rejected_before_kg_write(monkeypatch):
 
 def test_claim_standing_endpoint_combines_foundation_arguments_and_lineage(monkeypatch):
     app = load_app()
-    from lakatos.lineage import Derivation
+    from lakatos.io.lineage import Derivation
 
     calls = []
 

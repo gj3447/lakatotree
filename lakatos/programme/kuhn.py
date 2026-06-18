@@ -21,9 +21,9 @@ Kuhn 은 상태 어휘(정상과학/위기/혁명후보)만 빌린다:
 """
 from dataclasses import dataclass
 
-from .grounding import GROUNDED
-from .leaderboard import dominates
-from .lifecycle import DIVERGING, EXTINCT
+from lakatos.grounding import GROUNDED
+from lakatos.programme.leaderboard import dominates
+from lakatos.programme.lifecycle import DIVERGING, EXTINCT
 
 SUPERSESSION_WINDOW = GROUNDED['supersession_window']['value']
 # 연속 비진보 퇴행 임계 — grounding 레지스트리에서(매직넘버 금지, 나생문 T3-3).

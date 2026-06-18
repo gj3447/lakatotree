@@ -9,7 +9,7 @@
 # KG: span_lakatotree_S1_laudan_layer
 """
 import math
-from .grounding import GROUNDED, sprt_log_boundaries
+from lakatos.grounding import GROUNDED, sprt_log_boundaries
 
 ABANDON_K = GROUNDED['abandon_k']['value']            # 규칙①: 연속 비진보 (Wald SPRT 이산근사)
 ABANDON_BUDGET = GROUNDED['abandon_budget']['value']  # 규칙②: 예측 적중 0 노드 예산 (SPRT ASN)

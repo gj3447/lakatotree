@@ -19,8 +19,8 @@ fertility(novel 등록) + 문제수지 부호라는 *대리지표* — 원전(La
 """
 from dataclasses import dataclass
 
-from .grounding import GROUNDED
-from .stack import ABANDON, StackVerdict
+from lakatos.grounding import GROUNDED
+from lakatos.programme.stack import ABANDON, StackVerdict
 
 STALL_WINDOW = GROUNDED['lifecycle_stall_window']['value']
 

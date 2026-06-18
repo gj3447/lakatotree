@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from lakatos.adapters import (
+from lakatos.io.adapters import (
     MarquezClientError,
     bash_act_to_prov_document,
     derivation_to_openlineage_event,
@@ -28,7 +28,7 @@ from lakatos.engine import (
     LineageReplayGate,
     SourceCredibilityScore,
 )
-from lakatos.lineage import Derivation
+from lakatos.io.lineage import Derivation
 
 
 ZDF = Derivation(

@@ -13,7 +13,7 @@ from typing import Any
 import psycopg2.extras
 from fastapi import HTTPException
 
-from lakatos.adapters import (
+from lakatos.io.adapters import (
     MarquezClientError,
     derivations_to_dvc_lock,
     derivations_to_dvc_pipeline,
@@ -22,9 +22,9 @@ from lakatos.adapters import (
     prov_document_to_prov_json,
 )
 from lakatos.engine import LineageReplayGate
-from lakatos.envfp import environment_fingerprint as default_environment_fingerprint
-from lakatos.envfp import fingerprint_sha as default_fingerprint_sha
-from lakatos.lineage import (
+from lakatos.io.envfp import environment_fingerprint as default_environment_fingerprint
+from lakatos.io.envfp import fingerprint_sha as default_fingerprint_sha
+from lakatos.io.lineage import (
     Derivation,
     build_manifest,
     by_output,
@@ -116,7 +116,7 @@ class LineageService:
         return {"artifact": artifact, "events": lineage_result_to_openlineage_events(result)}
 
     def send_artifact_to_marquez(self, artifact: str) -> dict:
-        from lakatos import marquez_sink
+        from lakatos.io import marquez_sink
 
         if not marquez_sink.enabled():
             raise HTTPException(503, "MARQUEZ_URL 미설정 — 전송 비활성. 직렬화는 GET /api/openlineage/{artifact} "

@@ -1,7 +1,7 @@
 """인터넷 출처 신뢰 TDD — TrustRank(시드전파)+EigenTrust(고유벡터).
 # KG: span_lakatotree_trust
 """
-from lakatos.trust import trustrank, eigentrust, evidence_weight
+from lakatos.quant.trust import trustrank, eigentrust, evidence_weight
 
 def test_trustrank_seed_propagates():
     # 시드(신뢰 페이지)에서 아웃링크로 신뢰 전파, 시드가 최고
@@ -37,7 +37,7 @@ def test_eigentrust_dangling_redistribution():   # 나생문 F-MATH-3
 
 
 # ── P6 배선: 실 observation 그래프 → 글로벌 출처신뢰 (eigentrust 런타임 배선) ──
-from lakatos.trust import build_trust_graph, global_source_trust
+from lakatos.quant.trust import build_trust_graph, global_source_trust
 
 
 def test_build_graph_seeds_from_authoritative_types():

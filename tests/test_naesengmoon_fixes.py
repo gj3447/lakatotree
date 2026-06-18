@@ -1,10 +1,10 @@
 """나생문 수정 회귀 — 수식 비정합/zero-trust/BLAS/ECE/text-novelty.
 # KG: VR_LakatoTree_naesengmoon_3lens_20260612
 """
-from lakatos.bayes import bayes_factor, branch_credence
-from lakatos.trust import evidence_weight
-from lakatos.envfp import environment_fingerprint
-from lakatos.calibrate import calibration_error
+from lakatos.quant.bayes import bayes_factor, branch_credence
+from lakatos.quant.trust import evidence_weight
+from lakatos.io.envfp import environment_fingerprint
+from lakatos.quant.calibrate import calibration_error
 
 def test_partial_does_not_accumulate_to_certainty():  # F-MATH-2
     assert branch_credence([{'verdict': 'partial'}] * 200) == 0.5   # 땜빵만 = 변화없음

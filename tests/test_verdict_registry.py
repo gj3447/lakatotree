@@ -19,7 +19,7 @@ def test_progress_nonprogress_disjoint():
 
 def test_metrics_consumes_registry_not_local_tuples():
     # metrics 가 자체 어휘를 재정의하지 않고 verdicts 정본을 그대로 가리키는가(SSOT)
-    import lakatos.metrics as m
+    import lakatos.quant.metrics as m
     import lakatos.verdicts as v
     assert m.PROGRESS_VERDICTS is v.PROGRESS_VERDICTS
     assert m.NONPROGRESSIVE is v.NONPROGRESSIVE_VERDICTS

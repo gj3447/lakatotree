@@ -21,7 +21,7 @@ def load_app():
 
 # ── OPS-INIT-1: oo_sink — 내부 IP 하드코딩 제거, OO_URL 명시 강제 ───────────
 def test_oo_sink_requires_explicit_url(monkeypatch):
-    from lakatos import oo_sink
+    from lakatos.io import oo_sink
     monkeypatch.setenv('CONSUMER_LOGS_E2E', '1')
     monkeypatch.setenv('OO_PASS', 'secret')
     monkeypatch.delenv('OO_URL', raising=False)
@@ -30,13 +30,13 @@ def test_oo_sink_requires_explicit_url(monkeypatch):
 
 
 def test_oo_sink_no_hardcoded_internal_ip():
-    import lakatos.oo_sink as oo
+    import lakatos.io.oo_sink as oo
     text = open(oo.__file__, encoding='utf-8').read()
     assert '10.147' not in text, 'oo_sink 에 내부 IP 하드코딩 잔존(외부배포 깨짐)'
 
 
 def test_oo_sink_uses_explicit_url(monkeypatch):
-    from lakatos import oo_sink
+    from lakatos.io import oo_sink
     monkeypatch.setenv('CONSUMER_LOGS_E2E', '1')
     monkeypatch.setenv('OO_PASS', 'secret')
     monkeypatch.setenv('OO_URL', 'http://oo.example:5080')

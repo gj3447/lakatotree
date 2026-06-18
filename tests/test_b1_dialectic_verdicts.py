@@ -3,11 +3,11 @@ promote/metrics/bayes/verdicts 전반에 일관 인식되는지 (prom16 ENG-CORR
 
 핵심 안전버그: promote 가 'rejected' 만 막아 degenerating/withdrawn 노드가 CANONICAL 승격 가능했음.
 """
-from lakatos.promote import promotion_gate
-from lakatos.spine import synthesize_promotion
+from lakatos.verdict.promote import promotion_gate
+from lakatos.verdict.spine import synthesize_promotion
 from lakatos.verdicts import is_registered_verdict, VERDICT_REGISTRY
-from lakatos.bayes import branch_credence
-from lakatos.metrics import branch_inputs, NONPROGRESSIVE
+from lakatos.quant.bayes import branch_credence
+from lakatos.quant.metrics import branch_inputs, NONPROGRESSIVE
 
 
 # ── ENG-CORR-1: 퇴행/철회 판결은 CANONICAL 승격 불가 (allowlist fail-closed) ──

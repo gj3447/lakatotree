@@ -1,133 +1,197 @@
-# 라카토트리 (LakatoTree) — 연구 프로그램 트리 서버
+# LakatoTree — a deterministic verdict engine for research programmes
 
-> 모든 연구 = 라카토스 나무 탐색. 판결은 LLM 점수가 아니라 **사전등록 예측 + 스크립트 채점 + 순수함수 규칙**.
-> 라카토스의 "판정 기준 애매" 한계는 **라우든 문제해결력 정량층**(문제 수지·PSR·비교 점수·폐기 명문규칙)으로 닫는다.
+> A research programme is scored by a **pure scoring function over pre-registered predictions**,
+> not by an LLM's self-assessment. A verdict is admissible only if it is the scorer's output for a
+> registered prediction and an external measurement — **self-reported verdicts are rejected by
+> construction** (formally *modeled* in Lean 4, runtime-enforced by tests — see
+> [Formal foundation](#formal-foundation)).
+> Lakatos's "vague appraisal criterion" is closed by a quantified **Laudan problem-solving layer**
+> (problem balance · PSR · comparative score · explicit abandonment rules).
 
-## 구조
+> **Three views of the same system.** Engineering spec = this file. Conceptual model =
+> [`docs/PIDNA.md`](docs/PIDNA.md). Vision/rationale (prose) = [`TOUCH_THE_SKY.md`](TOUCH_THE_SKY.md).
+> Machine-checked theory = [`formal/Pidna.lean`](formal/Pidna.lean) (`lake build`, sorry=0).
+
+---
+
+## Problem and approach
+
+LLM agents *confabulate*: they emit fluent self-reports ("implemented, all tests pass") with no
+receipt behind them. LakatoTree removes an agent's ability to grade itself by splitting the system
+into two subsystems with strict role separation, run as a closed loop:
+
+| subsystem | role | modules |
+|---|---|---|
+| **Conjecture** | generate the next experiment, register a bold prediction, carry credence | `engine.py` · `heuristic.py` · `bayes.py` |
+| **Verification** | deterministic scripted scoring, external-store readback, source-symbol binding | `judge.py` · ooptdd · Longinus |
+
+**Loop:** conjecture registers a prediction → the world is measured → the verification subsystem
+scores it (`judge`) → credence/lineage accumulate. **Coupling invariant:** every accepted result
+pairs exactly one prediction with one independent verification; neither subsystem scores its own
+output. (This is the "ascending double-helix" of `docs/PIDNA.md` stated as an architecture: two
+coupled subsystems, role-separated, advancing only when a prediction is met by an external receipt.)
+
+---
+
+## Formal foundation
+
+The kernel's load-bearing claims are **machine-checked in Lean 4** ([`formal/Pidna.lean`](formal/Pidna.lean),
+core Lean only, no Mathlib → `lake build` is offline and fast). Ground-truth gate: `error=0, sorry=0`.
+
+```bash
+cd formal && lake build      # 12 theorems, sorry=0
 ```
-lakatos/            순수 판결·지표 모듈 (I/O 0, 어디서든 동일 판정) — 이론 기반 = THEORY.md
-  judge.py          [포퍼층] 4판결 + 사전등록 게이트 + 구조적 corroboration(NovelTarget 실측 대조)
-  engine.py         ★sparse 연구 프레임 — 가능성/행위이력/신뢰승격/재현계약
-  bayes.py          [베이즈층] 가지 신뢰도 = 판결 시퀀스 사후확률. 강한 가지는 반례 하나로 안 죽는다
-  laudan.py         [라우든층] 문제 수지/PSR/비교 점수/should_abandon 폐기 3규칙
-  explore.py        [탐색배분] bandit UCB + VoI — frontier 질문 우선순위(다음 어느 가지)
-  prov.py           [출처추적] W3C PROV-O 트리플 — 판결의 검증가능 계보 + 재현 명령
-  fertility.py      [이론 발전성] novel 예측 적중 track record — 과학=예측력, nobel_grade
-  trust.py          [인터넷 신뢰] TrustRank/EigenTrust — 웹 증거에 신뢰가중 → 베이즈 결합 (P1)
-  adapters.py       ★외부 lineage adapter — OpenLineage/DVC/PROV plain-dict export
-  claim.py          ★ClaimStanding — 상계/하계 confidence + foundation/lineage/doubt blocking reason
-  argue.py          [논증 채널] Dung AF — 인간+agent 의문/반박, grounded extension 정당성
-  calibrate.py      [신뢰도 보정] Brier/log/ECE proper scoring — 예측 정직성
-  stack.py          [메타규칙] 층간 충돌 명시투표+정족수 2/3 — 침묵 OR 제거 (gap3)
-  agm.py            [신념개정] AGM/Levi hard_core 개정 — 기본 PROTECTED, entrenchment 정책 선언 (P1)
-  lifecycle.py      [메타-종료] 수확/발산/소멸 3-상태 + regret (P1)
-  leaderboard.py    [경쟁비교] Pareto+Borda 다기준 리더보드 — 단일점수 환원 금지 (P2)
-  kuhn.py           [프로그램 교체] Lakatos-Zahar supersession — shift 는 인간 안건 (gap7)
-  certify.py        [인증층] 5게이트 AND 인증서 — 검증가능 계보 묶음 (P2)
-  metrics.py        트리 지표 (진보율/기각률/퇴행/베이즈/★발전성 + 라우든)
-  lineage.py        ★데이터 계보 — manifest + env fingerprint + root replay 검증. LINEAGE.md
-  harness.py        ★하네스 — 상계/하계/인간/agent 한 사이클 엮기 (포트-어댑터). HARNESS.md
-  harness_run.py    하네스 실행기 (실 HTTP/bash/git 포트)
-  cli.py            CLI 조작층 (python -m lakatos.cli)
-  mcp_server.py     MCP 도구 7종 (Claude/Codex 가 나무 조작)
-server/             FastAPI 박층 (:55170) — Neo4j(그래프 정본)+PG(append-only 이력)+Mongo(산출물)
-judges/             채점 스크립트 (결과 파일 → metric, LLM 무관)
-examples/           연구 프로그램 정의 — 미해결 연구 질문(open research questions)은 여기 FRONTIER/RIVAL_FRONTIER node-list 의 status='OPEN' 항목: bpc_icp_programme.py(정합 registration) + bpc_analysis_contract_programme.py(측정/analysis-contract)
-tests/              판결/엔진/서버계약 TDD — 규칙 변경은 RED 부터
-docs/BPC_CONSUMER_A_LONGINUS_20260612.md   consumer_b/consumer_a segmentation 기반지식 Longinus pack
-```
 
-## 엔진 개발 기반지식
+| theorem | guarantee | code it pins |
+|---|---|---|
+| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the whole "receipt, not self-report" rule |
+| `progressive_requires_novel` | progressive ⟹ a corroborated **novel** prediction | `judge.py` (F-CON-3: text alone ≠ novel) |
+| `progressive_requires_improved` | progressive ⟹ real improvement past the noise band | `judge.py` |
+| `no_novel_no_progressive` | improvement *without* novelty caps at `partial` (Lakatos's ad-hoc patch) | `judge.py` |
+| `rung_verdict_unique` | one verdict per evidence — **no second, negotiated re-score** | server `submit_test_result` lock |
+| `reconfirm_idempotent` | re-confirming the same target adds nothing (use-novelty) | `bayes.branch_credence` content-dedup |
+| `confirm_order_independent` | credence is independent of confirmation order (Bayesian coherence) | `bayes.branch_credence` |
+| `confirm_monotone` | confirming never lowers credence (assets accumulate) | `bayes.branch_credence` |
+| `stronger_confirm_strict` | a *new/stronger* target strictly raises credence — distinct novel predictions are independent evidence | `bayes.branch_credence` |
 
-- `docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md`: 인터넷 관측, 인간/agent critique,
-  bash evidence, source history, raw ZDF replayability, OpenLineage/DVC/PROV
-  reference mapping.
-- `docs/REFERENCE_COMPARISON.md`: OpenLineage/Marquez, DVC, W3C PROV,
-  MLflow, NetworkX/Neo4j 와 라카토트리 hard core 비교 및 채택/비채택 경계.
-- 핵심 원칙: 버퍼와 캐시는 허용하지만 정본이 아니다. 완성본은 raw root
-  manifest 에서 기록된 pipeline 으로 재생성 가능해야 한다.
+The `Rung` structure is the design's spine: its `derived : verdict = judge pred measured novel`
+field means the type checker refuses any rung whose verdict was not produced by the scorer. The
+manifesto line *"a self-report raises the helix by zero rungs"* is therefore a **typing rule**, not a
+slogan.
 
-## 엄격도 스택 (과학철학을 층으로 — 경쟁 아닌 스택)
-| 층 | 모듈 | 봄 | 엄격도 |
+**Scope, honestly.** `formal/Pidna.lean` is a **model of the kernel**, hand-written to mirror
+`judge.py`/`bayes.branch_credence` — it is *not* an auto-extraction of the Python, so the proofs
+certify the *theory*, while `tests/` certify the *implementation*. The two are complementary: Lean
+rules out a class of design errors (e.g. "progressive without novelty", non-commutative credence);
+pytest rules out coding errors in the actual modules. "Machine-checked theory", not "verified binary".
+
+---
+
+## Rigor stack (philosophy of science as layers, not competitors)
+| layer | module | what it sees | strictness |
 |---|---|---|---|
-| 포퍼 | judge.py | 반증되면 기각 (이산 판결) | 최강 |
-| **베이즈** | bayes.py | 증거마다 신뢰도 갱신 (연속). 자산 많은 가지는 반례 하나로 안 죽음 | 중 |
-| 라우든 | laudan.py | 참/거짓보다 문제 해결력 | 느슨 |
+| Popper | `judge.py` | refuted ⟹ rejected (discrete verdict) | strongest |
+| **Bayes** | `bayes.py` | per-evidence credence update (continuous); a high-asset branch survives one counterexample | mid |
+| Laudan | `laudan.py` | problem-solving power over truth/falsity | loose |
 
-## 폐기 타이밍 (라카토스가 못 준 시간표)
-- 라우든(이산, 해석가능): ① 연속 비진보 ≥3 ② 5노드 예산∧적중0 ③ 문제수지 ≤−2
-- 베이즈(연속, 자산가중): 가지 신뢰도 < 0.1. 사전등록 novel 적중 = 강한 증거(BF↑), 사후 땜빵 = 약한 증거(BF≈1)
-- 한계 정직: 베이즈는 within-tree 신뢰도만 — **새 가설 탄생은 frontier/directions(가설공간 확장)가 담당**
+**Abandonment timetable** (what Lakatos left unspecified):
+- Laudan (discrete, interpretable): ① ≥3 consecutive non-progressive ② 5-node budget spent ∧ 0 hits ③ problem balance ≤ −2
+- Bayes (continuous, asset-weighted): branch credence < 0.1. Pre-registered novel hit = strong evidence (BF↑); post-hoc patch = weak (BF≈1)
+- Honest limit: Bayes scores *within-tree* credence only — **new-hypothesis generation belongs to `heuristic.py`/`directions`** (the conjecture subsystem), not to the verifier.
 
-## 기동/사용
-```bash
-python -m pytest tests/ -q      # 엔진 검증
-bash server/run.sh              # http://localhost:55170 (대시보드 /, API /api/*)
-python -m lakatos.cli metrics <tree>      # CLI: 지표(진보율/베이즈/발전성/다중비교 보정 gap8)
-python -m lakatos.cli directions <tree>   # CLI: 다음 어느 가지(VoI 우선순위)
-python -m lakatos.cli stack <tree> [--leaf L]      # 포퍼/베이즈/라우든 3층 명시투표+정족수(gap3)
-python -m lakatos.cli lifecycle <tree> [--leaf L]  # 프로그램 종료판정 수확/발산/소멸/활성(P1)
-python -m lakatos.cli leaderboard a,b,c [--snapshot]  # 경쟁 트리 Pareto+Borda 리더보드(P2)
-python -m lakatos.cli paradigm <incumbent> rival1,rival2  # 정상과학/위기/shift_candidate(gap7)
-python -m lakatos.cli certificate <tree> <tag>     # 5게이트 AND 인증서(P2)
-python -m lakatos.cli event <tree> <tag> evt-web --realm internet --action fetch_source --payload trust=0.82
-python -m lakatos.cli events <tree> <tag> # node별 append-only ResearchEvent 조회
-python -m lakatos.cli claim-standing <tree> <tag>   # claim standing read-model
-python -m lakatos.cli manifest-verify manifest.json   # G-RebuildFromRaw 검증
-claude mcp add lakatotree -- python -m lakatos.mcp_server   # MCP: Claude 가 나무 조작 (21 도구)
+---
+
+## Why a tree, not a line
+
+A single path presumes it already knows which conjecture wins. By **computational irreducibility**
+(Wolfram), you cannot in general predict which programme progresses without running it — so the
+search hedges across branches instead of betting everything on one. The structure is then a search
+tree managed by the loop:
+
+- scout the most informative branch — `explore.py` (UCB + Value-of-Information)
+- prune degenerating branches — `laudan.should_abandon` (3 rules)
+- reinforce advancing branches — `bayes.py` (credence)
+- record one programme superseding a rival — `kuhn.py` (Lakatos–Zahar supersession)
+- keep genealogy — `prov.py` (W3C PROV-O); a rootless blob cannot say why it is true, which is the
+  topology of confabulation
+
+Branches diverge exactly when their verification paths become independent (a sub-question's progress
+no longer constrains its sibling's) — operationally, when `explore.rank_questions` ranks them
+separately. The tree is *not* a higher-order spiral; spiral (within-branch ascent) and tree
+(between-branch competition) are orthogonal (see `docs/PIDNA.md §3`, where the "meta-spiral"
+hypothesis was falsified and pruned — the project applies its own method to itself).
+
+---
+
+## Module map
+```
+lakatos/            pure verdict/metric modules (zero I/O, same ruling anywhere) — theory = THEORY.md
+  judge.py          [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
+  engine.py         sparse research frame — possibilities / event log / credence promotion / reproducibility contract
+  heuristic.py      [MSRP heuristics] negative (hard-core protection) + positive (generate_moves: ABANDON/PUSH/PROBE/PRIORITIZE)
+  bayes.py          [Bayes] branch credence = posterior over verdict sequence; use-novelty dedup; eigentrust source weighting
+  laudan.py         [Laudan] problem balance / PSR / comparative score / should_abandon (3 rules)
+  explore.py        [exploration] bandit UCB + VoI — frontier question priority (which branch next)
+  prov.py           [provenance] W3C PROV-O triples — verifiable lineage + replay command
+  fertility.py      [theoretical fertility] novel-prediction hit record — science = predictive power, nobel_grade
+  trust.py          [web trust] TrustRank/EigenTrust over the observation graph → Bayes weighting (P6 wired)
+  adapters.py       external lineage adapter — OpenLineage/DVC/PROV plain-dict export
+  claim.py          ClaimStanding — upper/lower-realm confidence + foundation/lineage/doubt blocking reasons
+  argue.py          [argumentation] Dung AF — human+agent doubt/rebuttal, grounded-extension justification (stands)
+  calibrate.py      [calibration] Brier/log/ECE proper scoring — predictive honesty
+  stack.py          [meta-rule] inter-layer explicit vote + 2/3 quorum (gap3)
+  agm.py            [belief revision] AGM/Levi hard-core revision — PROTECTED by default, entrenchment policy
+  lifecycle.py      [meta-termination] harvest/diverge/extinct + regret
+  leaderboard.py    [comparison] Pareto+Borda multi-criteria — no single-score reduction (P2)
+  kuhn.py           [programme replacement] Lakatos–Zahar supersession — shift is a human agenda (gap7)
+  certify.py        [certification] 5-gate AND certificate — verifiable lineage bundle (P2)
+  metrics.py        tree metrics (progress rate / rejection rate / degeneration / Bayes / fertility + Laudan)
+  lineage.py        data lineage — manifest + env fingerprint + root-replay verification. LINEAGE.md
+  harness.py        harness — upper/lower/human/agent one cycle (ports & adapters). HARNESS.md
+  cli.py            CLI (python -m lakatos.cli)
+  mcp_server.py     MCP tools (Claude/Codex operate the tree)
+formal/             ★Lean 4 formal kernel — machine-checked verdict theory (lake build, sorry=0)
+server/             FastAPI shell (:55170) — Neo4j (graph SoT) + PG (append-only history) + Mongo (artifacts)
+judges/             scoring scripts (result file → metric, LLM-independent)
+examples/           research-programme definitions; euler_polyhedron_programme.py = engine-generated verdicts (no hand-typed verdict)
+tests/              verdict/engine/server-contract TDD — rule changes start from RED
 ```
 
-## oo LTDD 백본 — 로그가 ground truth (자기 테스트 스위트에도 적용)
-라카토트리는 "재현됐다는 주장이 아니라 영수증"(`rebuild.py`) 원칙을 *자기 테스트*에 적용한다.
-`tests/conftest.py` 가 매 pytest 세션을 correlation_id(cid)로 묶어 각 테스트 outcome 을
-`oo_sink.test_outcome_records` 로 직렬화해 oo `tests` 스트림에 적재한다 → 실패 RCA 는
-`trace_cycle(cid)` 한 콜로 전 타임라인 확보. 게이트 OFF(`CONSUMER_LOGS_E2E`/`OO_PASS` 미설정)면
-완전 no-op(로컬=조용), ship 실패는 빌드를 깨지 않는다(관측은 판결을 바꾸지 않는다).
+## Build & verify
 ```bash
-CONSUMER_LOGS_E2E=1 OO_PASS=*** python -m pytest tests/ -q   # 트레이스 oo 적재(게이트 ON)
-LAKATOS_TEST_CID=my-run python -m pytest tests/ -q        # 부모 dev-loop 와 cid 공유
+python -m pytest tests/ -q                  # engine + server contract (Python)
+cd formal && lake build                     # formal kernel (Lean 4): error=0, sorry=0
+bash server/run.sh                          # http://localhost:55170 (dashboard /, API /api/*)
 ```
 
-## 이론 발전성 (이론적 기반의 예측력 — 과학 판정의 본질)
-`fertility.py`: 과학은 이론으로 **새 사실을 미리 얼마나 맞히는가**(novel fact prediction)로 판정된다 — 노벨상의 본질.
-발전성 = 적중 novel 예측 / 등록 novel 예측 (사전등록이라 HARKing 불가). nobel_grade = 예측 수 충분 ∧ 적중률 ≥0.7.
+CLI (selected):
+```bash
+python -m lakatos.cli metrics <tree>        # progress rate / Bayes credence / fertility / multiple-comparison correction
+python -m lakatos.cli directions <tree>     # next branch by VoI (numerator = positive-heuristic estimate, not a constant)
+python -m lakatos.cli heuristic <tree>      # MSRP policy — negative (hard-core protection) + positive (generated moves)
+python -m lakatos.cli stack <tree>          # Popper/Bayes/Laudan explicit vote + quorum (gap3)
+python -m lakatos.cli lifecycle <tree>      # programme termination: harvest/diverge/extinct/active
+python -m lakatos.cli leaderboard a,b,c     # rival programmes — Pareto+Borda (no single-score reduction)
+python -m lakatos.cli trust <tree>          # eigentrust global source trust over the observation graph (P6)
+python -m lakatos.cli certificate <tree> <tag>   # 5-gate AND certificate
+claude mcp add lakatotree -- python -m lakatos.mcp_server
+```
 
-## 위계 — 틀(프레임워크) ⊃ 프로젝트
-LakatoTree = 추상 형상/틀(domain-agnostic). 그 안에 구체 프로젝트가 인스턴스로 산다(root 데이터·목표 각자).
-엔진은 특정 프로젝트를 단칼에 맞추는 dense solver 가 아니라, 가능성·질문·인간/agent 이벤트·인터넷 관측·bash 실행·DB/KG/git 이력을 얇게 엮어 언제든 재현 가능한 연구 흐름으로 보존한다.
-예: consumer_b는 root=ZDF인 첫 프로젝트 인스턴스일 뿐이다. KG: `(:LegionCommander)-[:INSTANTIATED_AS]->(:LakatoProject)`.
+## Observability as ground truth (oo LTDD)
+The "receipts, not claims" rule (`rebuild.py`) is applied to the **test suite itself**.
+`tests/conftest.py` ties each pytest session to a correlation id (cid) and ships each outcome via
+`oo_sink` to the `tests` stream; failure RCA is one `trace_cycle(cid)` call. With the gate off
+(`CONSUMER_LOGS_E2E`/`OO_PASS` unset) it is a complete no-op (local = quiet); ship failures never break
+the build (observation does not change the verdict).
+```bash
+CONSUMER_LOGS_E2E=1 OO_PASS=*** python -m pytest tests/ -q   # ship traces (gate on)
+```
 
-## v1.1 서버 계약 반영
-- `BRANCHED_FROM`은 다중 부모 DAG를 지원하고, edge에 `inferred/relation_kind/evidence_ref`를 기록한다.
-- 질문 닫기는 `closed_by` overwrite가 아니라 `QuestionClosure` append-only event로 남긴다.
-- verdict 어휘는 `lakatos.verdicts` registry가 단일 출처다.
-- `LakatosElement`를 서버/CLI/MCP에서 등록하고 노드의 `USES_ELEMENT`로 연결한다.
-- `CANONICAL`은 절대 정본이 아니라 `current_best_pointer`와 scope/assumption/evidence window를 가진 임시 현재 최선이다.
-- metrics는 `coverage_backlog`를 보고서에 강제 노출해 전수성 과장을 막는다.
-- `ClaimStanding`은 기존 Dung `standing`을 대체하지 않고, 상계(internet/human/kg)와 하계(bash/data/git/agent)를 분리해 confidence와 blocking reason을 보고한다.
-- `ResearchEvent`는 판결을 바꾸지 않는 append-only evidence 이며, `claim-standing`이 node 속성/argument/script result 와 함께 읽는다. `events`로 원장 자체를 조회하고, `claim-standing.next_actions`로 blocker별 다음 행동을 기계 판독형으로 받는다.
+## Server contract (v1.1)
+- `BRANCHED_FROM` supports a multi-parent DAG; edges record `inferred/relation_kind/evidence_ref`.
+- Closing a question is an append-only `QuestionClosure` event, not a `closed_by` overwrite.
+- Verdict vocabulary has a single source of truth: `lakatos.verdicts`.
+- `CANONICAL` is not an absolute truth but a temporary current-best with a `current_best_pointer` and a scope/assumption/evidence window.
+- `metrics` force-exposes `coverage_backlog` to prevent overstating completeness.
+- `ClaimStanding` separates upper-realm (internet/human/kg) from lower-realm (bash/data/git/agent) evidence and reports confidence + blocking reasons; `ResearchEvent` is append-only evidence that never changes a verdict.
 
-## 기반지식 지도
-라카토트리 엔진은 연구 전에 필요한 기반지식을 `FoundationRequirement`로 관리한다. 기본 범주는:
-
-- `theory`: 진보/퇴행/부분개선/현재최선의 의미
-- `domain`: 프로젝트별 엔티티·관측·개입 어휘
-- `data`: root artifact, content hash, stale 정책
-- `metric`: metric_name/direction/noise_band/relabel 단절 규칙
-- `trust`: 인터넷/문헌/관측 신뢰도와 claim 승격 규칙
-- `reproducibility`: lineage DAG, producer sha, rebuild plan
-- `human_protocol`: 인간 질문·평가·의문과 agent 빌드 역할 분리
-
-CLI/API:
+## Foundation map
+Before a project runs, required prior knowledge is tracked as `FoundationRequirement` in categories:
+`theory` · `domain` · `data` · `metric` · `trust` · `reproducibility` · `human_protocol`.
 ```bash
 python -m lakatos.cli foundation <tree>
-python -m lakatos.cli foundation-record <tree> metric-contract --kind metric \
-  --question "which metric judges progress?" --accept metric_name --evidence doc:metric-v1 --status satisfied
 ```
 
-## 위계 — The Great Flow 군단장
-라카토트리는 **인류역사흐름의 강물(The Great Flow)의 군단장** — 과학적 연구의 진보를 관장.
-KG: `(:GreatFlow)-[:HAS_COMMANDER]->(:LegionCommander LakatoTree_LegionCommander)`.
-이론 기반 = `THEORY.md`(7층 + 정직한 8 gaps). 프로토콜·지표 = `~/.claude/skills/lakatos/SKILL.md` (/lakatos). KG 진입 = `(:Doctrine {name:'라카토스'})` (이음동의어 라카토트리).
+## Theoretical references
+- Lakatos, *Methodology of Scientific Research Programmes* (1970) — novel prediction, hard core, two heuristics, programme branching
+- Lakatos, *Proofs and Refutations* (1976) — counterexample-response dialectic (`pnr.py`; `examples/euler_polyhedron_programme.py` runs it end-to-end)
+- Popper — falsification, bold conjectures
+- Laudan, *Progress and its Problems* (1977) — problem-solving effectiveness
+- Zahar (1973) — use-novelty (basis of the credence dedup; `bayes.py`)
+- Bayesian confirmation: Jeffreys (1961), Kass–Raftery (1995) — BF bands (`grounding.py`, with tier-honesty: literature vs policy-in-scale vs policy)
+- Wolfram, *A New Kind of Science* (2002) — computational irreducibility (why a tree, not a line)
 
-# KG: SA_LakatoTree_Server_20260612 / Doctrine 라카토스 / LakatosTree_BPC_20View_20260612(첫 인스턴스)
+Theory detail = [`THEORY.md`](THEORY.md) (7 layers + 8 honest gaps). Quantitative grounding =
+[`docs/QUANTITATIVE_GROUNDING.md`](docs/QUANTITATIVE_GROUNDING.md) (auto-generated from `grounding.py`).
+
+# KG: SA_LakatoTree_Server_20260612 / Doctrine 라카토스 / span_lakatotree_engine

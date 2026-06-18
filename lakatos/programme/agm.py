@@ -20,7 +20,7 @@ AGM(1985)은 그 '바뀜'을 공준으로 형식화한다: expansion(+), contrac
 """
 from dataclasses import dataclass, field, replace
 
-from .grounding import GROUNDED   # P7-A: demote 여유폭 단일 정본
+from lakatos.grounding import GROUNDED   # P7-A: demote 여유폭 단일 정본
 
 ENTRENCHMENT_POLICY = 'lexicographic(kind>credence>problem_balance>connectivity) — 정책 선언(gap5: 유일해 없음)'
 DEMOTE_PENALTY = GROUNDED['demote_canonical_penalty']['value']   # 0.1 (정책) — 전엔 하드코딩

@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from lakatos.lineage import Derivation
+from lakatos.io.lineage import Derivation
 
 
 def load_app():
@@ -95,7 +95,7 @@ def test_result_path_is_declared_source_reproducible(monkeypatch):
 def test_gate_blocks_canonical_when_not_reproducible(monkeypatch):
     # _reproducible_for_node=False → synthesize_promotion 이 not_reproducible 로 차단
     app = load_app()
-    from lakatos.spine import synthesize_promotion
+    from lakatos.verdict.spine import synthesize_promotion
     d = synthesize_promotion(scripted_verdict="progressive", stands=True, reproducible=False)
     assert not d["ok"] and "not_reproducible" in d["reasons"]
 

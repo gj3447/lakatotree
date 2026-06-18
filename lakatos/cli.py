@@ -289,10 +289,10 @@ def main(argv=None):
         out = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
     elif a.cmd == 'rebuild-run':
         import urllib.parse as up, subprocess, uuid
-        from lakatos.rebuild import RebuildExecutor
-        from lakatos.lineage import RebuildManifest, RawRoot
-        from lakatos.envfp import environment_fingerprint, fingerprint_sha
-        from lakatos import oo_sink
+        from lakatos.io.rebuild import RebuildExecutor
+        from lakatos.io.lineage import RebuildManifest, RawRoot
+        from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
+        from lakatos.io import oo_sink
         v = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
         m = v['manifest']
         mani = RebuildManifest(final=m['final'], roots=[RawRoot(**r) for r in m['roots']],
@@ -312,7 +312,7 @@ def main(argv=None):
         out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
                    producer=a.producer, producer_sha=a.producer_sha, inputs=inputs, kind=a.kind))
     elif a.cmd == 'manifest-verify':
-        from .lineage import load_dataset_manifest, verify_dataset_manifest
+        from lakatos.io.lineage import load_dataset_manifest, verify_dataset_manifest
         current_shas = {p.rsplit(':', 1)[0]: p.rsplit(':', 1)[1] for p in a.current_sha}
         out = verify_dataset_manifest(
             load_dataset_manifest(a.manifest),

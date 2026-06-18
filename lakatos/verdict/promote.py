@@ -8,7 +8,7 @@
 # KG: span_lakatotree_promote / q-lkt-writepath-enforce
 """
 
-from .verdicts import SCRIPTED_VERDICTS, ADMIN_VERDICTS
+from lakatos.verdicts import SCRIPTED_VERDICTS, ADMIN_VERDICTS
 
 # ENG-CORR-1: deny-by-default allowlist (안전게이트는 fail-closed). 단일 'rejected' denylist 는
 # dialectical 'degenerating'/'withdrawn'/'ambiguous' + rebuild 실패 판결을 통과시켜 퇴행 노드가

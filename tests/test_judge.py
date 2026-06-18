@@ -2,12 +2,12 @@
 # KG: SA_LakatoTree_Server_20260612 / span_lakatotree_S2_judge_tdd
 """
 import pytest
-from lakatos.judge import Prediction, judge, PredictionMissing, PredictionLocked, check_registration
+from lakatos.verdict.judge import Prediction, judge, PredictionMissing, PredictionLocked, check_registration
 
 P = dict(metric_name='loo_p95', direction='lower', baseline_value=0.384)
 
 def test_progressive_improved_and_novel():
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget('loo_p95', 'lower', 0.3)   # F-CON-3: 구조적 예측 필수
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction='OUTER 분기로 0.3 이하'),
               0.279, novel_target=nt, novel_measured=0.279)
@@ -30,7 +30,7 @@ def test_rejected_worse():
     assert v.verdict == 'rejected'
 
 def test_higher_direction():
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     v = judge(Prediction(metric_name='psr', direction='higher', baseline_value=0.5,
                          noise_band=0.0, novel_prediction='x'), 0.7,
               novel_target=NovelTarget('psr', 'higher', 0.6), novel_measured=0.7)
@@ -66,14 +66,14 @@ def test_worse_never_progressive():
 
 # === 구조적 corroboration (gap1/F-FG-2 해소) ===
 def test_structural_corroboration_hit():
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget(metric_name='psr', direction='higher', threshold=0.5)
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction='ignored'),
               measured=0.279, novel_target=nt, novel_measured=0.7)
     assert v.verdict == 'progressive' and v.novel   # 예측 적중
 
 def test_structural_corroboration_miss_demotes_to_partial():
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget(metric_name='psr', direction='higher', threshold=0.5)
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction='텍스트만'),
               measured=0.279, novel_target=nt, novel_measured=0.2)   # 예측 빗나감
@@ -82,19 +82,19 @@ def test_structural_corroboration_miss_demotes_to_partial():
 
 # === audit P2: novel default-to-measured 붕괴 차단 (같은 측정 1개로 양쪽 만족 금지) ===
 def test_novel_target_without_measured_refused_same_metric():
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget('loo_p95', 'lower', 0.3)   # 개선 metric 과 동일
     with pytest.raises(ValueError):   # novel_measured 생략 = 가짜 초과내용 → 거부
         judge(Prediction(**P, noise_band=0.01, novel_prediction='x'), 0.279, novel_target=nt)
 
 def test_novel_target_without_measured_refused_diff_metric():
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget('psr', 'higher', 0.6)   # 다른 metric 인데 측정 생략 → measured 로 채점 무의미
     with pytest.raises(ValueError):
         judge(Prediction(**P, noise_band=0.01, novel_prediction='x'), 0.279, novel_target=nt)
 
 def test_novelty_sense_default_zahar_and_surfaced():
-    from lakatos.judge import NovelTarget, NOVELTY_SENSES
+    from lakatos.verdict.judge import NovelTarget, NOVELTY_SENSES
     nt = NovelTarget('loo_p95', 'lower', 0.3)
     assert nt.novelty_sense == 'zahar_use_novelty' and nt.novelty_sense in NOVELTY_SENSES
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'), 0.279,
@@ -103,7 +103,7 @@ def test_novelty_sense_default_zahar_and_surfaced():
 
 def test_novelty_sense_tag_only_does_not_change_scoring():
     # temporal/worrall 태그여도 채점은 zahar 와 동일(구조적 corroboration) — 의미 논쟁 점수화 안 함
-    from lakatos.judge import NovelTarget
+    from lakatos.verdict.judge import NovelTarget
     for sense in ('temporal_novelty', 'worrall_use_novelty'):
         nt = NovelTarget('psr', 'higher', 0.5, novelty_sense=sense)
         v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),

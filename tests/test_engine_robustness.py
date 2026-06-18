@@ -2,11 +2,11 @@
 # KG: span_lakatotree_engine_hardening
 """
 import pytest
-from lakatos.judge import Prediction, NovelTarget, judge
-from lakatos.bayes import branch_credence, bayes_factor
-from lakatos.metrics import tree_metrics
-from lakatos.fertility import predictive_fertility
-from lakatos.explore import rank_questions
+from lakatos.verdict.judge import Prediction, NovelTarget, judge
+from lakatos.quant.bayes import branch_credence, bayes_factor
+from lakatos.quant.metrics import tree_metrics
+from lakatos.quant.fertility import predictive_fertility
+from lakatos.programme.explore import rank_questions
 
 # --- judge 엣지 ---
 def test_judge_inf_baseline_refused():

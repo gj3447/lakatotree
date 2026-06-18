@@ -1,7 +1,7 @@
 """신뢰도 보정 TDD — proper scoring(Brier/log)로 예측 calibration 정량.
 # KG: span_lakatotree_calibrate
 """
-from lakatos.calibrate import brier_score, log_score, calibration_error
+from lakatos.quant.calibrate import brier_score, log_score, calibration_error
 
 def test_brier_perfect_is_zero():
     assert brier_score([(1.0, 1), (0.0, 0)]) == 0.0

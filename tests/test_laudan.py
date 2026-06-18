@@ -1,7 +1,7 @@
 """라우든 정량층 TDD — 문제해결력 수지 + 폐기 타이밍 명문규칙 (라카토스 한계 보완).
 # KG: span_lakatotree_S1_laudan_layer
 """
-from lakatos.laudan import problem_balance, psr, branch_score, should_abandon
+from lakatos.quant.laudan import problem_balance, psr, branch_score, should_abandon
 
 def test_problem_balance():
     assert problem_balance(closed=3, opened=1) == 2

@@ -13,7 +13,7 @@ import json
 import time
 import urllib.request
 
-from .oo_sink import _cfg, _endpoint, _open_default, enabled, ship, test_outcome_records
+from lakatos.io.oo_sink import _cfg, _endpoint, _open_default, enabled, ship, test_outcome_records
 
 
 def verify_trace(cid: str, *, stream: str = 'tests', expect_total: int | None = None,

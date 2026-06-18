@@ -5,7 +5,7 @@ import json
 
 import lakatos.cli as cli
 from lakatos.cli import main
-from lakatos.lineage import (
+from lakatos.io.lineage import (
     Derivation,
     EnvironmentFingerprint,
     dataset_manifest_from_derivations,

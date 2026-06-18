@@ -152,7 +152,7 @@ def load_programme(module_name: str) -> Programme:
     # we still surface the module's certify result if cheaply available via the
     # certify gate without side effects.
     try:
-        from lakatos.metrics import tree_metrics  # type: ignore
+        from lakatos.quant.metrics import tree_metrics  # type: ignore
         m = tree_metrics(nodes, frontier)
         prog = m.get('progress') or {}
         canonical_imp_pct = prog.get('improvement_pct')

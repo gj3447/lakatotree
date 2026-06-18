@@ -4,8 +4,8 @@ ENG-DU-5-branch-problem-balance: closed_by 는 '닫은 노드 tag' 여야 규칙
 비-노드 문자열로 닫으면 closed 미집계 → 가지 문제수지 과소계상(조용한 false-abandon).
 unattributed_closures 로 이 미귀속을 가시화(정직 신호) + metrics 에 노출.
 """
-from lakatos.laudan import unattributed_closures, branch_problem_balance_windowed
-from lakatos.metrics import tree_metrics
+from lakatos.quant.laudan import unattributed_closures, branch_problem_balance_windowed
+from lakatos.quant.metrics import tree_metrics
 
 
 def test_unattributed_closure_detected():

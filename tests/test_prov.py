@@ -1,7 +1,7 @@
 """출처추적 TDD — W3C PROV-O 트리플 (판결의 검증가능 계보).
 # KG: span_lakatotree_prov
 """
-from lakatos.prov import prov_triples, replay_command
+from lakatos.io.prov import prov_triples, replay_command
 
 def test_prov_triples_structure():
     t = prov_triples(tree='T', tag='v4', script='judges/x.py', result_path='out.json',

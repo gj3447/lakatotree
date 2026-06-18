@@ -1,6 +1,6 @@
 """라카토트리 순수 엔진 패키지."""
 
-from .engine import (
+from lakatos.engine import (
     BashAct,
     CredibilityPromotionGate,
     CredibilityTier,
@@ -27,13 +27,13 @@ from .engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
-from .claim import (
+from lakatos.claim import (
     ClaimNextAction,
     ClaimStanding,
     ClaimStandingPolicy,
     evaluate_claim_standing,
 )
-from .lineage import (
+from lakatos.io.lineage import (
     DatasetManifest,
     DatasetManifestResult,
     Derivation,
@@ -45,7 +45,7 @@ from .lineage import (
     manifest_to_dict,
     verify_dataset_manifest,
 )
-from .adapters import (
+from lakatos.io.adapters import (
     MarquezClientError,
     bash_act_to_prov_document,
     derivation_to_openlineage_event,
@@ -59,7 +59,7 @@ from .adapters import (
     send_openlineage_events_to_marquez,
     serialize_prov_document,
 )
-from .verdicts import (
+from lakatos.verdicts import (
     ADMIN_VERDICTS,
     SCRIPTED_VERDICTS,
     VERDICT_REGISTRY,
@@ -67,13 +67,13 @@ from .verdicts import (
     is_registered_verdict,
     is_scripted_verdict,
 )
-from .stack import LayerVote, StackVerdict, evaluate_stack, stack_verdict
-from .agm import Belief, HardCoreProtected, RevisionResult, contraction, demote_canonical, expansion, revision
-from .lifecycle import LifecycleState, lifecycle_state, regret_nodes
-from .leaderboard import Competitor, dominates, leaderboard, score_competitor
-from .kuhn import ParadigmAssessment, assess_paradigm, sustained_dominance
-from .certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
-from .world_gates import scan_prompt_injection, web_gate, world_action_gate, LAKATOS_LOCATIONS
+from lakatos.programme.stack import LayerVote, StackVerdict, evaluate_stack, stack_verdict
+from lakatos.programme.agm import Belief, HardCoreProtected, RevisionResult, contraction, demote_canonical, expansion, revision
+from lakatos.programme.lifecycle import LifecycleState, lifecycle_state, regret_nodes
+from lakatos.programme.leaderboard import Competitor, dominates, leaderboard, score_competitor
+from lakatos.programme.kuhn import ParadigmAssessment, assess_paradigm, sustained_dominance
+from lakatos.verdict.certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
+from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate, LAKATOS_LOCATIONS
 
 __all__ = [
     "scan_prompt_injection",

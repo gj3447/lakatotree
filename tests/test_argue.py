@@ -1,7 +1,7 @@
 """논증 채널 TDD — Dung AF. 인간/agent 의문이 판결을 공격, grounded extension 이 정본.
 # KG: span_lakatotree_argue
 """
-from lakatos.argue import grounded_extension, verdict_stands
+from lakatos.verdict.argue import grounded_extension, verdict_stands
 
 def test_unattacked_argument_accepted():
     ext = grounded_extension({'v', 'd'}, [])

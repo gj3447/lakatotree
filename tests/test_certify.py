@@ -1,7 +1,7 @@
 """P2 인증층 — 5게이트 AND + 근거 없는 PASS 차단 + 시점 한계 명시 검증."""
 import pytest
 
-from lakatos.certify import GATES, Certificate, certify_claim, gate_check, next_actions
+from lakatos.verdict.certify import GATES, Certificate, certify_claim, gate_check, next_actions
 
 WINDOW = {'as_of': '2026-06-12T19:00:00+09:00', 'shas': {'VFEZ0060.zdf': 'abc123'}}
 
