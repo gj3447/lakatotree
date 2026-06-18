@@ -275,3 +275,40 @@ def test_claim_standing_can_make_missing_lower_world_evidence_explicit():
     actions = {a["reason"]: a for a in standing.to_dict()["next_actions"]}
     assert actions["lower_confidence_below_threshold"]["realm"] == "bash|data|git|agent"
     assert actions["lineage:not_checked"]["action"] == "check_lineage_replay"
+
+
+# ── SRP 분해 payoff: 각 blocking 소스(의미)를 *독립* 테스트 (전엔 frame/event 통째로만 가능) ──
+from lakatos.claim import (
+    ClaimStandingPolicy, _combined_confidence, _confidence_evidence_block,
+    _standing_status, _foundation_block, _lineage_block,
+)
+
+
+def test_combined_confidence_min_when_both_required():
+    pol = ClaimStandingPolicy(require_upper=True, require_lower=True)
+    assert _combined_confidence(0.9, 0.3, pol) == 0.3        # 둘 다 요구 → 약한 쪽이 끈다
+    pol2 = ClaimStandingPolicy(require_upper=False, require_lower=False)
+    assert _combined_confidence(0.9, 0.3, pol2) == 0.9        # 요구 없으면 max
+
+
+def test_confidence_evidence_block_isolated():
+    pol = ClaimStandingPolicy(require_upper=True, require_lower=False, min_confidence=0.5)
+    assert 'evidence:missing_refs' in _confidence_evidence_block(0.9, 0.1, [], pol)
+    assert 'upper_confidence_below_threshold' in _confidence_evidence_block(0.3, 0.9, ['ref'], pol)
+    assert _confidence_evidence_block(0.9, 0.1, ['ref'], pol) == []   # 통과
+
+
+def test_foundation_and_lineage_block_isolated():
+    req = ClaimStandingPolicy(require_foundation=True, require_replay=True)
+    off = ClaimStandingPolicy(require_foundation=False, require_replay=False)
+    assert _foundation_block(None, req) == (['foundation:missing'], ())
+    assert _foundation_block(None, off) == ([], ())                   # 요구 안 하면 무블록
+    assert _lineage_block(None, req) == (['lineage:missing'], ('missing',))
+    assert _lineage_block(None, off) == ([], ())
+
+
+def test_standing_status_isolated():
+    pol = ClaimStandingPolicy(strong_confidence=0.7)
+    assert _standing_status(False, 0.99, pol) == 'blocked'           # 막힌 의문 → blocked
+    assert _standing_status(True, 0.8, pol) == 'stands'              # 강한 신뢰
+    assert _standing_status(True, 0.5, pol) == 'conditional'         # 약한 신뢰
