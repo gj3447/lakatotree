@@ -116,3 +116,46 @@ def test_credibility_human_verdict_unblocks():
     c = credibility_from_trust(0.5, has_human_verdict=True)
     d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
     assert d['ok']
+
+
+# ── reconcile_standing: certify.py:13 의 '새 반박이 G3 깨면 자동 철회' 이행 ──────────
+from lakatos.verdict.spine import reconcile_standing
+
+
+def test_standing_holds_no_demotion():
+    r = reconcile_standing('CANONICAL', stands=True)
+    assert r['demoted'] is False and r['verdict'] == 'CANONICAL'
+
+
+def test_rebutted_canonical_auto_demotes_to_former():
+    # 막지 못한 반박(stands=False) + valid_until_rebutted(default True) → 현재최선 철회
+    r = reconcile_standing('CANONICAL', stands=False, valid_until_rebutted=True)
+    assert r['demoted'] is True
+    assert r['verdict'] == 'former_canonical'
+    assert r['current_best_pointer'] is False
+    assert r['verdict_source'] == 'engine'        # 인간 행정판결과 구분
+    assert r['standing_broken'] is True
+
+
+def test_human_locked_canonical_not_auto_demoted():
+    # valid_until_rebutted=False = 인간이 반박-자동무효 OFF(더 강한 잠금) → 자동강등 제외(인간경계)
+    r = reconcile_standing('CANONICAL', stands=False, valid_until_rebutted=False)
+    assert r['demoted'] is False
+    assert r['verdict'] == 'CANONICAL'             # 강등 안 함
+    assert r['standing_broken'] is True            # 단 깨짐은 노출(정직)
+
+
+def test_non_canonical_not_auto_demoted():
+    # CANONICAL 아닌 노드는 자동강등 대상 아님 — judgement 은 순수 agent/인간 몫
+    r = reconcile_standing('progressive', stands=False)
+    assert r['demoted'] is False
+    assert r['verdict'] == 'progressive'
+    assert r['standing_broken'] is True
+
+
+def test_demotion_is_symmetric_to_promotion_gate():
+    # 승격이 stands 를 요구(synthesize_promotion)하듯, 철회도 같은 stands 사실에 대칭
+    from lakatos.verdict.spine import synthesize_promotion
+    blocked = synthesize_promotion(scripted_verdict='proof', stands=False)
+    assert blocked['ok'] is False                  # stands=False 면 승격 차단
+    assert reconcile_standing('CANONICAL', stands=False)['demoted'] is True  # 동일 사실 → 철회

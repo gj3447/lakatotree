@@ -13,6 +13,23 @@ from typing import Any
 from fastapi import HTTPException
 
 from lakatos.verdict.argue import grounded_extension
+from lakatos.verdict.spine import reconcile_standing
+
+
+def _assemble_af(tag: str, arg_rows: list) -> tuple[set, list]:
+    """노드 verdict + 등재된 Argument 들 → Dung AF (arguments, attacks). standing 과 add_critique 공유.
+    critique.attacks==tag 이면 verdict 직접 공격, 아니면 다른 argument 공격(verdict 방어)."""
+    verdict_arg = f'verdict:{tag}'
+    arguments = {verdict_arg}
+    attacks: list = []
+    for a in arg_rows:
+        if not a.get('id'):
+            continue
+        short = a['id'].split('/')[-1]
+        arguments.add(short)
+        tgt = verdict_arg if a.get('attacks') == tag else a.get('attacks')
+        attacks.append((short, tgt))
+    return arguments, attacks
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
@@ -96,7 +113,32 @@ class EvidenceClaimService:
                 tree=name, tag=tag, arg=c.arg_id, by=c.by, kind=c.kind, body=c.body,
                 attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
         self.hist(name, 'critique', tag, c.model_dump())
-        return {'ok': True, 'note': '비판 등재 — 코드 빌딩은 순수 agent(test_result) 담당'}
+        # ★certify.py:13 의 '새 반박이 G3(stands)를 깨면 자동 철회' 이행 — 승격이 stands 를 *요구*한
+        # 것의 대칭. 비판 등재 직후 grounded standing 을 재계산하고, CANONICAL 의 standing 이 깨졌으면
+        # former_canonical 로 강등(결정론 grounded_extension 사실에만 근거, verdict_source='engine').
+        out: dict = {'ok': True, 'note': '비판 등재 — 코드 빌딩은 순수 agent(test_result) 담당'}
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                     OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                     RETURN e.verdict AS verdict,
+                            coalesce(e.valid_until_rebutted, true) AS vur,
+                            collect({id:a.id, attacks:a.attacks}) AS args""",
+                       tree=name, tag=tag)
+        if rows:
+            verdict_arg = f'verdict:{tag}'
+            arguments, attacks = _assemble_af(tag, rows[0]['args'])
+            stands = verdict_arg in grounded_extension(arguments, attacks)
+            decision = reconcile_standing(rows[0]['verdict'], stands=stands,
+                                          valid_until_rebutted=bool(rows[0]['vur']))
+            out['standing'] = {'stands': stands, **decision}
+            if decision['demoted']:
+                # 현재최선 철회: CANONICAL→former_canonical. 인간 admin(verdict_source='admin')과 구분.
+                self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      SET e.verdict='former_canonical', e.verdict_source='engine',
+                          e.current_best_pointer=false, e.standing_retracted_at=$ts""",
+                        tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat())
+                self.hist(name, 'standing_retraction', tag,
+                          {'from': 'CANONICAL', 'to': 'former_canonical', 'reason': decision['reason']})
+        return out
 
     def add_research_event(self, name: str, tag: str, ev: ResearchEventIn) -> dict:
         engine_event = ev.to_engine(tag)
@@ -215,15 +257,7 @@ class EvidenceClaimService:
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         verdict_arg = f'verdict:{tag}'
-        arguments = {verdict_arg}
-        attacks = []
-        for a in rows[0]['args']:
-            if not a['id']:
-                continue
-            short = a['id'].split('/')[-1]
-            arguments.add(short)
-            tgt = verdict_arg if a['attacks'] == tag else a['attacks']
-            attacks.append((short, tgt))
+        arguments, attacks = _assemble_af(tag, rows[0]['args'])
         ext = grounded_extension(arguments, attacks)
         stands = verdict_arg in ext
         return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,

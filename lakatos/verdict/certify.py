@@ -10,7 +10,9 @@
   G5 grounded      : 인용 상수의 tier 공개 (grounding — 문헌값/정책값 구분 동봉)
 
 인증은 시점 스냅샷이다 — evidence_window 에 박힌 sha/시각 밖에선 효력 주장 안 함
-(CANONICAL 이 '임시 현재 최선'인 것과 동형). 철회는 새 반박 증거가 G3 를 깨면 자동.
+(CANONICAL 이 '임시 현재 최선'인 것과 동형). 철회는 새 반박 증거가 G3(stands)를 깨면 자동:
+evidence_claim_service.add_critique → spine.reconcile_standing 가 grounded standing 이 깨진
+CANONICAL 을 former_canonical 로 강등(verdict_source='engine', valid_until_rebutted 잠금 존중).
 # KG: span_lakatotree_certify / P2
 """
 from dataclasses import dataclass, field
