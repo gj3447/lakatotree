@@ -1,6 +1,12 @@
 """트리 지표 — 라카토스(진보율/기각률/퇴행깊이) + 라우든(문제수지/폐기 후보).
 
 순수함수: 입력 = plain dict 리스트 (서버/스크립트/노트북 어디서든 동일 판정).
+
+★구조(SOLID/SRP): `tree_metrics` 는 *오케스트레이터* — 정본경로·children·leaves 를 한 번 계산하고,
+각 지표 *개념*을 자기 이름의 순수함수(`_progress_metric`/`_degeneration_depth`/`_laudan_layer`/
+`_bayes_layer`/`_fertility_layer`/`_eureka_layer`/`_multiplicity_screen`/`_assemble_alerts` …)에
+위임한다. 한 개념 = 한 함수 = 한 테스트(의미량과 코드량 1:1). 전엔 158-LOC 한 함수에 12 개념이
+뭉쳐 있었다(SRP 위반) → 동작 불변 분해(test_metrics 가 영수증).
 # KG: span_lakatotree_S1_laudan_layer
 """
 from collections import defaultdict
@@ -69,127 +75,148 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
     )
 
 
-def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
-    cfg = cfg or {}
-    by = {r['tag']: r for r in nodes}
-    n = len(nodes)
-    rejected = [r['tag'] for r in nodes if r['verdict'] == 'rejected']
+# ── 공유 구조 (정본경로 · children · leaves) — 오케스트레이터가 한 번 계산 ──────────────
+def _canonical_path(nodes: list, by: dict) -> list:
+    """정본(CANONICAL) leaf → root 사이클가드 walk. root→leaf 순 반환."""
     can = [r['tag'] for r in nodes if r['verdict'] == 'CANONICAL']
     path, cur, seen = [], (can[0] if can else None), set()
     while cur and cur not in seen and cur in by:   # 사이클 가드(나생문 F-FG-3)
         seen.add(cur)
         path.append(cur)
         cur = _primary_parent(by[cur])
-    path = path[::-1]
-    # 진보율 (같은 scope 의 정본경로 metric)
-    prog = None
-    # ENG-HON-1: pred_direction 동봉 — improvement_pct 가 방향 무시하면 higher-is-better 진보를
-    # 음수로 오보 + 가짜 정체경보 + leaderboard/kuhn 오염. (default 'lower' → 기존 동작 보존)
-    pm = [(t, by[t]['metric_value'], by[t].get('metric_scope'), by[t].get('pred_direction') or 'lower')
-          for t in path if by[t].get('metric_value') is not None]
-    if len(pm) >= 2:
-        scopes = defaultdict(list)
-        for t, m, sc, d in pm:
-            scopes[sc].append((t, m, d))
-        # dogfood 발견: 다중 scope 중 노드 최다 scope 를 측정하면서 *어느 scope 인지* 미공개였음
-        # → 정직 표기. tie 면 결정성 위해 이름순 우선(같은 len 일 때 안정 선택).
-        scope_name = max(scopes, key=lambda k: (len(scopes[k]), str(k)))
-        sc = scopes[scope_name]
-        if len(sc) >= 2:
-            first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
-            gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)  # 개선=양수
-            common = dict(first={'tag': sc[0][0], 'm': first_m},
-                          last={'tag': sc[-1][0], 'm': last_m}, direction=direction,
-                          scope=scope_name)
-            if first_m != 0:   # 나생문 F-FG-8: first=0 ZeroDivision 가드
-                prog = dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
-            else:              # 기준 0 → 절대 증가량(raw last-first, 부호보존)
-                prog = dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))
+    return path[::-1]
+
+
+def _children_index(nodes: list) -> dict:
+    """parent tag → 자식 노드 리스트 (다중부모 DAG 지원)."""
     children = defaultdict(list)
     for r in nodes:
         for parent in (r.get('parents') or ([r.get('parent')] if r.get('parent') else [])):
             children[parent].append(r)
-    def degen_depth(tag, _seen=None):
+    return children
+
+
+def _verdict_seq(tags: list, by: dict) -> list:
+    """판결 시퀀스 → branch_credence 입력. delta/noise(효과크기) + target(use-novelty dedup 키) 동봉.
+    target = 닫는 질문(novel target 정체성) — 같은 질문 재확증은 branch_credence 가 content-dedup."""
+    out = []
+    for t in tags:
+        r = by[t]
+        d = {'verdict': r['verdict']}
+        if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
+            d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
+            d['noise_band'] = r.get('pred_noise_band') or 0.0
+        if r.get('pred_closes'):
+            d['target'] = r['pred_closes']
+        out.append(d)
+    return out
+
+
+# ── 지표 개념별 순수함수 (한 개념 = 한 함수 = 한 테스트) ──────────────────────────────
+def _progress_metric(path: list, by: dict) -> dict | None:
+    """진보율 — 같은 scope 정본경로의 metric 개선 %. 방향 인식(ENG-HON-1) + first=0 가드(F-FG-8)."""
+    pm = [(t, by[t]['metric_value'], by[t].get('metric_scope'), by[t].get('pred_direction') or 'lower')
+          for t in path if by[t].get('metric_value') is not None]
+    if len(pm) < 2:
+        return None
+    scopes = defaultdict(list)
+    for t, m, sc, d in pm:
+        scopes[sc].append((t, m, d))
+    # dogfood: 다중 scope 중 노드 최다 scope 측정 + *어느 scope 인지* 정직 표기. tie 면 이름순(결정성).
+    scope_name = max(scopes, key=lambda k: (len(scopes[k]), str(k)))
+    sc = scopes[scope_name]
+    if len(sc) < 2:
+        return None
+    first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
+    gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)   # 개선=양수
+    common = dict(first={'tag': sc[0][0], 'm': first_m},
+                  last={'tag': sc[-1][0], 'm': last_m}, direction=direction, scope=scope_name)
+    if first_m != 0:
+        return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
+    return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))   # 기준 0 → 절대증가
+
+
+def _degeneration_depth(path: list, children: dict) -> int:
+    """퇴행 깊이 — 정본경로 노드들의 최대 연속 비진보 자식 체인 (≥3 경보)."""
+    def depth(tag, _seen=None):
         _seen = _seen or set()
         if tag in _seen:
             return 0                              # 사이클 가드(나생문 F-FG-3)
         _seen = _seen | {tag}
-        return max([1 + degen_depth(c['tag'], _seen) for c in children.get(tag, [])
+        return max([1 + depth(c['tag'], _seen) for c in children.get(tag, [])
                     if c['verdict'] in NONPROGRESSIVE], default=0)
-    stalled = max([degen_depth(t) for t in path], default=0)
-    open_q = sum(1 for q in frontier if q['status'] == 'OPEN')
-    closed_q = sum(1 for q in frontier if q['status'] == 'CLOSED')
-    annotated = sum(1 for r in nodes
-                    if r.get('algorithm') and r.get('comment') and r.get('limitation'))
-    # 라우든: leaf 별 가지 진단 → 폐기 후보
-    leaves = [r['tag'] for r in nodes if r['tag'] not in children]
+    return max([depth(t) for t in path], default=0)
+
+
+def _branch_chain(leaf: str, path: list, by: dict) -> list:
+    """leaf → (정본경로 만나기 전까지) 분기 가지 노드 리스트, 사이클 가드."""
+    chain, cur, seen = [], leaf, set()
+    while cur and cur not in path and cur not in seen and cur in by:
+        seen.add(cur)
+        chain.append(by[cur])
+        cur = _primary_parent(by[cur])
+    return chain
+
+
+def _laudan_layer(nodes: list, frontier: list, path: list, by: dict, leaves: list,
+                  open_q: int, closed_q: int) -> dict:
+    """라우든 문제해결력층 — 가지별 폐기 후보(should_abandon 3규칙) + 문제수지 + PSR + 미귀속 폐쇄."""
     abandon = []
     for leaf in leaves:
         if leaf in path:
             continue
-        chain, cur2, seen2 = [], leaf, set()
-        while cur2 and cur2 not in path and cur2 not in seen2 and cur2 in by:
-            seen2.add(cur2)
-            chain.append(by[cur2])
-            cur2 = _primary_parent(by[cur2])
+        chain = _branch_chain(leaf, path, by)
         consec = 0
-        for r in chain:                      # leaf→분기점 방향 연속 비진보
+        for r in chain:                          # leaf→분기점 방향 연속 비진보
             if r['verdict'] in NONPROGRESSIVE:
                 consec += 1
             else:
                 break
-        hits = sum(1 for r in chain
-                   if r['verdict'] in PROGRESS_VERDICTS)
-        # gap4: 규칙③ 가동 — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
+        hits = sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS)
+        # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
         pb_windowed = branch_problem_balance_windowed(chain, frontier)
-        ok, reason = should_abandon(consecutive_nonprogressive=consec,
-                                    nodes_spent=len(chain), prediction_hits=hits,
-                                    problem_balance_windowed=pb_windowed)
+        ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
+                                    prediction_hits=hits, problem_balance_windowed=pb_windowed)
         if ok:
             abandon.append(dict(leaf=leaf, branch_len=len(chain), reason=reason))
-    laudan = dict(frontier_balance=problem_balance(closed_q, open_q),
-                  psr=round(psr(closed_q, len(path)), 3),
-                  abandon_candidates=abandon,
-                  # gap4 정직: closed_by 가 노드 tag 에 안 걸린 폐쇄 — rule③ 가 미집계(과소계상 신호)
-                  unattributed_closed=unattributed_closures([r['tag'] for r in nodes], frontier))
-    # 베이즈 연속층: 정본 경로 신뢰도 + 저신뢰 가지 (판결 시퀀스 = 증거)
-    def verdict_seq(tags):
-        out = []
-        for t in tags:
-            r = by[t]
-            d = {'verdict': r['verdict']}
-            if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
-                d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
-                d['noise_band'] = r.get('pred_noise_band') or 0.0
-            # use-novelty 상관보정 키(닫는 질문=novel target 정체성). 같은 질문 재확증은
-            # branch_credence 가 content-dedup(초과내용 0). 없으면 None=항상 novel(독립).
-            if r.get('pred_closes'):
-                d['target'] = r['pred_closes']
-            out.append(d)
-        return out
-    can_cred = round(branch_credence(verdict_seq(path)), 3) if path else None
+    return dict(frontier_balance=problem_balance(closed_q, open_q),
+                psr=round(psr(closed_q, len(path)), 3), abandon_candidates=abandon,
+                # gap4 정직: closed_by 가 노드 tag 에 안 걸린 폐쇄 — rule③ 미집계(과소계상 신호)
+                unattributed_closed=unattributed_closures([r['tag'] for r in nodes], frontier))
+
+
+def _bayes_layer(path: list, by: dict, leaves: list) -> dict:
+    """베이즈 연속층 — 정본경로 신뢰도(판결 시퀀스 사후확률) + 신뢰도<0.1 저신뢰 가지."""
+    can_cred = round(branch_credence(_verdict_seq(path, by)), 3) if path else None
     low_branches = []
     for leaf in leaves:
         if leaf in path:
             continue
-        chain, cur3, seen3 = [], leaf, set()
-        while cur3 and cur3 not in path and cur3 not in seen3 and cur3 in by:
-            seen3.add(cur3); chain.append(cur3); cur3 = _primary_parent(by[cur3])
-        ab, c = should_abandon_bayes(verdict_seq(chain[::-1]))
+        chain = _branch_chain(leaf, path, by)     # leaf→분기점
+        ab, c = should_abandon_bayes(_verdict_seq([r['tag'] for r in chain][::-1], by))
         if ab:
             low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
-    bayes = dict(canonical_credence=can_cred, low_credence_branches=low_branches,
-                 note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
-    # 이론 발전성: 정본 경로의 novel 예측 적중 track record (과학=예측력)
+    return dict(canonical_credence=can_cred, low_credence_branches=low_branches,
+                note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
+
+
+def _fertility_layer(path: list, by: dict, nodes: list) -> dict:
+    """이론 발전성 — 정본경로 novel 예측 적중 track record (과학=예측력). nobel_grade 동봉."""
     fert = predictive_fertility([by[t] for t in path]) if path else predictive_fertility(nodes)
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
-    # eureka(measurement-grade): novel 예측 중 *측정 red* 를 통과한 것의 비율 = true/felt.
-    # fertility(confirmed/registered) 위에 BF substantial + 문제수지>0 게이트를 더 건 엄격본.
-    # standing(promotion)은 별도 층이라 제외 — felt aha 중 측정으로 확증된 것만 true.
-    eureka = eureka_over_tree([by[t] for t in path]) if path else eureka_over_tree(nodes)
-    # gap8: 다중비교 — improved 판결을 (metric_name, scope) family 별로 BH/Bonferroni 스크린.
-    # 판결은 불변(judge 권위) — family 수준 false-progressive 경보만.
+    return fert
+
+
+def _eureka_layer(path: list, by: dict, nodes: list) -> dict:
+    """eureka(measurement-grade) — novel 예측 중 *측정 red* 통과 비율 = true/felt. BF substantial +
+    문제수지>0 게이트를 fertility 위에 더 건 엄격본. standing(promotion)은 별도 층이라 제외."""
+    return eureka_over_tree([by[t] for t in path]) if path else eureka_over_tree(nodes)
+
+
+def _multiplicity_screen(nodes: list) -> dict:
+    """gap8 다중비교 — improved 판결을 (metric_name, scope) family 별 BH/Bonferroni 스크린.
+    판결은 불변(judge 권위) — family 수준 false-progressive 경보만."""
     fam = defaultdict(list)
     for r in nodes:
         if (r['verdict'] in ('progressive', 'partial')
@@ -198,28 +225,69 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 tag=r['tag'], delta=r['metric_value'] - r['pred_baseline'],
                 noise_band=r.get('pred_noise_band') or 0.0,
                 direction=r.get('pred_direction') or 'lower'))
-    multiplicity = {}
+    out = {}
     for key, cands in fam.items():
         if len(cands) < 2:
             continue   # family 1개 = 다중비교 아님
         rep = false_progressive_screen(cands)
-        multiplicity['/'.join(str(k) for k in key)] = dict(
+        out['/'.join(str(k) for k in key)] = dict(
             family_size=rep.family_size, untestable=list(rep.untestable),
             survivors_bh=list(rep.survivors_bh),
             survivors_bonferroni=list(rep.survivors_bonferroni), q=rep.q, note=rep.note)
-    coverage_backlog = list(cfg.get('coverage_backlog') or [])
-    coverage = dict(statement=cfg.get('coverage_statement') or '',
-                    backlog=coverage_backlog, backlog_count=len(coverage_backlog),
-                    exhaustive=(len(coverage_backlog) == 0))
-    alerts = [a for a in [
+    return out
+
+
+def _coverage(cfg: dict) -> dict:
+    """커버리지 — 전수성 backlog 강제 노출(과장 방지)."""
+    backlog = list(cfg.get('coverage_backlog') or [])
+    return dict(statement=cfg.get('coverage_statement') or '', backlog=backlog,
+                backlog_count=len(backlog), exhaustive=(len(backlog) == 0))
+
+
+def _assemble_alerts(*, stalled: int, prog: dict | None, annotated: int, n: int,
+                     coverage_backlog: list, abandon: list, multiplicity: dict) -> list:
+    """경보 조립 — 퇴행/정체/주석미완/커버리지/폐기후보/다중비교를 사람 읽는 문자열로."""
+    base = [
         f'퇴행 경보: 연속 비진보 깊이 {stalled} ≥3 — 가지 전환 검토' if stalled >= 3 else None,
         '정체 경보: 진보율 ≤0' if prog and prog.get('improvement_pct') is not None
         and prog['improvement_pct'] <= 0 else None,
         '주석 미완 노드 존재' if annotated < n else None,
         f'커버리지 backlog {len(coverage_backlog)}건 — 전수성 주장 금지' if coverage_backlog else None,
-    ] + [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon]
-      + [f"다중비교 경보({k}): improved {m['family_size']}건 중 BH 생존 {len(m['survivors_bh'])}건"
-         for k, m in multiplicity.items() if len(m['survivors_bh']) < m['family_size']] if a]
+    ]
+    base += [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon]
+    base += [f"다중비교 경보({k}): improved {m['family_size']}건 중 BH 생존 {len(m['survivors_bh'])}건"
+             for k, m in multiplicity.items() if len(m['survivors_bh']) < m['family_size']]
+    return [a for a in base if a]
+
+
+def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
+    """트리 지표 오케스트레이터 — 공유 구조 1회 계산 후 각 지표 개념을 자기 함수에 위임.
+    (개념별 분해는 위 `_*_layer`/`_*_metric`/`_*_screen` 참조 — 한 개념 = 한 함수.)"""
+    cfg = cfg or {}
+    by = {r['tag']: r for r in nodes}
+    n = len(nodes)
+    path = _canonical_path(nodes, by)
+    children = _children_index(nodes)
+    leaves = [r['tag'] for r in nodes if r['tag'] not in children]
+    can = [r['tag'] for r in nodes if r['verdict'] == 'CANONICAL']
+    rejected = [r['tag'] for r in nodes if r['verdict'] == 'rejected']
+    open_q = sum(1 for q in frontier if q['status'] == 'OPEN')
+    closed_q = sum(1 for q in frontier if q['status'] == 'CLOSED')
+    annotated = sum(1 for r in nodes
+                    if r.get('algorithm') and r.get('comment') and r.get('limitation'))
+
+    prog = _progress_metric(path, by)
+    stalled = _degeneration_depth(path, children)
+    laudan = _laudan_layer(nodes, frontier, path, by, leaves, open_q, closed_q)
+    bayes = _bayes_layer(path, by, leaves)
+    fert = _fertility_layer(path, by, nodes)
+    eureka = _eureka_layer(path, by, nodes)
+    multiplicity = _multiplicity_screen(nodes)
+    coverage = _coverage(cfg)
+    alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
+                              coverage_backlog=coverage['backlog'],
+                              abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
+
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
                 rejected=rejected, max_degeneration_depth=stalled,
