@@ -1,0 +1,103 @@
+"""EUREKA detector — distinguish a FELT aha from a TRUE (externally-confirmed) one.
+
+The cognitive science is blunt (see ``docs/EUREKA.md``; prom cycle eureka-red-blue,
+2026-06-18, 12 axes, 8 surviving adversarial verification). The felt "aha" is mostly
+🔵 BLUE — representational restructuring crossing the conscious threshold — plus an
+INTRINSIC "feeling of rightness" that is a LOW-FIDELITY proxy, NOT verification.
+~37% of objectively WRONG solutions produce a phenomenologically identical aha
+(Danek & Wiley 2017; Laukkonen et al. "dark side of Eureka" 2019). Therefore:
+
+    felt eureka  ≠  true eureka.
+    A felt eureka with no external receipt is a hallucination.
+
+This module makes that distinction executable. It is a **downstream pipeline detector**
+(Reichenbach: discovery → justification), NOT a symmetric "red⊗blue bond": the engine's
+gates are decoupled and 🔴 red is an *asymmetric* filter — it gates/demotes, never
+originates content. What red contributes is the only thing that separates Archimedes
+from a confident crank: external confirmation.
+
+    🔵 blue (discovery)     a NOVEL prediction was registered (the flash)     → felt
+    🔴 red  (justification) confirmed + survives the gates                    → true
+    hallucinated = felt ∧ ¬true   (the false aha; the 37%)
+
+Longinus: composes lakatos/ real symbols — ``bayes.bayes_factor`` (evidential weight),
+``laudan.problem_balance`` (closed−opened), ``promote.promotion_gate`` (fail-closed).
+The true-eureka *rate* mirrors ``fertility.predictive_fertility`` (confirmed/registered).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .bayes import bayes_factor
+from .laudan import problem_balance
+from .promote import promotion_gate
+
+# Jeffreys 'substantial' evidence band (10**0.5). Below this a confirmation is marginal —
+# a felt aha riding weak evidence is not a true eureka.
+BF_SUBSTANTIAL = 3.162
+
+
+@dataclass(frozen=True)
+class EurekaVerdict:
+    felt: bool          # 🔵 the flash: a novel prediction was made (aha-prone, unreliable)
+    true: bool          # 🔴 survives external red: confirmed + every gate passes
+    hallucinated: bool  # felt ∧ ¬true — the false aha (the ~37%)
+    bf: float
+    balance: int
+    reasons: tuple = ()  # which external-red gate(s) vetoed it (why it is not true)
+
+
+def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL) -> EurekaVerdict:
+    """Classify a research node as felt / true / hallucinated eureka.
+
+    Node keys (all optional, conservative defaults): ``novel_registered``,
+    ``novel_confirmed``, ``verdict``, ``delta``, ``noise_band``, ``source_trust``,
+    ``closed``, ``opened``, ``stands``, ``reproducible``.
+
+    A node is *felt* iff a novel prediction was registered (the blue flash). It is *true*
+    iff it is also externally confirmed AND clears every red gate; otherwise the felt aha
+    is *hallucinated* and ``reasons`` names every veto.
+    """
+    felt = bool(node.get("novel_registered"))  # 🔵 blue flash — does NOT imply correctness
+    if not felt:
+        return EurekaVerdict(False, False, False, bf=1.0, balance=0,
+                             reasons=("no_novel_prediction",))
+
+    # 🔴 external-red gates — each may veto, none may originate (asymmetric filter)
+    reasons: list[str] = []
+    if not node.get("novel_confirmed"):
+        reasons.append("novel_unconfirmed")  # the decisive false-aha signature
+    bf = bayes_factor(node.get("verdict", ""), node.get("delta", 0.0),
+                      node.get("noise_band", 0.0), node.get("source_trust", 1.0))
+    if bf <= bf_substantial:
+        reasons.append(f"bf_marginal:{bf:.3f}<={bf_substantial}")
+    balance = problem_balance(int(node.get("closed", 0)), int(node.get("opened", 0)))
+    if balance <= 0:
+        reasons.append(f"problem_balance:{balance}<=0")
+    ok, gate_reasons = promotion_gate(scripted_verdict=node.get("verdict", ""),
+                                      stands=bool(node.get("stands", False)),
+                                      reproducible=node.get("reproducible"))
+    if not ok:
+        reasons.extend(gate_reasons)
+
+    true = not reasons
+    return EurekaVerdict(felt=True, true=true, hallucinated=not true,
+                         bf=bf, balance=balance, reasons=tuple(reasons))
+
+
+def eureka_rate(nodes: list) -> dict:
+    """True-eureka rate over a node set = true / felt = 1 − hallucination rate.
+
+    The headline reliability metric: of all felt ahas, how many survived external red?
+    This is the engine's measured analogue of the ~37% human false-insight rate — and the
+    whole point of the 🔴 strand is to drive ``hallucination_rate`` toward zero.
+    """
+    verdicts = [classify(n) for n in nodes]
+    felt = sum(1 for v in verdicts if v.felt)
+    true = sum(1 for v in verdicts if v.true)
+    hallucinated = sum(1 for v in verdicts if v.hallucinated)
+    return {
+        "felt": felt, "true": true, "hallucinated": hallucinated,
+        "true_rate": round(true / felt, 3) if felt else 0.0,
+        "hallucination_rate": round(hallucinated / felt, 3) if felt else 0.0,
+    }
