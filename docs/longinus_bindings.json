@@ -1181,6 +1181,56 @@
       "layer": "hard_core",
       "serving": "lib",
       "frege_sinn": "hard_core 수축/확장 시 raise (음의 휴리스틱 형식화)"
+    },
+    {
+      "sourceId": "eureka.classify",
+      "file": "lakatos/eureka.py",
+      "symbol": "classify",
+      "kind": "def",
+      "line_hint": 50,
+      "sha256": "abda4bf20d2cb3bf",
+      "layer": "eureka",
+      "frege_sinn": "felt/true/hallucinated 분류 (붉음이 felt를 true로 인증)"
+    },
+    {
+      "sourceId": "eureka.eureka_rate",
+      "file": "lakatos/eureka.py",
+      "symbol": "eureka_rate",
+      "kind": "def",
+      "line_hint": 88,
+      "sha256": "ace4251421f846f3",
+      "layer": "eureka",
+      "frege_sinn": "true/felt = 1−환각률 (=fertility보다 엄격)"
+    },
+    {
+      "sourceId": "eureka.EurekaVerdict",
+      "file": "lakatos/eureka.py",
+      "symbol": "EurekaVerdict",
+      "kind": "class",
+      "line_hint": 41,
+      "sha256": "931f5db8f41b0710",
+      "layer": "eureka",
+      "frege_sinn": "유레카 판정 7-tuple (felt/true/hallucinated)"
+    },
+    {
+      "sourceId": "laudan.problem_balance",
+      "file": "lakatos/quant/laudan.py",
+      "symbol": "problem_balance",
+      "kind": "def",
+      "line_hint": 19,
+      "sha256": "a0f5f1a517759534",
+      "layer": "laudan",
+      "frege_sinn": "문제 수지 closed−opened (압축 신호)"
+    },
+    {
+      "sourceId": "fertility.nobel_grade",
+      "file": "lakatos/quant/fertility.py",
+      "symbol": "nobel_grade",
+      "kind": "def",
+      "line_hint": 26,
+      "sha256": "3746deea3f7bf56d",
+      "layer": "fertility",
+      "frege_sinn": "노벨급 적중률 Wilson LB≥0.7 (환각률 바닥)"
     }
   ],
   "kg_anchors": [
