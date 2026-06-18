@@ -115,7 +115,7 @@ class TreeKgRepository:
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
                e.novel_confirmed AS novel_confirmed,
                e.pred_baseline AS pred_baseline, e.pred_noise_band AS pred_noise_band,
-               e.pred_direction AS pred_direction,
+               e.pred_direction AS pred_direction, e.pred_closes AS pred_closes,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
                [pe IN parent_edges | pe.tag] AS parents, parent_edges AS parent_edges,
                questions AS questions

@@ -103,3 +103,26 @@ def test_improvement_pct_higher_is_better_direction():
 def test_improvement_pct_lower_default_unchanged():
     m = tree_metrics(NODES, FRONTIER)
     assert m['progress']['improvement_pct'] == 50.0          # 기존 lower-is-better 회귀 0
+
+
+def test_canonical_credence_dedups_repeated_same_question_LIVE():
+    """use-novelty 상관보정 live 배선 실증: 정본 경로에서 같은 질문(pred_closes)을 반복 확증해도
+    canonical_credence 가 부풀지 않는다(content-dedup). 전엔 같은 progressive 반복이 ~1.0 인위확신."""
+    def chain(closes_pair):
+        c1, c2 = closes_pair
+        return [
+            dict(tag='root', verdict='canonical_stage', parent=None, metric_value=1.0,
+                 metric_scope='s', algorithm='a', comment='c', limitation='l'),
+            dict(tag='p1', verdict='progressive', parent='root', metric_value=0.5, metric_scope='s',
+                 pred_baseline=1.0, pred_noise_band=0.02, pred_closes=c1,
+                 algorithm='a', comment='c', limitation='l'),
+            dict(tag='p2', verdict='progressive', parent='p1', metric_value=0.4, metric_scope='s',
+                 pred_baseline=1.0, pred_noise_band=0.02, pred_closes=c2,
+                 algorithm='a', comment='c', limitation='l'),
+            dict(tag='top', verdict='CANONICAL', parent='p2', metric_value=0.35, metric_scope='s',
+                 algorithm='a', comment='c', limitation='l'),
+        ]
+    same = tree_metrics(chain(('q1', 'q1')), [])['bayes']['canonical_credence']    # 같은 질문 재확증
+    diff = tree_metrics(chain(('q1', 'q2')), [])['bayes']['canonical_credence']    # 서로 다른 질문
+    assert diff > same          # 새 예측 2개 = 독립증거 → 더 높은 신뢰 (use-novelty)
+    assert 0.0 < same < 1.0     # 재확증은 인위확신 안 만듦
