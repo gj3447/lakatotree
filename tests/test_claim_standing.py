@@ -312,3 +312,22 @@ def test_standing_status_isolated():
     assert _standing_status(False, 0.99, pol) == 'blocked'           # 막힌 의문 → blocked
     assert _standing_status(True, 0.8, pol) == 'stands'              # 강한 신뢰
     assert _standing_status(True, 0.5, pol) == 'conditional'         # 약한 신뢰
+
+
+# ── 바인딩 owner+test 메움: claim 2개 ──────────────────────────────────────────
+from lakatos.claim import _realm_confidences, _doubt_block
+from lakatos.engine import ResearchEvent as _RE, Realm as _Realm
+
+
+def _ev(name, realm):
+    return _RE(name=name, realm=realm, actor='a', action='fetch', target='claim-1', evidence_refs=('r',))
+
+
+def test_realm_confidences_isolated_bounded():
+    upper, lower = _realm_confidences((_ev('e1', _Realm.INTERNET), _ev('e2', _Realm.BASH)), None)
+    assert 0 <= upper <= 1 and 0 <= lower <= 1
+
+
+def test_doubt_block_isolated_empty_when_no_doubt():
+    block, unresolved = _doubt_block(())
+    assert block == [] and unresolved == ()

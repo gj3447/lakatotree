@@ -172,3 +172,58 @@ def test_multiplicity_screen_isolated_only_families_of_2plus():
 def test_coverage_isolated_backlog_blocks_exhaustive():
     assert _coverage({})['exhaustive'] is True
     assert _coverage({'coverage_backlog': ['x']})['exhaustive'] is False
+
+
+# ── 바인딩이 드러낸 테스트 공백 메움: bound owner 8개 독립 테스트 (owner+test chain) ──────
+from lakatos.quant.metrics import (
+    _children_index, _verdict_seq, _branch_chain, _laudan_layer, _bayes_layer,
+    _fertility_layer, _eureka_layer, _assemble_alerts,
+)
+
+
+def _mn(tag, verdict, parent=None, **kw):
+    return dict(tag=tag, verdict=verdict, parent=parent, **kw)
+
+
+def test_children_index_isolated():
+    ci = _children_index([_mn('r', 'canonical_stage'), _mn('a', 'progressive', 'r'), _mn('b', 'rejected', 'r')])
+    assert {c['tag'] for c in ci['r']} == {'a', 'b'}
+
+
+def test_verdict_seq_isolated_delta_and_target():
+    by = {'a': _mn('a', 'progressive', metric_value=0.5, pred_baseline=1.0, pred_noise_band=0.02, pred_closes='q1')}
+    s = _verdict_seq(['a'], by)
+    assert s[0]['delta'] == -0.5 and s[0]['target'] == 'q1'
+
+
+def test_branch_chain_isolated_stops_at_path():
+    by = {'leaf': _mn('leaf', 'rejected', 'mid'), 'mid': _mn('mid', 'rejected', 'canon'), 'canon': _mn('canon', 'CANONICAL')}
+    assert [r['tag'] for r in _branch_chain('leaf', ['canon'], by)] == ['leaf', 'mid']
+
+
+def test_laudan_layer_isolated_balance():
+    lay = _laudan_layer([_mn('canon', 'CANONICAL')], [], ['canon'], {'canon': _mn('canon', 'CANONICAL')}, [], 2, 5)
+    assert lay['frontier_balance'] == 3 and 'abandon_candidates' in lay and 'psr' in lay
+
+
+def test_bayes_layer_isolated_credence_bounded():
+    by = {'canon': _mn('canon', 'progressive', metric_value=0.5, pred_baseline=1.0, pred_noise_band=0.02)}
+    b = _bayes_layer(['canon'], by, [])
+    assert 0 < b['canonical_credence'] < 1 and b['low_credence_branches'] == []
+
+
+def test_fertility_layer_isolated_has_nobel_grade():
+    by = {'c': _mn('c', 'progressive', novel_registered=True, novel_confirmed=True)}
+    f = _fertility_layer(['c'], by, list(by.values()))
+    assert 'nobel_grade' in f and 'note' in f
+
+
+def test_eureka_layer_isolated_returns_dict():
+    by = {'c': _mn('c', 'progressive', novel_registered=True, novel_confirmed=True)}
+    assert isinstance(_eureka_layer(['c'], by, list(by.values())), dict)
+
+
+def test_assemble_alerts_isolated_degeneration_then_clean():
+    al = _assemble_alerts(stalled=3, prog=None, annotated=1, n=1, coverage_backlog=[], abandon=[], multiplicity={})
+    assert any('퇴행' in a for a in al)
+    assert _assemble_alerts(stalled=0, prog=None, annotated=1, n=1, coverage_backlog=[], abandon=[], multiplicity={}) == []
