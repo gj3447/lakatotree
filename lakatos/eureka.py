@@ -28,9 +28,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .bayes import bayes_factor
-from .laudan import problem_balance
-from .promote import promotion_gate
+from lakatos.quant.bayes import bayes_factor
+from lakatos.quant.laudan import problem_balance
+from lakatos.verdict.promote import promotion_gate
 
 # Jeffreys 'substantial' evidence band (10**0.5). Below this a confirmation is marginal —
 # a felt aha riding weak evidence is not a true eureka.

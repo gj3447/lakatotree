@@ -5,7 +5,7 @@ examples/bpc_analysis_contract_programme.py(실 작업사: W3 merged 운반/운�
 구동해 엔진 판정을 핀으로 고정. bpc_icp_programme(정합 scope)와 별개 tree(measurement scope).
 """
 from examples.bpc_analysis_contract_programme import run, NODES, FRONTIER
-from lakatos.metrics import tree_metrics
+from lakatos.quant.metrics import tree_metrics
 
 
 def test_dogfood_runs_and_concludes_sensibly():

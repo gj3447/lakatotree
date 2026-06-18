@@ -1,7 +1,7 @@
 """환경 지문 TDD — 같은 ZDF+코드라도 환경 다르면 결과 다르다(재현성 마지막 조각).
 # KG: span_lakatotree_envfp
 """
-from lakatos.envfp import environment_fingerprint, fingerprint_sha, env_matches
+from lakatos.io.envfp import environment_fingerprint, fingerprint_sha, env_matches
 
 PROBE = dict(python='3.13.0', platform='Linux-x86_64',
              packages={'numpy': '2.1.0', 'scipy': '1.14.0'},

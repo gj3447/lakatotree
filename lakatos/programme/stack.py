@@ -19,9 +19,9 @@
 """
 from dataclasses import dataclass, field
 
-from .bayes import should_abandon_bayes
-from .grounding import GROUNDED
-from .laudan import should_abandon
+from lakatos.quant.bayes import should_abandon_bayes
+from lakatos.grounding import GROUNDED
+from lakatos.quant.laudan import should_abandon
 
 STACK_QUORUM = GROUNDED['stack_quorum']['value']
 

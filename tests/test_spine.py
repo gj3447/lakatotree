@@ -2,7 +2,7 @@
 # KG: span_lakatotree_spine / q-lkt-engine-unify
 """
 from lakatos.engine import LakatosEvidence, LakatosGate
-from lakatos.spine import reconcile_verdict, promotion_decision
+from lakatos.verdict.spine import reconcile_verdict, promotion_decision
 
 GOOD = LakatosEvidence(theory_laden_anomaly=True, independent_testable_consequence=True,
                        excess_empirical_content=True, hard_core_preserved=True, implementation_complete=True)
@@ -54,7 +54,7 @@ def test_promotion_decision_clean_passes():
 
 # === 완전 합성: 모든 승격 게이트 (Foundation + Credibility + 헌법) ===
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind, CredibilityTier
-from lakatos.spine import synthesize_promotion, credibility_from_trust
+from lakatos.verdict.spine import synthesize_promotion, credibility_from_trust
 
 def _foundation_with_gap():
     fm = FoundationMap()

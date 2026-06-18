@@ -7,7 +7,7 @@ import pytest
 
 from examples.bpc_inspection_groundtruth import (
     tolerance_for, preregister, ground_truth_verdict, check_against_pipeline, run)
-from lakatos.judge import judge, PredictionMissing, PredictionLocked, check_registration
+from lakatos.verdict.judge import judge, PredictionMissing, PredictionLocked, check_registration
 
 
 # ── 공차 spec (정답 contract 근거) ──

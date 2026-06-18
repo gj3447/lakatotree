@@ -15,17 +15,17 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lakatos.metrics import branch_inputs
-from lakatos.stack import evaluate_stack
-from lakatos.lifecycle import lifecycle_state
-from lakatos.leaderboard import Competitor, leaderboard as build_leaderboard
-from lakatos.kuhn import assess_paradigm
-from lakatos.explore import rank_questions
-from lakatos.agm import (Belief, expansion, contraction, revision, demote_canonical,
+from lakatos.quant.metrics import branch_inputs
+from lakatos.programme.stack import evaluate_stack
+from lakatos.programme.lifecycle import lifecycle_state
+from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
+from lakatos.programme.kuhn import assess_paradigm
+from lakatos.programme.explore import rank_questions
+from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
-from lakatos.lineage import by_output, roots as lin_roots
-from lakatos.envfp import environment_fingerprint, fingerprint_sha
+from lakatos.io.lineage import by_output, roots as lin_roots
+from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import TypeAdapter

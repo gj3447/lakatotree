@@ -13,10 +13,10 @@
 """
 from dataclasses import dataclass
 
-from .bayes import branch_credence
-from .fertility import predictive_fertility
-from .grounding import wilson_lower_bound
-from .laudan import branch_score
+from lakatos.quant.bayes import branch_credence
+from lakatos.quant.fertility import predictive_fertility
+from lakatos.grounding import wilson_lower_bound
+from lakatos.quant.laudan import branch_score
 
 CRITERIA = ('laudan_score', 'credence', 'fertility_lb')
 

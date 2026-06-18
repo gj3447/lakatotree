@@ -96,7 +96,7 @@ def test_provenance_carries_citation():
 
 # ── 일관성: 모듈 상수가 grounding 정본과 일치 (drift 차단) ─────────────
 def test_bayes_constants_match_grounding():
-    from lakatos import bayes
+    from lakatos.quant import bayes
     assert bayes.BF_BASE['progressive'] == G.GROUNDED['bf_progressive']['value']
     assert bayes.BF_BASE['rejected'] == G.GROUNDED['bf_rejected']['value']
     assert bayes.EFF_CAP == G.GROUNDED['eff_cap']['value']
@@ -104,13 +104,13 @@ def test_bayes_constants_match_grounding():
 
 
 def test_laudan_constants_match_grounding():
-    from lakatos import laudan
+    from lakatos.quant import laudan
     assert laudan.ABANDON_K == G.GROUNDED['abandon_k']['value']
     assert laudan.ABANDON_BUDGET == G.GROUNDED['abandon_budget']['value']
 
 
 def test_fertility_constants_match_grounding():
-    from lakatos import fertility
+    from lakatos.quant import fertility
     assert fertility.NOBEL_MIN_HITRATE_LB == G.GROUNDED['nobel_min_hitrate_lb']['value']
 
 
@@ -169,7 +169,7 @@ def test_sprt_rejects_alpha_plus_beta_ge_1():
 
 # ── F-MATH-1: NOBEL 실효 최소표본 = 9/9 (3/3·8/8 탈락) ─────────────────
 def test_nobel_effective_minimum_is_9():
-    from lakatos.fertility import nobel_grade
+    from lakatos.quant.fertility import nobel_grade
     def fert(c, r): return dict(registered=r, confirmed=c, fertility=c / r)
     assert nobel_grade(fert(3, 3)) is False    # 하한 0.438 < 0.7
     assert nobel_grade(fert(8, 8)) is False    # 하한 0.676 < 0.7
@@ -179,7 +179,7 @@ def test_nobel_effective_minimum_is_9():
 
 # ── SPRT-근거 폐기가 휴리스틱 K=3 과 정합 ─────────────────────────────
 def test_sprt_abandonment_matches_k3_heuristic():
-    from lakatos.laudan import should_abandon_sprt
+    from lakatos.quant.laudan import should_abandon_sprt
     # 노드당 ≈−1 nat 비진보 3개 → 누적 −3 ≤ lnB(−2.944) → abandon (K=3 휴리스틱과 일치)
     v, s, (lnA, lnB) = should_abandon_sprt([-1.0, -1.0, -1.0])
     assert v == 'abandon' and s <= lnB
@@ -195,7 +195,7 @@ def test_sprt_abandonment_matches_k3_heuristic():
 
 def test_grounding_single_source_consumed_by_modules():
     import inspect
-    import lakatos.calibrate as cal, lakatos.trust as tr, lakatos.explore as ex
+    import lakatos.quant.calibrate as cal, lakatos.quant.trust as tr, lakatos.programme.explore as ex
     assert inspect.signature(cal.calibration_error).parameters['bins'].default == G.GROUNDED['ece_bins']['value']
     assert inspect.signature(tr.trustrank).parameters['damping'].default == G.GROUNDED['pagerank_damping']['value']
     assert inspect.signature(tr.eigentrust).parameters['alpha'].default == G.GROUNDED['eigentrust_alpha']['value']
@@ -226,7 +226,7 @@ def test_wilson_k_positive_n_zero_now_raises():
 
 def test_p6_3_credibility_and_claim_thresholds_grounded():
     # P6-3: spine/engine 가 0.70/0.35 를 각자 하드코딩하던 것 → GROUNDED 단일 정본. claim 도.
-    from lakatos import spine
+    from lakatos.verdict import spine
     from lakatos.claim import ClaimStandingPolicy
     from lakatos.engine import CredibilityTier
     assert spine._CRED_EXT == G.GROUNDED['credibility_extracted_trust']['value'] == 0.70

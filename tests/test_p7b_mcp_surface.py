@@ -81,7 +81,7 @@ def test_record_derivation_routes_and_parses_inputs(monkeypatch):
 
 def test_manifest_verify_local_no_server(monkeypatch):
     # manifest-verify 는 로컬(파일 read + 검증) — 서버 호출 없음. lineage 헬퍼를 패치.
-    import lakatos.lineage as L
+    import lakatos.io.lineage as L
 
     captured = {}
 

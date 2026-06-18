@@ -1,7 +1,7 @@
 """엔진 env 인식 — 환경 바뀌면 재현 결과 달라질 수 있음(G-RebuildFromRaw 강화).
 # KG: span_lakatotree_envfp
 """
-from lakatos.lineage import Derivation
+from lakatos.io.lineage import Derivation
 from lakatos.engine import LineageReplayGate
 
 def _chain(env='E1'):

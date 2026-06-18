@@ -104,7 +104,7 @@ def test_history_limit_clamped(monkeypatch):
 # ── T3-3: kuhn 매직넘버 → grounding ──
 
 def test_kuhn_degeneration_threshold_from_grounding():
-    from lakatos.kuhn import DEGENERATION_K, incumbent_degenerating
+    from lakatos.programme.kuhn import DEGENERATION_K, incumbent_degenerating
     from lakatos.grounding import GROUNDED
     assert DEGENERATION_K == GROUNDED['abandon_k']['value']   # bare 3 제거, 레지스트리 출처
     assert incumbent_degenerating([], DEGENERATION_K) is True
@@ -160,7 +160,7 @@ def test_parse_metric_sci_notation_harness():
 
 
 def test_parse_metric_sci_notation_rebuild():
-    from lakatos.rebuild import _parse_metric
+    from lakatos.io.rebuild import _parse_metric
     assert _parse_metric('metric=1.5e-3') == 0.0015
     assert _parse_metric('metric=0.279') == 0.279
 

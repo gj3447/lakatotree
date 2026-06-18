@@ -1,7 +1,7 @@
 """탐색배분 TDD — bandit UCB + VoI 로 frontier 질문 우선순위.
 # KG: span_lakatotree_explore
 """
-from lakatos.explore import ucb_score, voi, rank_questions
+from lakatos.programme.explore import ucb_score, voi, rank_questions
 
 def test_ucb_unexplored_bonus():
     # 같은 신뢰도면 덜 탐색된 질문이 높다 (탐색 보너스)

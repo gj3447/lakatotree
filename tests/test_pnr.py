@@ -6,7 +6,7 @@
 """
 import pytest
 
-from lakatos.pnr import (
+from lakatos.verdict.pnr import (
     Response, CounterexampleType, ad_hoc_class, appraise_response,
     PositiveHeuristic, ProofGeneratedConcept, AD_HOC_CLASSES,
 )
@@ -162,14 +162,14 @@ def test_response_enum_completeness():
 # ── 변증법이 판결 권위(spine)에 배선 — 고아 아님 ──────────────────────
 def test_dialectic_downgrades_metric_progressive_on_monster_barring():
     # 메트릭은 진보인데 monster-barring 대응 → 변증법이 퇴행으로 강등(라카토스의 심장)
-    from lakatos.spine import dialectical_verdict
+    from lakatos.verdict.spine import dialectical_verdict
     mb = appraise_response(Response.MONSTER_BARRING, excess_content=True, novel_corroborated=True)
     d = dialectical_verdict('progressive', pnr_appraisal=mb)
     assert d['verdict'] == 'degenerating' and d['status'] == 'dialectic_overrides'
 
 
 def test_dialectic_keeps_progressive_on_good_lemma_incorporation():
-    from lakatos.spine import dialectical_verdict
+    from lakatos.verdict.spine import dialectical_verdict
     li = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
                            novel_corroborated=True, in_heuristic_spirit=True,
                            proof_generated_concept=SIMPLY_CONNECTED)
@@ -178,14 +178,14 @@ def test_dialectic_keeps_progressive_on_good_lemma_incorporation():
 
 
 def test_dialectic_no_pnr_falls_back_to_reconcile():
-    from lakatos.spine import dialectical_verdict
+    from lakatos.verdict.spine import dialectical_verdict
     d = dialectical_verdict('partial')
     assert d['verdict'] == 'partial'   # 반례 대응 없으면 reconcile 그대로
 
 
 def test_dialectic_conditional_downgrades_progressive_to_conditional():
     # ad_hoc2(배웠으나 미확증) → 메트릭 진보를 progressive_conditional 로 (이론적≠경험적 진보)
-    from lakatos.spine import dialectical_verdict
+    from lakatos.verdict.spine import dialectical_verdict
     cond = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
                              novel_corroborated=False, in_heuristic_spirit=True)
     d = dialectical_verdict('progressive', pnr_appraisal=cond)
@@ -216,7 +216,7 @@ def test_matches_lakatos_1976_oracle():
 #    appraise_response 에 additive 로 배선 — verdict 불변, 숨은 보조정리 진단만 추가 ──
 
 def test_counterexample_type_adds_hidden_lemma_signal_additive():
-    from lakatos.pnr import appraise_response, Response, CounterexampleType
+    from lakatos.verdict.pnr import appraise_response, Response, CounterexampleType
     base = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
                              novel_corroborated=True, in_heuristic_spirit=True)
     ce = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
@@ -229,7 +229,7 @@ def test_counterexample_type_adds_hidden_lemma_signal_additive():
 
 
 def test_counterexample_type_global_is_not_hidden_lemma():
-    from lakatos.pnr import appraise_response, Response, CounterexampleType
+    from lakatos.verdict.pnr import appraise_response, Response, CounterexampleType
     a = appraise_response(Response.LEMMA_INCORPORATION, excess_content=True,
                           novel_corroborated=True, in_heuristic_spirit=True,
                           counterexample_type=CounterexampleType.GLOBAL)
@@ -237,7 +237,7 @@ def test_counterexample_type_global_is_not_hidden_lemma():
 
 
 def test_counterexample_type_default_none_byte_identical():
-    from lakatos.pnr import appraise_response, Response
+    from lakatos.verdict.pnr import appraise_response, Response
     a = appraise_response(Response.MONSTER_BARRING)
     b = appraise_response(Response.MONSTER_BARRING, counterexample_type=None)
     assert a == b                                            # default None → 완전 동일

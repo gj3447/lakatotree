@@ -11,9 +11,9 @@ import pytest
 
 import lakatos.grounding as G
 from lakatos.engine import Realm, ResearchEvent
-import lakatos.agm as agm
+import lakatos.programme.agm as agm
 import lakatos.claim as claim
-import lakatos.explore as explore
+import lakatos.programme.explore as explore
 
 
 # ── GROUND-1: agm demote penalty grounded + 실소비 ──────────────────────────

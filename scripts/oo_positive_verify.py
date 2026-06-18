@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""oo positive verification CLI — lakatos.oo_verify.verify_trace 의 얇은 래퍼(단일 정본).
+"""oo positive verification CLI — lakatos.io.oo_verify.verify_trace 의 얇은 래퍼(단일 정본).
 
 LTDD positive 단언: 주어진 cycle_id 의 test_session trace 가 oo `tests` 스트림에 *실재*하는지
 (ship 의 '예외 없음' 보고가 아니라 실제 도착). logs = ground truth.
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lakatos.oo_verify import verify_trace
+from lakatos.io.oo_verify import verify_trace
 
 
 def main(argv=None) -> int:

@@ -7,10 +7,10 @@
   promotion_decision = promotion_gate + FoundationGate(준비도) + 재현성 + CredibilityPromotionGate
 # KG: span_lakatotree_spine / q-lkt-engine-unify
 """
-from .promote import promotion_gate
-from .engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
-from .pnr import PnRAppraisal
-from .grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(engine 과 공유)
+from lakatos.verdict.promote import promotion_gate
+from lakatos.engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
+from lakatos.verdict.pnr import PnRAppraisal
+from lakatos.grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(engine 과 공유)
 
 _CRED_EXT = GROUNDED['credibility_extracted_trust']['value']   # 0.70
 _CRED_INF = GROUNDED['credibility_inferred_trust']['value']    # 0.35

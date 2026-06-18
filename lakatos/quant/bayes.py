@@ -16,8 +16,8 @@
 # KG: span_lakatotree_bayes
 """
 import math
-from .trust import evidence_weight
-from .grounding import GROUNDED, interpret_bayes_factor
+from lakatos.quant.trust import evidence_weight
+from lakatos.grounding import GROUNDED, interpret_bayes_factor
 
 # 판결별 기본 Bayes factor — 값은 grounding 정본서 (Jeffreys 1961 / Kass-Raftery 1995 근거).
 #  progressive=6.0(Jeffreys substantial 밴드), rejected=1/6(log-odds 대칭, F-MATH-2),

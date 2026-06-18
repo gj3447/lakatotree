@@ -7,11 +7,11 @@
 실행: python -m examples.ice_orca_dragon_programme   (순수 엔진, 서버/DB 불필요)
 """
 from __future__ import annotations
-from lakatos.metrics import tree_metrics, branch_inputs
-from lakatos.stack import evaluate_stack
-from lakatos.lifecycle import lifecycle_state
-from lakatos.fertility import predictive_fertility
-from lakatos.certify import gate_check, certify_claim, next_actions
+from lakatos.quant.metrics import tree_metrics, branch_inputs
+from lakatos.programme.stack import evaluate_stack
+from lakatos.programme.lifecycle import lifecycle_state
+from lakatos.quant.fertility import predictive_fertility
+from lakatos.verdict.certify import gate_check, certify_claim, next_actions
 
 def _n(tag, verdict, parent, *, m=None, base=None, scope='registration', direction='lower',
        nr=False, nc=False, q=None, comment='', limitation='', algo=''):

@@ -13,12 +13,12 @@
 """
 from __future__ import annotations
 
-from lakatos.metrics import tree_metrics, branch_inputs
-from lakatos.stack import evaluate_stack
-from lakatos.lifecycle import lifecycle_state
-from lakatos.leaderboard import Competitor, leaderboard as build_leaderboard
-from lakatos.certify import gate_check, certify_claim, next_actions
-from lakatos.fertility import predictive_fertility
+from lakatos.quant.metrics import tree_metrics, branch_inputs
+from lakatos.programme.stack import evaluate_stack
+from lakatos.programme.lifecycle import lifecycle_state
+from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
+from lakatos.verdict.certify import gate_check, certify_claim, next_actions
+from lakatos.quant.fertility import predictive_fertility
 
 
 def _n(tag, verdict, parent, *, m=None, base=None, scope='registration',

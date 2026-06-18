@@ -15,8 +15,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from uuid import uuid5, NAMESPACE_URL
 
-from .engine import BashAct, InternetObservation, LineageReplayResult
-from .lineage import Derivation, by_output, rebuild_plan, roots
+from lakatos.engine import BashAct, InternetObservation, LineageReplayResult
+from lakatos.io.lineage import Derivation, by_output, rebuild_plan, roots
 
 
 OPENLINEAGE_SCHEMA_URL = "https://openlineage.io/spec/1-0-5/OpenLineage.json"

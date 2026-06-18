@@ -1,7 +1,7 @@
 """이론 발전성 TDD — novel 예측을 미리 맞힌 비율(라카토스 핵심=노벨상 본질).
 # KG: span_lakatotree_fertility
 """
-from lakatos.fertility import predictive_fertility, nobel_grade
+from lakatos.quant.fertility import predictive_fertility, nobel_grade
 
 NODES = [
  dict(tag='a', verdict='CANONICAL', novel_registered=True, novel_confirmed=True),

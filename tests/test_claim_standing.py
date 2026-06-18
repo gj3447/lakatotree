@@ -13,7 +13,7 @@ from lakatos.engine import (
     ResearchFrame,
     ResearchProject,
 )
-from lakatos.lineage import Derivation
+from lakatos.io.lineage import Derivation
 
 
 def _satisfied_foundation() -> FoundationMap:

@@ -235,7 +235,7 @@ def test_run_cycle_carries_pnr_fields(monkeypatch):
 
 def test_artifact_prov_format_prov_json(monkeypatch):
     app = load_app()
-    from lakatos.lineage import Derivation
+    from lakatos.io.lineage import Derivation
     src = Derivation('raw', 'rs', '', '', [], kind='source')
     fin = Derivation('out', 'os', 'build.py', 'bs', [('raw', 'rs')], kind='final')
     monkeypatch.setattr(app, '_load_lineage', lambda: [src, fin])

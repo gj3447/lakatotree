@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from lakatos.multiplicity import (
+from lakatos.quant.multiplicity import (
     benjamini_hochberg, bonferroni, false_progressive_screen, judgment_pvalue,
 )
 

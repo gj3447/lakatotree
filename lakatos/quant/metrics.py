@@ -4,13 +4,13 @@
 # KG: span_lakatotree_S1_laudan_layer
 """
 from collections import defaultdict
-from .laudan import (branch_problem_balance_windowed, problem_balance, psr, should_abandon,
+from lakatos.quant.laudan import (branch_problem_balance_windowed, problem_balance, psr, should_abandon,
                      unattributed_closures)
-from .bayes import branch_credence, should_abandon_bayes
-from .fertility import predictive_fertility, nobel_grade
-from .multiplicity import false_progressive_screen
+from lakatos.quant.bayes import branch_credence, should_abandon_bayes
+from lakatos.quant.fertility import predictive_fertility, nobel_grade
+from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
-from .verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE
+from lakatos.verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE
 
 
 def _primary_parent(row: dict) -> str | None:
@@ -28,7 +28,7 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
           prediction_hits / problem_balance_windowed / novel_registered_recent /
           canonical_improved_recent / leaf / window.
     """
-    from .grounding import GROUNDED
+    from lakatos.grounding import GROUNDED
     window = window or GROUNDED['lifecycle_stall_window']['value']
     by = {r['tag']: r for r in nodes}
     if leaf is None:

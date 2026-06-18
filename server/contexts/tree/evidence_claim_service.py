@@ -12,8 +12,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from lakatos.argue import grounded_extension
-from lakatos.certify import gate_check, certify_claim, next_actions as cert_next_actions
+from lakatos.verdict.argue import grounded_extension
+from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
     CredibilityTier,
@@ -26,10 +26,10 @@ from lakatos.engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
-from lakatos.envfp import environment_fingerprint as default_environment_fingerprint
-from lakatos.envfp import fingerprint_sha as default_fingerprint_sha
-from lakatos.lineage import by_output
-from lakatos.prov import replay_command
+from lakatos.io.envfp import environment_fingerprint as default_environment_fingerprint
+from lakatos.io.envfp import fingerprint_sha as default_fingerprint_sha
+from lakatos.io.lineage import by_output
+from lakatos.io.prov import replay_command
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate
 from server.contexts.tree.schemas import CritiqueIn, ObservationIn, ResearchEventIn, WorldActionIn
 from server.ports import HistoryAppend, KgQuery

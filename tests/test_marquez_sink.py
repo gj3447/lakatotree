@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from lakatos import marquez_sink
+from lakatos.io import marquez_sink
 
 
 EVENTS = [{"eventType": "COMPLETE", "job": {"name": "solve.py"}}]

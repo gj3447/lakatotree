@@ -30,7 +30,7 @@ from lakatos.engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
-from lakatos.lineage import Derivation
+from lakatos.io.lineage import Derivation
 
 
 def test_source_credibility_uses_trust_components_and_existing_weight():

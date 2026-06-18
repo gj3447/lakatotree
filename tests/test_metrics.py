@@ -1,7 +1,7 @@
 """트리 지표 TDD — 합성 나무로 진보율/기각률/퇴행깊이/라우든 alert.
 # KG: span_lakatotree_S1_laudan_layer
 """
-from lakatos.metrics import tree_metrics
+from lakatos.quant.metrics import tree_metrics
 
 NODES = [
  dict(tag='root', verdict='canonical_stage', parent=None, metric_value=1.0, metric_scope='s',

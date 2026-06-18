@@ -159,17 +159,17 @@
     },
     {
       "sourceId": "judge.NovelTarget",
-      "sourcePath": "lakatos/judge.py:42",
+      "sourcePath": "lakatos/verdict/judge.py:42",
       "purpose": "structural_metric_threshold_for_seg_contract_and_p95_targets"
     },
     {
       "sourceId": "prov.prov_triples",
-      "sourcePath": "lakatos/prov.py:10",
+      "sourcePath": "lakatos/io/prov.py:10",
       "purpose": "script_result_verdict_provenance"
     },
     {
       "sourceId": "lineage.Derivation",
-      "sourcePath": "lakatos/lineage.py:20",
+      "sourcePath": "lakatos/io/lineage.py:20",
       "purpose": "source_intermediate_final_artifact_derivation_record"
     }
   ],

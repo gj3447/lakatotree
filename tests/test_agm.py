@@ -1,7 +1,7 @@
 """P1 AGM 신념개정 — hard core 보호 + Levi identity + 공준(success/inclusion/vacuity) 검증."""
 import pytest
 
-from lakatos.agm import (
+from lakatos.programme.agm import (
     Belief, HardCoreProtected, RevisionResult,
     contraction, demote_canonical, entrenchment_key, expansion, revision,
 )

@@ -20,7 +20,7 @@
 """
 from __future__ import annotations
 
-from .laudan import ABANDON_K, should_abandon
+from lakatos.quant.laudan import ABANDON_K, should_abandon
 
 
 def _clamp01(x: float) -> float:

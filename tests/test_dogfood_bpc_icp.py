@@ -5,7 +5,7 @@ examples/bpc_icp_programme.py(실 연구사: ArUco metric/frozen calib/v8 0.90mm
 + dogfood 가 발견한 progress.scope 미공개 갭 수정 검증.
 """
 from examples.bpc_icp_programme import run, NODES, FRONTIER
-from lakatos.metrics import tree_metrics
+from lakatos.quant.metrics import tree_metrics
 
 
 def test_dogfood_runs_and_concludes_sensibly():

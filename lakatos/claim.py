@@ -10,9 +10,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .engine import (FoundationGate, FoundationMap, LineageReplayResult, Realm,
+from lakatos.engine import (FoundationGate, FoundationMap, LineageReplayResult, Realm,
                      ResearchEvent, ResearchFrame, _clamp01)   # P8: _clamp01 단일 정본(engine)
-from .grounding import GROUNDED   # P6-3: confidence 문턱 단일 정본
+from lakatos.grounding import GROUNDED   # P6-3: confidence 문턱 단일 정본
 
 
 UPPER_REALMS = {Realm.INTERNET, Realm.HUMAN, Realm.KG}

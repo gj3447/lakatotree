@@ -2,8 +2,8 @@
 기대 trace 스펙(LTDD Red): rebuild_start → env_check → step_exec×N → metric_compare → rebuild_verdict
 # KG: span_lakatotree_rebuild
 """
-from lakatos.lineage import RebuildManifest, RawRoot
-from lakatos.rebuild import RebuildExecutor, RebuildResult
+from lakatos.io.lineage import RebuildManifest, RawRoot
+from lakatos.io.rebuild import RebuildExecutor, RebuildResult
 
 MANI = RebuildManifest(
     final='perview.json',

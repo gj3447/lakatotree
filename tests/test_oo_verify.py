@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from lakatos import oo_verify
+from lakatos.io import oo_verify
 
 
 class _FakeResp:

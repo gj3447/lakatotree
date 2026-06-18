@@ -1,6 +1,6 @@
 """gap4 per-branch 질문귀속 — 라우든 규칙③ 부활 검증 (엔진 레벨)."""
-from lakatos.laudan import branch_problem_balance_windowed
-from lakatos.metrics import tree_metrics
+from lakatos.quant.laudan import branch_problem_balance_windowed
+from lakatos.quant.metrics import tree_metrics
 
 
 def _node(tag, verdict='partial', questions=(), **kw):

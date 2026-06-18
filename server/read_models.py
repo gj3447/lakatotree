@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from fastapi import HTTPException
 
-from lakatos.metrics import tree_metrics
+from lakatos.quant.metrics import tree_metrics
 
 
 KgQuery = Callable[..., list[dict]]

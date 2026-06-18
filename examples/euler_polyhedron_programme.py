@@ -23,14 +23,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lakatos.judge import NovelTarget, Prediction, judge
-from lakatos.pnr import (
+from lakatos.verdict.judge import NovelTarget, Prediction, judge
+from lakatos.verdict.pnr import (
     CounterexampleType,
     ProofGeneratedConcept,
     Response,
     appraise_response,
 )
-from lakatos.spine import dialectical_verdict
+from lakatos.verdict.spine import dialectical_verdict
 
 
 @dataclass(frozen=True)

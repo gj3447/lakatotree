@@ -343,7 +343,7 @@ def manifest_verify(manifest_path: str, current_sha_csv: str = '',
                     require_environment: bool = True) -> str:
     """데이터셋 manifest 무결성 검증 — **로컬** 파일 read+검증(서버 무관). CLI `manifest-verify` 대칭.
     current_sha_csv = 'path:sha, ...' (현재 파일 sha; 안 주면 manifest 기록값만 검사)."""
-    from .lineage import load_dataset_manifest, verify_dataset_manifest
+    from lakatos.io.lineage import load_dataset_manifest, verify_dataset_manifest
     current = {p.rsplit(':', 1)[0].strip(): p.rsplit(':', 1)[1].strip()
                for p in current_sha_csv.split(',') if ':' in p}
     res = verify_dataset_manifest(

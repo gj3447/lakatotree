@@ -18,7 +18,7 @@ verdict* 를 비교. 불일치 = 파이프라인 버그 또는 현장 공차 con
 """
 from __future__ import annotations
 
-from lakatos.judge import Prediction, judge, PredictionMissing, PredictionLocked, check_registration
+from lakatos.verdict.judge import Prediction, judge, PredictionMissing, PredictionLocked, check_registration
 
 # ── 공차 spec (정답 contract 의 근거) — feature group → 위치공차 mm. grounded: BPC tiered ──
 TOLERANCE_MM = {
