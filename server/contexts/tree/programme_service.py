@@ -14,6 +14,8 @@ from fastapi import HTTPException
 
 from lakatos.calibrate import brier_score, calibration_error, log_score
 from lakatos.explore import rank_questions as default_rank_questions
+from lakatos.heuristic import (appraise_and_plan, branch_pressure as _branch_pressure_pct,
+                               expected_progress_gain, realized_reward)
 from lakatos.lifecycle import lifecycle_state
 from lakatos.metrics import branch_inputs
 from lakatos.stack import evaluate_stack
@@ -99,18 +101,82 @@ class ProgrammeService:
             value = q.get(k)
             return d if value is None else value
 
-        qmeta = [dict(name=q['name'], body=(q['body'] or '')[:160],
-                      expected_gain=_num(q, 'expected_gain', 0.1), cost=_num(q, 'cost', 1.0),
-                      credence=cred, n_visits=_num(q, 'n_visits', 1)) for q in opens]
+        # positive heuristic 신호 — 질문→연 노드 역매핑. 정본/진보 노드가 연 질문 = 살아있는 전선.
+        progressive = {'CANONICAL', 'progressive', 'progressive_conditional'}
+        front_qnames = {qn for r in td['nodes'] if r.get('verdict') in progressive
+                        for qn in (r.get('questions') or [])}
+        novel_qnames = {qn for r in td['nodes'] if r.get('novel_registered')
+                        for qn in (r.get('questions') or [])}
+        # 가지 미해결-문제압 + 실현 reward(bandit 학습). 실패해도 directions 는 살린다.
+        pressure, reward = 0.0, None
+        try:
+            bi = branch_inputs(td['nodes'], td['frontier'])
+            pressure = _branch_pressure_pct(bi)
+            reward = realized_reward(int(bi.get('prediction_hits', 0)), int(bi.get('nodes_spent', 0)))
+        except (KeyError, HTTPException):
+            pass
+
+        qmeta = []
+        for q in opens:
+            # ★ VoI 분자: q 에 명시 expected_gain 있으면 존중, 없으면 tree 구조+학습 reward 로 실계산
+            #   (전엔 0.1 하드코딩 = 가짜 분자, positive heuristic 미배선).
+            eg = q.get('expected_gain')
+            if eg is None:
+                eg = expected_progress_gain(
+                    canonical_credence=cred, problem_pressure=pressure, learned_reward=reward,
+                    on_canonical_frontier=q['name'] in front_qnames,
+                    has_novel_target=q['name'] in novel_qnames)
+            qmeta.append(dict(name=q['name'], body=(q['body'] or '')[:160],
+                              expected_gain=eg, cost=_num(q, 'cost', 1.0),
+                              credence=cred, n_visits=_num(q, 'n_visits', 1),
+                              on_canonical_frontier=q['name'] in front_qnames,
+                              gain_source='explicit' if q.get('expected_gain') is not None else 'derived'))
         total_visits = max(sum(q['n_visits'] for q in qmeta), len(qmeta), 1)
         ranked = self.rank_questions(qmeta, total_visits=total_visits)
         for q in ranked:
             q['branch_from'] = (can or {}).get('tag')
             q['suggested_tag'] = q['name'].replace('q-', 'exp-') + '-try1'
         return dict(canonical=(can or {}).get('tag'), canonical_credence=cred,
-                    ranked_directions=ranked,
+                    branch_pressure=round(pressure, 4), ranked_directions=ranked,
                     protocol=['① prediction 사전등록(구조적 novel_metric/threshold + script_sha 권장)',
                               '② 변경 하나 실행', '③ test_result 스크립트 채점', '④ 자동 판결+질문 close'])
+
+    def trust_view(self, name: str) -> dict:
+        """P6 배선 — 트리의 실 인터넷 관측 그래프에 eigentrust 돌려 글로벌 출처신뢰 산출(queryable).
+        coverage.mode 가 graph_propagated/seed_dominated/uniform_unlearned 로 정직하게 현 데이터 두께 표기."""
+        import json as _json
+        from lakatos.trust import global_source_trust
+        rows = self.kg(
+            "MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(e)-[:HAS_RESEARCH_EVENT]->"
+            "(ev:ResearchEvent {realm:'internet'}) RETURN e.tag AS node, ev.payload AS payload",
+            n=name)
+        observations = []
+        for r in rows or []:
+            try:
+                p = _json.loads(r.get('payload') or '{}')
+            except (ValueError, TypeError):
+                p = {}
+            observations.append(dict(
+                source=(p.get('url') or p.get('source_type') or '').strip(),
+                source_type=p.get('source_type') or '', node=r.get('node') or '',
+                corroboration_score=float(p.get('corroboration_score') or 0.0)))
+        result = global_source_trust(observations)
+        result['n_observations'] = len(observations)
+        return result
+
+    def heuristic_view(self, name: str, leaf: str | None = None) -> dict:
+        """MSRP 연구정책 — negative(hard core 보호) + positive(생성된 다음 수). directions 의 상위층:
+        directions=VoI 우선순위, heuristic=무슨 종류의 수를(ABANDON/PUSH/PROBE/PRIORITIZE) 왜."""
+        td, bi, _ = self.branch_stack(name, leaf)
+        metrics = self.compute_metrics(td)
+        bi = dict(bi)
+        bi['canonical_credence'] = (metrics.get('bayes') or {}).get('canonical_credence') or 0.5
+        hard_core = tuple((td.get('hard_core') or ()) if isinstance(td.get('hard_core'), (list, tuple))
+                          else ([td['hard_core']] if td.get('hard_core') else ()))
+        tested = tuple(r.get('metric_name') for r in td['nodes']
+                       if r.get('verdict') in ('CANONICAL', 'progressive') and r.get('metric_name'))
+        return appraise_and_plan(nodes=td['nodes'], frontier=td['frontier'], branch=bi,
+                                 hard_core=hard_core, tested_core=tested)
 
     def stack_view(self, name: str, leaf: str | None = None) -> dict:
         _, bi, sv = self.branch_stack(name, leaf)

@@ -4,7 +4,9 @@
   trees                          나무 목록
   tree <name>                    나무 구조
   metrics <name>                 지표(진보율/기각률/퇴행/베이즈/발전성/다중비교 보정 gap8)
-  directions <name>              VoI 우선순위 다음 방향
+  directions <name>              VoI 우선순위 다음 방향 (분자=positive heuristic 실계산)
+  heuristic <name> [--leaf L]    MSRP 연구정책 — negative(hard core 보호)+positive(다음 수 생성)
+  trust <name>                   eigentrust 글로벌 출처신뢰(실 관측 그래프, coverage 정직표기, P6)
   stack <name> [--leaf L]        포퍼/베이즈/라우든 3층 명시투표+정족수 메타규칙(gap3)
   lifecycle <name> [--leaf L]    프로그램 종료판정 — 수확/발산/소멸/활성(P1)
   leaderboard <a,b,..> [--snapshot]  경쟁 트리 Pareto+Borda 리더보드(P2)
@@ -65,6 +67,9 @@ def main(argv=None):
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sp = sub.add_parser('lifecycle'); sp.add_argument('name')
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
+    sp = sub.add_parser('heuristic'); sp.add_argument('name')
+    sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
+    sub.add_parser('trust').add_argument('name')
     sp = sub.add_parser('leaderboard'); sp.add_argument('trees', help='쉼표구분 트리명 (≥2)')
     sp.add_argument('--snapshot', action='store_true', help='리더보드 스냅샷 축적(패러다임 판정용)')
     sp = sub.add_parser('paradigm'); sp.add_argument('incumbent')
@@ -183,6 +188,12 @@ def main(argv=None):
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
         out = call('GET', f'/api/tree/{a.name}/lifecycle{q}')
+    elif a.cmd == 'heuristic':
+        import urllib.parse as up
+        q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
+        out = call('GET', f'/api/tree/{a.name}/heuristic{q}')
+    elif a.cmd == 'trust':
+        out = call('GET', f'/api/tree/{a.name}/trust')
     elif a.cmd == 'leaderboard':
         import urllib.parse as up
         q = up.urlencode({'trees': a.trees, 'snapshot': str(a.snapshot).lower()})

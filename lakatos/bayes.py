@@ -60,12 +60,20 @@ def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0,
     return math.exp(math.log(base) * w)   # base>1 → BF>1, base<1 → BF<1
 
 
-def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR) -> float:
-    """판결 시퀀스(시간순) → 사후 신뢰도. odds 곱셈(베이즈 갱신)."""
+def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
+                    source_trust_map: dict | None = None) -> float:
+    """판결 시퀀스(시간순) → 사후 신뢰도. odds 곱셈(베이즈 갱신).
+
+    source_trust_map (P6 배선): {source: global_trust} 를 주면, 판결이 `source` 키를 달 때
+    저장된 scalar 대신 *eigentrust 글로벌 신뢰*(trust.global_source_trust)를 증거가중에 쓴다.
+    안 주면 기존 동작(판결의 source_trust scalar, default 1.0). backward-compatible.
+    """
     odds = prior / (1 - prior)
     for v in verdicts:
-        odds *= bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0),
-                             v.get('source_trust', 1.0))
+        st = v.get('source_trust', 1.0)
+        if source_trust_map and v.get('source') in source_trust_map:
+            st = source_trust_map[v['source']]   # ★고유벡터 글로벌 신뢰로 대체
+        odds *= bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0), st)
     return odds / (1 + odds)
 
 

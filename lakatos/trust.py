@@ -80,3 +80,72 @@ def evidence_weight(source_trust: float, floor: float = 0.0) -> float:
     나생문 F-MATH-4: floor=0 → zero-trust(junk) 출처는 무정보(BF=1), credence 안 움직임.
     """
     return floor + (1.0 - floor) * max(0.0, min(1.0, source_trust))
+
+
+# ── P6 배선: eigentrust/trustrank 를 *실* observation 그래프에 돌려 글로벌 출처신뢰 산출 ──
+#  전엔 trustrank/eigentrust 가 library 함수일 뿐 런타임 미배선이었다(THEORY §6 LKT-T1, P6).
+#  여기서 실 데이터로 그래프를 짓는다 — 장식이 아니라 실 seed/edge:
+#    seed(pre-trusted) = 권위 source_type 관측 (primary/peer-reviewed/official = 문헌급 앵커)
+#    edge             = 같은 노드(주장)를 함께 받치는 관측끼리 corroboration 상호신뢰
+#  정직: 관측이 적거나 edge 가 없으면 그래프는 seed-dominated → coverage 라벨로 명시(숨김 금지).
+AUTHORITATIVE_SOURCE_TYPES = (
+    'primary', 'peer_reviewed', 'peer-reviewed', 'official', 'official_docs',
+    'standard', 'specification', 'textbook', 'literature',
+)
+
+
+def build_trust_graph(observations: list, *,
+                      authoritative_types=AUTHORITATIVE_SOURCE_TYPES) -> tuple[dict, dict]:
+    """실 관측 리스트 → (local_trust, pre_trusted) — eigentrust 입력 그래프.
+
+    observation dict 기대 키: 'source'(또는 url/source_type 로 식별), 'source_type',
+    'node'(어느 주장/노드를 받치나), 'corroboration_score'(0..1, 있으면 edge 가중).
+    같은 node 를 받치는 관측 i,j 는 서로 corroboration edge(상호신뢰) — co-support 그래프.
+    권위 source_type 관측은 pre_trusted seed(sybil 저항 앵커).
+    """
+    sources = {}
+    by_node: dict = {}
+    pre_trusted: dict = {}
+    for o in observations:
+        src = (o.get('source') or o.get('url') or o.get('source_type') or '').strip()
+        if not src:
+            continue
+        sources.setdefault(src, o.get('source_type') or '')
+        by_node.setdefault(o.get('node') or o.get('tag') or '', []).append((src, o))
+        if (o.get('source_type') or '').lower() in {t.lower() for t in authoritative_types}:
+            pre_trusted[src] = 1.0
+
+    local_trust: dict = {s: {} for s in sources}
+    for _node, members in by_node.items():
+        if not _node or len(members) < 2:
+            continue
+        for src_i, oi in members:
+            for src_j, oj in members:
+                if src_i == src_j:
+                    continue
+                w = float(oj.get('corroboration_score') or 0.5)   # j 가 받친 강도로 i→j 신뢰
+                local_trust[src_i][src_j] = local_trust[src_i].get(src_j, 0.0) + max(0.0, min(1.0, w))
+    return local_trust, pre_trusted
+
+
+def global_source_trust(observations: list, **kw) -> dict:
+    """실 관측 그래프 → 글로벌 출처신뢰 {source: trust} + coverage 메타.
+
+    eigentrust(전이적 신뢰의 고유벡터)를 build_trust_graph 산출 그래프에 돌린다. edge 가 없으면
+    eigentrust 는 pre_trusted 분포로 환원(seed-dominated) — 정직하게 coverage 로 표기.
+    반환: {'trust': {src: val}, 'coverage': {n_sources, n_seeds, n_edges, mode}}.
+    """
+    local_trust, pre_trusted = build_trust_graph(observations, **kw)
+    n_edges = sum(len(d) for d in local_trust.values())
+    trust = eigentrust(local_trust, pre_trusted) if local_trust else {}
+    mode = ('graph_propagated' if n_edges > 0
+            else ('seed_dominated' if pre_trusted else 'uniform_unlearned'))
+    return {
+        'trust': {k: round(v, 6) for k, v in trust.items()},
+        'coverage': {
+            'n_sources': len(local_trust),
+            'n_seeds': len(pre_trusted),
+            'n_edges': n_edges,
+            'mode': mode,   # 정직: edge 없으면 seed_dominated(고유벡터 heavy-lifting 아직 아님)
+        },
+    }

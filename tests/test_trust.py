@@ -34,3 +34,36 @@ def test_eigentrust_dangling_redistribution():   # 나생문 F-MATH-3
     gt = eigentrust(local, pre_trusted={'a': 0.5, 'b': 0.5})
     assert abs(sum(gt.values()) - 1.0) < 1e-6   # 질량 보존
     assert all(v >= 0 for v in gt.values())
+
+
+# ── P6 배선: 실 observation 그래프 → 글로벌 출처신뢰 (eigentrust 런타임 배선) ──
+from lakatos.trust import build_trust_graph, global_source_trust
+
+
+def test_build_graph_seeds_from_authoritative_types():
+    local, pre = build_trust_graph([
+        {'source': 'jeffreys1961', 'source_type': 'literature', 'node': 'v1'},
+        {'source': 'blog_x', 'source_type': 'blog', 'node': 'v1'},
+    ])
+    assert 'jeffreys1961' in pre and 'blog_x' not in pre   # 권위 source_type 만 seed
+    # 같은 노드 v1 받친 두 관측 → corroboration edge
+    assert local['jeffreys1961'].get('blog_x', 0) > 0
+
+
+def test_global_trust_authority_beats_blog():
+    obs = [
+        {'source': 'jeffreys1961', 'source_type': 'literature', 'node': 'v1', 'corroboration_score': 0.9},
+        {'source': 'blog_x', 'source_type': 'blog', 'node': 'v1', 'corroboration_score': 0.4},
+    ]
+    r = global_source_trust(obs)
+    assert r['trust']['jeffreys1961'] > r['trust']['blog_x']   # 문헌 앵커 > 블로그
+    assert r['coverage']['mode'] == 'graph_propagated'
+
+
+def test_global_trust_honest_coverage_labels():
+    # edge 없으면 seed_dominated (정직 — 고유벡터 heavy-lifting 아님)
+    assert global_source_trust(
+        [{'source': 'a', 'source_type': 'primary', 'node': 'n1'}]
+    )['coverage']['mode'] == 'seed_dominated'
+    # 관측 0 → uniform_unlearned
+    assert global_source_trust([])['coverage']['mode'] == 'uniform_unlearned'
