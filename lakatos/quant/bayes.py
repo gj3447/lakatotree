@@ -16,7 +16,7 @@
 # KG: span_lakatotree_bayes
 """
 import math
-from lakatos.quant.trust import evidence_weight
+from lakatos.trust import evidence_weight
 from lakatos.grounding import GROUNDED, interpret_bayes_factor
 
 # 판결별 기본 Bayes factor — 값은 grounding 정본서 (Jeffreys 1961 / Kass-Raftery 1995 근거).

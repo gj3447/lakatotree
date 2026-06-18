@@ -6,13 +6,13 @@ from lakatos.engine import (
     FoundationMap,
     FoundationRequirement,
     KnowledgeKind,
-    LineageReplayGate,
     Possibility,
     Realm,
     ResearchEvent,
     ResearchFrame,
     ResearchProject,
 )
+from lakatos.io.replay import LineageReplayGate
 from lakatos.io.lineage import Derivation
 
 

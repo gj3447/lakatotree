@@ -2,7 +2,7 @@
 # KG: span_lakatotree_envfp
 """
 from lakatos.io.lineage import Derivation
-from lakatos.engine import LineageReplayGate
+from lakatos.io.replay import LineageReplayGate
 
 def _chain(env='E1'):
     return [

@@ -195,7 +195,7 @@ def test_sprt_abandonment_matches_k3_heuristic():
 
 def test_grounding_single_source_consumed_by_modules():
     import inspect
-    import lakatos.quant.calibrate as cal, lakatos.quant.trust as tr, lakatos.programme.explore as ex
+    import lakatos.quant.calibrate as cal, lakatos.trust as tr, lakatos.programme.explore as ex
     assert inspect.signature(cal.calibration_error).parameters['bins'].default == G.GROUNDED['ece_bins']['value']
     assert inspect.signature(tr.trustrank).parameters['damping'].default == G.GROUNDED['pagerank_damping']['value']
     assert inspect.signature(tr.eigentrust).parameters['alpha'].default == G.GROUNDED['eigentrust_alpha']['value']

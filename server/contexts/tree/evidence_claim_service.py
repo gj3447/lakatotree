@@ -18,7 +18,6 @@ from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
     CredibilityTier,
     FoundationMap,
-    LineageReplayGate,
     Possibility,
     Realm,
     ResearchEvent,
@@ -26,6 +25,7 @@ from lakatos.engine import (
     ResearchProject,
     SourceCredibilityScore,
 )
+from lakatos.io.replay import LineageReplayGate
 from lakatos.io.envfp import environment_fingerprint as default_environment_fingerprint
 from lakatos.io.envfp import fingerprint_sha as default_fingerprint_sha
 from lakatos.io.lineage import by_output

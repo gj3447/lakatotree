@@ -2,7 +2,7 @@
 # KG: VR_LakatoTree_naesengmoon_3lens_20260612
 """
 from lakatos.quant.bayes import bayes_factor, branch_credence
-from lakatos.quant.trust import evidence_weight
+from lakatos.trust import evidence_weight
 from lakatos.io.envfp import environment_fingerprint
 from lakatos.quant.calibrate import calibration_error
 
