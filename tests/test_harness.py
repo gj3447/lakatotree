@@ -77,3 +77,37 @@ def test_no_internet_is_pure_haegye():
     prov = h.run_cycle(spec2)
     assert prov['source_trust'] == 1.0
     assert prov['internet_evidence'] == []
+
+
+# ── 바인딩 owner+test 메움: harness phase 6개 (각 realm/step 독립) ──────────────
+def test_upper_internet_phase_isolated():
+    h, calls = make_harness()
+    evidence, trust = h._upper_internet(SPEC)
+    assert len(evidence) == 1 and trust == 0.9 and ('internet', SPEC.internet_sources[0][0]) in calls
+
+
+def test_register_node_phase_posts_node_and_prediction():
+    h, calls = make_harness()
+    h._register_node(SPEC)
+    paths = [p for _, p in calls]
+    assert any(p.endswith('/node') for p in paths) and any(p.endswith('/prediction') for p in paths)
+
+
+def test_build_gate_phase_pass_and_fail():
+    assert make_harness(build_exit=0)[0]._build_gate(SPEC)['exit'] == 0
+    with pytest.raises(BuildFailed):
+        make_harness(build_exit=1)[0]._build_gate(SPEC)
+
+
+def test_measure_phase_isolated():
+    assert make_harness(judge_out='metric=49')[0]._measure(SPEC) == 49
+
+
+def test_submit_and_judge_phase_isolated():
+    assert make_harness()[0]._submit_and_judge(SPEC, 49, 'sha', 0.9)['verdict'] == 'progressive'
+
+
+def test_critiques_and_standing_phase_isolated():
+    h, calls = make_harness()
+    st = h._critiques_and_standing(SPEC)
+    assert st['stands'] is True and any(p.endswith('/critique') for _, p in calls)
