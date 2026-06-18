@@ -160,6 +160,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
                 d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
                 d['noise_band'] = r.get('pred_noise_band') or 0.0
+            # use-novelty 상관보정 키(닫는 질문=novel target 정체성). 같은 질문 재확증은
+            # branch_credence 가 content-dedup(초과내용 0). 없으면 None=항상 novel(독립).
+            if r.get('pred_closes'):
+                d['target'] = r['pred_closes']
             out.append(d)
         return out
     can_cred = round(branch_credence(verdict_seq(path)), 3) if path else None

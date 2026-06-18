@@ -66,3 +66,76 @@ def test_branch_credence_source_trust_map_wires_eigentrust():
     base = branch_credence([{'verdict': 'progressive', 'delta': 1.0, 'noise_band': 0.1}])
     assert base == branch_credence([{'verdict': 'progressive', 'delta': 1.0, 'noise_band': 0.1}],
                                    source_trust_map=None)
+
+
+def test_different_programme_distinct_from_degenerating_in_bayes():
+    # AXIS-CORR: 정체성 축 분리의 load-bearing 증명 —
+    # degenerating(진보축 음의증거)은 credence 를 1/6 BF 로 깎지만,
+    # different_programme(정체성축, frontier 범위 밖)은 무정보(BF=1.0)라 credence 불변.
+    from lakatos.bayes import branch_credence, BF_BASE, DEFAULT_PRIOR
+    assert BF_BASE['different_programme'] == 1.0           # off-axis 무정보(범위 밖)
+    assert BF_BASE['degenerating'] < 1.0                   # 진보축 음의증거
+    base = DEFAULT_PRIOR
+    degen = branch_credence([{'verdict': 'degenerating', 'delta': 0.2, 'noise_band': 0.01}])
+    diff = branch_credence([{'verdict': 'different_programme', 'delta': 0.2, 'noise_band': 0.01}])
+    assert degen < base          # 퇴행은 신뢰 깎음
+    assert diff == base          # 핵이탈은 이 프로그램 신뢰에 무정보(불변)
+
+
+# ── use-novelty content-dedup (branch_credence 상관보정, Zahar 1973) ──────────
+def _p(target=None, delta=-0.5, noise=0.05):
+    d = {'verdict': 'progressive', 'delta': delta, 'noise_band': noise}
+    if target is not None:
+        d['target'] = target
+    return d
+
+
+def test_dedup_same_target_repeats_do_not_inflate():
+    from lakatos.bayes import branch_credence
+    one = branch_credence([_p('q1')])
+    ten = branch_credence([_p('q1')] * 10)           # 같은 타깃 10회 재확증
+    assert abs(ten - one) < 1e-12                     # content-dedup: 재확증=초과내용 0 → 불변
+    assert ten < 0.9                                  # 인위확신(옛 ~1.0) 제거
+
+
+def test_distinct_targets_are_independent_evidence():
+    from lakatos.bayes import branch_credence
+    distinct = branch_credence([_p('q1'), _p('q2'), _p('q3')])
+    same = branch_credence([_p('q1')] * 3)
+    assert distinct > same                            # 새 예측 3개 > 같은예측 3회(use-novelty)
+
+
+def test_dedup_commutative_order_independent():
+    from lakatos.bayes import branch_credence
+    a = branch_credence([_p('q1', delta=-0.2), _p('q1', delta=-0.9), _p('q2', delta=-0.5)])
+    b = branch_credence([_p('q2', delta=-0.5), _p('q1', delta=-0.9), _p('q1', delta=-0.2)])
+    assert abs(a - b) < 1e-12                          # max-per-target → 순서 무관
+
+
+def test_dedup_keeps_strongest_confirmation():
+    from lakatos.bayes import branch_credence
+    weak_then_strong = branch_credence([_p('q1', delta=-0.1), _p('q1', delta=-1.0)])
+    strong_only = branch_credence([_p('q1', delta=-1.0)])
+    assert abs(weak_then_strong - strong_only) < 1e-12  # 최강 확증만 집계
+
+
+def test_no_target_is_bit_identical_to_legacy():
+    # 현 호출자 대부분(target 미지정) = 기존 동작 비트동일(615 회귀 0 보장)
+    from lakatos.bayes import branch_credence
+    legacy_style = [{'verdict': 'progressive', 'delta': -0.5, 'noise_band': 0.05}] * 4
+    # target 없으면 매번 곱(레거시) — 4회가 1회보다 높아야(누적)
+    assert branch_credence(legacy_style) > branch_credence(legacy_style[:1])
+
+
+def test_negative_evidence_not_deduped():
+    from lakatos.bayes import branch_credence
+    one = branch_credence([{'verdict': 'rejected', 'delta': 0.3, 'noise_band': 0.01, 'target': 'q1'}])
+    three = branch_credence([{'verdict': 'rejected', 'delta': 0.3, 'noise_band': 0.01, 'target': 'q1'}] * 3)
+    assert three < one                                 # 반례는 매번 독립부담(약가지 죽어야)
+
+
+def test_dedup_monotone_nondecreasing():
+    from lakatos.bayes import branch_credence
+    c1 = branch_credence([_p('q1')])
+    c2 = branch_credence([_p('q1'), _p('q2')])
+    assert c2 >= c1 and all(0.0 < c < 1.0 for c in (c1, c2))   # 새 타깃 추가 비감소 + 정규화
