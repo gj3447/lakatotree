@@ -19,7 +19,7 @@ from lakatos.quant.metrics import branch_inputs
 from lakatos.programme.stack import evaluate_stack
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
-from lakatos.programme.kuhn import assess_paradigm
+from lakatos.programme.kuhn import assess_paradigm, propose_supersession
 from lakatos.programme.explore import rank_questions
 from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
@@ -466,6 +466,9 @@ def paradigm_view(incumbent: str, rivals: str):
     pa = assess_paradigm(incumbent, rivals_l, snaps, [ls.state], consec)
     return dict(state=pa.state, incumbent=pa.incumbent, rival=pa.rival, reason=pa.reason,
                 window=pa.window, requires_human_oracle=pa.requires_human_oracle,
+                # shift_candidate 면 구조화된 대체 *제안* 안건(verdict mutation 0, 인간확정 필요).
+                # 신호가 prose reason 으로 증발하지 않고 machine-readable 레코드로 박힌다.
+                proposal=propose_supersession(pa),
                 snapshots=len(snaps), incumbent_lifecycle=ls.state,
                 note=('' if len(snaps) >= pa.window else
                       f'스냅샷 {len(snaps)} < 윈도우 {pa.window} — '

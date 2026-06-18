@@ -83,3 +83,28 @@ def test_normal_science_when_incumbent_healthy():
                         incumbent_lifecycles=[ACTIVE],
                         incumbent_consecutive_nonprogressive=0)
     assert a.state == NORMAL_SCIENCE
+
+
+# ── propose_supersession: shift_candidate → 구조화된 대체 *제안* 안건 (자동교체 아님) ──────
+# CRISIS / NORMAL_SCIENCE / SHIFT_CANDIDATE 는 파일 상단서 이미 import.
+from lakatos.programme.kuhn import ParadigmAssessment, propose_supersession  # noqa: E402
+
+
+def test_shift_candidate_yields_human_agenda_proposal():
+    pa = ParadigmAssessment(SHIFT_CANDIDATE, 'ptolemy', 'copernicus',
+                            'copernicus 지속우세 ∧ ptolemy 퇴행', window=3, requires_human_oracle=True)
+    p = propose_supersession(pa)
+    assert p is not None
+    assert p['kind'] == 'supersession_proposal'
+    assert p['incumbent'] == 'ptolemy' and p['rival'] == 'copernicus'
+    assert p['requires_human_verdict'] is True      # 자동 교체 금지(DON'T)
+    assert p['verdict_mutation'] is False           # 이 레코드는 어떤 verdict 도 안 바꾼다
+    assert p['status'] == 'proposed'
+
+
+def test_crisis_and_normal_make_no_proposal():
+    # rival 없는 위기/정상과학은 대체 제안 없음(증발 아니라 명시 None)
+    crisis = ParadigmAssessment(CRISIS, 'ptolemy', None, 'rival 부재', 3, requires_human_oracle=False)
+    normal = ParadigmAssessment(NORMAL_SCIENCE, 'ptolemy', None, '건재', 3, requires_human_oracle=False)
+    assert propose_supersession(crisis) is None
+    assert propose_supersession(normal) is None
