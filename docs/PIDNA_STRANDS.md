@@ -80,35 +80,35 @@ prom(`OQ_PIDNA_TreeBranching`)의 분기 트리거 = **"검증경로의 독립"*
 
 | 속성 | KG 개념 | 실재 심볼 (sourceId:line) | must_emit/역할 |
 |---|---|---|---|
-| 결정론 판정 (P3/P6) | `judge` 오라클 | `lakatos/judge.py:77` `judge()` · `:64` `Verdict` | 사전등록 예측 대비 스크립트 채점 |
-| 사전등록 잠금 (P7) | registration gate | `lakatos/judge.py:72` `check_registration()` · `:15` `PredictionLocked` | 채점 후 예측 변경 금지(영수증 위조 방지) |
-| 증거 가중·선택 (P2/P5) | Bayes 선택 | `lakatos/bayes.py:57` `bayes_factor()` · `:69` `branch_credence()` | 판결 시퀀스→credence (선택적 보존) |
-| 퇴행 가지치기 (P2/P8) | Laudan 폐기 | `lakatos/laudan.py:75` `should_abandon()` · `:93` `should_abandon_sprt()` | degenerate 가지 영구 erase |
-| 예측 정직성 채점 (P10) | proper scoring | `lakatos/calibrate.py:14` `brier_score()` · `:32` `calibration_error()` | 🔵의 자기확신을 외부 기준으로 처벌 |
-| 판결 권위 단일화 (rung) | spine | `lakatos/spine.py:44` `reconcile_verdict()` · `:67` `dialectical_verdict()` | 메트릭(🔴)+질적(🔵 P&R) 단일 판결 |
-| 적대적 정당화 (P10) | Dung AF | `lakatos/argue.py:20` `grounded_extension()` · `:34` `verdict_stands()` | 판결이 반박 공격을 견디나 |
-| 하드코어 보호 (P5) | 음의 휴리스틱 | `lakatos/heuristic.py:81` `negative_heuristic()` · `lakatos/agm.py:29` `HardCoreProtected` | modus tollens를 core에 못 겨눔 |
-| 층간 정족수 (P9) | stack | `lakatos/stack.py:48` `popper_vote()` · `:82` `stack_verdict()` | 3층 독립 투표 2/3 정족 |
+| 결정론 판정 (P3/P6) | `judge` 오라클 | `lakatos/verdict/judge.py:77` `judge()` · `:64` `Verdict` | 사전등록 예측 대비 스크립트 채점 |
+| 사전등록 잠금 (P7) | registration gate | `lakatos/verdict/judge.py:72` `check_registration()` · `:15` `PredictionLocked` | 채점 후 예측 변경 금지(영수증 위조 방지) |
+| 증거 가중·선택 (P2/P5) | Bayes 선택 | `lakatos/quant/bayes.py:57` `bayes_factor()` · `:69` `branch_credence()` | 판결 시퀀스→credence (선택적 보존) |
+| 퇴행 가지치기 (P2/P8) | Laudan 폐기 | `lakatos/quant/laudan.py:75` `should_abandon()` · `:93` `should_abandon_sprt()` | degenerate 가지 영구 erase |
+| 예측 정직성 채점 (P10) | proper scoring | `lakatos/quant/calibrate.py:14` `brier_score()` · `:32` `calibration_error()` | 🔵의 자기확신을 외부 기준으로 처벌 |
+| 판결 권위 단일화 (rung) | spine | `lakatos/verdict/spine.py:44` `reconcile_verdict()` · `:67` `dialectical_verdict()` | 메트릭(🔴)+질적(🔵 P&R) 단일 판결 |
+| 적대적 정당화 (P10) | Dung AF | `lakatos/verdict/argue.py:20` `grounded_extension()` · `:34` `verdict_stands()` | 판결이 반박 공격을 견디나 |
+| 하드코어 보호 (P5) | 음의 휴리스틱 | `lakatos/programme/heuristic.py:81` `negative_heuristic()` · `lakatos/programme/agm.py:29` `HardCoreProtected` | modus tollens를 core에 못 겨눔 |
+| 층간 정족수 (P9) | stack | `lakatos/programme/stack.py:48` `popper_vote()` · `:82` `stack_verdict()` | 3층 독립 투표 2/3 정족 |
 
 ### 3.2 🔵 푸른 가닥 (추측/변이) — ReferenceSites
 
 | 속성 | KG 개념 | 실재 심볼 (sourceId:line) | must_emit/역할 |
 |---|---|---|---|
-| 다음 실험 생성 (P1/P2) | 양의 휴리스틱 | `lakatos/heuristic.py:124` `generate_moves()` · `pnr.py:84` `PositiveHeuristic` | ABANDON/PUSH/PROBE/PRIORITIZE 수(move) *생성* |
-| 탐색 방향 (P4/P8) | VoI·UCB | `lakatos/explore.py:23` `voi()` · `:16` `ucb_score()` · `:32` `rank_questions()` | 어느 가지를 찌를지(변이 우선순위) |
-| 기대 진보이득 (P5) | progress gain | `lakatos/heuristic.py:51` `expected_progress_gain()` | 초과경험내용 예상치(분자) |
-| 예측 자체 (P4) | 사전등록 예측 | `lakatos/judge.py:20` `Prediction` · `:42` `NovelTarget` | 🔵가 던지는 conjecture (🔴가 판정) |
-| 발견적 개념 생성 (P5) | P&R | `lakatos/pnr.py:106` `ProofGeneratedConcept` · `:84` `PositiveHeuristic` | 증명-반박서 새 개념 산출 |
-| 예측력 track record (P8) | fertility | `lakatos/fertility.py:18` `predictive_fertility()` · `:26` `nobel_grade()` | novel 예측 적중 이력(변이의 열매) |
+| 다음 실험 생성 (P1/P2) | 양의 휴리스틱 | `lakatos/programme/heuristic.py:124` `generate_moves()` · `verdict/pnr.py:84` `PositiveHeuristic` | ABANDON/PUSH/PROBE/PRIORITIZE 수(move) *생성* |
+| 탐색 방향 (P4/P8) | VoI·UCB | `lakatos/programme/explore.py:23` `voi()` · `:16` `ucb_score()` · `:32` `rank_questions()` | 어느 가지를 찌를지(변이 우선순위) |
+| 기대 진보이득 (P5) | progress gain | `lakatos/programme/heuristic.py:51` `expected_progress_gain()` | 초과경험내용 예상치(분자) |
+| 예측 자체 (P4) | 사전등록 예측 | `lakatos/verdict/judge.py:20` `Prediction` · `:42` `NovelTarget` | 🔵가 던지는 conjecture (🔴가 판정) |
+| 발견적 개념 생성 (P5) | P&R | `lakatos/verdict/pnr.py:106` `ProofGeneratedConcept` · `:84` `PositiveHeuristic` | 증명-반박서 새 개념 산출 |
+| 예측력 track record (P8) | fertility | `lakatos/quant/fertility.py:18` `predictive_fertility()` · `:26` `nobel_grade()` | novel 예측 적중 이력(변이의 열매) |
 | 연구 프레임 (P7) | engine | `lakatos/engine.py:96` `ResearchProject` · `:69` `Realm` | 추측이 사는 sparse 프레임 |
 
 ### 3.3 ⊗ 염기쌍 — 두 가닥이 *만나는* 심볼 (rung bond)
 
 | 역할 | 실재 심볼 | 비고 |
 |---|---|---|
-| 🔴+🔵 단일 판결 결합 | `lakatos/spine.py:67` `dialectical_verdict()` · `:103` `synthesize_promotion()` | 메트릭+P&R = 한 칸 |
-| 판결→다음 추측 전달 | `lakatos/bayes.py:69` `branch_credence()` → `heuristic.py:225` `appraise_and_plan()` | 🔴 출력이 🔵 입력으로 (회전) |
-| 학습 보정(상호) | `lakatos/heuristic.py:38` `realized_reward()` (🔴 실측) → `:51` `expected_progress_gain(learned_reward=)` (🔵 보정) | 상호 감시의 코드화 |
+| 🔴+🔵 단일 판결 결합 | `lakatos/verdict/spine.py:67` `dialectical_verdict()` · `:103` `synthesize_promotion()` | 메트릭+P&R = 한 칸 |
+| 판결→다음 추측 전달 | `lakatos/quant/bayes.py:69` `branch_credence()` → `programme/heuristic.py:225` `appraise_and_plan()` | 🔴 출력이 🔵 입력으로 (회전) |
+| 학습 보정(상호) | `lakatos/programme/heuristic.py:38` `realized_reward()` (🔴 실측) → `:51` `expected_progress_gain(learned_reward=)` (🔵 보정) | 상호 감시의 코드화 |
 
 > ⚠️ Longinus 깊이 게이트: 위 심볼은 모두 *작동하는* 함수/클래스다(no-op·NotImplementedError 아님). drift 시 `scripts/`의 baseline 감사로 재검증.
 
