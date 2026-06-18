@@ -105,53 +105,60 @@ hypothesis was falsified and pruned — the project applies its own method to it
 
 ---
 
-## Module map
-Pure modules (zero I/O, same ruling anywhere — theory = `THEORY.md`) live under `lakatos/`,
-grouped by role (subpackages: `verdict/` · `quant/` · `io/` · `programme/`):
+## Module map · enforced layering
 
-**Verdict kernel** — the scorer (the modeled subset is in `formal/Pidna.lean`)
+Pure modules (zero I/O, same ruling anywhere — theory = `THEORY.md`) live under `lakatos/`.
+**Dependency direction is enforced** by [`.importlinter`](.importlinter) (import-linter — `lint-imports`):
+a strict layering **`programme → verdict → quant → io`** (a layer may import lower layers, never a
+higher one) over a shared **foundation** at the package root that any layer may import. `engine.py`
+is pure foundation since the split — it imports no `io`/`quant` (`io/replay.py` holds the
+lineage-replay gates; `trust.py` is a root scoring primitive). **The layer roster below is a
+drift-guarded contract**: `tests/test_readme_longinus.py` checks every module resides in its claimed
+layer (and that the set of layers matches `.importlinter`) — this map cannot silently lie.
+
+### Foundation — `lakatos/` (root; shared, importable by any layer)
+`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `cli` `mcp_server` `eureka`
+- `engine` sparse research frame — enums / `GateResult` / gates / possibilities / event log / credence promotion / `SourceCredibilityScore`
+- `verdicts` verdict-vocabulary single source of truth · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
+- `trust` TrustRank/EigenTrust source-scoring primitive (shared by `engine` + `quant.bayes`) · `claim` ClaimStanding (upper/lower-realm confidence + blockers)
+- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector
+
+### `verdict/` — judgment kernel (the scorer; modeled in `formal/Pidna.lean`)
+`judge` `pnr` `spine` `promote` `certify` `argue`
 - `judge` [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
-- `verdicts` verdict-vocabulary single source of truth (registry)
-- `pnr` [Proofs & Refutations] counterexample-response dialectic (monster-barring … lemma-incorporation)
-- `spine` `dialectical_verdict` — reconcile metric + qualitative + PnR into one verdict
-- `promote` fail-closed CANONICAL allowlist (deny-by-default promotion gate)
-- `engine` sparse research frame — possibilities / event log / credence promotion / reproducibility contract
+- `pnr` [Proofs & Refutations] counterexample-response dialectic · `spine` `dialectical_verdict` (reconcile metric + qualitative + PnR)
+- `promote` fail-closed CANONICAL allowlist · `certify` 5-gate AND certificate · `argue` Dung AF grounded-extension justification
 
-**Quantitative** [`quant/`]
-- `bayes` branch credence = posterior over verdict sequence; use-novelty dedup; eigentrust source weighting
-- `laudan` problem balance / PSR / comparative score / `should_abandon` (3 rules)
-- `metrics` tree metrics (progress / rejection / degeneration / Bayes / fertility + Laudan)
-- `multiplicity` BH/FDR + Bonferroni family-level false-progressive screen
-- `fertility` novel-prediction hit record — science = predictive power, `nobel_grade`
-- `calibrate` Brier/log/ECE proper scoring — predictive honesty
-- `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
+### `quant/` — quantitative substrate
+`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate`
+- `bayes` branch credence over verdict sequence (use-novelty dedup; eigentrust weighting) · `laudan` problem balance / PSR / `should_abandon` (3 rules)
+- `metrics` tree metrics (progress / rejection / degeneration + Bayes + fertility + Laudan) · `multiplicity` BH/FDR + Bonferroni false-progressive screen
+- `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
-**Exploration & meta-policy**
-- `explore` bandit UCB + VoI — frontier question priority (which branch next)
-- `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`: ABANDON/PUSH/PROBE/PRIORITIZE)
-- `stack` inter-layer explicit vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `leaderboard` Pareto+Borda
-- `kuhn` Lakatos–Zahar supersession (shift = human agenda) · `agm` AGM/Levi hard-core revision (PROTECTED default)
+### `programme/` — programme-level / comparative / meta-policy
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic`
+- `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
+- `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
+- `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct
 
-**Evidence, provenance & I/O** [`io/`]
-- `prov` W3C PROV-O triples — verifiable lineage + replay command · `lineage` manifest + env fingerprint + root-replay
-- `rebuild` "receipts not claims" rebuild-from-raw · `trust` TrustRank/EigenTrust over the observation graph
-- `claim` ClaimStanding (upper/lower-realm confidence + blocking reasons) · `argue` Dung AF grounded-extension justification
-- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export · `world_gates` G-Web/G-WorldAction
-- `certify` 5-gate AND certificate (verifiable lineage bundle)
-
-**Surface**: `cli` (`python -m lakatos.cli`) · `mcp_server` (MCP tools) · `harness`/`harness_run` (ports & adapters).
+### `io/` — evidence, provenance, persistence, observability
+`lineage` `replay` `rebuild` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`
+- `lineage` manifest + env fingerprint + root-replay DAG · `replay` lineage-replay gates (`LineageReplayGate`/`ReproducibilityContract`, split out of `engine`)
+- `rebuild` "receipts not claims" rebuild-from-raw · `prov` W3C PROV-O triples + replay command · `envfp` environment fingerprint
+- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export (OpenLineage / DVC / PROV)
 
 ```
 formal/    ★Lean 4 formal kernel — machine-checked verdict theory (lake build, sorry=0)
 server/    FastAPI shell (:55170) — Neo4j (graph SoT) + PG (append-only history) + Mongo (artifacts)
 judges/    scoring scripts (result file → metric, LLM-independent)
 examples/  research programmes; euler_polyhedron_programme.py = engine-generated verdicts (no hand-typed verdict)
-tests/     verdict/engine/server-contract TDD — rule changes start from RED
+tests/     verdict/engine/server-contract TDD — rule changes start from RED; test_readme_longinus.py drift-guards this module map
 ```
 
 ## Build & verify
 ```bash
 python -m pytest tests/ -q                  # engine + server contract (Python)
+lint-imports                                # enforced layering (programme → verdict → quant → io); .importlinter
 cd formal && lake build                     # formal kernel (Lean 4): error=0, sorry=0
 bash server/run.sh                          # http://localhost:55170 (dashboard /, API /api/*)
 ```
