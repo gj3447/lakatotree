@@ -8,6 +8,7 @@ from lakatos.quant.laudan import (branch_problem_balance_windowed, problem_balan
                      unattributed_closures)
 from lakatos.quant.bayes import branch_credence, should_abandon_bayes
 from lakatos.quant.fertility import predictive_fertility, nobel_grade
+from lakatos.eureka import eureka_over_tree
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
 from lakatos.verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE
@@ -183,6 +184,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     fert = predictive_fertility([by[t] for t in path]) if path else predictive_fertility(nodes)
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
+    # eureka(measurement-grade): novel 예측 중 *측정 red* 를 통과한 것의 비율 = true/felt.
+    # fertility(confirmed/registered) 위에 BF substantial + 문제수지>0 게이트를 더 건 엄격본.
+    # standing(promotion)은 별도 층이라 제외 — felt aha 중 측정으로 확증된 것만 true.
+    eureka = eureka_over_tree([by[t] for t in path]) if path else eureka_over_tree(nodes)
     # gap8: 다중비교 — improved 판결을 (metric_name, scope) family 별로 BH/Bonferroni 스크린.
     # 판결은 불변(judge 권위) — family 수준 false-progressive 경보만.
     fam = defaultdict(list)
@@ -222,4 +227,4 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
-                multiplicity=multiplicity, alerts=alerts)
+                eureka=eureka, multiplicity=multiplicity, alerts=alerts)
