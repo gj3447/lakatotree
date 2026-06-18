@@ -7,6 +7,7 @@
   promotion_decision = promotion_gate + FoundationGate(준비도) + 재현성 + CredibilityPromotionGate
 # KG: span_lakatotree_spine / q-lkt-engine-unify
 """
+from lakatos.verdict.compose import GateOutcome, compose_gates
 from lakatos.verdict.promote import promotion_gate
 from lakatos.engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
 from lakatos.verdict.pnr import PnRAppraisal
@@ -122,11 +123,13 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
                        foundation_gaps: tuple = (), credibility_reasons: tuple = ()) -> tuple[bool, tuple]:
     """모든 승격 게이트 합성 (F-CON-1/2/5 + Foundation + Credibility) → 단일 결정."""
     _, reasons = promotion_gate(scripted_verdict=scripted_verdict, stands=stands, reproducible=reproducible)
-    block = list(reasons)
-    if foundation_gaps:
-        block.append('foundation_gaps:' + ','.join(foundation_gaps))
-    block.extend(credibility_reasons)
-    return (not block, tuple(block))
+    out = compose_gates(
+        GateOutcome('constitution', tuple(reasons)),
+        GateOutcome('foundation', ('foundation_gaps:' + ','.join(foundation_gaps),))
+        if foundation_gaps else None,
+        GateOutcome('credibility', tuple(credibility_reasons)),
+    )
+    return (out.passed, out.reasons)
 
 
 def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
@@ -136,19 +139,18 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
 
     이게 강건한 엔진의 척추: 서버가 가진 신호를 흘려보내면 모든 게이트가 합의해 차단/통과.
     """
-    block: list[str] = []
     gates: dict = {}
     _, pr = promotion_gate(scripted_verdict=scripted_verdict, stands=stands, reproducible=reproducible)
     gates['constitution'] = {'passed': not pr, 'reasons': list(pr)}
-    block.extend(pr)
+    outcomes = [GateOutcome('constitution', tuple(pr))]
     if foundation is not None:
         fr = FoundationGate.evaluate(foundation)
         gates['foundation'] = {'passed': fr.passed, 'reasons': list(fr.reasons)}
-        if not fr.passed:
-            block.append('foundation_gaps:' + ','.join(fr.reasons))
+        outcomes.append(GateOutcome(
+            'foundation', () if fr.passed else ('foundation_gaps:' + ','.join(fr.reasons),)))
     if credibility is not None:
         cr = CredibilityPromotionGate.evaluate(**credibility)
         gates['credibility'] = {'passed': cr.passed, 'reasons': list(cr.reasons)}
-        if not cr.passed:
-            block.extend(cr.reasons)
-    return {'ok': not block, 'reasons': tuple(block), 'gates': gates}
+        outcomes.append(GateOutcome('credibility', () if cr.passed else tuple(cr.reasons)))
+    out = compose_gates(*outcomes)
+    return {'ok': out.passed, 'reasons': out.reasons, 'gates': gates}
