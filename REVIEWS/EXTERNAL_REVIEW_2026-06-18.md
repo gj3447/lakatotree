@@ -60,9 +60,16 @@ euler/HALCON-3D 도그푸딩은 좋은 신호지만 "이 엔진을 통과한 연
 **아키텍처 A− / "검증된 진리 엔진" 서사 B−.** 최대 자산은 Lean이 아니라 "누구도 자기 출력을 채점 못 한다"는 구조적 불변식. 가장 시급한 실무 결함은 **B-1의 톤**이 아니라 **A-1(requirements 미명세 → 테스트 green 재현 불가)** — 정직성 브랜드를 직접 훼손하므로 우선 수정 권고.
 
 ### 액션 아이템
-- [ ] (P0) `requirements.txt`에 `httpx`, `mcp` 추가
-- [ ] (P0) 의존성 버전 핀(최소 상한) — 미고정으로 7 테스트 드리프트
-- [ ] (P1) `test_server_architecture` 인트로스펙션을 FastAPI 내부구조 비결합 방식으로 재작성
-- [ ] (P1) clean-container CI로 deps/런타임 드리프트 차단
-- [ ] (P2) README 첫 문단에 Lean 범위 한계 명시 (B-1)
-- [ ] (P2) 각 rigor 층의 "판결 뒤집은 횟수" 지표 노출 (B-3)
+- [x] (P0) `requirements.txt`에 `httpx`, `mcp`, `lxml`, `rdflib` 추가 — **이 커밋에서 수정**
+- [x] (P0) 의존성 버전 핀(`==`) — **이 커밋에서 수정**. clean venv + `pip install -r requirements.txt`만으로 762 passed 재현 확인
+- [x] (P1) `test_server_architecture` + `test_make_it_real` 인트로스펙션을 `_IncludedRouter` 평탄화 헬퍼로 버전-비결합화 — **이 커밋에서 수정** (7→0 fail)
+- [ ] (P1) clean-container CI로 deps/런타임 드리프트 차단 — *미착수(인프라)*
+- [ ] (P2) README 첫 문단에 Lean 범위 한계 명시 (B-1) — *문서 톤, 저자 판단 영역*
+- [ ] (P2) 각 rigor 층의 "판결 뒤집은 횟수" 지표 노출 (B-3) — *기능 추가, 별도 작업*
+
+### 수정 후 실측 (2026-06-18, this branch)
+| 항목 | before | after |
+|---|---|---|
+| clean clone `pip install -r requirements.txt` | 8 collection errors | ✅ 성공 |
+| `pytest tests/ -q` | 755 passed / 7 failed | ✅ **762 passed / 0 failed / 1 skipped** |
+| `cd formal && lake build` | (변경 없음) | ✅ success, sorry=0 |

@@ -90,7 +90,18 @@ def test_directions_ranks_by_real_voi_and_survives_none(monkeypatch):
 def test_cli_mcp_endpoints_are_registered_routes():
     app = load_app()
     registered = set()
-    for r in app.app.routes:
+
+    def _leaves(router):
+        # FastAPI >=0.137 wraps included routers as _IncludedRouter (sub-routes
+        # under original_router.routes) instead of flattening inline — walk both.
+        for r in router.routes:
+            sub = getattr(r, 'original_router', None)
+            if sub is not None and hasattr(sub, 'routes'):
+                yield from _leaves(sub)
+            else:
+                yield r
+
+    for r in _leaves(app.app):
         for m in (getattr(r, 'methods', None) or []):
             registered.add((m, r.path))
     required = {

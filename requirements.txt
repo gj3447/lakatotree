@@ -1,7 +1,26 @@
-fastapi
-uvicorn
-psycopg2-binary
-pymongo
-neo4j
-pytest
-prov
+# Runtime + test dependencies, version-pinned for reproducibility.
+# "receipts, not claims" applies to the build too: an unpinned, incomplete
+# spec makes "tests green" a claim no one can reproduce from a clean clone.
+# Pins are the versions the suite is verified green against (2026-06-18).
+
+# --- web/server ---
+fastapi==0.137.2
+starlette==1.3.1        # transitive via fastapi; pinned — route-introspection tests couple to its include_router shape
+uvicorn==0.49.0
+httpx==0.28.1           # required by mcp_server + starlette.testclient (was missing → 8 collection errors)
+
+# --- datastores ---
+psycopg2-binary==2.9.12
+pymongo==4.17.0
+neo4j==6.2.0
+
+# --- MCP surface ---
+mcp==1.28.0             # lakatos/mcp_server.py:from mcp.server.fastmcp import FastMCP (was missing)
+
+# --- provenance (W3C PROV-O) ---
+prov==2.1.1
+lxml==6.1.1             # prov.serialize() lazy-loads ALL serializers incl. provxml → needs lxml (was missing)
+rdflib==7.6.0           # same registry load pulls provrdf → needs rdflib (was missing)
+
+# --- test ---
+pytest==9.1.0
