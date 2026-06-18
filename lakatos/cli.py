@@ -56,7 +56,10 @@ def call(method, path, body=None):
         sys.exit(f'서버 연결 실패({BASE}): {e}. server/run.sh 가동 확인')
 
 
-def main(argv=None):
+def _build_parser() -> argparse.ArgumentParser:
+    """CLI 표면 *선언* — 모든 서브커맨드+인자 정의(한 책임). main 의 dispatch/네트워크와 분리(SRP):
+    전엔 한 함수에 ~100 LOC 선언 + ~180 LOC dispatch 가 융합. parser 만 필요한 테스트/도구가
+    dispatch·서버호출 없이 parse_args 할 수 있다(표면 변경의 단일 findable home)."""
     p = argparse.ArgumentParser(prog='lakatos', description='라카토트리 CLI')
     sub = p.add_subparsers(dest='cmd', required=True)
     sub.add_parser('trees')
@@ -162,6 +165,12 @@ def main(argv=None):
     sp.add_argument('--command', default=''); sp.add_argument('--cwd', default='')
     sp.add_argument('--exit-code', type=int); sp.add_argument('--stdout', default=''); sp.add_argument('--stderr', default='')
     sp.add_argument('--git-diff', default=''); sp.add_argument('--require-git-diff', action='store_true')
+    return p
+
+
+def main(argv=None):
+    """CLI dispatch — parser(=_build_parser)로 파싱 후 명령을 서버 API/로컬 감사로 라우팅(한 책임)."""
+    p = _build_parser()
     a = p.parse_args(argv)
 
     if a.cmd == 'longinus':   # 로컬 감사 — 서버 호출 안 함 (코드↔KG 바인딩 정합성)
