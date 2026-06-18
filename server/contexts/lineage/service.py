@@ -21,7 +21,7 @@ from lakatos.io.adapters import (
     lineage_result_to_openlineage_events,
     prov_document_to_prov_json,
 )
-from lakatos.engine import LineageReplayGate
+from lakatos.io.replay import LineageReplayGate
 from lakatos.io.envfp import environment_fingerprint as default_environment_fingerprint
 from lakatos.io.envfp import fingerprint_sha as default_fingerprint_sha
 from lakatos.io.lineage import (

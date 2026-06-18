@@ -10,8 +10,15 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from lakatos.engine import (FoundationGate, FoundationMap, LineageReplayResult, Realm,
-                     ResearchEvent, ResearchFrame, _clamp01)   # P8: _clamp01 단일 정본(engine)
+from lakatos.engine import (
+    FoundationGate,
+    FoundationMap,
+    Realm,
+    ResearchEvent,
+    ResearchFrame,
+    _clamp01,
+)
+from lakatos.io.replay import LineageReplayResult   # P8: _clamp01 단일 정본(engine)
 from lakatos.grounding import GROUNDED   # P6-3: confidence 문턱 단일 정본
 
 

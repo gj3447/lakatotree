@@ -854,7 +854,7 @@
     },
     {
       "sourceId": "engine.LineageReplayGate",
-      "file": "lakatos/engine.py",
+      "file": "lakatos/io/replay.py",
       "symbol": "LineageReplayGate",
       "kind": "class",
       "line_hint": 680,
@@ -1140,7 +1140,7 @@
     },
     {
       "sourceId": "trust.evidence_weight",
-      "file": "lakatos/quant/trust.py",
+      "file": "lakatos/trust.py",
       "symbol": "evidence_weight",
       "kind": "def",
       "line_hint": 77,
@@ -1151,7 +1151,7 @@
     },
     {
       "sourceId": "trust.trustrank",
-      "file": "lakatos/quant/trust.py",
+      "file": "lakatos/trust.py",
       "symbol": "trustrank",
       "kind": "def",
       "line_hint": 13,
@@ -1162,7 +1162,7 @@
     },
     {
       "sourceId": "trust.eigentrust",
-      "file": "lakatos/quant/trust.py",
+      "file": "lakatos/trust.py",
       "symbol": "eigentrust",
       "kind": "def",
       "line_hint": 42,

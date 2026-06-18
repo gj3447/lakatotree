@@ -145,7 +145,7 @@ class ProgrammeService:
         """P6 배선 — 트리의 실 인터넷 관측 그래프에 eigentrust 돌려 글로벌 출처신뢰 산출(queryable).
         coverage.mode 가 graph_propagated/seed_dominated/uniform_unlearned 로 정직하게 현 데이터 두께 표기."""
         import json as _json
-        from lakatos.quant.trust import global_source_trust
+        from lakatos.trust import global_source_trust
         rows = self.kg(
             "MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(e)-[:HAS_RESEARCH_EVENT]->"
             "(ev:ResearchEvent {realm:'internet'}) RETURN e.tag AS node, ev.payload AS payload",

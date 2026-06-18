@@ -20,16 +20,15 @@ from lakatos.engine import (
     LakatosNode,
     LakatosTree,
     LakatosVerdict,
-    LineageReplayGate,
     ObservationLedger,
     Possibility,
     Realm,
-    ReproducibilityContract,
     ResearchEvent,
     ResearchFrame,
     ResearchProject,
     SourceCredibilityScore,
 )
+from lakatos.io.replay import LineageReplayGate, ReproducibilityContract
 from lakatos.io.lineage import Derivation
 
 

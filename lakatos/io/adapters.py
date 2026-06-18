@@ -15,7 +15,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from uuid import uuid5, NAMESPACE_URL
 
-from lakatos.engine import BashAct, InternetObservation, LineageReplayResult
+from lakatos.engine import BashAct, InternetObservation
+from lakatos.io.replay import LineageReplayResult
 from lakatos.io.lineage import Derivation, by_output, rebuild_plan, roots
 
 

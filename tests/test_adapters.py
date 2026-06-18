@@ -25,9 +25,9 @@ from lakatos.io.adapters import (
 from lakatos.engine import (
     BashAct,
     InternetObservation,
-    LineageReplayGate,
     SourceCredibilityScore,
 )
+from lakatos.io.replay import LineageReplayGate
 from lakatos.io.lineage import Derivation
 
 

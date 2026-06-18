@@ -1,40 +1,16 @@
-; 라카토트리 엔진 계층 경계 강제 (engine reorg 2026-06-18, audit "단층" 응답).
-; THEORY.md 엄격도 스택을 파일구조+import 규칙으로 못 박는다 — 평면 재평탄화/역방향 의존 차단.
-;
-; 계층(THEORY.md): programme(프로그램/비교/메타) > verdict(판결 커널) > quant(정량 substrate) > io(어댑터/계보/관측).
-; foundation/shell(engine·verdicts·grounding·claim·world_gates·harness*·longinus·cli·mcp_server·eureka)는 root 공유층.
-;
-; ★정직 표기(audit 후속): 완전한 total-order `layers` 계약은 *아직* 성립 안 한다 — engine.py 가 순수
-; foundation 이 아니라 io.lineage + quant.trust 위에 gate 를 *합성*하는 straddle(770 LOC SRP, audit engine.py
-; 지적)이라 io.adapters→engine→quant.trust 경로가 생긴다. 그래서 strict layers 대신 *실제로 성립하는*
-; 단방향 경계(판결/메타 로직이 아래로 새지 않음)만 forbidden 으로 강제한다. engine.py 분리(foundation 타입
-; vs 합성 gate) 후 strict layers 로 승격 = 잔여 작업.
+; 라카토트리 엔진 계층 — strict layers 강제 (engine.py straddle 제거 후 승격, 2026-06-18).
+; THEORY.md 엄격도 스택을 파일구조+import 로 못 박는다. foundation/shell(engine·verdicts·grounding·
+; trust·claim·world_gates·harness*·longinus·cli·mcp_server·eureka)는 root 공유층(계약 대상 아님).
+; engine.py 는 이제 순수 foundation(io/quant import 0): LineageReplay* → io/replay.py, trust → root.
 
 [importlinter]
 root_package = lakatos
 
-[importlinter:contract:quant-no-upward]
-name = quant(정량 substrate) must not import verdict/programme (appraisal 로직 역류 차단)
-type = forbidden
-source_modules =
+[importlinter:contract:engine-layers]
+name = engine layers: programme > verdict > quant > io (no upward import)
+type = layers
+layers =
+    lakatos.programme
+    lakatos.verdict
     lakatos.quant
-forbidden_modules =
-    lakatos.verdict
-    lakatos.programme
-
-[importlinter:contract:verdict-below-programme]
-name = verdict(판결 커널) must not import programme (per-shift 커널은 프로그램-메타 아래)
-type = forbidden
-source_modules =
-    lakatos.verdict
-forbidden_modules =
-    lakatos.programme
-
-[importlinter:contract:io-no-appraisal]
-name = io(어댑터/계보/관측) must not import verdict/programme (직렬화층은 판결/메타 모름)
-type = forbidden
-source_modules =
     lakatos.io
-forbidden_modules =
-    lakatos.verdict
-    lakatos.programme
