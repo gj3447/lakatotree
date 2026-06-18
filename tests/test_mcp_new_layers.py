@@ -124,6 +124,24 @@ def test_run_cycle_tool_routes(monkeypatch):
     assert seen[0][0] == '/api/tree/T/cycle' and seen[0][1]['tag'] == 'e1'
 
 
+def test_add_observation_tool_passes_theory_rival_longinus(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    refs = '[{"sourceId":"world_gates.web_gate","sourcePath":"lakatos/world_gates.py:60"}]'
+    json.loads(m.add_observation(
+        'T', 'v', 'o1', url='https://w3.org/TR/prov-o/', retrieved_at='2026-06-18',
+        content_hash='h', source_type='standard', source_class_weight=0.9,
+        lakatos_location='protective_belt',
+        theory_basis='PROV-O anchors provenance semantics.',
+        foundation_refs_csv='trust-and-provenance-contract',
+        rival_name='citation-pile', rival_relation='contradicts', rival_node='quote',
+        comparison_axes_csv='provenance,trust_decomposition', longinus_refs_json=refs))
+    path, body = seen[0]
+    assert path == '/api/tree/T/node/v/observation'
+    assert body['rival_name'] == 'citation-pile'
+    assert body['comparison_axes'] == ['provenance', 'trust_decomposition']
+    assert body['longinus_refs'][0]['sourceId'] == 'world_gates.web_gate'
+
+
 def test_set_verdict_tool_routes(monkeypatch):
     seen = _cap_post(monkeypatch)
     json.loads(m.set_verdict('T', 'v', 'CANONICAL', human_verdict=True))

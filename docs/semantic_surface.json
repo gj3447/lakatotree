@@ -1,0 +1,115 @@
+{
+  "name": "lakatotree-semantic-surface",
+  "purpose": "One high-level methodology meaning maps to one primary code owner, plus tests and docs. This prevents dense prose from floating without source ownership.",
+  "policy": "A semantic unit may have collaborators, but owner_sourceId is unique across this file. Tests enforce owner Longinus binding, test refs, doc refs, and owner uniqueness.",
+  "semantic_units": [
+    {
+      "meaning_id": "internet_observation_gate",
+      "owner_sourceId": "world_gates.web_gate",
+      "layer": "foundation",
+      "change_actor": "evidence ingestion reviewer",
+      "source_refs": ["external:w3c-prov-o", "external:cucumber-bdd", "repo:docs/meaning_units.json"],
+      "tests": ["tests/test_world_gates.py::test_web_gate_passes_complete_observation"],
+      "docs": ["README.md#Internet observations as rival-programme evidence"]
+    },
+    {
+      "meaning_id": "world_action_gate",
+      "owner_sourceId": "world_gates.world_action_gate",
+      "layer": "foundation",
+      "change_actor": "world execution auditor",
+      "source_refs": ["external:nasa-traceability", "repo:docs/meaning_units.json"],
+      "tests": ["tests/test_world_gates.py::test_world_action_gate_passes_complete"],
+      "docs": ["docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md#Gates"]
+    },
+    {
+      "meaning_id": "theory_embedding",
+      "owner_sourceId": "engine.TheoryEmbedding",
+      "layer": "foundation",
+      "change_actor": "programme methodologist",
+      "source_refs": ["external:w3c-prov-o", "kg:finding_lkt_prov_external_evidence_20260618", "repo:docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md"],
+      "tests": ["tests/test_theory_embedding.py::test_embedded_internet_evidence_projects_theory_rival_and_longinus"],
+      "docs": ["README.md#Internet observations as rival-programme evidence"]
+    },
+    {
+      "meaning_id": "rival_programme_evidence",
+      "owner_sourceId": "engine.RivalProgrammeLink",
+      "layer": "foundation",
+      "change_actor": "rival programme reviewer",
+      "source_refs": ["kg:finding_lkt_registry_scope_gap_20260618", "repo:docs/meaning_units.json"],
+      "tests": ["tests/test_theory_embedding.py::test_observation_endpoint_wires_theory_rival_and_longinus"],
+      "docs": ["docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md#Required Ontology"]
+    },
+    {
+      "meaning_id": "embedded_internet_evidence_projection",
+      "owner_sourceId": "engine.EmbeddedInternetEvidence",
+      "layer": "foundation",
+      "change_actor": "kg projection maintainer",
+      "source_refs": ["external:w3c-prov-o", "kg:finding_lkt_prov_external_evidence_20260618"],
+      "tests": ["tests/test_theory_embedding.py::test_rival_embedding_requires_longinus_ref"],
+      "docs": ["README.md#Internet observations as rival-programme evidence"]
+    },
+    {
+      "meaning_id": "claim_standing",
+      "owner_sourceId": "claim.evaluate_claim_standing",
+      "layer": "foundation",
+      "change_actor": "claim promotion reviewer",
+      "source_refs": ["external:nasa-traceability", "repo:docs/meaning_units.json"],
+      "tests": ["tests/test_claim_standing.py::test_claim_standing_stands_when_foundation_replay_and_upper_lower_evidence_pass"],
+      "docs": ["README.md#Server contract"]
+    },
+    {
+      "meaning_id": "lakatos_verdict_gate",
+      "owner_sourceId": "engine.LakatosGate",
+      "layer": "foundation",
+      "change_actor": "methodology gatekeeper",
+      "source_refs": ["external:clean-coder-srp", "repo:docs/meaning_units.json"],
+      "tests": ["tests/test_engine.py::test_lakatos_gate_requires_progressive_content_and_replay_for_data_branch"],
+      "docs": ["docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md#Gates"]
+    },
+    {
+      "meaning_id": "lineage_replay_gate",
+      "owner_sourceId": "engine.LineageReplayGate",
+      "layer": "io",
+      "change_actor": "reproducibility auditor",
+      "source_refs": ["external:nasa-traceability", "repo:LINEAGE.md"],
+      "tests": ["tests/test_reproducibility_wire.py::test_gate_blocks_canonical_when_not_reproducible"],
+      "docs": ["LINEAGE.md"]
+    },
+    {
+      "meaning_id": "rival_leaderboard",
+      "owner_sourceId": "leaderboard.leaderboard",
+      "layer": "programme",
+      "change_actor": "comparative programme analyst",
+      "source_refs": ["kg:finding_lkt_registry_scope_gap_20260618", "repo:docs/meaning_units.json"],
+      "tests": ["tests/test_leaderboard_kuhn.py::test_leaderboard_exposes_criteria_not_single_score"],
+      "docs": ["README.md#Why a tree, not a line"]
+    },
+    {
+      "meaning_id": "hard_core_protection",
+      "owner_sourceId": "agm.HardCoreProtected",
+      "layer": "programme",
+      "change_actor": "hard-core revision reviewer",
+      "source_refs": ["external:clean-coder-srp", "repo:THEORY.md"],
+      "tests": ["tests/test_agm.py::test_hard_core_protected_by_default"],
+      "docs": ["THEORY.md"]
+    },
+    {
+      "meaning_id": "true_vs_felt_eureka",
+      "owner_sourceId": "eureka.classify",
+      "layer": "foundation",
+      "change_actor": "insight corroboration reviewer",
+      "source_refs": ["external:cucumber-bdd", "repo:docs/EUREKA.md"],
+      "tests": ["tests/test_eureka.py::test_felt_but_unconfirmed_is_hallucinated"],
+      "docs": ["docs/EUREKA.md"]
+    },
+    {
+      "meaning_id": "longinus_drift_audit",
+      "owner_sourceId": "longinus.audit",
+      "layer": "foundation",
+      "change_actor": "traceability auditor",
+      "source_refs": ["external:nasa-traceability", "kg:finding_lkt_traceability_bidirectional_20260618", "repo:docs/longinus_bindings.json"],
+      "tests": ["tests/test_longinus_bindings.py::test_all_bindings_symbol_resolves"],
+      "docs": ["docs/longinus_bindings.json"]
+    }
+  ]
+}

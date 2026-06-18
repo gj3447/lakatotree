@@ -144,7 +144,7 @@
   "lakatotree_bindings": [
     {
       "sourceId": "LakatosGate.evaluate",
-      "sourcePath": "lakatos/engine.py:526",
+      "sourcePath": "lakatos/engine.py:652",
       "purpose": "progressive_or_conditional_gate_for_bpc_segmentation_branch"
     },
     {
@@ -159,7 +159,7 @@
     },
     {
       "sourceId": "judge.NovelTarget",
-      "sourcePath": "lakatos/verdict/judge.py:42",
+      "sourcePath": "lakatos/verdict/judge.py:43",
       "purpose": "structural_metric_threshold_for_seg_contract_and_p95_targets"
     },
     {

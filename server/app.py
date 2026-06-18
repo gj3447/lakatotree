@@ -44,6 +44,7 @@ from server.api_schemas import (
     ElementIn,
     ElementUseIn,
     FoundationRequirementIn,
+    LonginusRefIn,
     NodeIn,
     ObservationIn,
     ParentEdgeIn,

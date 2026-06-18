@@ -44,6 +44,17 @@ class LakatosVerdict(str, Enum):
     AMBIGUOUS = "ambiguous"
 
 
+LAKATOS_LOCATIONS = ("hard_core", "protective_belt", "positive_heuristic", "negative_heuristic")
+
+
+class RivalRelation(str, Enum):
+    """How an observation relates the active node to a rival programme."""
+
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    QUALIFIES = "qualifies"
+
+
 @dataclass(frozen=True)
 class GateResult:
     passed: bool
@@ -496,6 +507,121 @@ class ObservationLedger:
             revision_of=previous.name,
         )
         return self.add(observation)
+
+
+@dataclass(frozen=True)
+class LonginusRef:
+    """Source binding for evidence that enters the theory tree."""
+
+    sourceId: str
+    sourcePath: str
+    layer: str = ""
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.sourceId.strip():
+            raise ValueError("sourceId is required")
+        if not self.sourcePath.strip():
+            raise ValueError("sourcePath is required")
+
+    def as_dict(self) -> dict:
+        return {
+            "sourceId": self.sourceId,
+            "sourcePath": self.sourcePath,
+            "layer": self.layer,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class TheoryEmbedding:
+    """Where external evidence sits inside the research programme."""
+
+    lakatos_location: str
+    theoretical_basis: str = ""
+    foundation_refs: tuple[str, ...] = ()
+    longinus_refs: tuple[LonginusRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.lakatos_location not in LAKATOS_LOCATIONS:
+            raise ValueError(f"lakatos_location must be one of {LAKATOS_LOCATIONS}")
+        object.__setattr__(self, "foundation_refs", tuple(self.foundation_refs))
+        object.__setattr__(self, "longinus_refs", tuple(self.longinus_refs))
+
+    def as_dict(self) -> dict:
+        return {
+            "lakatos_location": self.lakatos_location,
+            "theoretical_basis": self.theoretical_basis,
+            "foundation_refs": list(self.foundation_refs),
+        }
+
+
+@dataclass(frozen=True)
+class RivalProgrammeLink:
+    """Typed evidence relation from a Lakatos node to a rival programme."""
+
+    programme: str
+    relation: RivalRelation | str
+    rival_node: str = ""
+    comparison_axes: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.programme.strip():
+            raise ValueError("rival programme is required")
+        relation = self.relation
+        if not isinstance(relation, RivalRelation):
+            try:
+                relation = RivalRelation(str(relation).lower())
+            except ValueError as exc:
+                raise ValueError("rival_relation must be supports, contradicts, or qualifies") from exc
+            object.__setattr__(self, "relation", relation)
+        object.__setattr__(self, "comparison_axes", tuple(self.comparison_axes))
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+
+    def as_dict(self) -> dict:
+        return {
+            "programme": self.programme,
+            "relation": self.relation.value,
+            "rival_node": self.rival_node,
+            "comparison_axes": list(self.comparison_axes),
+            "evidence_refs": list(self.evidence_refs),
+        }
+
+
+@dataclass(frozen=True)
+class EmbeddedInternetEvidence:
+    """InternetObservation joined to theory location, rivals, and Longinus refs."""
+
+    observation: InternetObservation
+    tree_name: str
+    node_tag: str
+    embedding: TheoryEmbedding
+    rival_links: tuple[RivalProgrammeLink, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rival_links", tuple(self.rival_links))
+        if self.rival_links and not self.embedding.longinus_refs:
+            raise ValueError("rival embedded evidence requires longinus refs")
+        if not self.tree_name.strip():
+            raise ValueError("tree_name is required")
+        if not self.node_tag.strip():
+            raise ValueError("node_tag is required")
+
+    def kg_projection(self) -> dict:
+        longinus_refs = [ref.as_dict() for ref in self.embedding.longinus_refs]
+        rival_links = [link.as_dict() for link in self.rival_links]
+        return {
+            "observation": self.observation.kg_properties(),
+            "embedding": self.embedding.as_dict(),
+            "longinus_refs": longinus_refs,
+            "rival_links": rival_links,
+            "edges": {
+                "LOCATED_IN": f"{self.tree_name}/{self.node_tag}",
+                "BOUND_BY": [ref["sourceId"] for ref in longinus_refs],
+                "RIVAL_EVIDENCE": [link["programme"] for link in rival_links],
+            },
+        }
 
 
 @dataclass(frozen=True)

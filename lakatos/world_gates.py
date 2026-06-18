@@ -12,7 +12,7 @@ prom32 사이클이 PROGRESSIVE_CONDITIONAL 로 남은 이유 = "automated G-Web
 """
 import re
 
-from lakatos.engine import GateResult, BashAct
+from lakatos.engine import GateResult, BashAct, LAKATOS_LOCATIONS
 
 # ── F07: 프롬프트 인젝션/exfiltration 휴리스틱 시그널 ──────────────────────────
 _INJECTION_PATTERNS = [
@@ -50,7 +50,6 @@ def scan_prompt_injection(text: str) -> dict:
 
 
 # ── G-Web: 인터넷 fetch 게이트 ───────────────────────────────────────────────
-LAKATOS_LOCATIONS = ('hard_core', 'protective_belt', 'positive_heuristic', 'negative_heuristic')
 # G-Trust: 신뢰는 *분해된* 성분이어야("단일 최종 점수는 不可", AXIS_gates G-Trust).
 # ★나생문: bare 'trust' 는 분해 성분이 아님(제외) — 분해 성분 중 1+ 가 *양수*여야(present+nonzero).
 _CREDIBILITY_KEYS = ('link_authority', 'source_class_weight', 'primary_source_bonus',
