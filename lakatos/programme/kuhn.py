@@ -89,3 +89,27 @@ def assess_paradigm(incumbent: str, rivals: list, snapshots: list,
     return ParadigmAssessment(
         NORMAL_SCIENCE, incumbent, None, 'incumbent 건재 — 정상과학', window,
         requires_human_oracle=False)
+
+
+def propose_supersession(assessment: ParadigmAssessment) -> dict | None:
+    """shift_candidate 판정 → 구조화된 *대체 제안* 안건 레코드 ('합류를 기록한다'의 기계화).
+
+    ★자동 교체가 아니다 — 이 레코드는 어떤 verdict 도 바꾸지 않는다(verdict_mutation=False).
+    rival 의 지속 우세(붉은 영수증)가 incumbent 정본(푸른 현재최선)을 대체 *후보*로 미는 염기쌍을
+    machine-readable 안건으로 박는다. 확정은 인간 몫: AGM allow_hard_core 동의 + admin
+    set_verdict('superseded'). shift_candidate 가 아니면 None(제안 없음 — endpoint 에서 증발 방지).
+    DON'T 준수: requires_human_verdict=True, 자동 교체/인간경계 자동화 0.
+    """
+    if assessment.state != SHIFT_CANDIDATE or not assessment.rival:
+        return None
+    return {
+        'kind': 'supersession_proposal',
+        'incumbent': assessment.incumbent,
+        'rival': assessment.rival,
+        'reason': assessment.reason,
+        'window': assessment.window,
+        'status': 'proposed',                # proposed → (인간) → confirmed/rejected
+        'requires_human_verdict': True,      # 자동 교체 금지 (DON'T)
+        'verdict_mutation': False,           # 이 레코드는 어떤 verdict 도 바꾸지 않는다
+        'confirm_via': "AGM allow_hard_core 동의 후 admin set_verdict('superseded')",
+    }
