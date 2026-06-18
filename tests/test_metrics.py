@@ -126,3 +126,49 @@ def test_canonical_credence_dedups_repeated_same_question_LIVE():
     diff = tree_metrics(chain(('q1', 'q2')), [])['bayes']['canonical_credence']    # 서로 다른 질문
     assert diff > same          # 새 예측 2개 = 독립증거 → 더 높은 신뢰 (use-novelty)
     assert 0.0 < same < 1.0     # 재확증은 인위확신 안 만듦
+
+
+# ── SOLID 분해의 payoff: 각 지표 개념을 *독립*으로 테스트 (전엔 트리 통째로만 가능했음) ──────
+from lakatos.quant.metrics import (
+    _canonical_path, _progress_metric, _degeneration_depth, _multiplicity_screen, _coverage,
+)
+
+
+def _r(tag, verdict, parent=None, **kw):
+    return dict(tag=tag, verdict=verdict, parent=parent, metric_scope='s', **kw)
+
+
+def test_canonical_path_isolated():
+    nodes = [_r('root', 'canonical_stage'), _r('a', 'progressive', 'root'), _r('c', 'CANONICAL', 'a')]
+    by = {r['tag']: r for r in nodes}
+    assert _canonical_path(nodes, by) == ['root', 'a', 'c']        # root→leaf
+
+
+def test_progress_metric_isolated_direction_and_zero_guard():
+    by = {'root': _r('root', 'canonical_stage', metric_value=2.0),
+          'c': _r('c', 'CANONICAL', 'root', metric_value=1.0)}
+    p = _progress_metric(['root', 'c'], by)
+    assert p['improvement_pct'] == 50.0 and p['scope'] == 's'       # lower-is-better 2→1 = 50%
+    byz = {'root': _r('root', 'canonical_stage', metric_value=0.0),
+           'c': _r('c', 'CANONICAL', 'root', metric_value=3.0)}
+    pz = _progress_metric(['root', 'c'], byz)
+    assert pz['improvement_pct'] is None and pz['abs_gain'] == 3.0  # first=0 → 절대증가(ZeroDiv 가드)
+
+
+def test_degeneration_depth_isolated():
+    children = {'canon': [_r('d1', 'degenerating', 'canon')],
+                'd1': [_r('d2', 'rejected', 'd1')]}
+    assert _degeneration_depth(['canon'], children) == 2           # 2연속 비진보 자식 체인
+
+
+def test_multiplicity_screen_isolated_only_families_of_2plus():
+    one = [_r('a', 'progressive', metric_name='iou', metric_value=0.5, pred_baseline=1.0)]
+    assert _multiplicity_screen(one) == {}                         # family 1개 = 다중비교 아님
+    two = [_r('a', 'progressive', metric_name='iou', metric_value=0.5, pred_baseline=1.0),
+           _r('b', 'progressive', metric_name='iou', metric_value=0.4, pred_baseline=1.0)]
+    assert 'iou/s' in _multiplicity_screen(two)                    # family 2개 → 스크린
+
+
+def test_coverage_isolated_backlog_blocks_exhaustive():
+    assert _coverage({})['exhaustive'] is True
+    assert _coverage({'coverage_backlog': ['x']})['exhaustive'] is False
