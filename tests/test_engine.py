@@ -137,6 +137,22 @@ def test_lakatos_gate_requires_progressive_content_and_replay_for_data_branch():
     assert degenerating.verdict == LakatosVerdict.DEGENERATING
 
 
+def test_lakatos_gate_hard_core_violation_is_different_programme():
+    # AXIS-CORR (audit qual-fidelity 2026-06-18): hard core 위반은 진보 축의 degenerating 이 아니라
+    # 정체성 축의 different_programme — 내용이 다 있어도(아래 anomaly/consequence/excess 모두 True) 그렇다.
+    r = LakatosGate.evaluate(
+        LakatosEvidence(
+            theory_laden_anomaly=True,
+            independent_testable_consequence=True,
+            excess_empirical_content=True,
+            hard_core_preserved=False,
+            implementation_complete=True,
+        )
+    )
+    assert r.verdict == LakatosVerdict.DIFFERENT_PROGRAMME
+    assert "hard_core_violated" in r.reasons
+
+
 def test_tree_retains_rejected_branches_but_excludes_them_from_canonical_path():
     tree = LakatosTree(name="T", hard_core=("internet-first",))
     tree.add_node(LakatosNode(name="root", verdict=LakatosVerdict.PROGRESSIVE))

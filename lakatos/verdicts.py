@@ -32,6 +32,8 @@ ENGINE_VERDICTS = frozenset({
     "progressive_conditional",
     "degenerating",
     "withdrawn",              # ENG-CORR-2: pnr surrender → spine.dialectical_verdict 가 emit (등록 누락이었음)
+    "different_programme",    # AXIS-CORR (audit qual-fidelity 2026-06-18): hard_core 위반 = 음의 휴리스틱을
+                              # 떠난 것 = *다른 프로그램*(정체성 축). 진보 축의 degenerating(belt 내용-비진보)과 구분.
     "ambiguous",
 })
 
@@ -62,6 +64,7 @@ NONPROGRESSIVE_VERDICTS = frozenset({
     "equivalent",
     "degenerating",
     "withdrawn",
+    "different_programme",   # 현 프로그램의 진보 아님(다른 프로그램으로 분기) — withdrawn 과 동류(off-axis)
 })
 
 

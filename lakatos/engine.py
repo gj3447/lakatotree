@@ -48,6 +48,7 @@ class LakatosVerdict(str, Enum):
     PROGRESSIVE = "progressive"
     PROGRESSIVE_CONDITIONAL = "progressive_conditional"
     DEGENERATING = "degenerating"
+    DIFFERENT_PROGRAMME = "different_programme"   # AXIS-CORR: hard core 위반 = 정체성 사건(다른 프로그램)
     AMBIGUOUS = "ambiguous"
 
 
@@ -538,6 +539,12 @@ class LakatosGate:
                 requires_human_verdict=True,
             )
 
+        # AXIS-CORR (audit qual-fidelity 2026-06-18): hard core 위반은 진보/퇴행 판정이 아니라
+        # 정체성 사건 — 음의 휴리스틱을 떠나 *다른 프로그램*으로 간 것. degenerating(belt 내용-비진보,
+        # 진보 축)으로 뭉뚱그리면 정체성 축과 진보 축이 섞인다(MSRP 곡해). 별 verdict 로 분리.
+        if not evidence.hard_core_preserved:
+            return LakatosGateResult(LakatosVerdict.DIFFERENT_PROGRAMME, ("hard_core_violated",))
+
         missing: list[str] = []
         if not evidence.theory_laden_anomaly:
             missing.append("theory_laden_anomaly")
@@ -545,8 +552,6 @@ class LakatosGate:
             missing.append("independent_testable_consequence")
         if not evidence.excess_empirical_content:
             missing.append("excess_empirical_content")
-        if not evidence.hard_core_preserved:
-            missing.append("hard_core_preserved")
         if missing:
             return LakatosGateResult(LakatosVerdict.DEGENERATING, tuple(missing))
 
