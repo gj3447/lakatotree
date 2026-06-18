@@ -47,7 +47,8 @@ class EurekaVerdict:
     reasons: tuple = ()  # which external-red gate(s) vetoed it (why it is not true)
 
 
-def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL) -> EurekaVerdict:
+def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
+             require_promotion: bool = True) -> EurekaVerdict:
     """Classify a research node as felt / true / hallucinated eureka.
 
     Node keys (all optional, conservative defaults): ``novel_registered``,
@@ -57,6 +58,12 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL) -> EurekaVer
     A node is *felt* iff a novel prediction was registered (the blue flash). It is *true*
     iff it is also externally confirmed AND clears every red gate; otherwise the felt aha
     is *hallucinated* and ``reasons`` names every veto.
+
+    ``require_promotion=False`` drops the promotion gate (``stands``/``reproducible``) from
+    the verdict. Those live in the *standing* layer, not on a tree node — so a tree-level
+    eureka scan asserts only the *measurement* gates (confirmed + substantial BF + net
+    problem closure) and leaves promotion-standing to the layer that owns it, rather than
+    hallucinating a veto from a field the node never carried. See :func:`eureka_over_tree`.
     """
     felt = bool(node.get("novel_registered"))  # 🔵 blue flash — does NOT imply correctness
     if not felt:
@@ -74,15 +81,66 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL) -> EurekaVer
     balance = problem_balance(int(node.get("closed", 0)), int(node.get("opened", 0)))
     if balance <= 0:
         reasons.append(f"problem_balance:{balance}<=0")
-    ok, gate_reasons = promotion_gate(scripted_verdict=node.get("verdict", ""),
-                                      stands=bool(node.get("stands", False)),
-                                      reproducible=node.get("reproducible"))
-    if not ok:
-        reasons.extend(gate_reasons)
+    if require_promotion:
+        ok, gate_reasons = promotion_gate(scripted_verdict=node.get("verdict", ""),
+                                          stands=bool(node.get("stands", False)),
+                                          reproducible=node.get("reproducible"))
+        if not ok:
+            reasons.extend(gate_reasons)
 
     true = not reasons
     return EurekaVerdict(felt=True, true=true, hallucinated=not true,
                          bf=bf, balance=balance, reasons=tuple(reasons))
+
+
+def _node_to_eureka_input(node: dict) -> dict:
+    """Assemble the eureka input dict from a *real* lakatotree tree node (server
+    ``repository``/``read_models`` shape). Derivations match the engine, not invented:
+
+    * ``delta = metric_value − pred_baseline``  (exactly ``judge.judge``'s effect)
+    * ``noise_band = pred_noise_band``
+    * ``closed = |pred_closes|`` (questions this prediction closes),
+      ``opened = |questions|`` (questions the node raises) → per-node problem balance
+    * ``verdict`` / ``novel_registered`` / ``novel_confirmed`` / ``source_trust`` — direct
+
+    ``stands``/``reproducible`` are deliberately absent — they belong to the standing layer
+    (see :func:`eureka_over_tree`, which runs with ``require_promotion=False``).
+    """
+    mv, base = node.get("metric_value"), node.get("pred_baseline")
+    delta = (float(mv) - float(base)) if mv is not None and base is not None else 0.0
+    return {
+        "novel_registered": node.get("novel_registered"),
+        "novel_confirmed": node.get("novel_confirmed"),
+        "verdict": node.get("verdict", ""),
+        "delta": delta,
+        "noise_band": node.get("pred_noise_band") or 0.0,
+        "source_trust": node.get("source_trust", 1.0),
+        "closed": len(node.get("pred_closes") or []),
+        "opened": len(node.get("questions") or []),
+    }
+
+
+def eureka_over_tree(nodes: list) -> dict:
+    """Run the eureka scan over real tree nodes — the *measurement-grade* eureka.
+
+    Each node's inputs are assembled by :func:`_node_to_eureka_input` from fields the node
+    actually carries; ``classify`` runs with ``require_promotion=False`` because standing is
+    not a node field. So a *true* here means: a novel prediction that was confirmed, with
+    substantial Bayes evidence, that closed more questions than it opened — i.e. the node
+    *measured* a real discovery (felt aha that survived measurement red). Promotion-standing
+    is a separate, higher gate. Returns the same shape as :func:`eureka_rate` plus
+    ``measurement_grade=True`` so a caller never mistakes it for the full (promotion) verdict.
+    """
+    verdicts = [classify(_node_to_eureka_input(n), require_promotion=False) for n in nodes]
+    felt = sum(1 for v in verdicts if v.felt)
+    true = sum(1 for v in verdicts if v.true)
+    hallucinated = sum(1 for v in verdicts if v.hallucinated)
+    return {
+        "felt": felt, "true": true, "hallucinated": hallucinated,
+        "true_rate": round(true / felt, 3) if felt else 0.0,
+        "hallucination_rate": round(hallucinated / felt, 3) if felt else 0.0,
+        "measurement_grade": True,
+    }
 
 
 def eureka_rate(nodes: list) -> dict:

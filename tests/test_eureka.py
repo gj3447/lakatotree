@@ -6,7 +6,22 @@ made executable). Red is an asymmetric downstream filter — it can veto, never 
 """
 from __future__ import annotations
 
-from lakatos.eureka import BF_SUBSTANTIAL, classify, eureka_rate
+from lakatos.eureka import (
+    BF_SUBSTANTIAL,
+    _node_to_eureka_input,
+    classify,
+    eureka_over_tree,
+    eureka_rate,
+)
+
+# a real lakatotree tree node (server repository/read_models shape) that is a
+# measurement-grade true eureka: a confirmed novel prediction, strong effect, net closure.
+_TREE_NODE = {
+    "tag": "v8_frozen", "verdict": "progressive",
+    "novel_registered": True, "novel_confirmed": True,
+    "metric_value": 12.0, "pred_baseline": 2.0, "pred_noise_band": 0.1,
+    "pred_closes": ["q1", "q2", "q3"], "questions": ["q4"], "source_trust": 1.0,
+}
 
 _TRUE = {
     "novel_registered": True, "novel_confirmed": True, "verdict": "progressive",
@@ -76,3 +91,51 @@ def test_eureka_rate_measures_true_over_felt():
     assert r["felt"] == 3 and r["true"] == 1 and r["hallucinated"] == 2
     assert r["true_rate"] == round(1 / 3, 3)
     assert r["hallucination_rate"] == round(2 / 3, 3)
+
+
+# ── eureka over real tree nodes (measurement-grade, standing excluded) ────────
+def test_node_to_input_derives_delta_and_balance_from_real_fields():
+    inp = _node_to_eureka_input(_TREE_NODE)
+    assert inp["delta"] == 10.0          # metric_value - pred_baseline (judge convention)
+    assert inp["noise_band"] == 0.1
+    assert inp["closed"] == 3 and inp["opened"] == 1   # |pred_closes| vs |questions|
+    assert "stands" not in inp and "reproducible" not in inp  # standing is not a node field
+
+
+def test_tree_node_is_measurement_true_eureka():
+    # confirmed novel + strong effect + net closure, NO standing field needed.
+    v = classify(_node_to_eureka_input(_TREE_NODE), require_promotion=False)
+    assert v.felt and v.true and not v.hallucinated
+    assert v.bf > BF_SUBSTANTIAL and v.balance > 0
+
+
+def test_require_promotion_false_drops_the_standing_gate():
+    # the same input that is true without promotion is hallucinated WITH it (no stands).
+    inp = _node_to_eureka_input(_TREE_NODE)
+    assert classify(inp, require_promotion=False).true is True
+    assert classify(inp, require_promotion=True).true is False  # promotion vetoes (no stands)
+
+
+def test_unconfirmed_tree_node_is_hallucinated():
+    node = {**_TREE_NODE, "novel_confirmed": False}
+    v = classify(_node_to_eureka_input(node), require_promotion=False)
+    assert v.felt and not v.true and "novel_unconfirmed" in v.reasons
+
+
+def test_marginal_effect_tree_node_blocked():
+    # confirmed but the result barely moved off baseline -> marginal evidence -> not true.
+    node = {**_TREE_NODE, "metric_value": 2.05, "pred_noise_band": 1.0}  # delta 0.05
+    v = classify(_node_to_eureka_input(node), require_promotion=False)
+    assert not v.true and any(r.startswith("bf_marginal") for r in v.reasons)
+
+
+def test_eureka_over_tree_aggregates_and_flags_measurement_grade():
+    nodes = [
+        _TREE_NODE,                                   # true
+        {**_TREE_NODE, "novel_confirmed": False},     # hallucinated
+        {"tag": "x", "novel_registered": False},      # not felt
+    ]
+    r = eureka_over_tree(nodes)
+    assert r["measurement_grade"] is True
+    assert r["felt"] == 2 and r["true"] == 1 and r["hallucinated"] == 1
+    assert r["true_rate"] == 0.5
