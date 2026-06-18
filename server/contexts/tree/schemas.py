@@ -133,6 +133,13 @@ class ResearchEventIn(BaseModel):
         )
 
 
+class LonginusRefIn(BaseModel):
+    sourceId: str
+    sourcePath: str
+    layer: str = ""
+    note: str = ""
+
+
 class ObservationIn(BaseModel):
     """G-Web internet observation evidence."""
 
@@ -156,6 +163,13 @@ class ObservationIn(BaseModel):
     content: str = ""
     actor: str = ""
     evidence_refs: list[str] = Field(default_factory=list)
+    theory_basis: str = ""
+    foundation_refs: list[str] = Field(default_factory=list)
+    rival_name: str = ""
+    rival_relation: str = ""
+    rival_node: str = ""
+    comparison_axes: list[str] = Field(default_factory=list)
+    longinus_refs: list[LonginusRefIn] = Field(default_factory=list)
 
 
 class WorldActionIn(BaseModel):

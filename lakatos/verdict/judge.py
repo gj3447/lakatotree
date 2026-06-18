@@ -36,6 +36,7 @@ class Prediction:
 
 
 NOVELTY_SENSES = ('zahar_use_novelty', 'temporal_novelty', 'worrall_use_novelty')
+NOVELTY_SENSE_SCORING_POLICY = 'tag_only'
 
 
 @dataclass(frozen=True)

@@ -120,7 +120,7 @@
       "file": "lakatos/quant/laudan.py",
       "symbol": "unattributed_closures",
       "kind": "def",
-      "line_hint": 45,
+      "line_hint": 81,
       "sha256": "6900152af158d6c8",
       "layer": "positive_heuristic",
       "frege_sinn": "P7-F closed_by 미귀속 가시화"
@@ -134,6 +134,16 @@
       "sha256": "bf9bd7ab74dcf26f",
       "layer": "negative_heuristic",
       "frege_sinn": "P7-C NaN/inf 거부(math.isfinite)"
+    },
+    {
+      "sourceId": "claim.evaluate_claim_standing",
+      "file": "lakatos/claim.py",
+      "symbol": "evaluate_claim_standing",
+      "kind": "def",
+      "line_hint": 266,
+      "sha256": "c74057375a2237c4",
+      "layer": "claim-standing",
+      "frege_sinn": "상계/하계 evidence, foundation, human doubt, lineage 를 합쳐 claim standing 계산"
     },
     {
       "sourceId": "agm.demote_canonical",
@@ -356,6 +366,26 @@
       "frege_sinn": "application service owning evidence ingestion, standing, claim-standing, and certificate assembly"
     },
     {
+      "sourceId": "server.contexts.tree.evidence_claim_service.embedded_observation",
+      "file": "server/contexts/tree/evidence_claim_service.py",
+      "symbol": "embedded_observation",
+      "kind": "def",
+      "line_hint": 269,
+      "sha256": "3e6c1ad40ce15f1d",
+      "layer": "application",
+      "frege_sinn": "G-Web observation을 theory/rival/Longinus 임베딩 순수 모델로 조립"
+    },
+    {
+      "sourceId": "server.contexts.tree.evidence_claim_service.bind_embedded_observation",
+      "file": "server/contexts/tree/evidence_claim_service.py",
+      "symbol": "bind_embedded_observation",
+      "kind": "def",
+      "line_hint": 325,
+      "sha256": "c280e3f012d24c75",
+      "layer": "application",
+      "frege_sinn": "InternetObservation 이벤트를 LakatosNode, RivalProgramme, ReferenceSite:Longinus 로 KG 결합"
+    },
+    {
       "sourceId": "server.contexts.tree.programme.create_programme_router",
       "file": "server/contexts/tree/programme.py",
       "symbol": "create_programme_router",
@@ -474,6 +504,16 @@
       "sha256": "d1ce2227c575ae4a",
       "layer": "schema",
       "frege_sinn": "tree context append-only research event schema with engine conversion"
+    },
+    {
+      "sourceId": "server.contexts.tree.schemas.LonginusRefIn",
+      "file": "server/contexts/tree/schemas.py",
+      "symbol": "LonginusRefIn",
+      "kind": "class",
+      "line_hint": 136,
+      "sha256": "c11cb2d011290c2c",
+      "layer": "schema",
+      "frege_sinn": "HTTP schema for sourceId/sourcePath references attached to embedded internet evidence"
     },
     {
       "sourceId": "server.contexts.tree.schemas.ObservationIn",
@@ -666,6 +706,46 @@
       "frege_sinn": "Longinus drift 감사기(코드↔KG 바인딩 정합)"
     },
     {
+      "sourceId": "semantic_surface.SemanticUnit",
+      "file": "lakatos/semantic_surface.py",
+      "symbol": "SemanticUnit",
+      "kind": "class",
+      "line_hint": 18,
+      "sha256": "7b171cea09759d9a",
+      "layer": "implementation",
+      "frege_sinn": "고수준 의미 단위의 primary code owner/test/doc 계약"
+    },
+    {
+      "sourceId": "semantic_surface.SemanticSurfaceReport",
+      "file": "lakatos/semantic_surface.py",
+      "symbol": "SemanticSurfaceReport",
+      "kind": "class",
+      "line_hint": 27,
+      "sha256": "5877b51035ec99bc",
+      "layer": "implementation",
+      "frege_sinn": "semantic surface validation result"
+    },
+    {
+      "sourceId": "semantic_surface.load_surface",
+      "file": "lakatos/semantic_surface.py",
+      "symbol": "load_surface",
+      "kind": "def",
+      "line_hint": 33,
+      "sha256": "c30217134540a724",
+      "layer": "implementation",
+      "frege_sinn": "docs/semantic_surface.json 을 SemanticUnit 목록으로 로드"
+    },
+    {
+      "sourceId": "semantic_surface.validate_surface",
+      "file": "lakatos/semantic_surface.py",
+      "symbol": "validate_surface",
+      "kind": "def",
+      "line_hint": 47,
+      "sha256": "a672b92f9ec0aaa5",
+      "layer": "implementation",
+      "frege_sinn": "의미↔코드 owner 1:1, Longinus owner, test/doc refs 검증"
+    },
+    {
       "sourceId": "judge.judge",
       "file": "lakatos/verdict/judge.py",
       "symbol": "judge",
@@ -692,11 +772,22 @@
       "file": "lakatos/verdict/judge.py",
       "symbol": "NovelTarget",
       "kind": "class",
-      "line_hint": 39,
+      "line_hint": 43,
       "sha256": "a4e1d9f592d06c6f",
       "layer": "domain-policy",
       "serving": "wired",
       "frege_sinn": "구조적 novel 명세 — 실측 대조 없으면 novel 불인정(F-CON-3)"
+    },
+    {
+      "sourceId": "judge.NOVELTY_SENSE_SCORING_POLICY",
+      "file": "lakatos/verdict/judge.py",
+      "symbol": "NOVELTY_SENSE_SCORING_POLICY",
+      "kind": "constant",
+      "line_hint": 39,
+      "sha256": "40891163d311a021",
+      "layer": "domain-policy",
+      "serving": "negative-policy",
+      "frege_sinn": "temporal/Worrall novelty 를 점수화하지 않고 감사 태그로만 유지하는 DON'T-DO 정책"
     },
     {
       "sourceId": "pnr.appraise_response",
@@ -807,6 +898,72 @@
       "layer": "domain-policy",
       "serving": "wired",
       "frege_sinn": "source_trust→CredibilityPromotionGate 입력 (verdict경로 유일 정량심볼)"
+    },
+    {
+      "sourceId": "engine.LAKATOS_LOCATIONS",
+      "file": "lakatos/engine.py",
+      "symbol": "LAKATOS_LOCATIONS",
+      "kind": "const",
+      "line_hint": 47,
+      "sha256": "d43bc97af8bba2a6",
+      "layer": "hard_core",
+      "serving": "lib",
+      "frege_sinn": "인터넷 관측과 이론 노드가 공유하는 Lakatos 위치 어휘"
+    },
+    {
+      "sourceId": "engine.RivalRelation",
+      "file": "lakatos/engine.py",
+      "symbol": "RivalRelation",
+      "kind": "class",
+      "line_hint": 50,
+      "sha256": "fb4f782fee65a230",
+      "layer": "protective_belt",
+      "serving": "lib",
+      "frege_sinn": "경쟁 프로그램 증거 관계 supports/contradicts/qualifies"
+    },
+    {
+      "sourceId": "engine.LonginusRef",
+      "file": "lakatos/engine.py",
+      "symbol": "LonginusRef",
+      "kind": "class",
+      "line_hint": 513,
+      "sha256": "0a79987f8d2b96a9",
+      "layer": "implementation",
+      "serving": "lib",
+      "frege_sinn": "임베딩된 증거가 관통하는 sourceId/sourcePath 바인딩"
+    },
+    {
+      "sourceId": "engine.TheoryEmbedding",
+      "file": "lakatos/engine.py",
+      "symbol": "TheoryEmbedding",
+      "kind": "class",
+      "line_hint": 537,
+      "sha256": "49497c10263b1641",
+      "layer": "protective_belt",
+      "serving": "lib",
+      "frege_sinn": "인터넷 관측이 hard_core/protective_belt/heuristic 중 어디에 놓이는지 표현"
+    },
+    {
+      "sourceId": "engine.RivalProgrammeLink",
+      "file": "lakatos/engine.py",
+      "symbol": "RivalProgrammeLink",
+      "kind": "class",
+      "line_hint": 560,
+      "sha256": "a583d37926c3ab82",
+      "layer": "protective_belt",
+      "serving": "lib",
+      "frege_sinn": "관측 증거를 경쟁 연구프로그램과 typed relation 으로 연결"
+    },
+    {
+      "sourceId": "engine.EmbeddedInternetEvidence",
+      "file": "lakatos/engine.py",
+      "symbol": "EmbeddedInternetEvidence",
+      "kind": "class",
+      "line_hint": 593,
+      "sha256": "a89b33044dc409c2",
+      "layer": "positive_heuristic",
+      "serving": "lib",
+      "frege_sinn": "InternetObservation→TheoryEmbedding→RivalProgrammeLink→LonginusRef projection"
     },
     {
       "sourceId": "engine.LakatosGate",
@@ -1022,7 +1179,7 @@
       "file": "lakatos/quant/laudan.py",
       "symbol": "should_abandon",
       "kind": "def",
-      "line_hint": 75,
+      "line_hint": 166,
       "sha256": "f6c23a29269072a5",
       "layer": "laudan",
       "serving": "diagnostic",
@@ -1033,7 +1190,7 @@
       "file": "lakatos/quant/laudan.py",
       "symbol": "should_abandon_sprt",
       "kind": "def",
-      "line_hint": 93,
+      "line_hint": 184,
       "sha256": "a0f6880a9e764909",
       "layer": "laudan",
       "serving": "orphan",
@@ -1139,6 +1296,39 @@
       "frege_sinn": "수확/발산/소멸 3-상태 종료판정"
     },
     {
+      "sourceId": "series.ProgrammeSeriesRecord",
+      "file": "lakatos/programme/series.py",
+      "symbol": "ProgrammeSeriesRecord",
+      "kind": "class",
+      "line_hint": 25,
+      "sha256": "72ea983e38b2090a",
+      "layer": "programme-series",
+      "serving": "diagnostic",
+      "frege_sinn": "time-series step 객체 — verdict/problem/rival/conceptual pressure 입력"
+    },
+    {
+      "sourceId": "series.ProgrammeSeriesAppraisal",
+      "file": "lakatos/programme/series.py",
+      "symbol": "ProgrammeSeriesAppraisal",
+      "kind": "class",
+      "line_hint": 50,
+      "sha256": "80e644d4bee87e2c",
+      "layer": "programme-series",
+      "serving": "diagnostic",
+      "frege_sinn": "programme series 진단 결과 — diagnostic_only, promotion_authority=False"
+    },
+    {
+      "sourceId": "series.programme_series_appraisal",
+      "file": "lakatos/programme/series.py",
+      "symbol": "programme_series_appraisal",
+      "kind": "def",
+      "line_hint": 67,
+      "sha256": "d5ea4a2bbaed012c",
+      "layer": "programme-series",
+      "serving": "diagnostic",
+      "frege_sinn": "node-local verdict 를 시간열 진단으로 집계하되 canonical authority 는 바꾸지 않음"
+    },
+    {
       "sourceId": "trust.evidence_weight",
       "file": "lakatos/trust.py",
       "symbol": "evidence_weight",
@@ -1188,7 +1378,7 @@
       "symbol": "classify",
       "kind": "def",
       "line_hint": 50,
-      "sha256": "abda4bf20d2cb3bf",
+      "sha256": "f554cecb5e30464a",
       "layer": "eureka",
       "frege_sinn": "felt/true/hallucinated 분류 (붉음이 felt를 true로 인증)"
     },
@@ -1223,6 +1413,39 @@
       "frege_sinn": "문제 수지 closed−opened (압축 신호)"
     },
     {
+      "sourceId": "laudan.conceptual_problem_score",
+      "file": "lakatos/quant/laudan.py",
+      "symbol": "conceptual_problem_score",
+      "kind": "def",
+      "line_hint": 27,
+      "sha256": "d7f138edf24f0927",
+      "layer": "laudan",
+      "serving": "diagnostic",
+      "frege_sinn": "라우든 개념 문제 internal/external conflict 점수 — empirical problem balance 와 분리"
+    },
+    {
+      "sourceId": "laudan.RivalProblemRecord",
+      "file": "lakatos/quant/laudan.py",
+      "symbol": "RivalProblemRecord",
+      "kind": "class",
+      "line_hint": 51,
+      "sha256": "1673de3622b3c2b3",
+      "layer": "laudan",
+      "serving": "diagnostic",
+      "frege_sinn": "programme/problem별 solved 영수증 — rival-relative anomaly 입력 객체"
+    },
+    {
+      "sourceId": "laudan.rival_relative_anomaly",
+      "file": "lakatos/quant/laudan.py",
+      "symbol": "rival_relative_anomaly",
+      "kind": "def",
+      "line_hint": 72,
+      "sha256": "0d4960db6305c7a8",
+      "layer": "laudan",
+      "serving": "diagnostic",
+      "frege_sinn": "target unsolved + qualified rival solved => target-relative anomaly"
+    },
+    {
       "sourceId": "fertility.nobel_grade",
       "file": "lakatos/quant/fertility.py",
       "symbol": "nobel_grade",
@@ -1231,6 +1454,16 @@
       "sha256": "3746deea3f7bf56d",
       "layer": "fertility",
       "frege_sinn": "노벨급 적중률 Wilson LB≥0.7 (환각률 바닥)"
+    },
+    {
+      "sourceId": "mcp_server.add_observation",
+      "file": "lakatos/mcp_server.py",
+      "symbol": "add_observation",
+      "kind": "def",
+      "line_hint": 360,
+      "sha256": "f8e1cb6950bb4ea2",
+      "layer": "mcp",
+      "frege_sinn": "MCP G-Web tool carrying theory/rival/Longinus embedding fields to the HTTP surface"
     },
     {"sourceId": "metrics._canonical_path", "file": "lakatos/quant/metrics.py", "symbol": "_canonical_path", "kind": "def", "line_hint": 79, "sha256": "8bf2d92cf91221e3", "layer": "implementation", "frege_sinn": "정본 leaf→root 사이클가드 walk(공유구조)"},
     {"sourceId": "metrics._children_index", "file": "lakatos/quant/metrics.py", "symbol": "_children_index", "kind": "def", "line_hint": 90, "sha256": "441725666971e8d5", "layer": "implementation", "frege_sinn": "parent→children DAG 인덱스(공유구조)"},
@@ -1340,6 +1573,7 @@
     "span_lakatotree_server_contracts",
     "span_lakatotree_server_endpoints_fcon1",
     "span_lakatotree_server_tree_context",
+    "span_lakatotree_semantic_surface",
     "span_lakatotree_spine",
     "span_lakatotree_stack_meta_rule",
     "span_lakatotree_trust",

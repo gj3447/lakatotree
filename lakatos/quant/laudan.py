@@ -8,7 +8,10 @@
 이산근사(노드당 ≈1 nat 증거), budget=5 는 SPRT 평균표본수 규모, B/w_problem 은 Laudan 정책값(명시).
 # KG: span_lakatotree_S1_laudan_layer
 """
+from dataclasses import dataclass
 import math
+from typing import Iterable
+
 from lakatos.grounding import GROUNDED, sprt_log_boundaries
 
 ABANDON_K = GROUNDED['abandon_k']['value']            # 규칙①: 연속 비진보 (Wald SPRT 이산근사)
@@ -19,6 +22,94 @@ ABANDON_B = GROUNDED['abandon_b']['value']            # 규칙③: 문제 수지
 def problem_balance(closed: int, opened: int) -> int:
     """문제 수지 = 닫은 질문 − 연 질문. 음수 = 변명이 문제를 낳는 중."""
     return closed - opened
+
+
+def conceptual_problem_score(
+    internal_inconsistency: int,
+    external_conflict: int,
+    *,
+    internal_weight: float = 1.0,
+    external_weight: float = 1.0,
+) -> float:
+    """라우든 개념 문제 점수 — empirical closed/open balance 와 분리된 진단층.
+
+    internal_inconsistency = 전통/프로그램 내부의 자기모순·정의충돌.
+    external_conflict     = 배경지식·성공한 인접 이론·허용된 방법론과의 외부충돌.
+
+    Laudan 의 conceptual problem 은 경험적 미해결 문제와 성격이 다르므로
+    ``problem_balance`` 에 섞지 않는다. 가중치는 문헌 상수가 아니라 호출자가
+    드러내는 정책값이다.
+    """
+    internal = _nonnegative_int("internal_inconsistency", internal_inconsistency)
+    external = _nonnegative_int("external_conflict", external_conflict)
+    iw = _nonnegative_finite("internal_weight", internal_weight)
+    ew = _nonnegative_finite("external_weight", external_weight)
+    return internal * iw + external * ew
+
+
+@dataclass(frozen=True)
+class RivalProblemRecord:
+    """One programme's outcome for one problem.
+
+    Comparative anomaly needs typed problem outcomes; otherwise "anomaly" falls
+    back to prose. ``solved`` is the receipt, and ``explanation_quality`` is a
+    policy threshold hook for weak rival solutions.
+    """
+
+    programme: str
+    problem: str
+    solved: bool
+    explanation_quality: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not self.programme.strip():
+            raise ValueError("programme must be non-empty")
+        if not self.problem.strip():
+            raise ValueError("problem must be non-empty")
+        _nonnegative_finite("explanation_quality", self.explanation_quality)
+
+
+def rival_relative_anomaly(
+    target_programme: str,
+    problem: str,
+    records: Iterable[RivalProblemRecord],
+    *,
+    min_rival_quality: float = 0.0,
+) -> bool:
+    """Laudan comparative anomaly: target unsolved + relevant rival solved.
+
+    A problem unsolved by everyone is not yet anomalous for the target. It
+    becomes target-relative pressure only when at least one non-target programme
+    solves the same problem with enough explanation quality.
+    """
+    if not target_programme.strip():
+        raise ValueError("target_programme must be non-empty")
+    if not problem.strip():
+        raise ValueError("problem must be non-empty")
+    min_quality = _nonnegative_finite("min_rival_quality", min_rival_quality)
+    target_solved = False
+    rival_solved = False
+    for record in records:
+        if record.problem != problem:
+            continue
+        if record.programme == target_programme:
+            target_solved = target_solved or record.solved
+        elif record.solved and record.explanation_quality >= min_quality:
+            rival_solved = True
+    return (not target_solved) and rival_solved
+
+
+def _nonnegative_int(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
+def _nonnegative_finite(name: str, value: float) -> float:
+    value = float(value)
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a non-negative finite number")
+    return value
 
 
 def branch_problem_balance_windowed(chain: list, frontier: list,

@@ -130,6 +130,9 @@ The engine should preserve these labels even if the storage backend changes.
 | `LakatosNode` | Branch or hypothesis node |
 | `InternetObservation` | One append-only web fetch/snapshot |
 | `SourceCredibilityScore` | Decomposed source trust components |
+| `TheoryEmbedding` | Placement of external evidence inside hard-core / belt / heuristic coordinates |
+| `LakatosRivalProgramme` | Competing research programme compared against the active tree |
+| `ReferenceSite:Longinus` | sourceId/sourcePath binding from KG evidence to real source symbols |
 | `HumanQuestion` / `HumanComment` / `HumanVerdict` | Sigma-oracle critique |
 | `ResearchEvent` | Append-only upper/lower evidence event for ClaimStanding |
 | `AgentBuild` | Agent-owned implementation action |
@@ -141,6 +144,16 @@ The engine should preserve these labels even if the storage backend changes.
 | `PipelineRun` | One execution from inputs to outputs |
 | `TransformStep` | Logical step with code, params, and environment binding |
 | `RebuildRecipe` | Replay command sequence from raw roots |
+
+Core evidence edges:
+
+| Edge | Meaning |
+|---|---|
+| `LOCATED_IN` | `ResearchEvent/InternetObservation -> LakatosNode` theoretical placement |
+| `BOUND_BY` | `ResearchEvent/LakatosNode -> ReferenceSite:Longinus` code binding |
+| `HAS_RIVAL` | `LakatosTree -> LakatosRivalProgramme` rival registration |
+| `RIVAL_EVIDENCE` | `LakatosNode -> LakatosRivalProgramme` with `relation=supports|contradicts|qualifies` |
+| `EVIDENCE_FOR_RIVAL` | `ResearchEvent -> LakatosRivalProgramme` observation-level support/contradiction |
 
 ## Gates
 

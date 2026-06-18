@@ -4,6 +4,7 @@ from lakatos.engine import (
     BashAct,
     CredibilityPromotionGate,
     CredibilityTier,
+    EmbeddedInternetEvidence,
     FoundationGate,
     FoundationMap,
     FoundationRequirement,
@@ -16,13 +17,17 @@ from lakatos.engine import (
     LakatosNode,
     LakatosTree,
     LakatosVerdict,
+    LonginusRef,
     ObservationLedger,
     Possibility,
     Realm,
     ResearchEvent,
     ResearchFrame,
     ResearchProject,
+    RivalProgrammeLink,
+    RivalRelation,
     SourceCredibilityScore,
+    TheoryEmbedding,
 )
 from lakatos.io.replay import LineageReplayGate, LineageReplayResult, ReproducibilityContract
 from lakatos.claim import (
@@ -70,8 +75,10 @@ from lakatos.programme.agm import Belief, HardCoreProtected, RevisionResult, con
 from lakatos.programme.lifecycle import LifecycleState, lifecycle_state, regret_nodes
 from lakatos.programme.leaderboard import Competitor, dominates, leaderboard, score_competitor
 from lakatos.programme.kuhn import ParadigmAssessment, assess_paradigm, sustained_dominance
+from lakatos.programme.series import ProgrammeSeriesAppraisal, ProgrammeSeriesRecord, programme_series_appraisal
 from lakatos.verdict.certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate, LAKATOS_LOCATIONS
+from lakatos.semantic_surface import SemanticSurfaceReport, SemanticUnit, load_surface, validate_surface
 
 __all__ = [
     "scan_prompt_injection",
@@ -81,6 +88,7 @@ __all__ = [
     "BashAct",
     "CredibilityPromotionGate",
     "CredibilityTier",
+    "EmbeddedInternetEvidence",
     "FoundationGate",
     "FoundationMap",
     "FoundationRequirement",
@@ -93,6 +101,7 @@ __all__ = [
     "LakatosNode",
     "LakatosTree",
     "LakatosVerdict",
+    "LonginusRef",
     "LineageReplayGate",
     "LineageReplayResult",
     "ObservationLedger",
@@ -102,7 +111,10 @@ __all__ = [
     "ResearchEvent",
     "ResearchFrame",
     "ResearchProject",
+    "RivalProgrammeLink",
+    "RivalRelation",
     "SourceCredibilityScore",
+    "TheoryEmbedding",
     "ClaimNextAction",
     "ClaimStanding",
     "ClaimStandingPolicy",
@@ -156,9 +168,16 @@ __all__ = [
     "ParadigmAssessment",
     "assess_paradigm",
     "sustained_dominance",
+    "ProgrammeSeriesAppraisal",
+    "ProgrammeSeriesRecord",
+    "programme_series_appraisal",
     "Certificate",
     "GateCheck",
     "certify_claim",
     "gate_check",
     "next_actions",
+    "SemanticSurfaceReport",
+    "SemanticUnit",
+    "load_surface",
+    "validate_surface",
 ]

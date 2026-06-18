@@ -34,13 +34,18 @@ from lakatos.verdict.certify import gate_check, certify_claim, next_actions as c
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
     CredibilityTier,
+    EmbeddedInternetEvidence,
     FoundationMap,
+    InternetObservation,
+    LonginusRef,
     Possibility,
     Realm,
     ResearchEvent,
     ResearchFrame,
     ResearchProject,
+    RivalProgrammeLink,
     SourceCredibilityScore,
+    TheoryEmbedding,
 )
 from lakatos.io.replay import LineageReplayGate
 from lakatos.io.envfp import environment_fingerprint as default_environment_fingerprint
@@ -221,14 +226,152 @@ class EvidenceClaimService:
         payload['tier'] = tier.value
         payload['credibility_decomposed'] = 'true'
         payload['confidence'] = str(round(score.trust, 4))
+        embedded = self.embedded_observation(name, tag, o, score)
+        if embedded is not None:
+            projection = embedded.kg_projection()
+            payload['theory_basis'] = projection['embedding']['theoretical_basis']
+            payload['foundation_refs'] = ','.join(projection['embedding']['foundation_refs'])
+            payload['longinus_sourceIds'] = ','.join(projection['edges']['BOUND_BY'])
+            payload['rival_programmes'] = ','.join(projection['edges']['RIVAL_EVIDENCE'])
         eid = f'{name}/{tag}/obs/{o.event_id}'
         self.store_research_event_provider(name, tag, eid, 'internet', 'fetch', o.actor, o.evidence_refs, payload)
+        if embedded is not None:
+            self.bind_embedded_observation(name, tag, eid, embedded)
         self.hist(name, 'observation', tag, {'id': eid, 'url': o.url, 'injection_risk': injection['risk']})
         cred = {'decomposed': payload.get('credibility_decomposed') == 'true',
                 'confidence': float(payload['confidence']), 'tier': payload.get('tier'),
                 'components': {k: float(payload[k]) for k in SourceCredibilityScore().as_components()
                                if k in payload}}
-        return {'ok': True, 'id': eid, 'gate': 'G-Web', 'injection': injection, 'credibility': cred}
+        out = {'ok': True, 'id': eid, 'gate': 'G-Web', 'injection': injection, 'credibility': cred}
+        if embedded is not None:
+            out['embedding'] = embedded.kg_projection()
+        return out
+
+    @staticmethod
+    def _retrieved_at(value: str) -> datetime:
+        try:
+            return datetime.fromisoformat((value or '').replace('Z', '+00:00'))
+        except ValueError:
+            return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _has_embedding_fields(o: ObservationIn) -> bool:
+        return any((
+            o.theory_basis,
+            o.foundation_refs,
+            o.rival_name,
+            o.rival_relation,
+            o.rival_node,
+            o.comparison_axes,
+            o.longinus_refs,
+        ))
+
+    def embedded_observation(
+        self,
+        name: str,
+        tag: str,
+        o: ObservationIn,
+        score: SourceCredibilityScore,
+    ) -> EmbeddedInternetEvidence | None:
+        if not self._has_embedding_fields(o):
+            return None
+        longinus_refs = tuple(
+            LonginusRef(sourceId=ref.sourceId, sourcePath=ref.sourcePath,
+                        layer=ref.layer, note=ref.note)
+            for ref in o.longinus_refs
+        )
+        rival_links: tuple[RivalProgrammeLink, ...] = ()
+        if o.rival_name or o.rival_relation or o.rival_node or o.comparison_axes:
+            if not (o.rival_name and o.rival_relation):
+                raise HTTPException(422, 'rival evidence requires rival_name and rival_relation')
+            rival_links = (
+                RivalProgrammeLink(
+                    programme=o.rival_name,
+                    relation=o.rival_relation,
+                    rival_node=o.rival_node,
+                    comparison_axes=tuple(o.comparison_axes),
+                    evidence_refs=tuple(o.evidence_refs),
+                ),
+            )
+        try:
+            return EmbeddedInternetEvidence(
+                observation=InternetObservation(
+                    name=o.event_id,
+                    url=o.url,
+                    query=o.query,
+                    retrieved_at=self._retrieved_at(o.retrieved_at),
+                    content_hash=o.content_hash or o.raw_snapshot_path,
+                    fetch_tool=o.fetch_tool,
+                    source_type=o.source_type,
+                    credibility=score,
+                    raw_snapshot_path=o.raw_snapshot_path or None,
+                ),
+                tree_name=name,
+                node_tag=tag,
+                embedding=TheoryEmbedding(
+                    lakatos_location=o.lakatos_location,
+                    theoretical_basis=o.theory_basis,
+                    foundation_refs=tuple(o.foundation_refs),
+                    longinus_refs=longinus_refs,
+                ),
+                rival_links=rival_links,
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            if 'longinus' in msg.lower():
+                msg = f'Longinus binding required for rival evidence: {msg}'
+            raise HTTPException(422, msg) from exc
+
+    def bind_embedded_observation(
+        self,
+        name: str,
+        tag: str,
+        event_id: str,
+        embedded: EmbeddedInternetEvidence,
+    ) -> None:
+        projection = embedded.kg_projection()
+        emb = projection['embedding']
+        ts = datetime.now(timezone.utc).isoformat()
+        self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+              MATCH (ev:ResearchEvent {id:$event_id})
+              SET ev.lakatos_location=$lakatos_location,
+                  ev.theoretical_basis=$theoretical_basis,
+                  ev.foundation_refs=$foundation_refs
+              MERGE (ev)-[:LOCATED_IN]->(e)""",
+                tree=name, tag=tag, event_id=event_id,
+                lakatos_location=emb['lakatos_location'],
+                theoretical_basis=emb['theoretical_basis'],
+                foundation_refs=emb['foundation_refs'])
+        if projection['longinus_refs']:
+            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  MATCH (ev:ResearchEvent {id:$event_id})
+                  UNWIND $refs AS ref
+                  MERGE (rs:ReferenceSite:Longinus {sourceId: ref.sourceId})
+                    ON CREATE SET rs.name=ref.sourceId, rs.created_at=$ts
+                  SET rs.repo='lakatotree', rs.sourcePath=ref.sourcePath,
+                      rs.layer=ref.layer, rs.note=ref.note, rs.updated_at=$ts
+                  MERGE (ev)-[:BOUND_BY]->(rs)
+                  MERGE (e)-[:BOUND_BY]->(rs)""",
+                    tree=name, tag=tag, event_id=event_id,
+                    refs=projection['longinus_refs'], ts=ts)
+        if projection['rival_links']:
+            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  MATCH (ev:ResearchEvent {id:$event_id})
+                  UNWIND $links AS link
+                  MERGE (r:LakatosRivalProgramme {name: link.programme})
+                    ON CREATE SET r.created_at=$ts
+                  SET r.updated_at=$ts
+                  MERGE (t)-[:HAS_RIVAL]->(r)
+                  MERGE (ev)-[evr:EVIDENCE_FOR_RIVAL]->(r)
+                  SET evr.relation=link.relation, evr.rival_node=link.rival_node,
+                      evr.comparison_axes=link.comparison_axes, evr.evidence_refs=link.evidence_refs,
+                      evr.observation_event_id=$event_id, evr.updated_at=$ts
+                  MERGE (e)-[rr:RIVAL_EVIDENCE]->(r)
+                  SET rr.relation=link.relation, rr.rival_node=link.rival_node,
+                      rr.comparison_axes=link.comparison_axes, rr.evidence_refs=link.evidence_refs,
+                      rr.observation_event_id=$event_id, rr.updated_at=$ts""",
+                    tree=name, tag=tag, event_id=event_id,
+                    links=projection['rival_links'], ts=ts)
 
     def add_world_action(self, name: str, tag: str, a: WorldActionIn) -> dict:
         act = dict(command=a.command, cwd=a.cwd, exit_code=a.exit_code,

@@ -103,6 +103,29 @@ separately. The tree is *not* a higher-order spiral; spiral (within-branch ascen
 (between-branch competition) are orthogonal (see `docs/PIDNA.md §3`, where the "meta-spiral"
 hypothesis was falsified and pruned — the project applies its own method to itself).
 
+## Internet observations as rival-programme evidence
+
+Web data enters the tree through `G-Web`, but it is not treated as a loose citation. An
+`InternetObservation` can now be embedded into the programme structure as:
+
+```text
+InternetObservation
+  -> TheoryEmbedding(lakatos_location, theoretical_basis, foundation_refs)
+  -> LakatosNode
+  -> RivalProgrammeLink(supports|contradicts|qualifies)
+  -> ReferenceSite:Longinus(sourceId, sourcePath)
+```
+
+That is the intended meaning of "putting a rival programme on the Lakatos tree": the external
+observation is located in the hard-core / protective-belt / heuristic coordinates of the active
+programme, then linked as typed evidence for or against a rival. Rival comparisons remain queryable
+through the existing Pareto+Borda leaderboard, while Longinus binds the ingestion path back to real
+source symbols.
+
+MCP/HTTP path:
+`add_observation(..., theory_basis=..., rival_name=..., rival_relation=..., longinus_refs_json=...)`
+posts to `/api/tree/{name}/node/{tag}/observation`.
+
 ---
 
 ## Module map · enforced layering
@@ -117,17 +140,17 @@ drift-guarded contract**: `tests/test_readme_longinus.py` checks every module re
 layer (and that the set of layers matches `.importlinter`) — this map cannot silently lie.
 
 ### Foundation — `lakatos/` (root; shared, importable by any layer)
-`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `cli` `mcp_server` `eureka`
+`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import`
 - `engine` sparse research frame — enums / `GateResult` / gates / possibilities / event log / credence promotion / `SourceCredibilityScore`
 - `verdicts` verdict-vocabulary single source of truth · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
 - `trust` TrustRank/EigenTrust source-scoring primitive (shared by `engine` + `quant.bayes`) · `claim` ClaimStanding (upper/lower-realm confidence + blockers)
-- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector
+- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates)
 
 ### `verdict/` — judgment kernel (the scorer; modeled in `formal/Pidna.lean`)
-`judge` `pnr` `spine` `promote` `certify` `argue`
+`judge` `pnr` `spine` `promote` `certify` `argue` `compose`
 - `judge` [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
 - `pnr` [Proofs & Refutations] counterexample-response dialectic · `spine` `dialectical_verdict` (reconcile metric + qualitative + PnR)
-- `promote` fail-closed CANONICAL allowlist · `certify` 5-gate AND certificate · `argue` Dung AF grounded-extension justification
+- `promote` fail-closed CANONICAL allowlist · `certify` 5-gate AND certificate · `argue` Dung AF grounded-extension justification · `compose` gate outcome composition
 
 ### `quant/` — quantitative substrate
 `bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate`
@@ -136,10 +159,10 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
 ### `programme/` — programme-level / comparative / meta-policy
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series`
 - `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
 - `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
-- `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct
+- `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
 
 ### `io/` — evidence, provenance, persistence, observability
 `lineage` `replay` `rebuild` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`

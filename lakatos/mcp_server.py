@@ -363,15 +363,36 @@ def add_observation(name: str, tag: str, event_id: str, url: str = '', source_ty
                     source_class_weight: float = None, primary_source_bonus: float = None,
                     provenance_score: float = None, corroboration_score: float = None,
                     recency_score: float = None, supply_chain_score: float = None,
-                    content: str = '') -> str:
+                    content: str = '', theory_basis: str = '', foundation_refs_csv: str = '',
+                    rival_name: str = '', rival_relation: str = '', rival_node: str = '',
+                    comparison_axes_csv: str = '', longinus_refs_json: str = '') -> str:
     """G-Web 강제 — 인터넷 fetch 증거 적재. url/retrieved_at/content_hash|snapshot/source_type/
     lakatos_location(hard_core|protective_belt|positive_heuristic|negative_heuristic) + 신뢰성분 전수.
     ★G-Trust: 신뢰는 *분해* 권장(source_class_weight/link_authority/primary_source_bonus/
     provenance_score/corroboration_score/recency_score/supply_chain_score) — bare trust 는 lower-assurance.
-    content 는 인젝션 스캔 대상(F07, injection_penalty 로 흐름). 미통과=422 → claim-standing 상계 공급."""
+    content 는 인젝션 스캔 대상(F07, injection_penalty 로 흐름). 미통과=422 → claim-standing 상계 공급.
+    theory/rival/longinus 필드는 인터넷 관측을 이론 좌표와 경쟁 프로그램 증거로 임베딩한다."""
     body = dict(event_id=event_id, url=url, source_type=source_type, lakatos_location=lakatos_location,
                 retrieved_at=retrieved_at, content_hash=content_hash,
                 raw_snapshot_path=raw_snapshot_path, content=content)
+    if theory_basis:
+        body['theory_basis'] = theory_basis
+    if foundation_refs_csv:
+        body['foundation_refs'] = [x.strip() for x in foundation_refs_csv.split(',') if x.strip()]
+    if rival_name:
+        body['rival_name'] = rival_name
+    if rival_relation:
+        body['rival_relation'] = rival_relation
+    if rival_node:
+        body['rival_node'] = rival_node
+    if comparison_axes_csv:
+        body['comparison_axes'] = [x.strip() for x in comparison_axes_csv.split(',') if x.strip()]
+    if longinus_refs_json:
+        try:
+            refs = json.loads(longinus_refs_json)
+        except json.JSONDecodeError as exc:
+            return json.dumps({'error': 'invalid_longinus_refs_json', 'detail': str(exc)}, ensure_ascii=False)
+        body['longinus_refs'] = refs if isinstance(refs, list) else [refs]
     for k, v in dict(trust=trust, link_authority=link_authority, source_class_weight=source_class_weight,
                      primary_source_bonus=primary_source_bonus, provenance_score=provenance_score,
                      corroboration_score=corroboration_score, recency_score=recency_score,
