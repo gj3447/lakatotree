@@ -68,7 +68,7 @@
     },
     {
       "meaning_id": "lineage_replay_gate",
-      "owner_sourceId": "engine.LineageReplayGate",
+      "owner_sourceId": "replay.LineageReplayGate",
       "layer": "io",
       "change_actor": "reproducibility auditor",
       "source_refs": ["external:nasa-traceability", "repo:LINEAGE.md"],

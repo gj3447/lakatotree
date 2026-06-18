@@ -1010,7 +1010,7 @@
       "frege_sinn": "인터넷 관측의 조용한 KG claim 승격 차단"
     },
     {
-      "sourceId": "engine.LineageReplayGate",
+      "sourceId": "replay.LineageReplayGate",
       "file": "lakatos/io/replay.py",
       "symbol": "LineageReplayGate",
       "kind": "class",
