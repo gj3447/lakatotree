@@ -31,7 +31,7 @@ from . import (
 )
 from .assertions import TraceAssertionError, assert_gate, assert_present
 from .backends import Backend, MemoryBackend, QueryResult, get_backend
-from .gate import can_i_deploy, check, evaluate
+from .gate import GateInput, can_i_deploy, check, evaluate, evaluate_record
 from .model import build_outcome_records
 from .ontology import EventType, Ontology, check_conformance
 from .verify import session_finish, verify_policy, verify_trace
@@ -43,6 +43,8 @@ __all__ = [
     "session_finish",
     "get_backend",
     "evaluate",
+    "evaluate_record",
+    "GateInput",
     "can_i_deploy",
     "check",
     "assert_gate",

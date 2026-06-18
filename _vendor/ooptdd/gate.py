@@ -452,6 +452,143 @@ def _resolve_cid(spec: dict) -> str:
     return cid
 
 
+# ---- dependency-ordered rule executor (jQAssistant RuleSetExecutor port) ----- #
+# A rule may declare ``requires: [id, ...]``. Prerequisites are resolved first; if any is
+# not satisfied (RED / itself skipped / cyclic / unknown id) the dependent rule is recorded
+# as SKIPPED — a third verdict state that is neither a false PASS nor a hard RED — instead
+# of being run and vacuously passing on zero events. This closes ooptdd's green-and-blind
+# hole (the consumer_b `cycle.finalize` gate class). Ported faithfully from RuleSetExecutor's
+# three coupled mechanisms: memoization (executedConcepts), requiredConceptsAreSuccessful/
+# skipConstraint, and the executionStack cycle guard. Rules without ``requires`` run exactly
+# as the flat registry dispatch did — a no-op resolution path, so behaviour is preserved.
+
+
+def _skip_result(rule: dict, unmet: list[str]) -> dict:
+    """A SKIP verdict (jQAssistant ``skipConstraint``): surfaced, never a silent PASS."""
+    rid = rule.get("id")
+    label = (_detect_check_key(rule) or "count") + (f"#{rid}" if rid else "")
+    return {"event": label, "skipped": True, "passed": False, "requires_unmet": unmet}
+
+
+def _run_rules(rules: list[dict], events: list[dict], ctx: CheckCtx) -> list[dict]:
+    """Resolve every rule in spec order, honouring ``requires`` dependencies. Memoized by
+    ``id`` (each rule evaluated at most once); a cyclic or unknown ``requires`` is
+    fail-closed (the dependent skips). Returns one check-dict per rule, in spec order."""
+    by_id: dict[str, dict] = {}
+    for r in rules:
+        if "id" in r:
+            if r["id"] in by_id:
+                raise ValueError(f"duplicate gate check id {r['id']!r}")
+            by_id[r["id"]] = r
+    memo: dict[str, dict] = {}
+
+    def _stamp(chk: dict, rule: dict) -> dict:
+        chk["optional"] = bool(rule.get("optional", False))
+        chk["pending"] = bool(rule.get("pending", False))
+        chk["weight"] = float(rule.get("weight", 1.0))
+        chk.setdefault("skipped", False)
+        return chk
+
+    def _resolve(rule: dict, stack: frozenset) -> dict:
+        rid = rule.get("id")
+        if rid is not None and rid in memo:
+            return memo[rid]
+        here = stack | ({rid} if rid is not None else set())
+        unmet: list[str] = []
+        for req in rule.get("requires", []):
+            if req in here or req not in by_id:  # cyclic (incl. self) or unknown — fail-closed
+                unmet.append(req)
+            elif not _resolve(by_id[req], here).get("passed"):  # RED/skipped prereq != satisfied
+                unmet.append(req)
+        if unmet:
+            chk = _stamp(_skip_result(rule, unmet), rule)
+        else:
+            key = _detect_check_key(rule)
+            handler = CHECK_REGISTRY[key] if key is not None else _eval_count
+            chk = _stamp(handler(events, rule, ctx), rule)
+        if rid is not None:
+            memo[rid] = chk
+        return chk
+
+    return [_resolve(rule, frozenset()) for rule in rules]
+
+
+@dataclass(frozen=True)
+class GateInput:
+    """A hermetic, content-addressed snapshot of everything a gate verdict depends on, so
+    :func:`evaluate_record` is a PURE function (zero env/time/store reads). Ported from
+    Kythe's ``CompilationUnit`` (analysis = a pure function of a digest-keyed blob) — enables
+    deterministic replay and result caching keyed by ``.digest``. :func:`evaluate` collects
+    these inputs from the ambient process/store ONCE, then delegates here."""
+
+    cid: str
+    reachable: bool
+    events: tuple
+    now_us: int
+    rules: tuple
+    forbid_errors: bool
+    error_levels: tuple
+    threshold: float | None
+    indicators: dict
+    allow_errors: list | None
+    ontology: object | None = None
+
+    @property
+    def digest(self) -> str:
+        """A stable content hash of the data inputs (for cache keys / replay identity)."""
+        import hashlib
+        import json
+        payload = {
+            "cid": self.cid, "reachable": self.reachable, "events": list(self.events),
+            "now_us": self.now_us, "rules": list(self.rules),
+            "forbid_errors": self.forbid_errors, "error_levels": list(self.error_levels),
+            "threshold": self.threshold, "indicators": self.indicators,
+            "allow_errors": self.allow_errors, "ontology": self.ontology,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def evaluate_record(gi: GateInput) -> dict:
+    """The pure verdict function: a gate result is a deterministic function of a
+    content-addressed :class:`GateInput` — ZERO ambient/env/time/store reads. The verdict
+    logic lives here verbatim; :func:`evaluate` is the thin collector that snapshots the
+    ambient inputs once. Cache/replay consumers may build a ``GateInput`` and call this."""
+    rules = list(gi.rules)
+    if gi.forbid_errors:
+        rules.append({"absent": [{"where": {"level": lv}} for lv in gi.error_levels],
+                      "_auto": "forbid_errors"})
+    ctx = CheckCtx(reachable=gi.reachable, indicators=gi.indicators,
+                   ontology=gi.ontology, allow_errors=gi.allow_errors)
+    checks = _run_rules(rules, list(gi.events), ctx)
+    gating = [c for c in checks
+              if not c["optional"] and not c["pending"] and not c.get("skipped")]
+    threshold = gi.threshold
+    if threshold is None:
+        required_ok = all(c["passed"] for c in gating)
+        score = None
+    else:
+        wtot = sum(c["weight"] for c in gating)
+        score = (sum(c["weight"] for c in gating if c["passed"]) / wtot) if wtot else 1.0
+        required_ok = score >= threshold
+    if not gating and any(c.get("skipped") for c in checks):
+        required_ok = False
+    result = {
+        "ok": gi.reachable and required_ok,
+        "reachable": gi.reachable,
+        "cid": gi.cid,
+        "checks": checks,
+        "optional_failed": [_label(c) for c in checks if c["optional"] and not c["passed"]],
+        "pending_failed": [_label(c) for c in checks if c["pending"] and not c["passed"]],
+        "pending_satisfied": [_label(c) for c in checks if c["pending"] and c["passed"]],
+        "skipped": [_label(c) for c in checks if c.get("skipped")],
+    }
+    if score is not None:
+        result["score"] = score
+        result["threshold"] = threshold
+    return result
+
+
 def evaluate(
     backend: Backend,
     spec: dict,
@@ -470,81 +607,39 @@ def evaluate(
     The readback window comes from ``lookback_s`` (arg) else the spec's ``timeWindow``
     (OpenSLO rolling window) else the backend default.
     """
-    cid = _resolve_cid(spec)
+    # --- collect ambient inputs ONCE (the only env / time / live-store reads) ----
+    cid = _resolve_cid(spec)  # reads os.getenv for the cid env fallback
     if ontology is None and spec.get("ontology"):
         from .ontology import Ontology  # file-first; offline, no KG dependency
         ontology = Ontology.from_file(spec["ontology"])
-    indicators = spec.get("indicators") or {}
     if lookback_s is None:
         lookback_s = duration_s(spec.get("timeWindow", spec.get("time_window")))
     lookback_s = backend.default_lookback_s if lookback_s is None else lookback_s
     future_buffer_s = (
         backend.default_future_buffer_s if future_buffer_s is None else future_buffer_s
     )
-    now_us = int(time.time() * 1_000_000)
-    res = backend.query(
+    now_us = int(time.time() * 1_000_000)  # ambient clock
+    res = backend.query(  # the live store
         cid,
         since_us=now_us - lookback_s * 1_000_000,
         until_us=now_us + future_buffer_s * 1_000_000,
     )
-    rules = list(spec.get("expect", []))
-    # The negative wing: forbid ERROR/CRITICAL records for this cid. Default-ON via the
-    # OOPTDD_FORBID_ERRORS env so consumers opt in without editing every spec; a spec can
-    # override with `forbid_errors: false` (opt out) or exempt known-benign ones via
-    # `allow_errors:`. Without it, a cycle whose good events all arrived but which also
-    # logged an error reads as green-and-noisy — the field-error blind spot.
+    # The negative-wing decision (forbid ERROR/CRITICAL): spec opt-out else the
+    # OOPTDD_FORBID_ERRORS env — the last ambient read. The DECISION is captured in the
+    # record; the rule injection itself happens in the pure evaluate_record.
     fe = spec.get("forbid_errors")
     if fe is None:
         fe = _truthy(os.getenv("OOPTDD_FORBID_ERRORS"))
-    if fe:
-        levels = spec.get("error_levels") or ["ERROR", "CRITICAL"]
-        rules.append({"absent": [{"where": {"level": lv}} for lv in levels],
-                      "_auto": "forbid_errors"})
-    # Dispatch each rule through the check-predicate registry (the extension seam):
-    # detect the rule's predicate keyword, look up its handler (else the default count
-    # check). The uniform post-stamp (optional/pending/weight) applies to every check.
-    ctx = CheckCtx(reachable=res.reachable, indicators=indicators,
-                   ontology=ontology, allow_errors=spec.get("allow_errors"))
-    checks = []
-    for rule in rules:
-        key = _detect_check_key(rule)
-        handler = CHECK_REGISTRY[key] if key is not None else _eval_count
-        chk = handler(res.events, rule, ctx)
-        chk["optional"] = bool(rule.get("optional", False))
-        # Pact "pending pacts": a `pending` expectation is verified and surfaced but does
-        # NOT gate the build — for an event whose emitter isn't wired yet. Once it passes,
-        # drop the flag to promote it to a hard gate (see `pending_satisfied`).
-        chk["pending"] = bool(rule.get("pending", False))
-        chk["weight"] = float(rule.get("weight", 1.0))  # promptfoo per-assertion weight
-        checks.append(chk)
-    # A check gates only if it is neither optional (#10) nor pending (Pact). Optional/pending
-    # misses are surfaced separately so a silently-degraded stream never reads as clean.
-    gating = [c for c in checks if not c["optional"] and not c["pending"]]
-    threshold = spec.get("threshold")
-    if threshold is None:
-        # all-or-nothing (default, unchanged): every gating check must pass.
-        required_ok = all(c["passed"] for c in gating)
-        score = None
-    else:
-        # promptfoo test-level threshold: pass iff the *weighted* pass-ratio meets it
-        # (a quorum of expected events, not strict unanimity).
-        wtot = sum(c["weight"] for c in gating)
-        score = (sum(c["weight"] for c in gating if c["passed"]) / wtot) if wtot else 1.0
-        required_ok = score >= float(threshold)
-    # a store we never reached (reachable=False) is INFRA — never a clean pass (CLI exit 2).
-    result = {
-        "ok": res.reachable and required_ok,
-        "reachable": res.reachable,
-        "cid": cid,
-        "checks": checks,
-        "optional_failed": [_label(c) for c in checks if c["optional"] and not c["passed"]],
-        "pending_failed": [_label(c) for c in checks if c["pending"] and not c["passed"]],
-        "pending_satisfied": [_label(c) for c in checks if c["pending"] and c["passed"]],
-    }
-    if score is not None:
-        result["score"] = score
-        result["threshold"] = float(threshold)
-    return result
+    gi = GateInput(
+        cid=cid, reachable=res.reachable, events=tuple(res.events), now_us=now_us,
+        rules=tuple(spec.get("expect", [])), forbid_errors=bool(fe),
+        error_levels=tuple(spec.get("error_levels") or ("ERROR", "CRITICAL")),
+        threshold=None if spec.get("threshold") is None else float(spec["threshold"]),
+        indicators=spec.get("indicators") or {}, allow_errors=spec.get("allow_errors"),
+        ontology=ontology,
+    )
+    # --- pure verdict: a deterministic function of the hermetic record -----------
+    return evaluate_record(gi)
 
 
 def can_i_deploy(results: list[dict]) -> dict:
