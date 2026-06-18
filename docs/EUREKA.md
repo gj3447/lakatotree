@@ -66,12 +66,16 @@ true        = felt ∧ novel_confirmed                    # 🔴 외부 확증
               ∧ problem_balance(closed,opened) > 0       # 한 번에 >1 문제 닫음(압축)
               ∧ promotion_gate(verdict, stands, repro).ok # fail-closed
 hallucinated = felt ∧ ¬true                              # 거짓 아하 (인간 37%)
-eureka_rate  = true / felt = 1 − hallucination_rate      # = fertility.predictive_fertility 거울
+eureka_rate  = true / felt = 1 − hallucination_rate      # fertility.predictive_fertility 보다 엄격
 ```
 
 > ★ **정직 라벨(cell K 적대검증 반영)**: 이건 **하류 파이프라인 detector(discovery→justification)** 지 *대칭 ⊗ 결합이 아니다.* 엔진 게이트는 decoupled·ordered이고 🔴는 *비대칭 필터* — veto는 하되 content를 originate하지 않는다. `eureka.py` docstring에 명시. `red⊗blue/bond/PIDNA` 어휘는 코드에 0회(문학적 overlay) — 코드가 *하는* 일은 "felt 중 외부검증 통과분만 true로 센다".
 
 8 test green (`tests/test_eureka.py`): true / felt-but-unconfirmed=hallucinated / 미등록=¬felt / 한계증거·음의 problem_balance·promotion veto·rejected 모두 차단 / eureka_rate.
+
+> ⚠️ **정직한 현 상태(orphan)**: `eureka.py`는 *테스트된 개념 데모*다 — 엔진/CLI/MCP/`__init__` export 어디에도 미배선(테스트 밖 호출 0). live 파이프라인에 쓰려면 ① `lakatos/__init__` export ② server `submit_test_result` 후 노드별 `classify` 호출 + `eureka_event` emit ③ `/eureka` route. 이 자체가 PIDNA 정직: *배선 안 했는데 "탑재됐다"고 하면 그게 환각.* (cf. 엔진 production import 0 비판 — 같은 결).
+>
+> ★ **fertility와의 관계 정정**: `eureka_rate.true_rate ≤ predictive_fertility` — eureka는 `novel_confirmed` 위에 BF>3.162·problem_balance>0·promotion 게이트를 *더* 요구(엄격한 superset). "거울"이 아니라 **fertility를 더 조인 것**.
 
 ---
 
@@ -79,8 +83,8 @@ eureka_rate  = true / felt = 1 − hallucination_rate      # = fertility.predict
 
 | 역할 | 심볼 |
 |---|---|
-| 🔵 섬광 (novel 등록·track record) | `lakatos/judge.py:20` `Prediction` · `fertility.py:18` `predictive_fertility`(confirmed/registered=true-eureka율) · `:26` `nobel_grade`(Wilson LB≥0.7=환각률 바닥) |
-| 🔴 외부검증 게이트 | `lakatos/bayes.py:57` `bayes_factor`(BF>3.162) · `laudan.py:19` `problem_balance` · `promote.py:19` `promotion_gate`(fail-closed) |
+| 🔵 섬광 (novel 등록·track record) | `lakatos/verdict/judge.py:20` `Prediction` · `quant/fertility.py:18` `predictive_fertility`(confirmed/registered=true-eureka율) · `:26` `nobel_grade`(Wilson LB≥0.7=환각률 바닥) |
+| 🔴 외부검증 게이트 | `lakatos/quant/bayes.py:57` `bayes_factor`(BF>3.162) · `quant/laudan.py:19` `problem_balance` · `verdict/promote.py:19` `promotion_gate`(fail-closed) |
 | detector (합성) | `lakatos/eureka.py` `classify` · `eureka_rate` (위 심볼 AND-합성, no-op 아님, 8 test) |
 
 ---
