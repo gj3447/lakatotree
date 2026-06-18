@@ -13,6 +13,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # lakatos pkg importable as a script
+from lakatos.facts import FactQuery, evaluate  # noqa: E402
+
 
 REQUIRED_PRODUCTION_CLASSES = {
     "CUP": 1,
@@ -34,42 +37,36 @@ REQUIRED_CONTRACTS = {
 }
 
 
+def _class_queries() -> list[FactQuery]:
+    """The required-class contracts expressed as DATA — one FactQuery row per rule, in the
+    historical emit order. A missing class emits only ``class:<name>`` (the ``field`` checks
+    vacuously pass when the row is absent), matching the original ``continue`` behaviour."""
+    qs: list[FactQuery] = []
+    for name, yid in REQUIRED_PRODUCTION_CLASSES.items():
+        qs.append(FactQuery("present", f"class:{name}", (name,)))
+        qs.append(FactQuery("field", f"class_id:{name}", (name, "yolo_id", "==", yid)))
+        qs.append(FactQuery("field", f"class_production:{name}", (name, "production", "==", True)))
+        if name.endswith("_HOLE"):
+            qs.append(FactQuery("field", f"hole_center_xy:{name}",
+                                (name, "measurement_contract", "contains", "center_xy")))
+    for name, yid in REQUIRED_NONPRODUCTION_CLASSES.items():
+        qs.append(FactQuery("present", f"class:{name}", (name,)))
+        qs.append(FactQuery("field", f"class_id:{name}", (name, "yolo_id", "==", yid)))
+        qs.append(FactQuery("field", f"class_nonproduction:{name}", (name, "production", "==", False)))
+    return qs
+
+
 def missing_contracts(manifest: dict, repo_root: Path) -> list[str]:
-    missing: list[str] = []
+    # class-completeness rules are DATA, evaluated by the reusable fact-query runner.
     by_class = {item.get("name"): item for item in manifest.get("segmentation_classes", [])}
-
-    for name, yolo_id in REQUIRED_PRODUCTION_CLASSES.items():
-        item = by_class.get(name)
-        if item is None:
-            missing.append(f"class:{name}")
-            continue
-        if item.get("yolo_id") != yolo_id:
-            missing.append(f"class_id:{name}")
-        if item.get("production") is not True:
-            missing.append(f"class_production:{name}")
-        contract = item.get("measurement_contract", "")
-        if name.endswith("_HOLE") and "center_xy" not in contract:
-            missing.append(f"hole_center_xy:{name}")
-
-    for name, yolo_id in REQUIRED_NONPRODUCTION_CLASSES.items():
-        item = by_class.get(name)
-        if item is None:
-            missing.append(f"class:{name}")
-            continue
-        if item.get("yolo_id") != yolo_id:
-            missing.append(f"class_id:{name}")
-        if item.get("production") is not False:
-            missing.append(f"class_nonproduction:{name}")
-
+    missing = evaluate(by_class, _class_queries())
+    # structural checks that are not keyed-row field comparisons stay direct:
     contracts = {item.get("name") for item in manifest.get("contracts", [])}
-    for name in sorted(REQUIRED_CONTRACTS - contracts):
-        missing.append(f"contract:{name}")
-
+    missing += [f"contract:{name}" for name in sorted(REQUIRED_CONTRACTS - contracts)]
     for ref in manifest.get("lakatotree_bindings", []):
         source_path = str(ref.get("sourcePath", "")).split(":", 1)[0]
         if not source_path or not (repo_root / source_path).exists():
             missing.append(f"lakatotree_ref:{ref.get('sourceId', source_path)}")
-
     return missing
 
 
