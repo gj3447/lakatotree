@@ -121,67 +121,52 @@ MOVE_PROBE = "PROBE"            # 미검 hard-core 가정 → 경계 탐침(nega
 MOVE_PRIORITIZE = "PRIORITIZE"  # 높은 미해결-문제압 열린 질문 → 우선 착수
 
 
-def generate_moves(*, nodes: list, frontier: list, branch: dict,
-                   hard_core=(), tested_core=()) -> list[dict]:
-    """positive heuristic — 트리 상태에서 다음 실험 후보를 *생성*한다 (손-입력 정렬이 아니라).
-
-    nodes    = 노드 dict 리스트 (tag/verdict/parent/...). frontier = 질문 dict 리스트.
-    branch   = `metrics.branch_inputs(...)` 출력 (정본 leaf 의 consecutive_nonprogressive,
-               nodes_spent, prediction_hits, problem_balance_windowed, verdicts).
-    hard_core/tested_core = 프로그램 hard core 가정과 이미 실측 탐침된 가정들.
-
-    move kinds (라카토스 정신):
-      ABANDON    — should_abandon(가지) True → 정지 + 형제 노선 제안 (퇴행 인정)
-      PUSH       — 정본/진보 노드에 열린 질문 존재 → 그 전선을 novel 예측으로 밀기
-      PROBE      — hard core 가정이 미검 → 경계 탐침 (보호받지만 검증은 받아야)
-      PRIORITIZE — 음의 문제수지(미해결 적자) 가지 → 가장 압 큰 열린 질문 우선
-    각 move: kind/target/rationale/est_gain/suggested_action. est_gain 내림차순 정렬.
-    """
-    moves: list[dict] = []
-    open_qs = [q for q in frontier if (q.get("status") or "OPEN") == "OPEN"]
-    pressure = branch_pressure(branch)
-    reward = realized_reward(int(branch.get("prediction_hits", 0)),
-                             int(branch.get("nodes_spent", 0)))
-
-    # ABANDON — 정본 가지가 퇴행 규칙에 걸리면 (laudan SSOT 재사용, 임계 재발명 금지)
+def _abandon_moves(branch: dict, pressure: float) -> list[dict]:
+    """ABANDON 생성 — 정본 가지가 라우든 퇴행 규칙(should_abandon SSOT)에 걸리면 정지+형제 제안."""
     abandon, reason = should_abandon(
         consecutive_nonprogressive=int(branch.get("consecutive_nonprogressive", 0)),
         nodes_spent=int(branch.get("nodes_spent", 0)),
         prediction_hits=int(branch.get("prediction_hits", 0)),
         problem_balance_windowed=int(branch.get("problem_balance_windowed", 0)),
     )
-    if abandon:
-        leaf = branch.get("leaf")
-        moves.append({
-            "kind": MOVE_ABANDON,
-            "target": leaf,
-            "rationale": f"퇴행 가지 — {reason}. hard core 보존하며 형제 노선으로 분기 제안.",
-            "est_gain": round(0.6 + 0.4 * _clamp01(pressure), 4),
-            "suggested_action": f"branch '{leaf}' 정지 → 같은 부모에서 대안 보조가설 시도",
-        })
+    if not abandon:
+        return []
+    leaf = branch.get("leaf")
+    return [{
+        "kind": MOVE_ABANDON,
+        "target": leaf,
+        "rationale": f"퇴행 가지 — {reason}. hard core 보존하며 형제 노선으로 분기 제안.",
+        "est_gain": round(0.6 + 0.4 * _clamp01(pressure), 4),
+        "suggested_action": f"branch '{leaf}' 정지 → 같은 부모에서 대안 보조가설 시도",
+    }]
 
-    # PROBE — hard core 가정 중 아직 실측 탐침 안 된 것 (보호 ≠ 무검증)
+
+def _probe_moves(hard_core, tested_core) -> list[dict]:
+    """PROBE 생성 — 아직 실측 탐침 안 된 hard core 가정마다 경계 탐침(negative heuristic 가장자리, 보호≠무검증)."""
     untested = [c for c in hard_core if c not in set(tested_core)]
-    for c in untested:
-        moves.append({
-            "kind": MOVE_PROBE,
-            "target": c,
-            "rationale": "hard core 가정 미검 — negative heuristic 은 보호하나 경계는 탐침돼야(맹신 방지).",
-            "est_gain": round(0.30, 4),
-            "suggested_action": f"'{c}' 가 깨지는 경계 조건을 직접 실측 (반증 시도)",
-        })
+    return [{
+        "kind": MOVE_PROBE,
+        "target": c,
+        "rationale": "hard core 가정 미검 — negative heuristic 은 보호하나 경계는 탐침돼야(맹신 방지).",
+        "est_gain": round(0.30, 4),
+        "suggested_action": f"'{c}' 가 깨지는 경계 조건을 직접 실측 (반증 시도)",
+    } for c in untested]
 
-    # PUSH / PRIORITIZE — 열린 질문을 정본-전선/문제압 기준으로 생성.
-    # ★ 질문→연 노드 링크는 node['questions'] (KG RAISES_QUESTION) 로 역매핑한다 —
-    #   frontier row 엔 opened_by 가 없다(repository.py). directions 와 동일 규약.
+
+def _question_moves(nodes: list, open_qs: list, branch: dict,
+                    pressure: float, reward: float) -> list[dict]:
+    """PUSH/PRIORITIZE 생성 — 열린 질문을 정본 전선(PUSH)/문제압(PRIORITIZE)으로 분류해 est_gain 부여.
+
+    ★ 질문→연 노드 링크는 node['questions'] (KG RAISES_QUESTION) 로 역매핑 — frontier row 엔
+    opened_by 가 없다(repository.py). directions 와 동일 규약. opened_by 명시 시 존중(in-memory 호환)."""
     progressive = ("CANONICAL", "progressive", "progressive_conditional")
     front_qnames = {qn for n in nodes if n.get("verdict") in progressive
                     for qn in (n.get("questions") or [])}
     novel_qnames = {qn for n in nodes if n.get("novel_registered")
                     for qn in (n.get("questions") or [])}
+    moves: list[dict] = []
     for q in open_qs:
         qn = q.get("name")
-        # opened_by 가 명시돼 있으면 존중(in-memory 호출자 호환), 없으면 node 역매핑 사용
         on_front = qn in front_qnames or (
             bool(set(q.get("opened_by") or []) & {n.get("tag") for n in nodes
                  if n.get("verdict") in progressive}))
@@ -204,7 +189,34 @@ def generate_moves(*, nodes: list, frontier: list, branch: dict,
             "est_gain": eg,
             "suggested_action": action,
         })
+    return moves
 
+
+def generate_moves(*, nodes: list, frontier: list, branch: dict,
+                   hard_core=(), tested_core=()) -> list[dict]:
+    """positive heuristic — 트리 상태에서 다음 실험 후보를 *생성*한다 (손-입력 정렬이 아니라).
+
+    nodes    = 노드 dict 리스트 (tag/verdict/parent/...). frontier = 질문 dict 리스트.
+    branch   = `metrics.branch_inputs(...)` 출력 (정본 leaf 의 consecutive_nonprogressive,
+               nodes_spent, prediction_hits, problem_balance_windowed, verdicts).
+    hard_core/tested_core = 프로그램 hard core 가정과 이미 실측 탐침된 가정들.
+
+    move kinds (라카토스 정신):
+      ABANDON    — should_abandon(가지) True → 정지 + 형제 노선 제안 (퇴행 인정)
+      PUSH       — 정본/진보 노드에 열린 질문 존재 → 그 전선을 novel 예측으로 밀기
+      PROBE      — hard core 가정이 미검 → 경계 탐침 (보호받지만 검증은 받아야)
+      PRIORITIZE — 음의 문제수지(미해결 적자) 가지 → 가장 압 큰 열린 질문 우선
+    각 move: kind/target/rationale/est_gain/suggested_action. est_gain 내림차순 정렬.
+    """
+    # 공유 입력 1회 계산 후 move-type 별 생성기에 위임(한 전략=한 함수). append 순서
+    # (ABANDON→PROBE→PUSH/PRIORITIZE) 보존 → 안정정렬이라 동률 순서까지 동작 불변.
+    open_qs = [q for q in frontier if (q.get("status") or "OPEN") == "OPEN"]
+    pressure = branch_pressure(branch)
+    reward = realized_reward(int(branch.get("prediction_hits", 0)),
+                             int(branch.get("nodes_spent", 0)))
+    moves = (_abandon_moves(branch, pressure)
+             + _probe_moves(hard_core, tested_core)
+             + _question_moves(nodes, open_qs, branch, pressure, reward))
     moves.sort(key=lambda m: -m["est_gain"])
     return moves
 
