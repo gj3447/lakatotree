@@ -202,3 +202,24 @@ def test_standing_cli_routes(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['standing', 'T', 'v'])
     assert calls[0] == ('GET', '/api/tree/T/node/v/standing', None)
+
+
+# ── SRP 분해 payoff: CLI 표면(_build_parser)을 dispatch/네트워크 없이 독립 테스트 ──────────
+def test_build_parser_isolated_parses_surface_without_dispatch():
+    """_build_parser 가 main 의 dispatch·서버호출 없이 parser 를 빌드 (선언/실행 분리)."""
+    import argparse
+    p = cli._build_parser()
+    assert isinstance(p, argparse.ArgumentParser)
+    a = p.parse_args(['metrics', 'mytree'])
+    assert a.cmd == 'metrics' and a.name == 'mytree'
+    a = p.parse_args(['node', 'T', 'x', '--parent', 'p1', '--parent', 'p2'])
+    assert a.cmd == 'node' and a.parent == ['p1', 'p2']
+    a = p.parse_args(['predict', 'T', 'x', '--metric', 'iou', '--baseline', '1.0'])
+    assert a.cmd == 'predict' and a.baseline == 1.0 and a.dir == 'lower'
+
+
+def test_build_parser_isolated_requires_subcommand():
+    """subparsers required=True — 명령 없으면 SystemExit (표면 계약)."""
+    import pytest
+    with pytest.raises(SystemExit):
+        cli._build_parser().parse_args([])
