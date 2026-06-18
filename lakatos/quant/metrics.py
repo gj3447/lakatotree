@@ -10,6 +10,7 @@
 # KG: span_lakatotree_S1_laudan_layer
 """
 from collections import defaultdict
+from dataclasses import dataclass
 from lakatos.quant.laudan import (branch_problem_balance_windowed, problem_balance, psr, should_abandon,
                      unattributed_closures)
 from lakatos.quant.bayes import branch_credence, should_abandon_bayes
@@ -76,8 +77,33 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
 
 
 # ── 공유 구조 (정본경로 · children · leaves) — 오케스트레이터가 한 번 계산 ──────────────
+@dataclass(frozen=True)
+class _TreeView:
+    """tree_metrics 가 1회 계산해 각 지표 함수에 넘기는 *공유 트리 구조*. 분해가 드러낸 shared-state
+    결합을 1급 객체로 — 전엔 _laudan_layer 가 nodes/frontier/path/by/leaves/open_q/closed_q 7개 개별
+    param 으로 받아 결합이 시그니처에 그대로 노출됐다. 각 지표 함수는 이제 tv 하나만 받는다."""
+    nodes: list
+    frontier: list
+    by: dict
+    path: list
+    children: dict
+    leaves: list
+    open_q: int
+    closed_q: int
+
+
+def _tv(*, nodes: list | None = None, frontier: list | None = None, by: dict | None = None,
+        path: list | None = None, children: dict | None = None, leaves: list | None = None,
+        open_q: int = 0, closed_q: int = 0) -> _TreeView:
+    by = by or {}
+    nodes = list(nodes) if nodes is not None else list(by.values())
+    return _TreeView(nodes=nodes, frontier=frontier or (), by=by, path=path or (),
+                     children=children or {}, leaves=leaves or (),
+                     open_q=open_q, closed_q=closed_q)
+
+
 def _canonical_path(nodes: list, by: dict) -> list:
-    """정본(CANONICAL) leaf → root 사이클가드 walk. root→leaf 순 반환."""
+    """정본(CANONICAL) leaf → root 사이클가드 walk. root→leaf 순 반환. (tv 빌더 — tv 이전 실행.)"""
     can = [r['tag'] for r in nodes if r['verdict'] == 'CANONICAL']
     path, cur, seen = [], (can[0] if can else None), set()
     while cur and cur not in seen and cur in by:   # 사이클 가드(나생문 F-FG-3)
@@ -96,12 +122,14 @@ def _children_index(nodes: list) -> dict:
     return children
 
 
-def _verdict_seq(tags: list, by: dict) -> list:
+def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
     """판결 시퀀스 → branch_credence 입력. delta/noise(효과크기) + target(use-novelty dedup 키) 동봉.
     target = 닫는 질문(novel target 정체성) — 같은 질문 재확증은 branch_credence 가 content-dedup."""
+    if not isinstance(tv, _TreeView):
+        tv, tags = _tv(by=tags, path=tv), tv
     out = []
     for t in tags:
-        r = by[t]
+        r = tv.by[t]
         d = {'verdict': r['verdict']}
         if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
             d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
@@ -113,10 +141,13 @@ def _verdict_seq(tags: list, by: dict) -> list:
 
 
 # ── 지표 개념별 순수함수 (한 개념 = 한 함수 = 한 테스트) ──────────────────────────────
-def _progress_metric(path: list, by: dict) -> dict | None:
+def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | None:
     """진보율 — 같은 scope 정본경로의 metric 개선 %. 방향 인식(ENG-HON-1) + first=0 가드(F-FG-8)."""
+    if not isinstance(tv, _TreeView):
+        tv = _tv(by=by, path=tv)
+    by = tv.by
     pm = [(t, by[t]['metric_value'], by[t].get('metric_scope'), by[t].get('pred_direction') or 'lower')
-          for t in path if by[t].get('metric_value') is not None]
+          for t in tv.path if by[t].get('metric_value') is not None]
     if len(pm) < 2:
         return None
     scopes = defaultdict(list)
@@ -136,36 +167,45 @@ def _progress_metric(path: list, by: dict) -> dict | None:
     return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))   # 기준 0 → 절대증가
 
 
-def _degeneration_depth(path: list, children: dict) -> int:
+def _degeneration_depth(tv: '_TreeView | list', children: dict | None = None) -> int:
     """퇴행 깊이 — 정본경로 노드들의 최대 연속 비진보 자식 체인 (≥3 경보)."""
+    if not isinstance(tv, _TreeView):
+        tv = _tv(path=tv, children=children)
     def depth(tag, _seen=None):
         _seen = _seen or set()
         if tag in _seen:
             return 0                              # 사이클 가드(나생문 F-FG-3)
         _seen = _seen | {tag}
-        return max([1 + depth(c['tag'], _seen) for c in children.get(tag, [])
+        return max([1 + depth(c['tag'], _seen) for c in tv.children.get(tag, [])
                     if c['verdict'] in NONPROGRESSIVE], default=0)
-    return max([depth(t) for t in path], default=0)
+    return max([depth(t) for t in tv.path], default=0)
 
 
-def _branch_chain(leaf: str, path: list, by: dict) -> list:
+def _branch_chain(tv: '_TreeView | str', leaf: str | list, by: dict | None = None) -> list:
     """leaf → (정본경로 만나기 전까지) 분기 가지 노드 리스트, 사이클 가드."""
+    if not isinstance(tv, _TreeView):
+        tv, leaf = _tv(by=by, path=leaf), tv
     chain, cur, seen = [], leaf, set()
-    while cur and cur not in path and cur not in seen and cur in by:
+    while cur and cur not in tv.path and cur not in seen and cur in tv.by:
         seen.add(cur)
-        chain.append(by[cur])
-        cur = _primary_parent(by[cur])
+        chain.append(tv.by[cur])
+        cur = _primary_parent(tv.by[cur])
     return chain
 
 
-def _laudan_layer(nodes: list, frontier: list, path: list, by: dict, leaves: list,
-                  open_q: int, closed_q: int) -> dict:
+def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
+                  path: list | None = None, by: dict | None = None,
+                  leaves: list | None = None, open_q: int = 0,
+                  closed_q: int = 0) -> dict:
     """라우든 문제해결력층 — 가지별 폐기 후보(should_abandon 3규칙) + 문제수지 + PSR + 미귀속 폐쇄."""
+    if not isinstance(tv, _TreeView):
+        tv = _tv(nodes=tv, frontier=frontier, by=by, path=path, leaves=leaves,
+                 open_q=open_q, closed_q=closed_q)
     abandon = []
-    for leaf in leaves:
-        if leaf in path:
+    for leaf in tv.leaves:
+        if leaf in tv.path:
             continue
-        chain = _branch_chain(leaf, path, by)
+        chain = _branch_chain(tv, leaf)
         consec = 0
         for r in chain:                          # leaf→분기점 방향 연속 비진보
             if r['verdict'] in NONPROGRESSIVE:
@@ -174,44 +214,53 @@ def _laudan_layer(nodes: list, frontier: list, path: list, by: dict, leaves: lis
                 break
         hits = sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS)
         # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
-        pb_windowed = branch_problem_balance_windowed(chain, frontier)
+        pb_windowed = branch_problem_balance_windowed(chain, tv.frontier)
         ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
                                     prediction_hits=hits, problem_balance_windowed=pb_windowed)
         if ok:
             abandon.append(dict(leaf=leaf, branch_len=len(chain), reason=reason))
-    return dict(frontier_balance=problem_balance(closed_q, open_q),
-                psr=round(psr(closed_q, len(path)), 3), abandon_candidates=abandon,
+    return dict(frontier_balance=problem_balance(tv.closed_q, tv.open_q),
+                psr=round(psr(tv.closed_q, len(tv.path)), 3), abandon_candidates=abandon,
                 # gap4 정직: closed_by 가 노드 tag 에 안 걸린 폐쇄 — rule③ 미집계(과소계상 신호)
-                unattributed_closed=unattributed_closures([r['tag'] for r in nodes], frontier))
+                unattributed_closed=unattributed_closures([r['tag'] for r in tv.nodes], tv.frontier))
 
 
-def _bayes_layer(path: list, by: dict, leaves: list) -> dict:
+def _bayes_layer(tv: '_TreeView | list', by: dict | None = None,
+                 leaves: list | None = None) -> dict:
     """베이즈 연속층 — 정본경로 신뢰도(판결 시퀀스 사후확률) + 신뢰도<0.1 저신뢰 가지."""
-    can_cred = round(branch_credence(_verdict_seq(path, by)), 3) if path else None
+    if not isinstance(tv, _TreeView):
+        tv = _tv(by=by, path=tv, leaves=leaves)
+    can_cred = round(branch_credence(_verdict_seq(tv, tv.path)), 3) if tv.path else None
     low_branches = []
-    for leaf in leaves:
-        if leaf in path:
+    for leaf in tv.leaves:
+        if leaf in tv.path:
             continue
-        chain = _branch_chain(leaf, path, by)     # leaf→분기점
-        ab, c = should_abandon_bayes(_verdict_seq([r['tag'] for r in chain][::-1], by))
+        chain = _branch_chain(tv, leaf)           # leaf→분기점
+        ab, c = should_abandon_bayes(_verdict_seq(tv, [r['tag'] for r in chain][::-1]))
         if ab:
             low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
     return dict(canonical_credence=can_cred, low_credence_branches=low_branches,
                 note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
 
 
-def _fertility_layer(path: list, by: dict, nodes: list) -> dict:
+def _fertility_layer(tv: '_TreeView | list', by: dict | None = None,
+                     nodes: list | None = None) -> dict:
     """이론 발전성 — 정본경로 novel 예측 적중 track record (과학=예측력). nobel_grade 동봉."""
-    fert = predictive_fertility([by[t] for t in path]) if path else predictive_fertility(nodes)
+    if not isinstance(tv, _TreeView):
+        tv = _tv(nodes=nodes, by=by, path=tv)
+    fert = predictive_fertility([tv.by[t] for t in tv.path]) if tv.path else predictive_fertility(tv.nodes)
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
     return fert
 
 
-def _eureka_layer(path: list, by: dict, nodes: list) -> dict:
+def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
+                  nodes: list | None = None) -> dict:
     """eureka(measurement-grade) — novel 예측 중 *측정 red* 통과 비율 = true/felt. BF substantial +
     문제수지>0 게이트를 fertility 위에 더 건 엄격본. standing(promotion)은 별도 층이라 제외."""
-    return eureka_over_tree([by[t] for t in path]) if path else eureka_over_tree(nodes)
+    if not isinstance(tv, _TreeView):
+        tv = _tv(nodes=nodes, by=by, path=tv)
+    return eureka_over_tree([tv.by[t] for t in tv.path]) if tv.path else eureka_over_tree(tv.nodes)
 
 
 def _multiplicity_screen(nodes: list) -> dict:
@@ -275,13 +324,16 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     closed_q = sum(1 for q in frontier if q['status'] == 'CLOSED')
     annotated = sum(1 for r in nodes
                     if r.get('algorithm') and r.get('comment') and r.get('limitation'))
+    # 공유 트리 구조 1회 계산 → 각 지표 함수는 tv 하나만 받는다(결합을 1급 객체로).
+    tv = _TreeView(nodes=nodes, frontier=frontier, by=by, path=path, children=children,
+                   leaves=leaves, open_q=open_q, closed_q=closed_q)
 
-    prog = _progress_metric(path, by)
-    stalled = _degeneration_depth(path, children)
-    laudan = _laudan_layer(nodes, frontier, path, by, leaves, open_q, closed_q)
-    bayes = _bayes_layer(path, by, leaves)
-    fert = _fertility_layer(path, by, nodes)
-    eureka = _eureka_layer(path, by, nodes)
+    prog = _progress_metric(tv)
+    stalled = _degeneration_depth(tv)
+    laudan = _laudan_layer(tv)
+    bayes = _bayes_layer(tv)
+    fert = _fertility_layer(tv)
+    eureka = _eureka_layer(tv)
     multiplicity = _multiplicity_screen(nodes)
     coverage = _coverage(cfg)
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
