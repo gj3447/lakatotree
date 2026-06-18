@@ -22,5 +22,6 @@ prov==2.1.1
 lxml==6.1.1             # prov.serialize() lazy-loads ALL serializers incl. provxml → needs lxml (was missing)
 rdflib==7.6.0           # same registry load pulls provrdf → needs rdflib (was missing)
 
-# --- test ---
+# --- test / architecture gates ---
 pytest==9.1.0
+import-linter==2.11    # `lint-imports` — enforced layering (programme > verdict > quant > io); README "Build & verify"

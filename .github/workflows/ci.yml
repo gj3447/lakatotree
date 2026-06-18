@@ -1,0 +1,51 @@
+name: ci
+
+# Clean-container CI for the three authoritative gates LakatoTree declares in README
+# "Build & verify": lint-imports (layering) + pytest (engine/server) + lake build (Lean kernel).
+# Runs from a fresh checkout with ONLY requirements.txt — so it catches the exact dependency /
+# runtime drift that made "tests green" unreproducible before (missing httpx/mcp/lxml/rdflib,
+# unpinned FastAPI). "receipts, not claims" applied to the build itself.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: engine — lint-imports + pytest (Python 3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"   # the version the suite is verified green against
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install pinned deps (clean — requirements.txt only)
+        run: pip install -r requirements.txt
+      - name: lint-imports (layering gate — static, runs first)
+        run: lint-imports
+      - name: pytest (engine + server contract)
+        run: python -m pytest tests/ -q
+
+  formal:
+    name: formal — lake build (Lean 4, sorry=0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+          sh elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: lake build (toolchain pinned by formal/lean-toolchain → v4.27.0)
+        working-directory: formal
+        run: lake build   # ground-truth gate: error=0, sorry=0
