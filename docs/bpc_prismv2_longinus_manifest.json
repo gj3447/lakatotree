@@ -159,7 +159,7 @@
     },
     {
       "sourceId": "judge.NovelTarget",
-      "sourcePath": "lakatos/judge.py:39",
+      "sourcePath": "lakatos/judge.py:42",
       "purpose": "structural_metric_threshold_for_seg_contract_and_p95_targets"
     },
     {
