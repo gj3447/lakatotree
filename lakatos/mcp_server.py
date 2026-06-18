@@ -66,6 +66,22 @@ def lifecycle(name: str, leaf: str = '') -> str:
 
 
 @mcp.tool()
+def heuristic(name: str, leaf: str = '') -> str:
+    """MSRP 연구정책 — negative heuristic(hard core 보호/redirect) + positive heuristic(다음 실험 생성:
+    ABANDON 퇴행가지/PUSH 진보전선/PROBE 미검 hard-core/PRIORITIZE 문제압). leaf 생략=정본 leaf."""
+    import urllib.parse as up
+    q = ('?' + up.urlencode({'leaf': leaf})) if leaf else ''
+    return json.dumps(_get(f'/api/tree/{name}/heuristic{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def trust(name: str) -> str:
+    """eigentrust 글로벌 출처신뢰 — 트리의 실 인터넷 관측 그래프에 전이적 신뢰 고유벡터(P6 배선).
+    coverage.mode=graph_propagated/seed_dominated/uniform_unlearned 로 현 데이터 두께 정직표기."""
+    return json.dumps(_get(f'/api/tree/{name}/trust'), ensure_ascii=False)
+
+
+@mcp.tool()
 def leaderboard(trees_csv: str, snapshot: bool = False) -> str:
     """경쟁 트리 리더보드 — Pareto+Borda 3기준(P2). trees_csv=a,b(≥2). snapshot=패러다임 판정용 축적."""
     import urllib.parse as up

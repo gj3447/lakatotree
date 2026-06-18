@@ -53,3 +53,16 @@ def test_trust_weighted_evidence():
     hi = bayes_factor('progressive', delta=-0.1, noise_band=0.01, source_trust=1.0)
     lo = bayes_factor('progressive', delta=-0.1, noise_band=0.01, source_trust=0.1)
     assert hi > lo > 1.0   # 저신뢰도 증거도 무시는 아님(floor)
+
+
+def test_branch_credence_source_trust_map_wires_eigentrust():
+    # P6: 판결이 source 키를 달면 global_source_trust 맵의 고유벡터 신뢰를 증거가중에 사용
+    from lakatos.bayes import branch_credence
+    verdicts = [{'verdict': 'progressive', 'delta': 1.0, 'noise_band': 0.1, 'source': 'blog_x'}]
+    hi = branch_credence(verdicts, source_trust_map={'blog_x': 0.9})
+    lo = branch_credence(verdicts, source_trust_map={'blog_x': 0.05})
+    assert hi > lo   # 권위 출처 = 강한 증거 → 높은 신뢰도
+    # 맵 미제공 = 기존 동작(scalar default 1.0) 불변
+    base = branch_credence([{'verdict': 'progressive', 'delta': 1.0, 'noise_band': 0.1}])
+    assert base == branch_credence([{'verdict': 'progressive', 'delta': 1.0, 'noise_band': 0.1}],
+                                   source_trust_map=None)
