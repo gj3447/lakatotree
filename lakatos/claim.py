@@ -263,6 +263,75 @@ def _next_actions(blocking_reasons: tuple[str, ...], warnings: tuple[str, ...]) 
     return tuple(deduped.values())
 
 
+# ── claim standing 구성요소 — 각 의미(신뢰도 결합 · blocking 사유 소스)가 자기 함수 ──────────
+#   SRP: evaluate_claim_standing 은 오케스트레이터. blocking 은 5 소스(foundation/doubt/lineage/
+#   evidence/confidence)에서 오는데 전엔 한 함수에 inline 융합돼 있었다 → 소스별 함수로 분해.
+def _realm_confidences(events: tuple, lineage: 'LineageReplayResult | None') -> tuple[float, float]:
+    """상계(internet/human/kg, 의문 제외) / 하계(bash/data/git/agent + lineage 통과) 신뢰도 결합."""
+    upper = [_event_confidence(e) for e in events if e.realm in UPPER_REALMS and not _is_doubt(e)]
+    lower = [_event_confidence(e) for e in events if e.realm in LOWER_REALMS]
+    if lineage is not None and lineage.passed:
+        lower.append(0.85)
+    return _combine(upper), _combine(lower)
+
+
+def _combined_confidence(upper: float, lower: float, policy: 'ClaimStandingPolicy') -> float:
+    """정책이 요구하는 계의 최소값 — 둘 다 요구면 약한 쪽이 claim 을 끈다. 요구 없으면 max."""
+    active = []
+    if policy.require_upper:
+        active.append(upper)
+    if policy.require_lower:
+        active.append(lower)
+    return round(min(active), 4) if active else round(max(upper, lower), 4)
+
+
+def _foundation_block(foundation: 'FoundationMap | None', policy) -> tuple[list[str], tuple[str, ...]]:
+    """기반지식 게이트 blocking — 연구 전 기반지식 충족(한 의미)."""
+    if not policy.require_foundation:
+        return [], ()
+    if foundation is None:
+        return ["foundation:missing"], ()
+    gaps = tuple(FoundationGate.evaluate(foundation).reasons)
+    return [f"foundation:{g}" for g in gaps], gaps
+
+
+def _doubt_block(events: tuple) -> tuple[list[str], tuple[str, ...]]:
+    """미해소 인간/agent 의문 blocking — 막지 못한 의문이 있으면 stand 못 함."""
+    resolved = _resolved_doubt_ids(events)
+    unresolved = tuple(e.name for e in events if _is_doubt(e) and e.name not in resolved)
+    return [f"human_doubt:{n}" for n in unresolved], unresolved
+
+
+def _lineage_block(lineage: 'LineageReplayResult | None', policy) -> tuple[list[str], tuple[str, ...]]:
+    """재현(lineage replay) 게이트 blocking — 하계 산출물이 root 서 재생성 가능한가."""
+    if not policy.require_replay:
+        return [], ()
+    if lineage is None:
+        return ["lineage:missing"], ("missing",)
+    if not lineage.passed:
+        reasons = tuple(lineage.reasons)
+        return [f"lineage:{r}" for r in reasons], reasons
+    return [], ()
+
+
+def _confidence_evidence_block(upper: float, lower: float, evidence_refs: list, policy) -> list[str]:
+    """증거 존재 + 신뢰도 문턱 blocking."""
+    blocking = []
+    if not evidence_refs:
+        blocking.append("evidence:missing_refs")
+    if policy.require_upper and upper < policy.min_confidence:
+        blocking.append("upper_confidence_below_threshold")
+    if policy.require_lower and lower < policy.min_confidence:
+        blocking.append("lower_confidence_below_threshold")
+    return blocking
+
+
+def _standing_status(stands: bool, confidence: float, policy) -> str:
+    if not stands:
+        return "blocked"
+    return "stands" if confidence >= policy.strong_confidence else "conditional"
+
+
 def evaluate_claim_standing(
     claim: str,
     *,
@@ -271,71 +340,26 @@ def evaluate_claim_standing(
     lineage: LineageReplayResult | None = None,
     policy: ClaimStandingPolicy | None = None,
 ) -> ClaimStanding:
-    """한 claim 의 현재 standing 을 계산한다."""
+    """한 claim 의 현재 standing — 상/하계 신뢰도 + 5 blocking 소스 합성(각 소스 = 자기 함수, 위 참조).
+    blocking 순서 보존: foundation → doubt → lineage → evidence/confidence (dict.fromkeys 순서 dedup)."""
     policy = policy or ClaimStandingPolicy()
     standing = frame.standing(claim)
     events = frame.events_for(claim)
     evidence_refs = sorted({ref for e in events for ref in e.evidence_refs} | set(standing["evidence_refs"]))
     realms = tuple(sorted({e.realm.value for e in events}))
 
-    upper_scores = [_event_confidence(e) for e in events if e.realm in UPPER_REALMS and not _is_doubt(e)]
-    lower_scores = [_event_confidence(e) for e in events if e.realm in LOWER_REALMS]
-    if lineage is not None and lineage.passed:
-        lower_scores.append(0.85)
+    upper_confidence, lower_confidence = _realm_confidences(events, lineage)
+    confidence = _combined_confidence(upper_confidence, lower_confidence, policy)
 
-    upper_confidence = _combine(upper_scores)
-    lower_confidence = _combine(lower_scores)
+    found_block, foundation_gaps = _foundation_block(foundation, policy)
+    doubt_block, unresolved_doubts = _doubt_block(events)
+    lin_block, lineage_reasons = _lineage_block(lineage, policy)
+    conf_block = _confidence_evidence_block(upper_confidence, lower_confidence, evidence_refs, policy)
+    unique_blocking = tuple(dict.fromkeys(found_block + doubt_block + lin_block + conf_block))
 
-    active_scores = []
-    if policy.require_upper:
-        active_scores.append(upper_confidence)
-    if policy.require_lower:
-        active_scores.append(lower_confidence)
-    confidence = round(min(active_scores), 4) if active_scores else round(max(upper_confidence, lower_confidence), 4)
-
-    blocking: list[str] = []
-    foundation_gaps: tuple[str, ...] = ()
-    if policy.require_foundation:
-        if foundation is None:
-            blocking.append("foundation:missing")
-        else:
-            gate = FoundationGate.evaluate(foundation)
-            foundation_gaps = tuple(gate.reasons)
-            blocking.extend(f"foundation:{gap}" for gap in foundation_gaps)
-
-    resolved = _resolved_doubt_ids(events)
-    unresolved_doubts = tuple(e.name for e in events if _is_doubt(e) and e.name not in resolved)
-    blocking.extend(f"human_doubt:{name}" for name in unresolved_doubts)
-
-    lineage_reasons: tuple[str, ...] = ()
-    if policy.require_replay:
-        if lineage is None:
-            blocking.append("lineage:missing")
-            lineage_reasons = ("missing",)
-        elif not lineage.passed:
-            lineage_reasons = tuple(lineage.reasons)
-            blocking.extend(f"lineage:{reason}" for reason in lineage_reasons)
-
-    if not evidence_refs:
-        blocking.append("evidence:missing_refs")
-    if policy.require_upper and upper_confidence < policy.min_confidence:
-        blocking.append("upper_confidence_below_threshold")
-    if policy.require_lower and lower_confidence < policy.min_confidence:
-        blocking.append("lower_confidence_below_threshold")
-
-    unique_blocking = tuple(dict.fromkeys(blocking))
     stands = not unique_blocking
-    if not stands:
-        status = "blocked"
-    elif confidence >= policy.strong_confidence:
-        status = "stands"
-    else:
-        status = "conditional"
-
-    warnings = []
-    if lineage is None and not policy.require_replay:
-        warnings.append("lineage:not_checked")
-    warnings_tuple = tuple(warnings)
+    status = _standing_status(stands, confidence, policy)
+    warnings_tuple = ("lineage:not_checked",) if (lineage is None and not policy.require_replay) else ()
 
     return ClaimStanding(
         claim=claim,
