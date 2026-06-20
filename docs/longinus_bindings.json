@@ -1491,6 +1491,7 @@
     {"sourceId": "harness._critiques_and_standing", "file": "lakatos/harness.py", "symbol": "_critiques_and_standing", "kind": "def", "line_hint": 143, "sha256": "17905bdde4dee9f5", "layer": "implementation", "frege_sinn": "인간 critique→Dung standing phase"}
   ],
   "kg_anchors": [
+    "span_lakatotree_prom_honesty_dogfood",
     "CT_LakatoTree_BPC_PrismV2_KnowledgePack_20260612",
     "Doctrine_InternetFirst_RequestSecond_ReasonJoyThird_20260612",
     "SA_LakatoTree_Server_20260612",
