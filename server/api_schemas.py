@@ -42,6 +42,7 @@ class BeliefIn(BaseModel):
 
 class AgmReviseIn(BaseModel):
     op: str = "revision"
+    tree: str = ""          # A4: 주면 stateful — 트리의 영속 belief base 로드/저장 + auto-rejudge
     base: list[BeliefIn] = Field(default_factory=list)
     new: BeliefIn | None = None
     target_id: str | None = None

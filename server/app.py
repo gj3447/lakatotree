@@ -189,6 +189,7 @@ def _tree_service():
 def _evidence_claim_service(*, store_research_event=None):
     return EvidenceClaimService(
         kg=kg,
+        kg_tx=kg_tx,   # B1-step1: bind_embedded_observation 의 다중 KG write 를 단일 트랜잭션으로
         hist=hist,
         foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
         load_lineage=_load_lineage,
@@ -488,11 +489,65 @@ def _belief(b: BeliefIn) -> Belief:
                   connectivity=b.connectivity, depends_on=tuple(b.depends_on))
 
 
+def _load_belief_base(tree: str) -> list:
+    """A4: 트리의 영속 belief base 를 KG 에서 로드 (HAS_BELIEF). 없으면 빈 base."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(b:Belief)
+                 RETURN b.belief_id AS belief_id, b.statement AS statement, b.kind AS kind,
+                        b.credence AS credence, b.problem_balance AS problem_balance,
+                        b.connectivity AS connectivity, b.depends_on AS depends_on
+                 ORDER BY belief_id""", tree=tree)
+    return [Belief(belief_id=r['belief_id'], statement=r.get('statement') or r['belief_id'],
+                   kind=r.get('kind') or 'protective_belt',
+                   credence=r['credence'] if r.get('credence') is not None else 0.5,
+                   problem_balance=int(r.get('problem_balance') or 0),
+                   connectivity=int(r.get('connectivity') or 0),
+                   depends_on=tuple(r.get('depends_on') or ())) for r in (rows or [])]
+
+
+def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
+    """A4: 결과 belief base 영속 + removed/demoted belief 와 같은 tag 의 CANONICAL 노드 auto-rejudge
+    (→former_canonical, verdict_source='engine') — 전부 단일 kg_tx(원자적, MERGE 멱등). 반환 demote 후보."""
+    ts = datetime.now(timezone.utc).isoformat()
+    beliefs = [dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind, credence=b.credence,
+                    problem_balance=b.problem_balance, connectivity=b.connectivity,
+                    depends_on=list(b.depends_on)) for b in r.base]
+    ops = [("""MATCH (t:LakatosTree {name:$tree})
+               UNWIND $beliefs AS b
+               MERGE (bel:Belief {belief_id: b.belief_id})
+               SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
+                   bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
+                   bel.depends_on=b.depends_on, bel.updated_at=$ts
+               MERGE (t)-[:HAS_BELIEF]->(bel)""", dict(tree=tree, beliefs=beliefs, ts=ts))]
+    demote = list(r.removed) + ([old_canonical_id] if op == 'demote_canonical' and old_canonical_id else [])
+    if r.removed:
+        ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(bel:Belief)
+                       WHERE bel.belief_id IN $removed DETACH DELETE bel""",
+                    dict(tree=tree, removed=list(r.removed))))
+    if demote:
+        # auto-rejudge: belief 가 사라진/강등된 같은 tag 의 CANONICAL 노드를 엔진이 강등(수동 재채점 0).
+        ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                       WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                       SET e.verdict='former_canonical', e.verdict_source='engine',
+                           e.current_best_pointer=false, e.demoted_at=$ts""",
+                    dict(tree=tree, demote=demote, ts=ts)))
+    kg_tx(ops)
+    hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
+                                  'programme_shift_candidate': r.programme_shift_candidate,
+                                  'auto_demote_candidates': demote})
+    return demote
+
+
 @app.post('/api/agm/revise')
 def agm_revise(req: AgmReviseIn):
     """AGM 신념개정(P1) — expansion/contraction/revision/demote_canonical.
-    hard core 는 PROTECTED: allow_hard_core 없이 깎으면 409, 깎이면 programme_shift_candidate=True."""
-    base = [_belief(b) for b in req.base]
+    hard core 는 PROTECTED: allow_hard_core 없이 깎으면 409, 깎이면 programme_shift_candidate=True.
+
+    A4 (stateful): req.tree 주면 영속 belief base 를 로드(body base 없을 때)해 그 위에서 연산하고,
+    결과를 한 kg_tx 로 영속하며, removed/demoted belief 와 같은 tag 의 CANONICAL 노드를 엔진이
+    former_canonical 로 auto-rejudge(verdict_source='engine') — belief 변경이 verdict 변경을 수동
+    재채점 없이 만든다. body-override 보존: tree 없으면 KG 미접촉(기존 stateless 계약 불변)."""
+    loaded = bool(req.tree) and not req.base
+    base = _load_belief_base(req.tree) if loaded else [_belief(b) for b in req.base]
     try:
         if req.op == 'expansion':
             if not req.new:
@@ -515,7 +570,7 @@ def agm_revise(req: AgmReviseIn):
             raise HTTPException(422, f'미지원 op: {req.op} (expansion|contraction|revision|demote_canonical)')
     except HardCoreProtected as e:
         raise HTTPException(409, str(e))
-    return dict(
+    out = dict(
         op=req.op,
         base=[dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind,
                    credence=b.credence, problem_balance=b.problem_balance,
@@ -523,6 +578,11 @@ def agm_revise(req: AgmReviseIn):
         removed=list(r.removed), added=list(r.added),
         programme_shift_candidate=r.programme_shift_candidate,
         entrenchment_policy=r.entrenchment_policy)
+    if req.tree:
+        out['auto_demote_candidates'] = _persist_revision(req.tree, req.op, r, req.old_canonical_id)
+        out['persisted'] = True
+        out['loaded_base'] = loaded
+    return out
 
 
 # ── 하네스 사이클 (P5-C) — 서버 in-process 오케스트레이션, bash 미실행(no RCE) ──
