@@ -32,7 +32,8 @@ _RECEIPT_TESTS = (
     "tests/test_judge.py "                       # promB (novel 독립성) + sha_provenance
     "tests/test_oo_roundtrip.py "                # promC (외부 store 왕복)
     "tests/test_doc_honesty.py "                 # promD (문서 주장↔코드)
-    "tests/test_semantic_surface.py"             # longinus_grounding (external:/kg: 재-실명 가드)
+    "tests/test_semantic_surface.py "            # longinus_grounding (external:/kg: 재-실명 가드)
+    "tests/integration/test_db_write_path.py"    # db_boundary (gated: LAKATOS_IT → CI skip → pending)
 )
 
 
@@ -67,6 +68,7 @@ class PromNode:
     prediction: Prediction | None = None
     novel_target: NovelTarget | None = None
     guard_test: str = ""          # 이 가지가 닫은 novel 위협의 *독립* 측정(통과=1.0). receipt 에 없으면 pending.
+    gated: bool = False           # guard 가 gated 통합 테스트(LAKATOS_IT)면 CI 에선 skip → pending(gated) 정직표기.
 
 
 NODES: tuple[PromNode, ...] = (
@@ -157,6 +159,7 @@ NODES: tuple[PromNode, ...] = (
         novel_target=NovelTarget(metric_name="real_driver_integration_green",
                                  direction="higher", threshold=1.0),
         guard_test="test_kg_write_path_real_driver",
+        gated=True,   # gated 통합(LAKATOS_IT + testcontainers Neo4j) — CI 에선 skip, 영수증 없는 green 금지
     ),
     PromNode(
         tag="longinus_grounding", parent="hard_core",
@@ -183,9 +186,12 @@ def run(rc: dict[str, bool] | None = None) -> list[dict]:
                             status="ROOT", open_gap=None, surface=None, novel=None))
             continue
         if n.guard_test not in rc:                                # receipt 미도래 = 정직한 pending
-            out.append(dict(tag=n.tag, parent=n.parent, verdict="pending(no-receipt)",
-                            status="OPEN", open_gap=None, surface=0, novel=None,
-                            note=f"guard 미존재: {n.guard_test}"))
+            verdict = "pending(gated)" if n.gated else "pending(no-receipt)"
+            note = (f"gated 통합(LAKATOS_IT)로 CI skip: {n.guard_test}" if n.gated
+                    else f"guard 미존재: {n.guard_test}")
+            out.append(dict(tag=n.tag, parent=n.parent, verdict=verdict,
+                            status="GATED" if n.gated else "OPEN", open_gap=None, surface=0,
+                            novel=None, note=note))
             continue
         surface, failures = _select(rc, n.threat_needles)
         novel_measured = 1.0 if rc.get(n.guard_test, False) else 0.0
