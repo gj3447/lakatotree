@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import HTTPException
 
-from lakatos.verdicts import is_registered_verdict, is_scripted_verdict, is_engine_verdict
+from lakatos.verdicts import is_registered_verdict, is_self_report_blocked_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn
 
 
@@ -160,15 +160,15 @@ class LakatosSemanticValidator:
     def validate_node_create_result(self, tree_name: str, tree_data: dict, node: NodeIn) -> NodeValidationResult:
         if not is_registered_verdict(node.verdict):
             raise HTTPException(422, f"등록되지 않은 라카토스 verdict: {node.verdict}")
-        # prom-honesty/1 (적대감사 2026-06-20): *스코어링* 판결(judge=scripted ∪ engine — progressive,
-        #   progressive_conditional, degenerating, rejected …)은 채점 서브시스템 전용. 노드 수동 생성/업서트로
-        #   self-report 금지. metrics 의 PROGRESS_VERDICTS 는 progressive_conditional 도 진보로 세므로,
-        #   scripted 만 막으면 engine 어휘로 같은 주입이 뚫린다(적대 재검증으로 발견) → judge/engine 전부 차단.
-        #   ("neither subsystem scores its own output" 의 런타임 강제; set_verdict 403 게이트와 대칭.)
-        #   노드엔 구조/행정 어휘(proof·CANONICAL·canonical_stage·superseded …)만.
-        if is_scripted_verdict(node.verdict) or is_engine_verdict(node.verdict):
-            raise HTTPException(422, f"스코어링 판결({node.verdict})은 노드 수동 작성 금지 — "
-                                     f"채점은 judge/engine 전용. 노드엔 구조/행정 어휘만.")
+        # prom-honesty/1 (적대감사 2026-06-20, 재검증 강화 2026-06-21): *스코어링·진보* 판결은 노드 수동
+        #   생성/업서트로 self-report 금지. = scripted ∪ engine ∪ PROGRESS_VERDICTS(CANONICAL/former_canonical
+        #   포함). scripted/engine 만 막던 1차 게이트는 CANONICAL/former_canonical 누수가 남아 metrics 진보를
+        #   부풀렸다(적대 재검증 발견) → 정본급 진보어휘까지 차단. 이 어휘는 judge/engine 채점 또는 set_verdict
+        #   의 promotion gate 전용. ("neither subsystem scores its own output" 의 런타임 강제.)
+        #   노드엔 구조/행정 어휘(proof·canonical_stage·superseded·CANONICAL_KNOWLEDGE …)만.
+        if is_self_report_blocked_verdict(node.verdict):
+            raise HTTPException(422, f"스코어링/진보 판결({node.verdict})은 노드 수동 작성 금지 — 채점은 "
+                                     f"judge/engine 전용, 정본승격(CANONICAL)은 set_verdict gate 전용. 구조/행정 어휘만.")
         existing = {r["tag"] for r in tree_data.get("nodes", []) if r.get("tag")}
         parent_edges = self.normalized_parent_edges(node)
         missing = [edge.tag for edge in parent_edges if edge.tag not in existing]

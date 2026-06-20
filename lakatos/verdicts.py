@@ -88,6 +88,16 @@ def is_engine_verdict(verdict: str) -> bool:
     return verdict in ENGINE_VERDICTS or verdict in REBUILD_VERDICTS
 
 
+def is_self_report_blocked_verdict(verdict: str) -> bool:
+    """노드 수동 작성으로 self-report 금지 어휘 — 채점(scripted/engine) ∪ 진보집계(PROGRESS_VERDICTS,
+    CANONICAL/former_canonical 포함). 적대 재검증(2026-06-21): scripted/engine 만 막으면 정본급 진보어휘
+    (CANONICAL·former_canonical)가 노드 경로로 새서 metrics 진보를 부풀렸다(set_verdict 의 promotion gate
+    — eigentrust+논증+재현 — 와 engine 강등을 우회). 이 어휘는 judge/engine 채점 또는 set_verdict 만 부여한다.
+    구조/행정 어휘(proof·canonical_stage·superseded·CANONICAL_KNOWLEDGE·repurposed_*)는 노드 작성 허용."""
+    return (is_scripted_verdict(verdict) or is_engine_verdict(verdict)
+            or verdict in PROGRESS_VERDICTS)
+
+
 def is_registered_verdict(verdict: str) -> bool:
     # 나생문 F-ARCH-2: 엔진/재빌드 판결도 등록 어휘 (분기 차단)
     return verdict in VERDICT_REGISTRY
