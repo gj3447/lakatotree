@@ -70,3 +70,24 @@ def test_agm_hard_core_contraction_auto_demotes_dependent_canonical(monkeypatch)
     assert 'hc' in out['auto_demote_candidates']
     cyphers = ' '.join(c for c, _ in txs[0])
     assert 'former_canonical' in cyphers and "verdict_source='engine'" in cyphers
+
+
+def test_agm_auto_demote_respects_human_lock_valid_until_rebutted(monkeypatch):
+    """A4-richer: 자동 강등이 spine.reconcile_standing 정책 — CANONICAL ∧ valid_until_rebutted=True 만
+    강등. 인간이 lock 한(valid_until_rebutted=False) 노드는 belief contraction 으로도 자동강등 금지.
+    demote op 가 그 human-lock 가드를 포함해야(전엔 blanket SET 이 lock 무시 = 버그)."""
+    app = load_app()
+
+    def kg(q, **kw):
+        if 'HAS_BELIEF' in q and 'RETURN' in q:
+            return [dict(belief_id='hc', statement='hc', kind='hard_core',
+                         credence=0.9, problem_balance=0, connectivity=0, depends_on=[])]
+        return []
+    txs = []
+    monkeypatch.setattr(app, 'kg', kg)
+    monkeypatch.setattr(app, 'kg_tx', lambda ops: txs.append(ops) or [[]])
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    app.agm_revise(app.AgmReviseIn(op='contraction', tree='T', target_id='hc', allow_hard_core=True))
+    demote = [c for c, _ in txs[0] if 'former_canonical' in c]
+    assert demote, '강등 op 없음'
+    assert any('valid_until_rebutted' in c for c in demote), 'human-lock 가드 누락(reconcile_standing 정책)'

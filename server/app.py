@@ -525,15 +525,20 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                     dict(tree=tree, removed=list(r.removed))))
     if demote:
         # auto-rejudge: belief 가 사라진/강등된 같은 tag 의 CANONICAL 노드를 엔진이 강등(수동 재채점 0).
+        # A4-richer: spine.reconcile_standing 정책 적용 — CANONICAL ∧ valid_until_rebutted=True 만
+        # 자동 강등. 인간이 '반박-자동무효'를 끈 노드(valid_until_rebutted=False=human_locked)는 belief
+        # contraction 으로도 자동 강등 금지(인간경계 존중). 전엔 blanket SET 이 이 lock 을 무시했음(버그).
         ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
                        WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                             AND coalesce(e.valid_until_rebutted, true) = true
                        SET e.verdict='former_canonical', e.verdict_source='engine',
                            e.current_best_pointer=false, e.demoted_at=$ts""",
                     dict(tree=tree, demote=demote, ts=ts)))
     kg_tx(ops)
     hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
                                   'programme_shift_candidate': r.programme_shift_candidate,
-                                  'auto_demote_candidates': demote})
+                                  'auto_demote_candidates': demote,
+                                  'demote_policy': 'reconcile_standing: CANONICAL∧valid_until_rebutted'})
     return demote
 
 
