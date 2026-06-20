@@ -93,11 +93,7 @@ def judge(pred: Prediction | None, measured: float,
         # audit P2: default-to-measured 붕괴 차단 — novel_measured 생략 시 옛날엔 measured 로 채점해
         # *개선 측정 1개*가 이론(improved)+경험(novel) 양쪽을 공짜로 만족(가짜 초과경험내용)했다.
         # 같은 metric 이면 독립 초과내용이 아니고, 다른 metric 이면 measured(타 metric 값)는 무의미.
-        # → 어느 쪽이든 novel_measured 명시 요구(독립 측정). 명시값이 measured 와 같아도 그건 의도적 주장.
-        # TODO(prom-honesty/2, 적대감사 2026-06-20): 이건 *None 체크*지 *독립성 체크*가 아니다.
-        #   novel_measured == measured(=improved 계산에 쓴 같은 수)여도 통과 → "측정 1개로 improved+novel
-        #   공짜 충족"(이 가드가 막겠다던 바로 그 붕괴)이 재현. harness.py:141 이 실제로 novel_measured=metric
-        #   을 보냄. 같은 metric+동일값이면 거부하거나 독립 측정의 출처 sha 를 다르게 요구할 것.
+        # → 어느 쪽이든 novel_measured 명시 요구(독립 측정).
         if novel_measured is None:
             same = novel_target.metric_name == pred.metric_name
             raise ValueError(
@@ -108,9 +104,18 @@ def judge(pred: Prediction | None, measured: float,
         if not math.isfinite(novel_measured):
             raise ValueError('novel_measured 비유한')
         novel = novel_target.corroborated(novel_measured)
+        # prom-honesty/2 (적대감사 2026-06-20): 독립성 게이트 — '명시값이 measured 와 같아도 의도적 주장'이라던
+        #   기존 허용을 닫는다. 같은 metric 의 *동일 측정* 재활용(novel_measured == measured)은 improved 를 만든
+        #   바로 그 수를 novel 확증으로 되쓰는 것 = 독립 초과경험내용이 아니다(Zahar use-novelty 위반) →
+        #   novel 불인정(개선이나 비독립 → partial). 다른 metric 의 동일값은 우연일 수 있어 막지 않고, 그
+        #   fabrication 은 harness 가 *독립* novel_measured 를 보내게 해 차단한다(값+epsilon 우회는 출처-sha 후속).
+        noindep = novel and novel_target.metric_name == pred.metric_name and novel_measured == measured
+        if noindep:
+            novel = False
     else:
         # 나생문 F-CON-3: 구조적 novel_target 없으면 텍스트 존재만으론 novel 불인정(→partial)
         novel = False
+        noindep = False
     if improved and novel:
         verdict = 'progressive'
     elif improved:
@@ -120,5 +125,6 @@ def judge(pred: Prediction | None, measured: float,
     else:
         verdict = 'rejected'
     sense = f', novelty_sense={novel_target.novelty_sense}' if novel_target is not None else ''
+    indep = ' [novel 비독립: 같은 metric·동일 측정 재활용 → 초과내용 아님]' if noindep else ''
     return Verdict(verdict=verdict, delta=delta, improved=improved, novel=novel,
-                   reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{sense}')
+                   reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{sense}{indep}')

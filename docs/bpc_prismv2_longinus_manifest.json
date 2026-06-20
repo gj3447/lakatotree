@@ -154,7 +154,7 @@
     },
     {
       "sourceId": "LakatoHarness.run_cycle",
-      "sourcePath": "lakatos/harness.py:60",
+      "sourcePath": "lakatos/harness.py:62",
       "purpose": "register_prediction_build_judge_critique_git_sha_cycle"
     },
     {

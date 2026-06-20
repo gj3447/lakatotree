@@ -31,6 +31,8 @@ class CycleSpec:
     novel_metric: str | None = None
     novel_direction: str | None = None
     novel_threshold: float | None = None
+    novel_measured: float | None = None  # prom-honesty/2: novel target 의 *독립* 측정값 — 없으면 novel 미주장
+                                         #   (metric 재활용 금지). novel_metric 등록 시 judge 가 독립 측정 강제.
     build_cmd: str | None = None         # 하계: 빌드/TDD/실행 (ground truth 게이트)
     judge_cmd: str | None = None         # 하계: metric=<수> 출력하는 채점 스크립트
     judge_script: str | None = None      # 채점 스크립트 경로 (sha256 무결성)
@@ -136,11 +138,12 @@ class LakatoHarness:
 
     def _submit_and_judge(self, s: CycleSpec, metric, sha, trust) -> dict:
         """하계(write) — test_result 제출 → 판결(judge + 인터넷 신뢰 결합)."""
-        # TODO(prom-honesty/2, 적대감사 2026-06-20): novel_measured=metric — 개선 측정과 *동일한 수*를
-        #   '독립' novel 확증으로 제출. judge.py P2 가드를 무력화(가짜 초과경험내용). 독립 측정/출처 필요.
+        # prom-honesty/2 (적대감사 2026-06-20): metric 재활용 금지 — novel_measured 는 *독립* 측정(s.novel_measured)
+        #   만 보낸다. novel_metric 을 등록했으면 독립 측정값을 줘야 하고(없으면 judge 가 P2 로 거부), 줄 게
+        #   없으면 애초에 novel 을 주장하지 않는다(개선만이면 honest 하게 partial). 개선 측정 1개로 progressive 공짜 금지.
         return self._http('POST', f'/api/tree/{s.tree}/node/{s.tag}/test_result', {
             'metric_value': metric, 'script': s.judge_script or s.judge_cmd or 'inline',
-            'script_sha': sha, 'novel_measured': metric, 'source_trust': trust})
+            'script_sha': sha, 'novel_measured': s.novel_measured, 'source_trust': trust})
 
     def _critiques_and_standing(self, s: CycleSpec) -> dict:
         """인간+agent(critique) — 의문/반박 등재 → 정당성(Dung grounded extension) standing."""
