@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from lakatos.verdicts import is_scripted_verdict, is_engine_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.ports import KgTx
 
@@ -45,6 +46,17 @@ def _question_row(question: QuestionIn, ts: str) -> dict:
     return {**question.model_dump(), "ts": ts}
 
 
+def _reject_scored(nodes: Sequence[NodeIn]) -> None:
+    """prom-honesty/1 (적대감사 2026-06-20): writer 는 e.verdict 의 *유일 발행처* — *스코어링* 판결
+    (judge=scripted ∪ engine: progressive·progressive_conditional·degenerating·rejected …)은 채점
+    서브시스템만 부여한다. 노드-쓰기로 들어온 self-report 판결을 by-construction 으로 거부(validator 422
+    의 구조적 백스톱; validator 를 우회한 내부 호출도 여기서 막는다). 구조/행정 어휘만 통과 —
+    scripted 만 막으면 engine 어휘(progressive_conditional)로 같은 주입이 뚫린다(적대 재검증으로 발견)."""
+    bad = [n.verdict for n in nodes if is_scripted_verdict(n.verdict) or is_engine_verdict(n.verdict)]
+    if bad:
+        raise ValueError(f"prom-honesty/1: 노드-쓰기로 스코어링 판결 발행 불가(self-report 차단): {bad}")
+
+
 class TreeKgWriter:
     """Owns Cypher write shape for the tree context."""
 
@@ -56,6 +68,7 @@ class TreeKgWriter:
 
     def add_node(self, tree: str, node: NodeIn, parent_edges: Sequence[ParentEdgeIn]) -> WriteSummary:
         """Single-node compatibility path: node and branch edges share one tx."""
+        _reject_scored([node])   # prom-honesty/1: 스크립트 판결 self-report 차단(by-construction)
         ops = [
             (
                 """MATCH (t:LakatosTree {name:$tree})
@@ -121,6 +134,8 @@ class TreeKgWriter:
         return WriteSummary(tx_count=1, op_count=1, rows=1)
 
     def upsert_nodes(self, tree: str, nodes: Sequence[NodeIn]) -> WriteSummary:
+        nodes = list(nodes)
+        _reject_scored(nodes)   # prom-honesty/1: bulk 경로 by-construction 백스톱
         total = WriteSummary()
         ts = _utc_now()
         for chunk in _chunks(list(nodes), self.chunk_size):

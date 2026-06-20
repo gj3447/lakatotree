@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import HTTPException
 
-from lakatos.verdicts import is_registered_verdict
+from lakatos.verdicts import is_registered_verdict, is_scripted_verdict, is_engine_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn
 
 
@@ -160,6 +160,15 @@ class LakatosSemanticValidator:
     def validate_node_create_result(self, tree_name: str, tree_data: dict, node: NodeIn) -> NodeValidationResult:
         if not is_registered_verdict(node.verdict):
             raise HTTPException(422, f"등록되지 않은 라카토스 verdict: {node.verdict}")
+        # prom-honesty/1 (적대감사 2026-06-20): *스코어링* 판결(judge=scripted ∪ engine — progressive,
+        #   progressive_conditional, degenerating, rejected …)은 채점 서브시스템 전용. 노드 수동 생성/업서트로
+        #   self-report 금지. metrics 의 PROGRESS_VERDICTS 는 progressive_conditional 도 진보로 세므로,
+        #   scripted 만 막으면 engine 어휘로 같은 주입이 뚫린다(적대 재검증으로 발견) → judge/engine 전부 차단.
+        #   ("neither subsystem scores its own output" 의 런타임 강제; set_verdict 403 게이트와 대칭.)
+        #   노드엔 구조/행정 어휘(proof·CANONICAL·canonical_stage·superseded …)만.
+        if is_scripted_verdict(node.verdict) or is_engine_verdict(node.verdict):
+            raise HTTPException(422, f"스코어링 판결({node.verdict})은 노드 수동 작성 금지 — "
+                                     f"채점은 judge/engine 전용. 노드엔 구조/행정 어휘만.")
         existing = {r["tag"] for r in tree_data.get("nodes", []) if r.get("tag")}
         parent_edges = self.normalized_parent_edges(node)
         missing = [edge.tag for edge in parent_edges if edge.tag not in existing]

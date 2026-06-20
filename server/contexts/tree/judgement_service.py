@@ -47,6 +47,9 @@ class JudgementService:
         self.reproducible_for_node = reproducible_for_node
 
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
+        # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
+        #   회귀가드: tests/test_prom_honesty_node_gating.py::test_set_verdict_403_on_scripted_verdict.
+        #   (노드-쓰기 우회는 prom-honesty/1 에서 validator 422 + writer by-construction 으로 차단.)
         if not is_admin_verdict(v.verdict):
             raise HTTPException(403, f'판결 어휘({v.verdict})는 test_result 스크립트 전용 — 수동 지정 금지. '
                                      f'행정 상태만: {sorted(ADMIN_VERDICTS)}')
