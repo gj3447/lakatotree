@@ -36,10 +36,13 @@ def test_done_branches_score_progressive_from_receipt():
 def test_open_branches_are_honestly_pending():
     """열린 가지는 guard_test 가 receipt 에 없으므로 pending — '영수증 없는 green 은 거짓말'."""
     out = _by_tag(_GREEN)
-    for tag in ("sha_provenance", "promC_oo_roundtrip", "promD_doc_honesty",
-                "db_boundary", "longinus_grounding"):
-        assert out[tag]["verdict"].startswith("pending"), out[tag]
+    # 미착륙(guard 부재) 가지: pending(no-receipt), OPEN
+    for tag in ("sha_provenance", "promC_oo_roundtrip", "promD_doc_honesty", "longinus_grounding"):
+        assert out[tag]["verdict"] == "pending(no-receipt)", out[tag]
         assert out[tag]["status"] == "OPEN"
+    # gated 가지(LAKATOS_IT 통합)는 CI 에서 채점 불가 → pending(gated)/GATED 로 정직 표기
+    assert out["db_boundary"]["verdict"] == "pending(gated)", out["db_boundary"]
+    assert out["db_boundary"]["status"] == "GATED"
 
 
 def test_verdict_is_judge_generated_not_hand_entered():
