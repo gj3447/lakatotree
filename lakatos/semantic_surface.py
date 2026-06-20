@@ -66,6 +66,7 @@ def validate_surface(
         errors.append(f"duplicate_owner_sourceId:{duplicate}")
 
     longinus_ids = {b["sourceId"] for b in longinus_manifest.get("bindings", ())}
+    accepted_refs = frozenset(longinus_manifest.get("accepted_grounding_refs", ()))
     for unit in units:
         if unit.owner_sourceId not in longinus_ids:
             errors.append(f"{unit.meaning_id}:owner_not_longinus_bound:{unit.owner_sourceId}")
@@ -74,7 +75,7 @@ def validate_surface(
         if not unit.source_refs:
             errors.append(f"{unit.meaning_id}:missing_source_refs")
         for ref in unit.source_refs:
-            if not _source_ref_valid(root, ref):
+            if not _source_ref_valid(root, ref, accepted_refs):
                 errors.append(f"{unit.meaning_id}:source_ref_invalid:{ref}")
         if not unit.tests:
             errors.append(f"{unit.meaning_id}:missing_tests")
@@ -114,10 +115,15 @@ def _doc_ref_exists(root: Path, ref: str) -> bool:
     return bool(path_s) and (root / path_s).exists()
 
 
-def _source_ref_valid(root: Path, ref: str) -> bool:
+def _source_ref_valid(root: Path, ref: str, accepted: frozenset = frozenset()) -> bool:
     if not ref.strip():
         return False
     if ref.startswith("repo:"):
         path_s = ref.removeprefix("repo:").split("#", 1)[0].split(":", 1)[0]
         return bool(path_s) and (root / path_s).exists()
-    return ref.startswith(("external:", "kg:"))
+    # prom-honesty/longinus (적대감사 2026-06-20): external:/kg: 를 *prefix 만으로 무조건 통과*시키던
+    #   구멍 봉쇄(재-실명 회귀가드). 선언된 allowlist(manifest.accepted_grounding_refs — KG 실재 검증된
+    #   ref 만 등재)의 멤버만 유효. bogus/미존재(예: kg:NonExistent)는 allowlist 에 없어 실패.
+    if ref.startswith(("external:", "kg:")):
+        return ref in accepted
+    return False

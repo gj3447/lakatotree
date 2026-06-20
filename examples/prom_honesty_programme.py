@@ -31,7 +31,8 @@ _RECEIPT_TESTS = (
     "tests/test_prom_honesty_node_gating.py "   # promA
     "tests/test_judge.py "                       # promB (novel 독립성) + sha_provenance
     "tests/test_oo_roundtrip.py "                # promC (외부 store 왕복)
-    "tests/test_doc_honesty.py"                  # promD (문서 주장↔코드)
+    "tests/test_doc_honesty.py "                 # promD (문서 주장↔코드)
+    "tests/test_semantic_surface.py"             # longinus_grounding (external:/kg: 재-실명 가드)
 )
 
 
