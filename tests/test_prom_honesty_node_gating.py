@@ -40,13 +40,26 @@ def _service():
     return svc, writes
 
 
-# ── prom-honesty/1: 노드-쓰기 경로는 스크립트 판결을 거부(self-report 차단) ──────────────
+def _scored_node(verdict, *, tag="child", parent=None):
+    """*완전 채운* scored 노드 — 감사의 실제 주입과 동형. 빈약한 노드는 정책(progressive_metric_required
+    등)이 *우발적으로* 422 를 내 게이트를 가려버리므로(재검증서 발견), 정책이 받아들이는 완전 노드로
+    게이트를 *격리* 테스트한다."""
+    return NodeIn(tag=tag, parent=parent, verdict=verdict, metric_name="m", metric_value=1.0,
+                  metric_scope="s", script="run.py", result_path="o.json",
+                  algorithm="a", comment="c", limitation="l")
+
+
+_GATE_SIG = "judge/engine 전용"   # 내 게이트 고유 메시지 — 정책 메시지(Lakatos policy violation)와 구분
+
+
+# ── prom-honesty/1: 노드-쓰기 경로는 스코어링 판결을 거부(self-report 차단) ──────────────
 @pytest.mark.parametrize("verdict", SCORED)
 def test_add_node_rejects_every_scored_verdict_422(verdict):
     svc, writes = _service()
     with pytest.raises(HTTPException) as exc:
-        svc.add_node("T", NodeIn(tag="child", verdict=verdict), tree_data={"nodes": []})
+        svc.add_node("T", _scored_node(verdict), tree_data={"nodes": []})
     assert exc.value.status_code == 422
+    assert _GATE_SIG in exc.value.detail   # *내 게이트*가 거부(정책 우발 거부 아님) — 격리
     assert writes == []   # 거부는 *쓰기 이전* — 한 줄도 KG 에 안 들어간다
 
 
@@ -54,10 +67,11 @@ def test_add_node_rejects_every_scored_verdict_422(verdict):
 def test_upsert_tree_rejects_scored_verdict_422(verdict):
     svc, writes = _service()
     spec = TreeSpec(name="T", nodes=(NodeIn(tag="root"),
-                                     NodeIn(tag="child", parent="root", verdict=verdict)))
+                                     _scored_node(verdict, parent="root")))
     with pytest.raises(HTTPException) as exc:
         svc.upsert_tree(spec)
     assert exc.value.status_code == 422
+    assert _GATE_SIG in exc.value.detail
     assert writes == []
 
 
