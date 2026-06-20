@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from lakatos.verdicts import is_scripted_verdict, is_engine_verdict
+from lakatos.verdicts import is_self_report_blocked_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.ports import KgTx
 
@@ -47,14 +47,14 @@ def _question_row(question: QuestionIn, ts: str) -> dict:
 
 
 def _reject_scored(nodes: Sequence[NodeIn]) -> None:
-    """prom-honesty/1 (적대감사 2026-06-20): writer 는 e.verdict 의 *유일 발행처* — *스코어링* 판결
-    (judge=scripted ∪ engine: progressive·progressive_conditional·degenerating·rejected …)은 채점
-    서브시스템만 부여한다. 노드-쓰기로 들어온 self-report 판결을 by-construction 으로 거부(validator 422
-    의 구조적 백스톱; validator 를 우회한 내부 호출도 여기서 막는다). 구조/행정 어휘만 통과 —
-    scripted 만 막으면 engine 어휘(progressive_conditional)로 같은 주입이 뚫린다(적대 재검증으로 발견)."""
-    bad = [n.verdict for n in nodes if is_scripted_verdict(n.verdict) or is_engine_verdict(n.verdict)]
+    """prom-honesty/1 (적대감사 2026-06-20, 재검증 강화 2026-06-21): writer 는 e.verdict 의 *유일 발행처* —
+    *스코어링·진보* 판결(scripted ∪ engine ∪ PROGRESS_VERDICTS: progressive·progressive_conditional·
+    CANONICAL·former_canonical …)은 채점/promotion gate 만 부여한다. 노드-쓰기로 들어온 self-report 판결을
+    by-construction 으로 거부(validator 422 의 구조적 백스톱; validator 를 우회한 내부 호출도 여기서 막는다).
+    구조/행정 어휘만 통과. scripted/engine 만 막으면 CANONICAL/former_canonical 누수가 남는다(적대 재검증 발견)."""
+    bad = [n.verdict for n in nodes if is_self_report_blocked_verdict(n.verdict)]
     if bad:
-        raise ValueError(f"prom-honesty/1: 노드-쓰기로 스코어링 판결 발행 불가(self-report 차단): {bad}")
+        raise ValueError(f"prom-honesty/1: 노드-쓰기로 스코어링/진보 판결 발행 불가(self-report 차단): {bad}")
 
 
 class TreeKgWriter:

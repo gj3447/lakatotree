@@ -22,11 +22,12 @@ from server.contexts.tree.mutations import TreeMutationService, TreeSpec
 from server.contexts.tree.schemas import NodeIn, VerdictIn
 from server.contexts.tree.validation import LakatosSemanticValidator
 from server.contexts.tree.writer import TreeKgWriter
-from lakatos.verdicts import SCRIPTED_VERDICTS, ENGINE_VERDICTS, REBUILD_VERDICTS
+from lakatos.verdicts import SCRIPTED_VERDICTS, ENGINE_VERDICTS, REBUILD_VERDICTS, PROGRESS_VERDICTS
 
-# 노드-쓰기 게이트가 막아야 하는 *스코어링* 어휘 전체 (judge=scripted ∪ engine ∪ rebuild).
-# scripted 만 막으면 progressive_conditional(engine, PROGRESS_VERDICTS) 로 같은 주입이 뚫린다.
-SCORED = sorted(SCRIPTED_VERDICTS | ENGINE_VERDICTS | REBUILD_VERDICTS)
+# 노드-쓰기 게이트가 막아야 하는 *스코어링·진보* 어휘 전체. scripted 만 막으면 engine(progressive_conditional)
+# 으로 새고, scripted∪engine 만 막으면 PROGRESS 의 정본급(CANONICAL/former_canonical)이 샌다(적대 재검증
+# 2026-06-21 발견) → judge=scripted ∪ engine ∪ rebuild ∪ PROGRESS_VERDICTS 전부 차단.
+SCORED = sorted(SCRIPTED_VERDICTS | ENGINE_VERDICTS | REBUILD_VERDICTS | PROGRESS_VERDICTS)
 
 
 def _service():
@@ -105,11 +106,21 @@ def test_writer_upsert_nodes_byconstruction_rejects_scored(verdict):
         writer.upsert_nodes("T", [NodeIn(tag="x", verdict=verdict)])
 
 
-def test_writer_passes_admin_verdict_through():
+def test_writer_passes_structural_verdict_through():
+    """구조/행정 어휘(canonical_stage 등)는 통과 — 단 CANONICAL/former_canonical 은 진보어휘라 차단(아래)."""
     txs: list = []
     writer = TreeKgWriter(lambda ops: txs.append(ops) or [[]])
-    writer.add_node("T", NodeIn(tag="x", verdict="CANONICAL"), [])
-    assert txs   # 행정 어휘는 통과
+    writer.add_node("T", NodeIn(tag="x", verdict="canonical_stage"), [])
+    assert txs
+
+
+@pytest.mark.parametrize("verdict", ["CANONICAL", "former_canonical"])
+def test_writer_blocks_canonical_class_progress_verdicts(verdict):
+    """적대 재검증(2026-06-21): 정본급 진보어휘는 노드 self-report 금지 — set_verdict/engine 의 promotion
+    gate 만 부여(metrics 가 PROGRESS 로 세므로 우회 시 진보 부풀림)."""
+    writer = TreeKgWriter(lambda ops: [[]])
+    with pytest.raises(ValueError, match="prom-honesty/1"):
+        writer.add_node("T", NodeIn(tag="x", verdict=verdict), [])
 
 
 # ── prom-honesty/3: 결합 게이트(set_verdict)의 첫 행동 테스트 ──────────────────────────────

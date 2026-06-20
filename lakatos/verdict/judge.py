@@ -105,19 +105,16 @@ def judge(pred: Prediction | None, measured: float,
         if not math.isfinite(novel_measured):
             raise ValueError('novel_measured 비유한')
         novel = novel_target.corroborated(novel_measured)
-        # prom-honesty/2 (값 독립성) + prom-honesty/sha (출처 독립성): 같은 metric 의 novel 확증은 *독립
-        #   측정*이어야 초과경험내용이다(Zahar use-novelty). 두 측정의 출처 sha 가 모두 있으면 그걸로 판정 —
-        #   distinct sha = 독립(값이 epsilon 가까워도 다른 측정이면 정당), 같은 sha = 같은 측정 재활용 → 거부
-        #   (값+epsilon 우회 봉쇄). sha 미제공(레거시)이면 값-동일 폴백(measured 재활용만 거부). 비독립이면
-        #   novel 불인정(개선이나 비독립 → partial), raise 가 아니라 demote(유효 측정이되 novel 아님).
-        noindep = False
-        if novel and novel_target.metric_name == pred.metric_name:
-            if measured_sha and novel_sha:
-                noindep = (novel_sha == measured_sha)        # 같은 출처 = 비독립(epsilon 우회 차단)
-            else:
-                noindep = (novel_measured == measured)       # 레거시 값-동일 폴백(PROM-B)
-            if noindep:
-                novel = False
+        # prom-honesty/sha (적대 재검증 강화 2026-06-21): 같은 metric 의 novel 확증은 *독립 출처*(distinct
+        #   sha)를 증명해야 초과경험내용으로 인정한다(Zahar use-novelty). distinct sha = 독립(값이 epsilon
+        #   가까워도 다른 측정이면 정당); sha 누락(독립 증명 불가) 또는 same sha(같은 측정 재활용)는 비독립.
+        #   ★옛 값-동일 폴백은 epsilon 우회를 허용했고 novel_sha 를 안 보내는 호출자(cli/mcp/programme) 전부
+        #   샜다 → 출처 없으면 비독립으로 *강화*해 모든 경로에서 봉쇄. 비독립이면 demote(유효 측정이되 novel 아님).
+        #   다른 metric 의 novel 은 그 자체로 독립 사실이라 이 게이트 밖(영향 없음).
+        noindep = (novel and novel_target.metric_name == pred.metric_name
+                   and not (measured_sha and novel_sha and novel_sha != measured_sha))
+        if noindep:
+            novel = False
     else:
         # 나생문 F-CON-3: 구조적 novel_target 없으면 텍스트 존재만으론 novel 불인정(→partial)
         novel = False

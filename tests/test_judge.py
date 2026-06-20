@@ -112,13 +112,14 @@ def test_same_metric_same_measurement_is_not_novel():
               measured=0.279, novel_target=nt, novel_measured=0.279)   # improved 측정 그대로 재활용
     assert v.verdict == 'partial' and not v.novel and '비독립' in v.reason
 
-def test_same_metric_independent_value_can_still_be_novel():
-    """같은 metric 이라도 *다른*(독립) 측정값이면 막지 않는다 — 값+epsilon 우회는 출처-sha 강제가 후속 과제."""
+def test_same_metric_no_sha_cannot_be_novel():
+    """적대 재검증 강화(2026-06-21): 같은 metric 은 *독립 출처(distinct sha)* 없이는 novel 불가 — 값이
+    달라도(epsilon 우회 포함) 비독립으로 demote. 옛날엔 다른 값이면 통과시켜 cli/mcp/programme 가 다 샜다."""
     from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget('loo_p95', 'lower', 0.25)
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
-              measured=0.279, novel_target=nt, novel_measured=0.24)   # measured 와 다른 독립 측정
-    assert v.verdict == 'progressive' and v.novel
+              measured=0.279, novel_target=nt, novel_measured=0.24)   # 다른 값이지만 출처 미제공 → 비독립
+    assert v.verdict == 'partial' and not v.novel and '비독립' in v.reason
 
 def test_independent_metric_is_progressive():
     """다른 metric 의 독립 적중 = 진짜 초과경험내용 → progressive."""
@@ -157,15 +158,18 @@ def test_same_sha_exact_value_still_rejected():
               measured_sha='same', novel_sha='same')
     assert v.verdict == 'partial' and not v.novel
 
-def test_sha_absent_falls_back_to_value_check():
-    """sha 미제공(레거시)이면 PROM-B 값-동일 폴백 — 동일값 거부, 다른값 허용(비트동일 보존)."""
+def test_same_metric_no_sha_demotes_regardless_of_value():
+    """적대 재검증 강화: sha 미제공(cli/mcp/programme 가 보내는 경로)이면 같은 metric 은 값과 무관하게
+    전부 비독립 → partial. 옛 값-동일 폴백(다른값=progressive)이 epsilon 우회를 허용하던 구멍을 봉쇄."""
     from lakatos.verdict.judge import NovelTarget
     nt = NovelTarget('loo_p95', 'lower', 0.3)
     same = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
                  0.279, novel_target=nt, novel_measured=0.279)
     diff = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
                  0.279, novel_target=nt, novel_measured=0.24)
-    assert same.verdict == 'partial' and diff.verdict == 'progressive'
+    epsilon = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+                    0.279, novel_target=nt, novel_measured=0.2790001, measured_sha='s', novel_sha='')
+    assert same.verdict == 'partial' and diff.verdict == 'partial' and epsilon.verdict == 'partial'
 
 
 def test_novelty_sense_tag_only_does_not_change_scoring():
