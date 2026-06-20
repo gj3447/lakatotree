@@ -136,6 +136,12 @@ def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
             d['noise_band'] = r.get('pred_noise_band') or 0.0
         if r.get('pred_closes'):
             d['target'] = r['pred_closes']
+        # A2: 출처신뢰를 credence 로 전달 — 전엔 떨궈서 branch_credence 가 항상 1.0(죽은 경로).
+        #   source_trust = 노드별 기록 신뢰(float), source = eigentrust 글로벌 맵 바인딩 키(string).
+        if r.get('source_trust') is not None:
+            d['source_trust'] = r['source_trust']
+        if r.get('source') is not None:
+            d['source'] = r['source']
         out.append(d)
     return out
 
@@ -226,20 +232,35 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
 
 
 def _bayes_layer(tv: '_TreeView | list', by: dict | None = None,
-                 leaves: list | None = None) -> dict:
-    """베이즈 연속층 — 정본경로 신뢰도(판결 시퀀스 사후확률) + 신뢰도<0.1 저신뢰 가지."""
+                 leaves: list | None = None, source_trust_map: dict | None = None,
+                 trust_coverage_mode: str | None = None) -> dict:
+    """베이즈 연속층 — 정본경로 신뢰도(판결 시퀀스 사후확률) + 신뢰도<0.1 저신뢰 가지.
+
+    A2: source_trust_map(eigentrust 글로벌 신뢰) 주면 판결의 source 를 그 신뢰로 가중 —
+    노드별 source_trust(float)는 _verdict_seq 가 항상 전달, 맵은 그 위 글로벌 override.
+    정직성: 맵을 줬는데 경로 판결의 source 가 맵에 없으면 *조용히 1.0 스냅*이 되므로 trust_coverage
+    로 매칭 수를 노출(coverage.mode 가 graph_propagated/seed_dominated/uniform_unlearned 를 그대로 운반)."""
     if not isinstance(tv, _TreeView):
         tv = _tv(by=by, path=tv, leaves=leaves)
-    can_cred = round(branch_credence(_verdict_seq(tv, tv.path)), 3) if tv.path else None
+    can_seq = _verdict_seq(tv, tv.path) if tv.path else []
+    can_cred = round(branch_credence(can_seq, source_trust_map=source_trust_map), 3) if tv.path else None
     low_branches = []
     for leaf in tv.leaves:
         if leaf in tv.path:
             continue
         chain = _branch_chain(tv, leaf)           # leaf→분기점
-        ab, c = should_abandon_bayes(_verdict_seq(tv, [r['tag'] for r in chain][::-1]))
+        ab, c = should_abandon_bayes(_verdict_seq(tv, [r['tag'] for r in chain][::-1]),
+                                     source_trust_map=source_trust_map)
         if ab:
             low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
+    path_sources = sum(1 for d in can_seq if 'source' in d)
+    matched = sum(1 for d in can_seq if source_trust_map and d.get('source') in source_trust_map)
+    trust_coverage = dict(
+        map_supplied=bool(source_trust_map),
+        mode=trust_coverage_mode or ('graph_supplied' if source_trust_map else 'none'),
+        path_sources=path_sources, path_sources_matched=matched)
     return dict(canonical_credence=can_cred, low_credence_branches=low_branches,
+                trust_coverage=trust_coverage,
                 note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
 
 
@@ -331,7 +352,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     prog = _progress_metric(tv)
     stalled = _degeneration_depth(tv)
     laudan = _laudan_layer(tv)
-    bayes = _bayes_layer(tv)
+    # A2: eigentrust 글로벌 신뢰 맵을 cfg 로 받아 credence 가중에 전달(기본 None=레거시 비트동일).
+    #   서버 seam(read_models.compute_tree_metrics)이 global_source_trust 로 맵+mode 를 구성해 주입.
+    bayes = _bayes_layer(tv, source_trust_map=cfg.get('source_trust_map'),
+                         trust_coverage_mode=cfg.get('trust_coverage_mode'))
     fert = _fertility_layer(tv)
     eureka = _eureka_layer(tv)
     multiplicity = _multiplicity_screen(nodes)

@@ -96,6 +96,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--by', default=''); sp.add_argument('--body', default='')
     sp.add_argument('--kind', default='doubt', choices=['doubt', 'comment', 'rebuttal', 'evaluation'])
     sp = sub.add_parser('standing'); sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('eureka', help='노드별 measurement-grade eureka (felt/true/hallucinated)')
+    sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
@@ -230,6 +232,8 @@ def main(argv=None):
                    dict(arg_id=a.arg_id, attacks=a.attacks, by=a.by, kind=a.kind, body=a.body))
     elif a.cmd == 'standing':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/standing')
+    elif a.cmd == 'eureka':
+        out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/eureka')
     elif a.cmd == 'agm':
         out = call('POST', '/api/agm/revise', json.loads(open(a.spec).read()))
     elif a.cmd == 'cycle':

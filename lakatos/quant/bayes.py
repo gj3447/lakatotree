@@ -49,7 +49,8 @@ def interpret(bf: float) -> dict:
     return interpret_bayes_factor(bf)
 
 
-def effect_size(delta: float, noise_band: float, floor: float = 1e-6) -> float:
+def effect_size(delta: float, noise_band: float,
+                floor: float = GROUNDED['effect_size_floor']['value']) -> float:
     """증거 강도 = |delta| / max(noise_band, floor). 큰 개선 = 강한 증거."""
     return abs(delta) / max(noise_band, floor)
 
@@ -108,11 +109,13 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
 
 
 def should_abandon_bayes(verdicts: list, prior: float = DEFAULT_PRIOR,
-                         threshold: float = ABANDON_CREDENCE):
+                         threshold: float = ABANDON_CREDENCE,
+                         source_trust_map: dict | None = None):
     """신뢰도 기반 폐기 — 강한 가지는 반례 하나로 안 죽고, 약한 가지는 누적되면 죽는다.
 
     laudan.should_abandon(이산 3규칙)의 연속·증거가중 버전. 둘 다 쓰면:
     laudan = 해석 가능한 휴리스틱, bayes = 자산 가중 연속 신뢰도.
+    source_trust_map (A2): 정본경로와 동일하게 가지 폐기판정도 eigentrust 글로벌 신뢰로 가중.
     """
-    c = branch_credence(verdicts, prior)
+    c = branch_credence(verdicts, prior, source_trust_map=source_trust_map)
     return c < threshold, c
