@@ -75,6 +75,7 @@ class TestResultIn(BaseModel):
     script: str = Field(min_length=1)
     script_sha: str | None = None
     novel_measured: float | None = None
+    novel_sha: str | None = None   # prom-honesty/sha: novel 측정의 출처(예측 측정 sha 와 다르면 독립 인정)
     source_trust: float = 1.0
     result_path: str = ""
     log: str = ""

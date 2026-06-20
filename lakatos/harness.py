@@ -33,6 +33,7 @@ class CycleSpec:
     novel_threshold: float | None = None
     novel_measured: float | None = None  # prom-honesty/2: novel target 의 *독립* 측정값 — 없으면 novel 미주장
                                          #   (metric 재활용 금지). novel_metric 등록 시 judge 가 독립 측정 강제.
+    novel_sha: str | None = None         # prom-honesty/sha: novel 측정의 출처(채점 sha 와 다르면 같은 metric 도 독립)
     build_cmd: str | None = None         # 하계: 빌드/TDD/실행 (ground truth 게이트)
     judge_cmd: str | None = None         # 하계: metric=<수> 출력하는 채점 스크립트
     judge_script: str | None = None      # 채점 스크립트 경로 (sha256 무결성)
@@ -143,7 +144,8 @@ class LakatoHarness:
         #   없으면 애초에 novel 을 주장하지 않는다(개선만이면 honest 하게 partial). 개선 측정 1개로 progressive 공짜 금지.
         return self._http('POST', f'/api/tree/{s.tree}/node/{s.tag}/test_result', {
             'metric_value': metric, 'script': s.judge_script or s.judge_cmd or 'inline',
-            'script_sha': sha, 'novel_measured': s.novel_measured, 'source_trust': trust})
+            'script_sha': sha, 'novel_measured': s.novel_measured, 'novel_sha': s.novel_sha,
+            'source_trust': trust})
 
     def _critiques_and_standing(self, s: CycleSpec) -> dict:
         """인간+agent(critique) — 의문/반박 등재 → 정당성(Dung grounded extension) standing."""

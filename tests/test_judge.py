@@ -128,6 +128,46 @@ def test_independent_metric_is_progressive():
               measured=0.279, novel_target=nt, novel_measured=0.7)
     assert v.verdict == 'progressive' and v.novel
 
+# === prom-honesty/sha (적대감사 2026-06-20): 출처 독립성 — 같은 metric+epsilon 우회 봉쇄 ===
+def test_same_metric_same_sha_epsilon_rejected():
+    """같은 metric + *같은 출처 sha* 면 값이 epsilon 만 달라도 비독립(같은 측정 재활용) → progressive 불가.
+    PROM-B 의 값-동일 체크가 못 막던 epsilon 우회를 출처-sha 로 봉쇄."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.3)   # 예측과 같은 metric
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+              measured=0.279, novel_target=nt, novel_measured=0.2790001,   # measured+epsilon
+              measured_sha='abc123', novel_sha='abc123')                   # 같은 출처
+    assert v.verdict == 'partial' and not v.novel and '비독립' in v.reason
+
+def test_same_metric_distinct_sha_is_novel():
+    """같은 metric 이라도 *다른 출처 sha* = 독립 측정 → epsilon 값이어도 novel 정당(held-out 등)."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.3)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+              measured=0.279, novel_target=nt, novel_measured=0.2790001,
+              measured_sha='abc123', novel_sha='def456')                   # 독립 출처
+    assert v.verdict == 'progressive' and v.novel
+
+def test_same_sha_exact_value_still_rejected():
+    """출처 sha 가 같으면 값이 정확히 같아도 당연히 거부(값-체크를 sha-체크가 포섭)."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.3)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+              measured=0.279, novel_target=nt, novel_measured=0.279,
+              measured_sha='same', novel_sha='same')
+    assert v.verdict == 'partial' and not v.novel
+
+def test_sha_absent_falls_back_to_value_check():
+    """sha 미제공(레거시)이면 PROM-B 값-동일 폴백 — 동일값 거부, 다른값 허용(비트동일 보존)."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.3)
+    same = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+                 0.279, novel_target=nt, novel_measured=0.279)
+    diff = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+                 0.279, novel_target=nt, novel_measured=0.24)
+    assert same.verdict == 'partial' and diff.verdict == 'progressive'
+
+
 def test_novelty_sense_tag_only_does_not_change_scoring():
     # temporal/worrall 태그여도 채점은 zahar 와 동일(구조적 corroboration) — 의미 논쟁 점수화 안 함
     from lakatos.verdict.judge import NovelTarget
