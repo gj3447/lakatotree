@@ -50,7 +50,7 @@ cd formal && lake build      # 12 theorems, sorry=0
 
 | theorem | guarantee | code it pins |
 |---|---|---|
-| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the whole "receipt, not self-report" rule |
+| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the **kernel** verdict rule (caveat, prom-honesty/D: the *persisted* verdict is `dialectical_verdict(judge…)`, which can wrap/override the kernel output, and `novel`'s provenance is enforced at the Python boundary, not Lean-proven — `Rung.derived` pins the kernel, not the whole runtime) |
 | `progressive_requires_novel` | progressive ⟹ a corroborated **novel** prediction | `judge.py` (F-CON-3: text alone ≠ novel) |
 | `progressive_requires_improved` | progressive ⟹ real improvement past the noise band | `judge.py` |
 | `no_novel_no_progressive` | improvement *without* novelty caps at `partial` (Lakatos's ad-hoc patch) | `judge.py` |

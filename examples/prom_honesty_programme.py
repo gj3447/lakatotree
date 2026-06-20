@@ -30,7 +30,8 @@ _ROOT = "<WORKSPACE>/PROJECT/PI/lakatotree"
 _RECEIPT_TESTS = (
     "tests/test_prom_honesty_node_gating.py "   # promA
     "tests/test_judge.py "                       # promB (novel 독립성) + sha_provenance
-    "tests/test_oo_roundtrip.py"                 # promC (외부 store 왕복)
+    "tests/test_oo_roundtrip.py "                # promC (외부 store 왕복)
+    "tests/test_doc_honesty.py"                  # promD (문서 주장↔코드)
 )
 
 
@@ -134,7 +135,7 @@ NODES: tuple[PromNode, ...] = (
         tag="promD_doc_honesty", parent="hard_core",
         story="[OPEN] PROM-D: bayes [0,1) 정정·README Rung.derived↔런타임 과장 완화·매니페스토 Wolfram 을 "
               "동기/이미지로 명시(이론근거 아님). 주장↔코드 1:1 대응표.",
-        threat_needles=("doc_claims_match_code",),
+        threat_needles=("doc_claims_match_code", "wolfram_absent", "bayes_saturation_claim"),
         prediction=Prediction(metric_name="overclaim_doc_statements_open", direction="lower",
                               baseline_value=3.0, noise_band=0.0,
                               novel_prediction="주장-코드 1:1 대응표로 과장 0",
