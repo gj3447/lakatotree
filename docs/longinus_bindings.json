@@ -1490,6 +1490,15 @@
     {"sourceId": "harness._submit_and_judge", "file": "lakatos/harness.py", "symbol": "_submit_and_judge", "kind": "def", "line_hint": 137, "sha256": "d73b2adab862aab4", "layer": "implementation", "frege_sinn": "하계 test_result→판결 phase"},
     {"sourceId": "harness._critiques_and_standing", "file": "lakatos/harness.py", "symbol": "_critiques_and_standing", "kind": "def", "line_hint": 143, "sha256": "17905bdde4dee9f5", "layer": "implementation", "frege_sinn": "인간 critique→Dung standing phase"}
   ],
+  "accepted_grounding_refs": [
+    "external:clean-coder-srp",
+    "external:cucumber-bdd",
+    "external:nasa-traceability",
+    "external:w3c-prov-o",
+    "kg:finding_lkt_prov_external_evidence_20260618",
+    "kg:finding_lkt_registry_scope_gap_20260618",
+    "kg:finding_lkt_traceability_bidirectional_20260618"
+  ],
   "kg_anchors": [
     "span_lakatotree_prom_honesty_dogfood",
     "CT_LakatoTree_BPC_PrismV2_KnowledgePack_20260612",
