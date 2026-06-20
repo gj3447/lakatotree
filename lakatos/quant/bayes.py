@@ -105,6 +105,9 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
             odds *= bf   # 음의/무정보/target 미지정 = 매번(반례 독립부담·기존 동작 보존)
     for lb in best_log_bf.values():
         odds *= math.exp(lb)
+    # TODO(prom-honesty/5, 적대감사 2026-06-20): docstring 은 '[0,1)' 라 하지만 distinct 강확증 다수에서
+    #   float odds 가 포화해 정확히 1.0 을 반환(dedup 이 막겠다던 '인위확신'이 distinct-target 축에서 재발).
+    #   문서를 '(0,1]' 로 정정하거나 상한 클램프(1-ε). cf. noise_band=0 을 최대증거로 보는 점도 multiplicity.py 와 불일치.
     return odds / (1 + odds)
 
 
