@@ -6,11 +6,7 @@ the manifest changes show up as a git diff to review. Pure stdlib, offline.
 """
 import hashlib
 import json
-import os
-import subprocess
 from pathlib import Path
-
-import pytest
 
 _VENDOR = Path(__file__).resolve().parent           # …/_vendor
 _MANIFEST = _VENDOR / "ooptdd_vendor_manifest.json"
@@ -37,28 +33,21 @@ def test_vendored_ooptdd_matches_manifest():
     )
 
 
-def test_vendored_matches_canonical_head_when_present():
-    """When the canonical ooptdd checkout exists (dev box), the vendored copy must match
-    *committed* canonical (HEAD) — catches "upstream committed, we lagged". Compares
-    against HEAD, not the working tree, so unrelated in-flight WIP in the canonical repo
-    doesn't false-RED. Skips on the field PC where the canonical repo is absent (the
-    manifest guard above still covers integrity there)."""
-    repo = Path(os.getenv("OOPTDD_CANONICAL", "<WORKSPACE>/ooptdd"))
-    if not (repo / "src" / "ooptdd").exists():
-        pytest.skip("canonical ooptdd checkout absent")
-    # Vendoring is a *deliberate pin*: being behind committed HEAD is a SKIP (surfaced,
-    # not a CI failure), so a fast-moving upstream doesn't red us — we bump intentionally.
+def test_vendored_tree_matches_manifest_set():
+    """The set of vendored ``.py`` files must equal the manifest's set — no extras, none
+    missing. The per-file content check above is blind to a file *added* or *removed*
+    upstream (a structural drift, e.g. the engine/+domain/ split): an orphaned stale module
+    or a newly-required one would slip through. Offline, stdlib — no git needed."""
     manifest = json.loads(_MANIFEST.read_text())
-    behind = []
-    for rel in manifest["files"]:
-        try:
-            head = subprocess.run(
-                ["git", "-C", str(repo), "show", f"HEAD:src/ooptdd/{rel}"],
-                capture_output=True, check=True).stdout
-        except (OSError, subprocess.CalledProcessError):
-            pytest.skip("canonical not a usable git checkout")
-        if _normalized_sha256(head.decode()) != _normalized_sha256((_VENDOR / "ooptdd" / rel).read_text()):
-            behind.append(rel)
-    if behind:
-        pytest.skip(f"vendored pinned behind committed canonical (HEAD) on {behind} — "
-                    "re-vendor deliberately: python <ooptdd>/scripts/sync_consumers_from_head.py --apply")
+    declared = set(manifest["files"])
+    pkg = _VENDOR / "ooptdd"
+    present = {
+        p.relative_to(pkg).as_posix()
+        for p in pkg.rglob("*.py")
+        if "__pycache__" not in p.parts
+    }
+    assert present == declared, (
+        f"vendored tree != manifest. extra (orphaned): {sorted(present - declared)}; "
+        f"missing (un-vendored): {sorted(declared - present)}. Re-vendor from canonical: "
+        "python <ooptdd>/scripts/vendor_ooptdd.py <this-repo>"
+    )
