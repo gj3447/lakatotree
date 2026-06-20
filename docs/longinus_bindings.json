@@ -286,16 +286,6 @@
       "frege_sinn": "ooptdd session-finish hook that ships and verifies collected pytest outcomes"
     },
     {
-      "sourceId": "_vendor.ooptdd.plugin.pytest_runtest_makereport",
-      "file": "_vendor/ooptdd/plugin.py",
-      "symbol": "pytest_runtest_makereport",
-      "kind": "def",
-      "line_hint": 79,
-      "sha256": "4d0fc4e70be05941",
-      "layer": "implementation",
-      "frege_sinn": "ooptdd per-test report hook that collects setup/call/teardown outcomes"
-    },
-    {
       "sourceId": "server.settings.ServerSettings",
       "file": "server/settings.py",
       "symbol": "ServerSettings",
