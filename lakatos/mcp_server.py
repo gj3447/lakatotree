@@ -104,6 +104,13 @@ def certificate(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def eureka(name: str, tag: str) -> str:
+    """노드별 measurement-grade eureka — felt(novel 등록) vs true(확증+substantial BF+순문제폐쇄) vs
+    hallucinated(felt∧¬true, the false aha). 판결 seam 산출, standing(promotion)은 별도 층."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/eureka'), ensure_ascii=False)
+
+
+@mcp.tool()
 def agm_revise(spec_json: str) -> str:
     """AGM 신념개정(P1) — spec_json={op('expansion'|'contraction'|'revision'|'demote_canonical'),
     base[],new?,target_id?,contradicts[]?,old_canonical_id?,allow_hard_core?}.

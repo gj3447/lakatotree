@@ -224,6 +224,37 @@ def test_wilson_k_positive_n_zero_now_raises():
         G.wilson_lower_bound(5, 0)
 
 
+# ── B2: 수치 가드 상수도 grounding 정본 (하드코딩 1e-6/1e-9 금지, drift/G5 우회 차단) ──
+def test_numeric_guards_registered_in_grounding():
+    # effect_size 분모-0 가드 / log_score log(0) 클램프 — 두 수치 가드가 GROUNDED 정본에 등록
+    assert G.GROUNDED['effect_size_floor']['value'] == 1e-6
+    assert G.GROUNDED['log_score_eps']['value'] == 1e-9
+    assert G.GROUNDED['effect_size_floor']['tier'] in ('policy', 'policy_in_scale')
+    assert G.GROUNDED['log_score_eps']['tier'] in ('policy', 'policy_in_scale')
+    # 고아 인용 금지(source 가 SOURCES 에 등록)는 test_no_orphan_citations 가 전수 검증
+
+
+def test_numeric_guard_defaults_bind_to_grounding():
+    # ece_bins/UCB_C 처럼 함수 기본값이 grounding 정본을 실제로 소비 (test_grounding_single_source… 패턴)
+    import inspect
+    from lakatos.quant import bayes, calibrate
+    assert inspect.signature(bayes.effect_size).parameters['floor'].default \
+        == G.GROUNDED['effect_size_floor']['value']
+    assert inspect.signature(calibrate.log_score).parameters['eps'].default \
+        == G.GROUNDED['log_score_eps']['value']
+
+
+def test_no_inline_numeric_guards_left_in_quant():
+    # quant/ 소스에 인라인 1e-6/1e-9 가 남아있지 않아야 한다(grounding 만 보유) — 야매 회귀 차단
+    import pathlib
+    import lakatos.quant as q
+    qdir = pathlib.Path(q.__file__).parent
+    offenders = [f.name for f in qdir.glob('*.py')
+                 if ('1e-6' in f.read_text(encoding='utf-8')
+                     or '1e-9' in f.read_text(encoding='utf-8'))]
+    assert not offenders, f'quant/ 인라인 수치가드 잔존: {offenders}'
+
+
 def test_p6_3_credibility_and_claim_thresholds_grounded():
     # P6-3: spine/engine 가 0.70/0.35 를 각자 하드코딩하던 것 → GROUNDED 단일 정본. claim 도.
     from lakatos.verdict import spine

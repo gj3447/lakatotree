@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from lakatos.verdict.argue import grounded_extension
+from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
 from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, judge
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
@@ -109,6 +110,25 @@ class JudgementService:
         self.hist(name, 'verdict', tag, v.model_dump())
         return {'ok': True}
 
+    def node_eureka(self, name: str, tag: str) -> dict:
+        """A1: 노드별 measurement-grade eureka 읽기 — 판결 seam(submit_test_result)이 같은 kg_tx 로
+        영속한 felt/true/hallucinated/reasons/bf. standing(promotion)은 별도 상위 층이라 제외
+        (seam 이 require_promotion=False 로 산출). 미채점 노드는 judged=False."""
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                     RETURN e.tag AS tag, e.verdict AS verdict, e.eureka_felt AS felt,
+                            e.eureka_true AS true, e.eureka_hallucinated AS hallucinated,
+                            e.eureka_reasons AS reasons, e.eureka_bf AS bf""", tree=name, tag=tag)
+        if not rows:
+            raise HTTPException(404, f'노드 없음: {tag}')
+        x = rows[0]
+        if x.get('felt') is None:
+            return dict(tag=tag, judged=False, felt=False, true=False, hallucinated=False,
+                        reasons=[], note='스크립트 채점 전 — eureka 는 test_result 판결 seam 에서 산출됨')
+        return dict(tag=tag, judged=True, verdict=x.get('verdict'), felt=bool(x['felt']),
+                    true=bool(x['true']), hallucinated=bool(x['hallucinated']), bf=x.get('bf'),
+                    reasons=list(x.get('reasons') or []),
+                    note='measurement-grade: felt=novel 등록, true=확증+substantial BF+순문제폐쇄. standing 은 별도 층')
+
     def register_prediction(self, name: str, tag: str, p: PredictionIn) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
@@ -135,7 +155,9 @@ class JudgementService:
                      RETURN e.pred_metric AS m, e.pred_direction AS d, e.pred_baseline AS b,
                             e.pred_noise_band AS nb, e.pred_novel AS novel, e.verdict_source AS vsrc,
                             e.pred_novel_metric AS nmet, e.pred_novel_direction AS ndir,
-                            e.pred_novel_threshold AS nthr, e.pred_script_sha AS psha""", tree=name, tag=tag)
+                            e.pred_novel_threshold AS nthr, e.pred_script_sha AS psha,
+                            e.pred_closes AS closes,
+                            size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
@@ -195,15 +217,30 @@ class JudgementService:
         decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
         verdict = decided['verdict']
         lakatos_status = decided['lakatos']
+        # A1: measurement-grade eureka at the judgement seam — felt(novel registered) vs
+        # true(confirmed + substantial BF + net problem closure). Built from the just-scored fields
+        # (require_promotion=False: standing lives in the standing layer, not on a node) and persisted
+        # in the SAME kg_tx op-list below — atomic with the verdict, no second non-atomic write (B1).
+        # opened = questions this node raises (n_opened); closed = 1 if it closes a frontier question.
+        eu = eureka_classify({
+            'novel_registered': bool(pr['nmet']), 'novel_confirmed': v.novel, 'verdict': verdict,
+            'delta': v.delta, 'noise_band': pr['nb'] or 0.0, 'source_trust': r.source_trust,
+            'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
+        }, require_promotion=False)
         ts = datetime.now(timezone.utc).isoformat()
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
                        e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
-                       e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat""",
+                       e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
+                       e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
+                       e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
+                       e.eureka_bf=$eu_bf""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
                      script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel,
-                     st=r.source_trust, lstat=lakatos_status))]
+                     st=r.source_trust, lstat=lakatos_status,
+                     eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
+                     eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
         for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
             if tr.get('kind'):
                 ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -222,4 +259,6 @@ class JudgementService:
         return {'ok': True, 'verdict': verdict, 'delta': round(v.delta, 4), 'novel': v.novel,
                 'lakatos': lakatos_status, 'metric_verdict': v.verdict,
                 'requires_human': bool(decided.get('requires_human')),
+                'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
+                           'reasons': list(eu.reasons), 'bf': round(eu.bf, 3)},
                 'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}

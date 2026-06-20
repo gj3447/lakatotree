@@ -79,6 +79,7 @@ from lakatos.programme.series import ProgrammeSeriesAppraisal, ProgrammeSeriesRe
 from lakatos.verdict.certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate, LAKATOS_LOCATIONS
 from lakatos.semantic_surface import SemanticSurfaceReport, SemanticUnit, load_surface, validate_surface
+from lakatos.eureka import EurekaVerdict, classify, eureka_over_tree, eureka_rate
 
 __all__ = [
     "scan_prompt_injection",
@@ -180,4 +181,8 @@ __all__ = [
     "SemanticUnit",
     "load_surface",
     "validate_surface",
+    "EurekaVerdict",
+    "classify",
+    "eureka_over_tree",
+    "eureka_rate",
 ]

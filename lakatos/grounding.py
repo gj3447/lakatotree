@@ -186,6 +186,21 @@ GROUNDED = {
                      '사라지지 않게 하한. log(6)·0.3=0.54 → BF≈1.71(Jeffreys "barely~substantial 경계"). '
                      '원하는 ~1.7× 배율에 맞춘 튜닝값 — Jeffreys 가 0.3 을 주는 게 아님.',
     },
+    'effect_size_floor': {
+        'value': 1e-6, 'source': 'policy', 'tier': 'policy',
+        'band': '효과크기 분모(noise_band) division-by-zero 가드 하한',
+        'rationale': '★정직: 1e-6 은 *순수 수치 가드 정책값*(문헌 도출 아님). effect_size=|delta|/'
+                     'max(noise_band, floor) 의 분모가 0 이 되어 ∞/division-by-zero 가 되는 것을 막는 '
+                     '엔지니어링 하한 — weight_floor 와 동류(순수 policy). "무시 가능할 만큼 작은 양수"면 '
+                     '값 자체는 무방, grounding 정본화는 drift/G5 우회 차단용.',
+    },
+    'log_score_eps': {
+        'value': 1e-9, 'source': 'good1952', 'tier': 'policy_in_scale',
+        'band': 'Good(1952) log score 의 log(0)=−∞ 클램프 하한',
+        'rationale': '★정직: log_score=−log(q) 에서 q=0(완전 빗나간 확신)일 때 −∞ 가 되는 것을 막는 클램프. '
+                     'log score *방법* 은 Good(1952) strictly proper(문헌), eps *값* 은 엔지니어링 선택 — '
+                     'ece_bins(Guo 방법 + 정책 bin 수)와 동형(policy_in_scale). q 를 [eps,1] 로 하한.',
+    },
     'abandon_credence': {
         'value': 0.1, 'source': 'policy', 'tier': 'policy_in_scale',
         'band': 'posterior odds 1:9 (BF 9 ∈ Jeffreys substantial)',

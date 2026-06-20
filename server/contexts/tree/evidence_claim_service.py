@@ -405,6 +405,9 @@ class EvidenceClaimService:
         stands = verdict_arg in ext
         return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,
                     grounded_extension=sorted(ext),
+                    # A3: 어느 논증이 *패퇴*했는지(공격받고 grounded extension 밖) 명시 — 사람이 왜
+                    # 판결이 서는지/안 서는지 본다. Dung 경로는 이미 e2e 배선됨, 이건 가시성 echo.
+                    defeated=sorted(set(arguments) - set(ext)),
                     note='stands=False → 막지 못한 의문 존재, 판결 재검토 필요 (코드빌딩=순수agent)')
 
     def research_events(self, name: str, tag: str) -> dict:

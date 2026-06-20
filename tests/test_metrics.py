@@ -128,6 +128,52 @@ def test_canonical_credence_dedups_repeated_same_question_LIVE():
     assert 0.0 < same < 1.0     # 재확증은 인위확신 안 만듦
 
 
+def _src_chain(*, source_trust=None, source=None):
+    """A2: 정본경로 위 progressive 한 노드에 출처신뢰/출처를 달 수 있는 합성 체인."""
+    p1 = dict(tag='p1', verdict='progressive', parent='root', metric_value=0.5, metric_scope='s',
+              pred_baseline=1.0, pred_noise_band=0.02, pred_closes='q1',
+              algorithm='a', comment='c', limitation='l')
+    if source_trust is not None:
+        p1['source_trust'] = source_trust
+    if source is not None:
+        p1['source'] = source
+    return [
+        dict(tag='root', verdict='canonical_stage', parent=None, metric_value=1.0,
+             metric_scope='s', algorithm='a', comment='c', limitation='l'),
+        p1,
+        dict(tag='top', verdict='CANONICAL', parent='p1', metric_value=0.4, metric_scope='s',
+             algorithm='a', comment='c', limitation='l'),
+    ]
+
+
+def test_canonical_credence_weighted_by_per_node_source_trust_LIVE():
+    """A2: 노드 source_trust(저신뢰 블로그 vs 고신뢰 출처)가 canonical_credence 를 실제로 움직인다.
+    전엔 _verdict_seq 가 source_trust 를 떨궈 항상 1.0 — multi-source 가지서 조용히 동일 credence(버그)."""
+    hi = tree_metrics(_src_chain(source_trust=0.95), [])['bayes']['canonical_credence']
+    lo = tree_metrics(_src_chain(source_trust=0.05), [])['bayes']['canonical_credence']
+    assert hi > lo                                   # 고신뢰 출처 = 강한 증거 → 높은 credence
+
+
+def test_canonical_credence_no_source_trust_equals_trust_one_LEGACY():
+    """회귀 가드: source_trust 미지정 = trust 1.0(문서화된 기본값)과 비트동일 — 기존 동작 보존."""
+    none = tree_metrics(_src_chain(), [])['bayes']['canonical_credence']
+    one = tree_metrics(_src_chain(source_trust=1.0), [])['bayes']['canonical_credence']
+    assert none == one
+
+
+def test_canonical_credence_uses_eigentrust_source_trust_map_cfg():
+    """A2: 이미 계산되던(trust_view/global_source_trust) eigentrust 맵을 cfg 로 주면 노드 source 의
+    글로벌 신뢰로 credence 가중 + coverage 정직 노출(맵 줬는데 source 부재면 조용히 1.0 스냅 금지)."""
+    hi = tree_metrics(_src_chain(source='blog_x'), [],
+                      cfg={'source_trust_map': {'blog_x': 0.95}})['bayes']
+    lo = tree_metrics(_src_chain(source='blog_x'), [],
+                      cfg={'source_trust_map': {'blog_x': 0.05}})['bayes']
+    assert hi['canonical_credence'] > lo['canonical_credence']
+    # 정직성: 맵 적용 여부/매칭 수가 노출돼야(coverage.mode 진실 표기)
+    assert hi['trust_coverage']['map_supplied'] is True
+    assert hi['trust_coverage']['path_sources_matched'] >= 1
+
+
 # ── SOLID 분해의 payoff: 각 지표 개념을 *독립*으로 테스트 (전엔 트리 통째로만 가능했음) ──────
 from lakatos.quant.metrics import (
     _canonical_path, _progress_metric, _degeneration_depth, _multiplicity_screen, _coverage,
