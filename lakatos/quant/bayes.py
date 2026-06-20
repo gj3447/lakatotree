@@ -85,8 +85,9 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
 
     target 키가 없으면(현 호출자 대부분) None → 항상 novel 취급(할인 없음) = 기존 동작 비트동일.
     source_trust_map (P6): {source: global_trust} 주면 판결의 `source` 를 eigentrust 글로벌 신뢰로 가중.
-    단조: novel target 추가/더 강한 확증은 비감소. 반환 [0,1) — 단, 독립 강확증이 매우 많으면
-    (실 트리 경로 깊이로는 미도달) float odds 가 포화해 1.0 으로 반올림될 수 있다(불변식 ε 약화, 동작 무해).
+    단조: novel target 추가/더 강한 확증은 비감소. 반환 (0,1] — 독립 강확증이 매우 많으면
+    (실 트리 경로 깊이로는 미도달) float odds 가 포화해 정확히 1.0 에 도달할 수 있다(prom-honesty/5: 옛
+    docstring 의 '[0,1)'은 이 포화를 부정하는 과장이었다 → 상한 1.0 포함으로 정정).
     dedup 은 같은 타깃 반복을 max 1회로 접어 이 포화를 *완화*한다.
     """
     odds = prior / (1 - prior)
@@ -105,9 +106,8 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
             odds *= bf   # 음의/무정보/target 미지정 = 매번(반례 독립부담·기존 동작 보존)
     for lb in best_log_bf.values():
         odds *= math.exp(lb)
-    # TODO(prom-honesty/5, 적대감사 2026-06-20): docstring 은 '[0,1)' 라 하지만 distinct 강확증 다수에서
-    #   float odds 가 포화해 정확히 1.0 을 반환(dedup 이 막겠다던 '인위확신'이 distinct-target 축에서 재발).
-    #   문서를 '(0,1]' 로 정정하거나 상한 클램프(1-ε). cf. noise_band=0 을 최대증거로 보는 점도 multiplicity.py 와 불일치.
+    # prom-honesty/5 (적대감사 2026-06-20, 정정): distinct 강확증 다수에서 float odds 가 포화해 정확히
+    #   1.0 을 반환할 수 있다 → docstring 을 [0,1) 에서 (0,1] 로 정정(상한 1.0 포함). 과장 제거.
     return odds / (1 + odds)
 
 

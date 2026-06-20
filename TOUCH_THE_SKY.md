@@ -417,4 +417,7 @@ green 이 다시 무언가를 *의미*하게 된 것 — 그 한 칸이, 오늘 
 이미지 헌사: *천원돌파 그렌라간*(2007)의 나선력 — 한계를 거부하는 진화의 상승나선.
 판결 기관 = `lakatos/judge.py` (사전등록 게이트 + 4판결), 정직성 = 스크립트 채점, hard core = 코드가 아니라 약속.
 환각 반대 = ooptdd(외부 store readback) + Longinus(소스 심볼 바인딩) + 본 트리(LLM 아닌 결정론 채점).
+정직 단서(prom-honesty/D): 라카토스·포퍼·라우든은 *코드로 operationalize*돼 채점에 쓰인다(`judge.py`·`laudan.py`·
+`bayes.py`, `grounding.SOURCES`). 울프람은 그렇지 않다 — `grounding.SOURCES`에 없고 Python 0줄이다. 따라서
+"hard core 는 이 셋의 합"의 울프람 몫은 *동기·이미지*(왜 추측 말고 돌리는가의 정신)이지 채점에 박힌 이론근거가 아니다.
 이 구절은 장식이 아니라 우리가 매 커밋 지키기로 한 계약이다.</sub>
