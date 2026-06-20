@@ -8,9 +8,10 @@ P = dict(metric_name='loo_p95', direction='lower', baseline_value=0.384)
 
 def test_progressive_improved_and_novel():
     from lakatos.verdict.judge import NovelTarget
-    nt = NovelTarget('loo_p95', 'lower', 0.3)   # F-CON-3: 구조적 예측 필수
-    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='OUTER 분기로 0.3 이하'),
-              0.279, novel_target=nt, novel_measured=0.279)
+    # prom-honesty/2: 진짜 초과경험내용 = *독립* 사실(다른 metric)을 독립 측정으로 적중.
+    nt = NovelTarget('held_out_psr', 'higher', 0.6)   # 예측 metric(loo_p95)≠novel metric
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='OUTER 분기 + held-out psr↑'),
+              0.279, novel_target=nt, novel_measured=0.7)   # 독립 측정으로 적중
     assert v.verdict == 'progressive' and v.improved and round(v.delta, 3) == -0.105
 
 def test_partial_improved_without_novel():
@@ -33,7 +34,7 @@ def test_higher_direction():
     from lakatos.verdict.judge import NovelTarget
     v = judge(Prediction(metric_name='psr', direction='higher', baseline_value=0.5,
                          noise_band=0.0, novel_prediction='x'), 0.7,
-              novel_target=NovelTarget('psr', 'higher', 0.6), novel_measured=0.7)
+              novel_target=NovelTarget('held_out_recall', 'higher', 0.6), novel_measured=0.8)
     assert v.verdict == 'progressive'
 
 def test_missing_prediction_refused():
@@ -95,11 +96,37 @@ def test_novel_target_without_measured_refused_diff_metric():
 
 def test_novelty_sense_default_zahar_and_surfaced():
     from lakatos.verdict.judge import NovelTarget, NOVELTY_SENSES
-    nt = NovelTarget('loo_p95', 'lower', 0.3)
+    nt = NovelTarget('held_out_psr', 'higher', 0.6)
     assert nt.novelty_sense == 'zahar_use_novelty' and nt.novelty_sense in NOVELTY_SENSES
     v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'), 0.279,
-              novel_target=nt, novel_measured=0.279)
+              novel_target=nt, novel_measured=0.7)
     assert v.verdict == 'progressive' and 'novelty_sense=zahar_use_novelty' in v.reason
+
+# === prom-honesty/2 (적대감사 2026-06-20): novel 독립성 — 같은 측정 재활용 ≠ 초과경험내용 ===
+def test_same_metric_same_measurement_is_not_novel():
+    """같은 metric 의 *동일 측정*(novel_measured == measured)을 novel 로 재활용 → progressive 불가(partial).
+    improved 를 만든 그 수를 novel 확증으로 되쓰는 가짜 초과내용(Zahar use-novelty 위반)."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.3)   # 예측 metric 과 동일
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+              measured=0.279, novel_target=nt, novel_measured=0.279)   # improved 측정 그대로 재활용
+    assert v.verdict == 'partial' and not v.novel and '비독립' in v.reason
+
+def test_same_metric_independent_value_can_still_be_novel():
+    """같은 metric 이라도 *다른*(독립) 측정값이면 막지 않는다 — 값+epsilon 우회는 출처-sha 강제가 후속 과제."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('loo_p95', 'lower', 0.25)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+              measured=0.279, novel_target=nt, novel_measured=0.24)   # measured 와 다른 독립 측정
+    assert v.verdict == 'progressive' and v.novel
+
+def test_independent_metric_is_progressive():
+    """다른 metric 의 독립 적중 = 진짜 초과경험내용 → progressive."""
+    from lakatos.verdict.judge import NovelTarget
+    nt = NovelTarget('held_out_psr', 'higher', 0.6)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
+              measured=0.279, novel_target=nt, novel_measured=0.7)
+    assert v.verdict == 'progressive' and v.novel
 
 def test_novelty_sense_tag_only_does_not_change_scoring():
     # temporal/worrall 태그여도 채점은 zahar 와 동일(구조적 corroboration) — 의미 논쟁 점수화 안 함
