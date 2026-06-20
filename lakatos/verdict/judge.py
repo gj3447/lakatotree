@@ -77,7 +77,8 @@ def check_registration(already_judged: bool) -> None:
 
 def judge(pred: Prediction | None, measured: float,
           novel_target: 'NovelTarget | None' = None,
-          novel_measured: float | None = None) -> Verdict:
+          novel_measured: float | None = None,
+          measured_sha: str = '', novel_sha: str = '') -> Verdict:
     if pred is None:
         raise PredictionMissing('사전등록된 예측 없음 — prediction 먼저 (사후 채점 금지)')
     if not math.isfinite(measured):
@@ -104,14 +105,19 @@ def judge(pred: Prediction | None, measured: float,
         if not math.isfinite(novel_measured):
             raise ValueError('novel_measured 비유한')
         novel = novel_target.corroborated(novel_measured)
-        # prom-honesty/2 (적대감사 2026-06-20): 독립성 게이트 — '명시값이 measured 와 같아도 의도적 주장'이라던
-        #   기존 허용을 닫는다. 같은 metric 의 *동일 측정* 재활용(novel_measured == measured)은 improved 를 만든
-        #   바로 그 수를 novel 확증으로 되쓰는 것 = 독립 초과경험내용이 아니다(Zahar use-novelty 위반) →
-        #   novel 불인정(개선이나 비독립 → partial). 다른 metric 의 동일값은 우연일 수 있어 막지 않고, 그
-        #   fabrication 은 harness 가 *독립* novel_measured 를 보내게 해 차단한다(값+epsilon 우회는 출처-sha 후속).
-        noindep = novel and novel_target.metric_name == pred.metric_name and novel_measured == measured
-        if noindep:
-            novel = False
+        # prom-honesty/2 (값 독립성) + prom-honesty/sha (출처 독립성): 같은 metric 의 novel 확증은 *독립
+        #   측정*이어야 초과경험내용이다(Zahar use-novelty). 두 측정의 출처 sha 가 모두 있으면 그걸로 판정 —
+        #   distinct sha = 독립(값이 epsilon 가까워도 다른 측정이면 정당), 같은 sha = 같은 측정 재활용 → 거부
+        #   (값+epsilon 우회 봉쇄). sha 미제공(레거시)이면 값-동일 폴백(measured 재활용만 거부). 비독립이면
+        #   novel 불인정(개선이나 비독립 → partial), raise 가 아니라 demote(유효 측정이되 novel 아님).
+        noindep = False
+        if novel and novel_target.metric_name == pred.metric_name:
+            if measured_sha and novel_sha:
+                noindep = (novel_sha == measured_sha)        # 같은 출처 = 비독립(epsilon 우회 차단)
+            else:
+                noindep = (novel_measured == measured)       # 레거시 값-동일 폴백(PROM-B)
+            if noindep:
+                novel = False
     else:
         # 나생문 F-CON-3: 구조적 novel_target 없으면 텍스트 존재만으론 novel 불인정(→partial)
         novel = False
@@ -125,6 +131,6 @@ def judge(pred: Prediction | None, measured: float,
     else:
         verdict = 'rejected'
     sense = f', novelty_sense={novel_target.novelty_sense}' if novel_target is not None else ''
-    indep = ' [novel 비독립: 같은 metric·동일 측정 재활용 → 초과내용 아님]' if noindep else ''
+    indep = ' [novel 비독립: 같은 metric·동일 출처(sha)/측정 재활용 → 초과내용 아님]' if noindep else ''
     return Verdict(verdict=verdict, delta=delta, improved=improved, novel=novel,
                    reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{sense}{indep}')

@@ -106,14 +106,15 @@ NODES: tuple[PromNode, ...] = (
         tag="sha_provenance", parent="promB_novel_independence",
         story="[OPEN] PROM-B 잔여: 같은 metric+값+epsilon 우회는 아직 progressive 가능. novel 측정의 "
               "출처 sha 를 예측 측정과 다르게 강제해 봉쇄.",
-        threat_needles=("epsilon_rejected_by_distinct_sha",),
+        threat_needles=("same_sha_epsilon_rejected", "distinct_sha_is_novel",
+                        "same_sha_exact_value_still_rejected"),
         prediction=Prediction(metric_name="same_metric_epsilon_evasion_open", direction="lower",
                               baseline_value=1.0, noise_band=0.0,
                               novel_prediction="출처-sha 상이 강제로 epsilon 우회 봉쇄",
                               closes_question="q-sha-provenance"),
         novel_target=NovelTarget(metric_name="source_sha_distinct_enforced",
                                  direction="higher", threshold=1.0),
-        guard_test="test_same_metric_epsilon_rejected_by_distinct_sha",
+        guard_test="test_same_metric_same_sha_epsilon_rejected",
     ),
     PromNode(
         tag="promC_oo_roundtrip", parent="hard_core",

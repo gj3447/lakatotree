@@ -175,7 +175,10 @@ class JudgementService:
             v = judge(None if pr['m'] is None else Prediction(
                 metric_name=pr['m'], direction=pr['d'], baseline_value=pr['b'],
                 noise_band=pr['nb'] or 0.0, novel_prediction=pr['novel'] or ''),
-                r.metric_value, novel_target=nt, novel_measured=r.novel_measured)
+                r.metric_value, novel_target=nt, novel_measured=r.novel_measured,
+                # prom-honesty/sha: 예측 측정 출처 = 채점 스크립트 sha, novel 측정 출처 = r.novel_sha.
+                #   둘 다 있고 다르면 같은 metric 이어도 독립(epsilon 우회 봉쇄); 같으면 비독립 → demote.
+                measured_sha=r.script_sha or '', novel_sha=r.novel_sha or '')
         except PredictionMissing as e:
             raise HTTPException(409, str(e))
         except ValueError as e:
