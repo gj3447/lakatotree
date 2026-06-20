@@ -29,7 +29,8 @@ _ROOT = "<WORKSPACE>/PROJECT/PI/lakatotree"
 # receipt 를 만드는 테스트 파일들 — *닫힌* 가지의 guard 가 사는 곳. 새 prom 구현 시 그 테스트 파일을 추가.
 _RECEIPT_TESTS = (
     "tests/test_prom_honesty_node_gating.py "   # promA
-    "tests/test_judge.py"                        # promB (novel 독립성)
+    "tests/test_judge.py "                       # promB (novel 독립성) + sha_provenance
+    "tests/test_oo_roundtrip.py"                 # promC (외부 store 왕복)
 )
 
 
@@ -120,14 +121,14 @@ NODES: tuple[PromNode, ...] = (
         tag="promC_oo_roundtrip", parent="hard_core",
         story="[OPEN] PROM-C: 외부 store readback 이 CI 에선 같은 프로세스가 만든 응답을 대조(영수증 연극). "
               "write→독립read→compare positive 왕복을 외부 백엔드 1개로 CI 에 고정.",
-        threat_needles=("oo_positive_roundtrip",),
+        threat_needles=("oo_positive_roundtrip", "roundtrip_catches_silent"),
         prediction=Prediction(metric_name="unverified_external_arrival_open", direction="lower",
                               baseline_value=1.0, noise_band=0.0,
                               novel_prediction="positive write→read→compare 왕복 green",
                               closes_question="q-oo-roundtrip"),
         novel_target=NovelTarget(metric_name="write_read_compare_roundtrip_green",
                                  direction="higher", threshold=1.0),
-        guard_test="test_oo_positive_roundtrip_external_backend",
+        guard_test="test_oo_positive_roundtrip_memory_backend",
     ),
     PromNode(
         tag="promD_doc_honesty", parent="hard_core",
