@@ -94,6 +94,10 @@ def judge(pred: Prediction | None, measured: float,
         # *개선 측정 1개*가 이론(improved)+경험(novel) 양쪽을 공짜로 만족(가짜 초과경험내용)했다.
         # 같은 metric 이면 독립 초과내용이 아니고, 다른 metric 이면 measured(타 metric 값)는 무의미.
         # → 어느 쪽이든 novel_measured 명시 요구(독립 측정). 명시값이 measured 와 같아도 그건 의도적 주장.
+        # TODO(prom-honesty/2, 적대감사 2026-06-20): 이건 *None 체크*지 *독립성 체크*가 아니다.
+        #   novel_measured == measured(=improved 계산에 쓴 같은 수)여도 통과 → "측정 1개로 improved+novel
+        #   공짜 충족"(이 가드가 막겠다던 바로 그 붕괴)이 재현. harness.py:141 이 실제로 novel_measured=metric
+        #   을 보냄. 같은 metric+동일값이면 거부하거나 독립 측정의 출처 sha 를 다르게 요구할 것.
         if novel_measured is None:
             same = novel_target.metric_name == pred.metric_name
             raise ValueError(

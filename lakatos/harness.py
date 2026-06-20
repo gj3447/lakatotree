@@ -136,6 +136,8 @@ class LakatoHarness:
 
     def _submit_and_judge(self, s: CycleSpec, metric, sha, trust) -> dict:
         """하계(write) — test_result 제출 → 판결(judge + 인터넷 신뢰 결합)."""
+        # TODO(prom-honesty/2, 적대감사 2026-06-20): novel_measured=metric — 개선 측정과 *동일한 수*를
+        #   '독립' novel 확증으로 제출. judge.py P2 가드를 무력화(가짜 초과경험내용). 독립 측정/출처 필요.
         return self._http('POST', f'/api/tree/{s.tree}/node/{s.tag}/test_result', {
             'metric_value': metric, 'script': s.judge_script or s.judge_cmd or 'inline',
             'script_sha': sha, 'novel_measured': metric, 'source_trust': trust})

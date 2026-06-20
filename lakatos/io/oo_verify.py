@@ -24,6 +24,9 @@ def verify_trace(cid: str, *, stream: str = 'tests', expect_total: int | None = 
     logs = ground truth — ship 의 '예외 없음' 보고와 달리 *실제 도착*을 positive 단언.
     반환 {ok, attempts, records, outcomes, session{...}, reasons[]}. opener 주입 = 네트워크 없이 테스트.
     """
+    # TODO(prom-honesty/3, 적대감사 2026-06-20): CI 에 write→독립read→compare 왕복 테스트가 없음.
+    #   모든 oo/marquez 테스트가 opener 를 주입해 *같은 프로세스가 만든 응답*을 대조(영수증 연극).
+    #   실네트워크 테스트(test_oo_verify.py:173)는 기본 OFF + 부정경로만. 외부 백엔드 1개로 positive 왕복 고정할 것.
     if not _cfg('OO_URL', ''):
         return {'ok': False, 'attempts': 0, 'records': 0, 'outcomes': 0, 'session': {},
                 'reasons': ['OO_URL_unset']}
