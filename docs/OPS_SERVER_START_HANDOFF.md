@@ -1,5 +1,30 @@
 # LakatoTree 서버 기동 — 인프라 핸드오프 (2026-06-20)
 
+> ## ★실측 토폴로지 (2026-06-20, ZeroTier)
+> `100.64.0.3`(run_internal.sh 기본값)은 **이 박스에서 LAN 게이트웨이로 빠져 죽는다**(route via
+> 192.168.10.1, TCP closed). 실제 경로는 **ZeroTier**다:
+> - 이 박스 zt IP = `10.147.17.136/24` (iface `zt5zmfe7ey`), consumer zt망 가입됨.
+> - Neo4j+MCP 호스트 = **`localhost`** (= 내부망 "macmini").
+> - zt에 노출된 건 **MCP HTTP `localhost:55013`뿐** — Neo4j bolt(7687)·Mongo(27017)는 **미노출**
+>   (zt /24 전수스캔 0건). 그래서 `bolt://` 직접연결이 필요한 서버는 **다른 zt 호스트(이 박스 포함)에서
+>   못 붙는다.** kg-neo4j MCP(`type:http`)만이 그 Neo4j에 닿는 유일한 zt 경로다.
+> - `localhost:22` ssh OPEN이나 이 박스엔 키/비번 없음 → 원격 기동 불가.
+>
+> **결론: 서버는 `localhost` 본인 세션에서 띄운다.** 거기선 Neo4j가 localhost:7687.
+> zt에서 CLI로 쓰려면 `--host 0.0.0.0` 로 바인딩(run_internal.sh 기본 `127.0.0.1` 오버라이드):
+> ```bash
+> # ON localhost:
+> cd <lakatotree>
+> NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=<pw> \
+> LAKATOS_MONGO_URI=mongodb://localhost:27017 \
+> uv run uvicorn --app-dir server app:app --host 0.0.0.0 --port 55170
+> # 그 뒤 이 박스(10.147.17.136)에서:
+> #   LAKATOTREE_URL=http://localhost:55170 python -m lakatos.cli metrics LakatosTree_VerdictProvenanceGate_20260620
+> ```
+> 단, MCP 경로로 트리 빌드/조회/FDR/Longinus 다 이미 됐으므로 **서버는 CLI 편의용(선택)**이다.
+
+
+
 > 목적: `:55170` 서버를 띄워 `lakatos.cli`(metrics/certificate/directions/stack/lifecycle/
 > leaderboard/trust)와 MCP `add_node`/`register_prediction` 정식 게이트 경로를 쓸 수 있게 한다.
 > CLI 는 서버 위 얇은 층(`lakatos/cli.py:1` "서버 API(:55170) 위의 얇은 조작층")이라 **서버가
