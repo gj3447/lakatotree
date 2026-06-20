@@ -1,0 +1,13 @@
+# 커버리지 설정 — D seed(test-infra). 커널(verdict+quant)은 ratchet 으로 회귀 차단.
+# 정본 측정: scripts/coverage_kernel.sh (verdict+quant, --cov-fail-under=95).
+[run]
+branch = True
+
+[report]
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    \.\.\.
