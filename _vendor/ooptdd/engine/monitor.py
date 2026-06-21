@@ -363,6 +363,125 @@ class RatioMonitor(Monitor):
         })
 
 
+_REDUCERS = {"sum": sum, "min": min, "max": max, "last": lambda vs: vs[-1]}
+
+
+class InvariantMonitor(Monitor):
+    """Cross-event conservation invariant: ``reduce(field@left) op reduce(field@right)``. Makes a
+    *relation between events* expressible (e.g. ``sum(amount@payment) == sum(amount@shipment)``,
+    ``count(request) == count(response)``) — the first primitive that catches a value-CONSISTENCY
+    bug the count/where checks are blind to (a payment emitted with no/zero amount, a half that
+    doesn't balance its whole).
+
+    Honesty boundary: this is INTRA-TRACE and single-authority — it catches inconsistency BETWEEN
+    emitted events, **not** emit-vs-truth (both sides are still the system's own self-report).
+
+    Non-monotone (both reductions can move), so it never latches — stays PEND and collapses to the
+    final comparison. ``==`` compares within ``tol``. If either side matched ZERO events (or a
+    non-count side collected no numeric value), there is nothing to relate → not a pass
+    (``invariant_no_evidence``): a conservation law over a stream that never emitted either side
+    must not read green."""
+
+    def __init__(self, left, right, op, tol, indicators):
+        super().__init__()
+        self.l_event, self.l_where = _resolve_matcher(left, indicators)
+        self.r_event, self.r_where = _resolve_matcher(right, indicators)
+        self.l_reduce, self.r_reduce = left.get("reduce", "sum"), right.get("reduce", "sum")
+        self.l_field, self.r_field = left.get("field"), right.get("field")
+        self.op, self.tol = op, float(tol)
+        self._l_vals: list = []
+        self._r_vals: list = []
+        self._l_n = self._r_n = 0
+
+    def step(self, ev, idx):
+        if _matches(ev, self.l_event, self.l_where):
+            self._l_n += 1
+            v = ev.get(self.l_field)
+            if self.l_reduce != "count" and isinstance(v, (int, float)) and not isinstance(v, bool):
+                self._l_vals.append(v)
+        if _matches(ev, self.r_event, self.r_where):
+            self._r_n += 1
+            v = ev.get(self.r_field)
+            if self.r_reduce != "count" and isinstance(v, (int, float)) and not isinstance(v, bool):
+                self._r_vals.append(v)
+
+    @staticmethod
+    def _reduce(reduce_, vals, n):
+        if reduce_ == "count":
+            return n
+        return _REDUCERS[reduce_](vals) if vals else None
+
+    def collapse(self, reachable):
+        lv = self._reduce(self.l_reduce, self._l_vals, self._l_n)
+        rv = self._reduce(self.r_reduce, self._r_vals, self._r_n)
+        base = {
+            "invariant": (f"{self.l_reduce}({self.l_field or self.l_event}) {self.op} "
+                          f"{self.r_reduce}({self.r_field or self.r_event})"),
+            "left": lv, "right": rv, "op": self.op, "tol": self.tol,
+        }
+        if self._l_n == 0 or self._r_n == 0 or lv is None or rv is None:
+            return self._stamp({**base, "passed": False, "reason": "invariant_no_evidence"})
+        passed = abs(lv - rv) <= self.tol if self.op == "==" else _OPS[self.op](lv, rv)
+        return self._stamp({**base, "passed": reachable and passed})
+
+
+class MetamorphicMonitor(Monitor):
+    """A metamorphic RELATION between two reductions over two matched event sets in the SAME stream
+    — the oracle-FREE escape (Chen, Cheung & Yiu 1998): a relation that holds iff the computation is
+    correct, needing NO absolute oracle. idempotency (run twice -> same total: ``equal``), scaling
+    (2x input -> 2x output: ``scaled`` factor), ``subset`` / ``monotone``. Catches a class of
+    wrong-but-strong behavior (a stub that ignores its input no longer scales) with no external
+    truth — but BOTH sides are still the system's own emit, so a fault COMMON to both runs
+    (deterministic-same-wrong: every retry double-charges by the same factor) is invisible: it
+    raises *difficulty*, not grounding. Non-monotone, so it never latches; zero evidence on a side
+    is ``metamorphic_no_evidence`` (a no-data run cannot pass)."""
+
+    def __init__(self, a, b, relation, reduce_, field, factor, tol, indicators):
+        super().__init__()
+        self.a_event, self.a_where = _resolve_matcher(a, indicators)
+        self.b_event, self.b_where = _resolve_matcher(b, indicators)
+        self.relation, self.reduce, self.field = relation, reduce_, field
+        self.factor, self.tol = float(factor), float(tol)
+        self._a_vals: list = []
+        self._b_vals: list = []
+        self._a_n = self._b_n = 0
+
+    def _take(self, ev, event, where, vals):
+        if _matches(ev, event, where):
+            v = ev.get(self.field)
+            if self.reduce != "count" and isinstance(v, (int, float)) and not isinstance(v, bool):
+                vals.append(v)
+            return 1
+        return 0
+
+    def step(self, ev, idx):
+        self._a_n += self._take(ev, self.a_event, self.a_where, self._a_vals)
+        self._b_n += self._take(ev, self.b_event, self.b_where, self._b_vals)
+
+    def _reduce(self, vals, n):
+        return n if self.reduce == "count" else (_REDUCERS[self.reduce](vals) if vals else None)
+
+    def collapse(self, reachable):
+        av, bv = self._reduce(self._a_vals, self._a_n), self._reduce(self._b_vals, self._b_n)
+        base = {"metamorphic": self.relation, "relation": self.relation, "reduce": self.reduce,
+                "left": av, "right": bv, "tol": self.tol}
+        if self.relation == "scaled":
+            base["factor"] = self.factor
+        if self._a_n == 0 or self._b_n == 0 or av is None or bv is None:
+            return self._stamp({**base, "passed": False, "reason": "metamorphic_no_evidence"})
+        if self.relation in ("equal", "idempotent"):
+            ok = abs(av - bv) <= self.tol
+        elif self.relation == "scaled":
+            ok = abs(bv - self.factor * av) <= self.tol
+        elif self.relation == "subset":
+            ok = bv <= av + self.tol
+        elif self.relation == "monotone":
+            ok = bv >= av - self.tol
+        else:
+            ok = False
+        return self._stamp({**base, "passed": reachable and ok})
+
+
 class ConformsMonitor(Monitor):
     """Ontology conformance: events of the target type must satisfy their EventType (required
     attrs, value constraints); in closed-world an undeclared in-scope event name is drift.
@@ -460,6 +579,18 @@ def compile_check(rule: dict, *, indicators: dict | None = None, ontology=None,
                             _norm_op(rule.get("op", ">=")), float(_want(rule)), indicators)
     if "conforms" in rule:
         return ConformsMonitor(rule["conforms"], ontology, closed_world=rule.get("closed_world"))
+    if "invariant" in rule:
+        spec = rule["invariant"]
+        return InvariantMonitor(spec.get("left", {}), spec.get("right", {}),
+                                _norm_op(spec.get("op", rule.get("op", "=="))),
+                                spec.get("tol", rule.get("tol", 0.0)), indicators)
+    if "metamorphic" in rule:
+        spec = rule["metamorphic"]
+        rel = spec.get("relation", "equal")
+        return MetamorphicMonitor(spec.get("a", {}), spec.get("b", {}),
+                                  "equal" if rel == "idempotent" else rel,
+                                  spec.get("reduce", "sum"), spec.get("field"),
+                                  spec.get("factor", 1.0), spec.get("tol", 0.0), indicators)
     event, where = _resolve_matcher(rule, indicators)
     return CountMonitor(event, where, _norm_op(rule.get("op", ">=")), int(_want(rule)))
 

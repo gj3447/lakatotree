@@ -171,5 +171,47 @@ def fetch(backend, spec: QuerySpec, clock: Clock | None = None) -> QueryResult:
     return backend.query(spec.cid, since_us=spec.window.since_us, until_us=spec.window.until_us)
 
 
+# ── the independent-oracle port (breaks self-consistency) ───────────────────────
+# Every other verdict input is the system's own emit, read back from a store the system writes —
+# so a green proves self-CONSISTENCY, not correctness. An ExternalProbe is the one input that does
+# NOT come from the trace: it reads a fact from the TERRITORY (a DB row, a file, a second
+# collector). An `external:` gate check asserts against it, so a green there means more than the
+# system agreeing with itself. It mirrors QueryResult's honesty fields so the engine treats a
+# missing probe as a loud misconfiguration (never a silent green) and an unreachable probe as
+# inconclusive (never a strict fail) — extending, not bypassing, the reachable/complete lattice.
+
+@dataclass
+class ProbeResult:
+    """Outcome of one external-state probe.
+
+    reachable: True iff the probe round-trip succeeded (regardless of value). False -> `?`.
+    value:     the external fact (any value), or None if absent / not extracted.
+    complete:  True iff the probe read the full fact (no truncation).
+    """
+
+    reachable: bool
+    value: object = None
+    complete: bool = True
+    #: The probe author's DECLARATION that the fact comes from a genuinely separate source of
+    #: truth (a different store/service/filesystem), not the same store the system wrote — only a
+    #: separate_source=True probe counts as independent CORROBORATION (closes the relocation hole:
+    #: a probe re-reading the system's own store is self-consistency moved one layer out). ooptdd
+    #: trusts this declaration; it cannot itself prove a source is independent.
+    separate_source: bool = False
+
+
+@runtime_checkable
+class ExternalProbe(Protocol):
+    """The independent-oracle port. Optional everywhere (default None): the engine treats a
+    missing probe as ``no_external_probe_configured`` (loud, never a silent green) and an
+    unreachable probe as inconclusive."""
+
+    def probe(self, kind: str, selector: object, cid: str) -> ProbeResult:
+        """Resolve ``(kind, selector)`` for ``cid`` to a :class:`ProbeResult`. ``kind`` names the
+        fact family the probe understands (``db_row`` / ``file`` / ``http`` / …); ``selector`` is
+        the probe-specific locator — NOT the system's own emitted event."""
+        ...
+
+
 #: A sleeper is the injectable counterpart to the Clock for the retry loop's waits.
 Sleeper = Callable[[float], None]

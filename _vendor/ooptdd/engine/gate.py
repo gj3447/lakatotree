@@ -70,12 +70,15 @@ gains is a real incremental monitor with anticipatory verdicts, surfaced per che
 from __future__ import annotations
 
 import os
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..domain.ports import Backend, Clock, QuerySpec, SystemClock, TimeWindow, fetch
 from .monitor import (  # the evaluation kernel
+    _OPS,
     _matches,  # noqa: F401  re-exported for backward compat (ooptdd.mutation)
+    _norm_op,
     _resolve_matcher,  # noqa: F401  re-exported for backward compat (ooptdd.mutation)
     compile_check,
     run_monitor,
@@ -99,6 +102,8 @@ class CheckCtx:
     indicators: dict
     ontology: object | None = None
     allow_errors: list | None = None
+    probe: object | None = None  # an ExternalProbe (independent oracle) for `external:` checks
+    cid: str | None = None
 
 
 CheckFn = Callable[[list, dict, CheckCtx], dict]
@@ -145,6 +150,13 @@ def load_gate(path: str) -> dict:
 
 def _label(chk: dict) -> str:
     """Human handle for a check (used to surface optional failures)."""
+    if "external" in chk:
+        return "external:" + str(chk.get("external"))
+    if "metamorphic" in chk:
+        return "metamorphic:" + str(chk.get("metamorphic"))
+    if "invariant" in chk:
+        inv = chk["invariant"]
+        return "invariant:" + (inv if isinstance(inv, str) else "expr")
     if "conforms" in chk:
         return "conforms:" + str(chk["conforms"])
     if "heartbeat" in chk:
@@ -211,6 +223,46 @@ def _check_conforms(events: list, rule: dict, ctx: CheckCtx) -> dict:
     return _run(rule, events, ctx)
 
 
+@check("invariant")
+def _check_invariant(events: list, rule: dict, ctx: CheckCtx) -> dict:
+    return _run(rule, events, ctx)
+
+
+@check("metamorphic")
+def _check_metamorphic(events: list, rule: dict, ctx: CheckCtx) -> dict:
+    return _run(rule, events, ctx)  # within-run: pure, two matched subsets of the one stream
+
+
+@check("external")
+def _check_external(events: list, rule: dict, ctx: CheckCtx) -> dict:
+    """The independent-oracle check: assert against an external fact (ctx.probe), NOT the system's
+    own emit. A missing probe is a loud misconfiguration (never a silent green); an unreachable
+    probe is inconclusive (surfaced via ``probe_reachable=False``, never a strict fail)."""
+    spec = rule["external"]
+    op = _norm_op(spec.get("op", "=="))
+    base = {"external": spec.get("kind", "?"), "op": op, "want": spec.get("want"),
+            "selector": spec.get("selector")}
+    if ctx.probe is None:
+        return {**base, "passed": False, "probe_reachable": None,
+                "reason": "no_external_probe_configured"}
+    res = ctx.probe.probe(spec.get("kind"), spec.get("selector"), ctx.cid)
+    if not res.reachable or not getattr(res, "complete", True):
+        return {**base, "passed": False, "probe_reachable": False, "value": None,
+                "reason": "external_probe_unreachable"}
+    value, want = res.value, spec.get("want")
+    if want is None:
+        passed = value is not None  # the external fact merely has to EXIST
+    elif op == "==":
+        try:
+            passed = abs(value - want) <= float(spec.get("tol", 0.0))
+        except TypeError:
+            passed = value == want
+    else:
+        passed = _OPS[op](value, want)
+    return {**base, "value": value, "probe_reachable": True,
+            "separate_source": bool(getattr(res, "separate_source", False)), "passed": bool(passed)}
+
+
 def _eval_count(events: list, rule: dict, ctx: CheckCtx) -> dict:
     """The default check (no predicate keyword): a :class:`CountMonitor` over the rule's
     event/where compared with op/target. The documented fallback when no registered
@@ -229,6 +281,9 @@ _KEY_PROBES = (
     ("present", "present"),
     ("ratioMetric", "ratioMetric"),
     ("conforms", "conforms"),
+    ("invariant", "invariant"),
+    ("metamorphic", "metamorphic"),
+    ("external", "external"),
 )
 
 
@@ -242,6 +297,104 @@ def _detect_check_key(rule: dict) -> str | None:
         if key in rule:
             return key
     return None
+
+
+# ---- strength / scope signal (honesty, not an oracle) ----------------------- #
+# A GREEN gate must not be misread as "the system is correct": it only proves the events the
+# author NAMED arrived with the asserted shape. `_strength` classifies a check's discriminating
+# power (from the rule alone), so a gate can self-report HOW HARD it asserted — an all
+# `existence-only` gate proved tokens were emitted, pinned no field, ordered nothing, forbade
+# nothing. Higher strength is still author-vs-author (the `where` value descends from the same
+# mental model) — a harder self-check, NOT an external oracle (see METHODOLOGY "log-free zones").
+_STRENGTH_BY_KEY = {
+    "absent": "forbid", "must_order": "ordered", "ratioMetric": "ratio",
+    "heartbeat": "liveness", "conforms": "conformance", "invariant": "invariant",
+    "metamorphic": "metamorphic", "external": "external",
+}
+
+# Discriminating-power weight per strength class — basis of the scalar strength score that turns
+# "the agent weakened the gate to win" into a measurable REGRESSION (see strength_fingerprint).
+# `external` ranks highest: it is the only class whose input is NOT the system's own self-report.
+_STRENGTH_RANK = {
+    "existence-only": 1, "bounded": 2, "threshold": 2,
+    "value-pinned": 3, "ordered": 3, "forbid": 3,
+    "ratio": 4, "liveness": 4, "conformance": 4, "invariant": 5, "metamorphic": 5, "external": 6,
+}
+
+
+def _strength(rule: dict) -> str:
+    """Discriminating-power class of a check (pure, total over every registry key + the default
+    count). Low→high: existence-only < bounded < value-pinned/ordered/forbid/threshold <
+    ratio/liveness/conformance."""
+    key = _detect_check_key(rule)
+    if key in _STRENGTH_BY_KEY:
+        return _STRENGTH_BY_KEY[key]
+    if key == "present":
+        ms = rule.get("present") or []
+        return "value-pinned" if any(m.get("where") for m in ms) else "existence-only"
+    # default count check (and any custom predicate without a richer shape)
+    if rule.get("where"):
+        return "value-pinned"
+    if rule.get("threshold") is not None:
+        return "threshold"
+    tight = _norm_op(rule.get("op", ">=")) in ("==", "!=", "<=", "<")
+    return "bounded" if tight else "existence-only"
+
+
+def _rule_event_names(rule: dict) -> set[str]:
+    """Event names a single gate rule asserts on, best-effort across every check shape — used to
+    measure how much of the OBSERVED stream the gate actually names (the closed-world signal)."""
+    names: set[str] = set()
+    for key in ("present", "absent", "forbid"):
+        v = rule.get(key)
+        for m in (v if isinstance(v, list) else [v] if isinstance(v, dict) else []):
+            if isinstance(m, dict):
+                names.add(m.get("event"))
+    for key in ("must_order", "trajectory"):
+        for part in rule.get(key) or []:
+            names.add(part if isinstance(part, str) else
+                      part.get("event") if isinstance(part, dict) else None)
+    for container, sides in (("ratioMetric", ("good", "total")), ("invariant", ("left", "right")),
+                             ("metamorphic", ("a", "b"))):
+        c = rule.get(container)
+        if isinstance(c, dict):
+            for side in sides:
+                if isinstance(c.get(side), dict):
+                    names.add(c[side].get("event"))
+    names.add(rule.get("heartbeat"))
+    if isinstance(rule.get("conforms"), str):
+        names.add(rule["conforms"])
+    names.add(rule.get("event"))
+    return {n for n in names if isinstance(n, str) and n}
+
+
+def _check_charged(chk: dict) -> bool:
+    """Did a check actually SEE matching evidence (positive confirmation), vs pass on absence /
+    emptiness? The charge-ratio over gating checks measures how much of a green is backed by
+    observed events rather than by nothing happening — distinct from stream-coverage."""
+    if "got" in chk:
+        return chk["got"] > 0
+    if "present" in chk:
+        return len(chk.get("missing", [])) < len(chk.get("present", []))
+    if "must_order" in chk:
+        return any(v is not None for v in chk.get("firsts", {}).values())
+    if "ratio" in chk:
+        return chk.get("total", 0) > 0
+    if "invariant" in chk:
+        return chk.get("reason") != "invariant_no_evidence"
+    if "metamorphic" in chk:
+        return chk.get("reason") != "metamorphic_no_evidence"
+    if "external" in chk:
+        return chk.get("probe_reachable") is True and chk.get("value") is not None
+    if "heartbeat" in chk:
+        return chk.get("beats", 0) > 0
+    if "conforms" in chk:
+        # evidence = it validated a declared-type event OR saw a closed-world drift offender
+        # (`unknown`). ontology_not_loaded has unknown==[] so it stays uncharged (it saw nothing).
+        return chk.get("checked", 0) > 0 or bool(chk.get("unknown"))
+    if "absent" in chk:
+        return chk.get("violations", 0) > 0  # absent is "charged" only if it SAW an offender
+    return False
 
 
 def _resolve_cid(spec: dict) -> str:
@@ -262,6 +415,7 @@ def evaluate(
     future_buffer_s: int | None = None,
     ontology=None,
     clock: Clock | None = None,
+    probe=None,
 ) -> dict:
     """Run a gate spec once: read the backend, then judge the events.
 
@@ -296,7 +450,7 @@ def evaluate(
     # getattr default keeps duck-typed/older result objects (no `complete` field) working.
     return evaluate_events(
         spec, res.events, reachable=res.reachable,
-        complete=getattr(res, "complete", True), ontology=ontology, cid=cid,
+        complete=getattr(res, "complete", True), ontology=ontology, cid=cid, probe=probe,
     )
 
 
@@ -308,6 +462,7 @@ def evaluate_events(
     complete: bool = True,
     ontology=None,
     cid: str | None = None,
+    probe=None,
 ) -> dict:
     """Judge an already-fetched event set against a gate spec (no I/O).
 
@@ -341,7 +496,8 @@ def evaluate_events(
     # read (complete=False) is incomplete evidence and gates every check, exactly like an
     # unreachable store. The top-level result still reports the true reachable/complete.
     ctx = CheckCtx(reachable=reachable and complete, indicators=indicators,
-                   ontology=ontology, allow_errors=spec.get("allow_errors"))
+                   ontology=ontology, allow_errors=spec.get("allow_errors"),
+                   probe=probe, cid=cid)
     checks = []
     for rule in rules:
         key = _detect_check_key(rule)
@@ -353,10 +509,23 @@ def evaluate_events(
         # drop the flag to promote it to a hard gate (see `pending_satisfied`).
         chk["pending"] = bool(rule.get("pending", False))
         chk["weight"] = float(rule.get("weight", 1.0))  # promptfoo per-assertion weight
+        chk["strength"] = _strength(rule)  # discriminating-power class (signal, not an oracle)
+        # grounding: where the truth comes from — only a separate-source `external` check is
+        # CORROBORATED by an independent oracle; everything else (incl. a probe re-reading the
+        # system's own store, separate_source=False) is DERIVED-SELF. Orthogonal to strength.
+        chk["grounding"] = ("corroborated" if chk["strength"] == "external"
+                            and chk.get("separate_source") else "derived-self")
+        chk["charged"] = _check_charged(chk)  # did it see matching evidence (vs pass on absence)?
         checks.append(chk)
     # A check gates only if it is neither optional (#10) nor pending (Pact). Optional/pending
     # misses are surfaced separately so a silently-degraded stream never reads as clean.
     gating = [c for c in checks if not c["optional"] and not c["pending"]]
+    # A gate must assert something that can FAIL to be a clean pass. The old `bool(checks)` guard
+    # only caught ZERO checks; a gate whose every check is optional/pending (gating==0) ALSO
+    # asserts nothing that can fail and must equally not be GREEN — this is the agent-loop's free
+    # weakening move (mark-optional / mark-pending to turn a gate green). `vacuous` is the reason.
+    asserts_anything = bool(gating)
+    vacuous = bool(checks) and not asserts_anything
     threshold = spec.get("threshold")
     if threshold is None:
         # all-or-nothing (default, unchanged): every gating check must pass.
@@ -369,17 +538,75 @@ def evaluate_events(
         score = (sum(c["weight"] for c in gating if c["passed"]) / wtot) if wtot else 1.0
         required_ok = score >= float(threshold)
     # A store we never reached (reachable=False) is INFRA and a truncated read
-    # (complete=False) is incomplete evidence — neither is ever a clean pass (CLI exit 2).
-    # A gate with NO checks at all (empty `expect:` and no injected forbid wing) asserts
-    # nothing — `all([])` is vacuously True — so it would report GREEN while proving nothing
-    # arrived. That is the false-green this tool exists to kill, so a check-less gate is never
-    # a clean pass. (Checks that are all optional/pending are a different, intentional case.)
+    # (complete=False) is incomplete evidence — neither is ever a clean pass (CLI exit 2). And a
+    # gate that asserts nothing GATING (empty expect, or every check optional/pending) is never a
+    # clean pass either (`asserts_anything`, above). `scope` reports what — and how hard — this
+    # verdict actually asserted, so GREEN cannot be misread as "the system is correct": it is a
+    # closed-world claim over the events the author NAMED, not over un-named behavior.
+    # Stream charge-coverage: of the event TYPES that actually arrived for this cid, how many
+    # does the gate even name? `unasserted_observed` are events the system emitted that NO check
+    # observes — a measured slice of the closed-world gap (the rest, un-emitted paths, stays
+    # invisible). A green gate that names 1 of 9 arrived types is technically green and almost
+    # blind; this puts a number on it.
+    observed = {e.get("event") for e in events if e.get("event")}
+    asserted = set().union(*(_rule_event_names(r) for r in rules)) if rules else set()
+    named = observed & asserted
+    # An `external:` check whose probe was unreachable surfaces probe_reachable=False so the verdict
+    # layer maps it to inconclusive (?), never a strict fail — the same honesty as an unreachable
+    # store. A missing probe (no_external_probe_configured) is a loud RED, not a silent green.
+    probe_reachable = not any(c.get("probe_reachable") is False for c in checks)
+    # oracle provenance: how many GATING checks are CORROBORATED by an independent source (only
+    # `external:`) vs DERIVED-SELF (the system's own emit). single_authority=True is the meta-
+    # blind-spot made visible: this green is the system agreeing with itself. charge: how many
+    # gating checks actually SAW matching evidence (vs passed on absence) — distinct from coverage.
+    # Corroboration is an ACHIEVEMENT, not a check kind: a separate-source `external:` the probe
+    # could not reach OR that REFUTED the system (passed=False) corroborates nothing — counting it
+    # would issue the "independently corroborated" receipt the oracle denied, and would let a
+    # refuting oracle satisfy require_corroboration. So the corroboration must have actually passed.
+    corroborated = sum(
+        1 for c in gating if c.get("grounding") == "corroborated" and c.get("passed")
+    )
+    charged = sum(1 for c in gating if c.get("charged"))
+    # require_corroboration (spec key or env OOPTDD_REQUIRE_CORROBORATION, default OFF): promote the
+    # single_authority SIGNAL to a GATE — a gate whose every check is the system's own self-report
+    # (zero separate-source corroboration) is not a clean pass. A fixable misconfiguration (RED),
+    # not inconclusive: add a separate-source `external:` or accept self-consistency by leaving OFF.
+    rc = spec.get("require_corroboration")
+    if rc is None:
+        rc = _truthy(os.getenv("OOPTDD_REQUIRE_CORROBORATION"))
+    rc = bool(rc)
+    uncorroborated = rc and asserts_anything and corroborated == 0
     result = {
-        "ok": reachable and complete and bool(checks) and required_ok,
+        "ok": reachable and complete and asserts_anything and required_ok and not uncorroborated,
         "reachable": reachable,
         "complete": complete,
+        "probe_reachable": probe_reachable,
+        "vacuous": vacuous,
+        "uncorroborated": uncorroborated,
         "cid": cid,
         "checks": checks,
+        "oracle": {
+            "gating": len(gating),
+            "corroborated": corroborated,
+            "derived_self": len(gating) - corroborated,
+            "single_authority": bool(gating) and corroborated == 0,
+            "enforced": rc,
+        },
+        "scope": {
+            "gating": len(gating),
+            "optional": sum(1 for c in checks if c["optional"]),
+            "pending": sum(1 for c in checks if c["pending"]),
+            "total": len(checks),
+            "asserts_anything": asserts_anything,
+            "by_strength": dict(Counter(c["strength"] for c in gating)),
+            "observed_event_types": len(observed),
+            "named_event_types": len(named),
+            "unasserted_observed": sorted(observed - asserted)[:10],
+            "stream_coverage": (len(named) / len(observed)) if observed else None,
+            "charged": charged,
+            "charge_ratio": (charged / len(gating)) if gating else None,
+            "uncharged": [_label(c) for c in gating if not c.get("charged")][:10],
+        },
         "optional_failed": [_label(c) for c in checks if c["optional"] and not c["passed"]],
         "pending_failed": [_label(c) for c in checks if c["pending"] and not c["passed"]],
         "pending_satisfied": [_label(c) for c in checks if c["pending"] and c["passed"]],
@@ -388,6 +615,114 @@ def evaluate_events(
         result["score"] = score
         result["threshold"] = float(threshold)
     return result
+
+
+def green_banner(result: dict) -> str:
+    """One honest line for a GREEN gate: WHAT (scope) and HOW HARD (strength) it actually
+    asserted, so green is not read as "the system is correct". Pure — shared by the CLI."""
+    sc = result.get("scope", {})
+    bys = sc.get("by_strength") or {}
+    profile = " ".join(f"{k}={v}" for k, v in sorted(bys.items())) or "none"
+    line = (
+        f"GREEN closed-world over {sc.get('total', 0)} named expectation(s): "
+        f"{sc.get('gating', 0)} gating, {sc.get('optional', 0)} optional, "
+        f"{sc.get('pending', 0)} pending [by-strength: {profile}]. Certifies the named events "
+        "ARRIVED with the asserted shape; does NOT certify the system is correct (un-named "
+        f"behavior is unobserved). (cid={result.get('cid')})"
+    )
+    if sc.get("gating") and set(bys) <= {"existence-only"}:
+        line += (" WARNING: every gating check is existence-only — proves tokens were emitted, "
+                 "not that they had any effect.")
+    if sc.get("stream_coverage") is not None:
+        line += (f" Stream-coverage: {sc.get('named_event_types')}/"
+                 f"{sc.get('observed_event_types')} arrived event-type(s) named")
+        un = sc.get("unasserted_observed") or []
+        line += f" ({len(un)} arrived UNOBSERVED: {','.join(un[:5])})." if un else "."
+    orc = result.get("oracle") or {}
+    if orc.get("gating"):
+        line += (" Oracle: single authority — 0 checks corroborated by an independent source "
+                 "(add an `external:` check to break self-consistency)."
+                 if orc.get("single_authority")
+                 else f" Oracle: {orc.get('corroborated')}/{orc.get('gating')} independently"
+                      " corroborated.")
+    if sc.get("charge_ratio") is not None:
+        line += f" Charge: {sc.get('charged')}/{sc.get('gating')} gating check(s) saw evidence."
+    return line
+
+
+def lint_spec(spec: dict) -> list[dict]:
+    """Static, offline strength audit of a gate spec — the "pseudo-tested gate" detector, run
+    BEFORE any events, so a vacuously-satisfiable gate is caught at author time, not after a green
+    run. Pure. Returns findings ``[{code, severity, label, message}]`` (``high`` = vacuous/blocking,
+    ``medium`` = weak):
+
+    - **VAC0** no expectations at all (`expect:` empty).
+    - **VAC1** zero *gating* checks — every check optional/pending; the gate can never fail.
+    - **VAC2** `threshold < 1.0` with no `justification:` — a quorum that licenses silent drops.
+    - **VAC3** a gating `existence-only` check — proves a token arrived, pins no field/order/forbid.
+    """
+    rules = list(spec.get("expect", []))
+    if not rules:
+        return [{"code": "VAC0", "severity": "high", "label": "(spec)",
+                 "message": "empty `expect:` — gate declares no expectations, asserts nothing."}]
+    out: list[dict] = []
+    gating = [r for r in rules if not r.get("optional") and not r.get("pending")]
+    if not gating:
+        out.append({"code": "VAC1", "severity": "high", "label": "(spec)",
+                    "message": "no gating checks — every check is optional/pending; the gate can "
+                               "never fail (vacuous). Mark at least one check gating."})
+    t = spec.get("threshold")
+    if t is not None and float(t) < 1.0 and not spec.get("justification"):
+        out.append({"code": "VAC2", "severity": "high", "label": "(spec)",
+                    "message": f"threshold {t} < 1.0 silently licenses dropping up to "
+                               f"{(1 - float(t)) * 100:.0f}% of expectations every run; add a "
+                               "`justification:` field if this quorum is intentional."})
+    for i, r in enumerate(gating):
+        if _strength(r) == "existence-only":
+            out.append({"code": "VAC3", "severity": "medium", "label": _label(r),
+                        "message": f"check #{i} ({_label(r)}) is existence-only — proves a token "
+                                   "arrived, pins no field/order/forbid. Add a `where`, "
+                                   "`must_order`, `absent`, or `invariant` to discriminate."})
+    return out
+
+
+def strength_fingerprint(spec: dict) -> dict:
+    """A scalar + profile summary of a gate's discriminating power, computed from the spec alone
+    (pure). It is the basis for catching a *weakening* — dropping a `where`, marking a check
+    optional/pending, lowering a `threshold` — as a strength REGRESSION the way CI catches a
+    coverage drop, which directly counters the agent-loop's incentive to win by weakening the gate.
+    A quorum `threshold < 1` scales the score down (it licenses dropping expectations)."""
+    rules = list(spec.get("expect", []))
+    gating = [r for r in rules if not r.get("optional") and not r.get("pending")]
+    strengths = [_strength(r) for r in gating]
+    threshold = float(spec.get("threshold", 1.0))
+    raw = sum(_STRENGTH_RANK.get(s, 1) for s in strengths)
+    return {
+        "gating": len(gating),
+        "by_strength": dict(Counter(strengths)),
+        "min_threshold": threshold,
+        "score": round(raw * threshold, 4),
+    }
+
+
+def compare_strength(baseline: dict, current: dict) -> dict:
+    """Did ``current`` get WEAKER than ``baseline``? Returns ``{weakened, regressions[], ...}`` —
+    a non-empty ``regressions`` list (fewer gating checks, a lower score/threshold, or a stronger
+    check class that disappeared) is a strength regression to fail in CI."""
+    regs: list[str] = []
+    if current["gating"] < baseline["gating"]:
+        regs.append(f"gating checks dropped {baseline['gating']} -> {current['gating']}")
+    if current["score"] < baseline["score"]:
+        regs.append(f"strength score dropped {baseline['score']} -> {current['score']}")
+    if current["min_threshold"] < baseline["min_threshold"]:
+        regs.append(f"threshold lowered {baseline['min_threshold']} -> {current['min_threshold']}")
+    bb, cb = baseline.get("by_strength", {}), current.get("by_strength", {})
+    for cls in ("invariant", "ratio", "conformance", "liveness",
+                "ordered", "forbid", "value-pinned"):
+        if cb.get(cls, 0) < bb.get(cls, 0):
+            regs.append(f"{cls} checks dropped {bb.get(cls, 0)} -> {cb.get(cls, 0)}")
+    return {"weakened": bool(regs), "regressions": regs,
+            "baseline_score": baseline["score"], "current_score": current["score"]}
 
 
 def can_i_deploy(results: list[dict]) -> dict:
