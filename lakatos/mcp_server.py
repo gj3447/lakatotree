@@ -111,6 +111,13 @@ def eureka(name: str, tag: str) -> str:
 
 
 @mcp.tool()
+def graph(name: str) -> str:
+    """시각 트리 GUI 데이터 척추(E Phase 1) — node(색/klass 본류·퇴행·생존/클릭 패널) + edge(BRANCHED_FROM)
+    + frontier + agenda(human-in-the-loop 안건). 프론트엔드(Phase 2)가 이걸 렌더."""
+    return json.dumps(_get(f'/api/graph/{name}'), ensure_ascii=False)
+
+
+@mcp.tool()
 def agm_revise(spec_json: str) -> str:
     """AGM 신념개정(P1) — spec_json={op('expansion'|'contraction'|'revision'|'demote_canonical'),
     base[],new?,target_id?,contradicts[]?,old_canonical_id?,allow_hard_core?}.
