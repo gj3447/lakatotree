@@ -9,10 +9,12 @@ MERGE 재실행이 수렴함을 영수증으로 고정한다. prom C 의 atomic 
 clean clone 에 testcontainers 가 없어도 collection 이 깨지지 않게 fixture 안에서 lazy importorskip.
 """
 import os
+from pathlib import Path
 
 import pytest
 
 LAKATOS_IT = os.getenv('LAKATOS_IT')
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 def pytest_configure(config):
@@ -37,3 +39,22 @@ def neo4j_driver():
             yield driver
         finally:
             driver.close()
+
+
+@pytest.fixture(scope='session')
+def pg_kw():
+    """세션 1회 실 PostgreSQL 컨테이너 + schema.sql 적용 → psycopg2 연결 kwargs(B1 reconcile 영수증용)."""
+    if not LAKATOS_IT:
+        pytest.skip('LAKATOS_IT 미설정 — 통합티어 skip (hermetic 단위 suite 보존)')
+    pg_mod = pytest.importorskip('testcontainers.postgres')
+    import psycopg2
+    with pg_mod.PostgresContainer('postgres:16-alpine') as pg:
+        kw = dict(host=pg.get_container_host_ip(), port=int(pg.get_exposed_port(5432)),
+                  user=pg.username, password=pg.password, dbname=pg.dbname)
+        conn = psycopg2.connect(**kw)
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute((_ROOT / 'server' / 'schema.sql').read_text(encoding='utf-8'))
+        finally:
+            conn.close()
+        yield kw

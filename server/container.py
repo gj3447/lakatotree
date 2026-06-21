@@ -15,10 +15,13 @@ import json
 import logging
 from collections.abc import Iterable
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg2.pool
 from psycopg2 import OperationalError as PgOperationalError
+
+from lakatos.io.reconcile import outbox_id, plan_reconcile
 
 
 class AppContainer:
@@ -82,14 +85,56 @@ class AppContainer:
 
     def hist(self, tree: str, op: str, node_tag: str | None = None, payload: dict | None = None) -> None:
         # ROB-1: 이력(PG)=best-effort audit, KG=truth. KG 커밋 후 PG 다운이 mutation 을 503 으로
-        # 되돌리면 그래프-이력 분기가 더 나빠지므로, PG 연결오류는 삼키고 경고만(이력만 유실).
+        # 되돌리면 그래프-이력 분기가 더 나빠지므로 PG 연결오류는 mutation 을 막지 않는다.
+        # B1(override 2026-06-21): 단 *조용히 잃지 않는다* — PG 실패 시 KG OutboxEntry(정본)에 기록하고
+        #   reconcile_outbox 가 멱등 재적용한다. KG=truth/PG=best-effort 불변 유지하되 발산을 auditable 화.
+        payload = payload or {}
+        pj = json.dumps(payload, ensure_ascii=False)
         try:
             with self.pg() as c, c.cursor() as cur:
                 cur.execute(
                     "INSERT INTO history(tree, op, node_tag, payload) VALUES (%s,%s,%s,%s)",
-                    (tree, op, node_tag, json.dumps(payload or {}, ensure_ascii=False)))
+                    (tree, op, node_tag, pj))
         except PgOperationalError as e:
-            self._logger.error("hist PG 적재 실패(best-effort, KG 는 정상): %s", type(e).__name__)
+            ts = datetime.now(timezone.utc).isoformat()
+            oid = outbox_id(tree, op, node_tag, payload, ts)
+            try:
+                self.kg("""MERGE (o:OutboxEntry {id:$id})
+                           ON CREATE SET o.tree=$tree, o.op=$op, o.node_tag=$tag, o.payload=$payload,
+                                         o.status='pending', o.created_at=$ts, o.reason=$reason""",
+                        id=oid, tree=tree, op=op, tag=node_tag, payload=pj, ts=ts, reason=type(e).__name__)
+                self._logger.warning(
+                    "hist PG 실패 → OutboxEntry %s 기록(reconcile 대기, 이력 보존): %s", oid, type(e).__name__)
+            except Exception as ke:   # noqa: BLE001 — KG 도 다운 = 진짜 best-effort 한계(둘 다 유실)
+                self._logger.error(
+                    "hist PG+KG 동시 실패(이력 유실): %s / %s", type(e).__name__, type(ke).__name__)
+
+    def reconcile_outbox(self) -> dict:
+        """B1: pending OutboxEntry(KG 정본)를 PG history 에 *멱등* 재적용(ON CONFLICT event_id DO NOTHING).
+        KG↔PG 발산 복구 — PG 가 따라잡되 그 따라잡음이 감사가능. 반환 {pending, replayed, replayed_count, ...}."""
+        rows = self.kg(
+            "MATCH (o:OutboxEntry {status:'pending'}) "
+            "RETURN o.id AS id, o.tree AS tree, o.op AS op, o.node_tag AS node_tag, o.payload AS payload")
+        plan = plan_reconcile([dict(r) for r in (rows or [])])
+        replayed: list[str] = []
+        pg_down = False
+        for e in plan['to_replay']:
+            try:
+                with self.pg() as c, c.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO history(tree, op, node_tag, payload, event_id) "
+                        "VALUES (%s,%s,%s,%s,%s) "
+                        "ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING",
+                        (e['tree'], e['op'], e['node_tag'], e['payload'], e['id']))
+                self.kg("MATCH (o:OutboxEntry {id:$id}) SET o.status='applied', o.applied_at=$ts",
+                        id=e['id'], ts=datetime.now(timezone.utc).isoformat())
+                replayed.append(e['id'])
+            except PgOperationalError:
+                pg_down = True
+                break   # PG 여전히 다운 — 나머지 pending 유지(다음 sweep 재시도)
+        return {'pending': plan['pending_total'], 'replayed': replayed,
+                'replayed_count': len(replayed),
+                'still_pending': plan['pending_total'] - len(replayed), 'pg_down': pg_down}
 
     # ── lifecycle ──────────────────────────────────────────────────────
     def close(self) -> list:
