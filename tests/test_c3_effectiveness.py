@@ -7,7 +7,9 @@
 "Lakatos 를 옳게 기계화했다"는 증거지 *독립* 효과성 증명이 아니다(독립 증명=Phase-2 전향 사전등록).
 이 테스트가 고정하는 것: 측정 machinery 가 돌고, 그 위에서 engine 이 self-report 를 이긴다(Phase-1 신호).
 """
-from examples.c3_effectiveness_corpus import CORPUS, run
+from examples.c3_effectiveness_corpus import (
+    CORPUS, register_prospective, resolve_prospective, run, score_prospective,
+)
 
 
 def test_corpus_has_ground_truth_and_min_sample_both_classes():
@@ -31,3 +33,15 @@ def test_self_report_hallucinates_on_adhoc_patches_engine_does_not():
     assert r['self_report']['hallucination_rate'] > r['engine']['hallucination_rate']
     assert r['engine']['hallucination_rate'] == 0.0
     assert 'lorentz_ether_contraction' in r['self_report']['false_progressives']
+
+
+# ── Phase 2 (prospective) harness — 기계장치 검증(실 해소는 종단) ─────────────
+def test_prospective_harness_register_resolve_score():
+    e1 = register_prospective('q-open-1', pred_credence=0.8, novel_target_desc='X>θ')
+    e2 = register_prospective('q-open-2', pred_credence=0.7, novel_target_desc='Y<θ')
+    assert e1['status'] == 'open' and score_prospective([e1, e2])['resolved'] == 0   # 미해소 = open
+    r1 = resolve_prospective(e1, novel_confirmed=True)                                # 신뢰 0.8 + 확증 → hit
+    assert r1['status'] == 'resolved' and r1['hit'] is True
+    s = score_prospective([r1, e2])
+    assert s['resolved'] == 1 and s['open'] == 1 and 0.0 <= s['brier'] <= 1.0
+    assert '독립 효과성' in s['note']                  # 순환성 없는 gold standard 명시
