@@ -27,7 +27,7 @@ from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
 from lakatos.io.lineage import by_output, roots as lin_roots
 from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import TypeAdapter
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 import psycopg2.pool
@@ -67,7 +67,7 @@ from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
-from server.graph_view import tree_graph
+from server.graph_view import tree_dot, tree_dot_view, tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
 from server.container import AppContainer
 from server.settings import ServerSettings
@@ -443,6 +443,21 @@ def tree_graph_view(name: str):
     프론트엔드(Phase 2)가 렌더(브랜치 줌, 노드 클릭 패널, 본류·퇴행·생존 색). /api/tree 아님(app-owned)."""
     td = tree_data(name)
     return tree_graph(td, compute_metrics(td))
+
+
+@app.get('/api/graph/{name}/dot', response_class=PlainTextResponse)
+def tree_graph_dot(name: str):
+    """E Phase 2 — 트리를 Graphviz DOT(표준 시각 포맷)로. `dot -Tsvg` 로 렌더."""
+    td = tree_data(name)
+    return tree_dot(tree_graph(td, compute_metrics(td)))
+
+
+@app.get('/api/graph/{name}/view', response_class=HTMLResponse)
+def tree_graph_html(name: str):
+    """E Phase 2 — 브라우저 뷰어(빌드 0): DOT 임베드 + viz.js CDN 렌더. 본류/퇴행/생존 색."""
+    td = tree_data(name)
+    g = tree_graph(td, compute_metrics(td))
+    return tree_dot_view(name, tree_dot(g))
 
 
 @app.get('/api/leaderboard')
