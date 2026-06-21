@@ -349,13 +349,18 @@ def _foundation_from_rows(rows) -> FoundationMap | None:
 
 
 def _reproducible_for_node(name: str, tag: str) -> bool | None:
-    """F-CON-1: 노드 result_path 가 계보에 기록된 완성본이면 raw-root 재현가능 여부.
+    """F-CON-1 + R-AUDIT-1(적대 재검증 2026-06-21): 노드 result_path 가 raw-root 서 재현가능한지 —
+    *현실이 끊는 영수증*으로만 True.
 
-    엄격 재현성 = 완성본의 *모든 궁극 root 가 선언된 source(kind='source')* 일 때만 True.
-    reproducibility_gaps 단독은 "derivation 기록은 됐지만 inputs 빈 비-source(dangling leaf)"
-    를 못 잡아 가짜 reproducible=True 를 냈다(나생문 CON-1/F-CON-1-A/B/LINEAGE-1 수렴 확인).
-    roots() 는 그런 leaf 도 root 로 반환하므로 ⊆declared 검사가 갭+dangling 둘 다 포섭한다.
-    result_path 없음 or 계보 미기록 → None(증명 노드 등 — 재현성 게이트 비적용, 차단 안 함).
+    엄격 재현성 = 완성본의 모든 궁극 root 가 선언된 source(kind='source')이고, ★그 source 들의 sha 를
+    서버가 *디스크에서 재계산*해 기록값과 일치할 때만 True. client 가 lineage ledger 에 kind='source'/sha 를
+    자기선언하는 것만으론 절대 True 가 아니다 — 그게 R-AUDIT-1 forge 였다(노드 자기 출력을 kind='source' 로
+    POST → roots ⊆ declared 통과 → floor 가 위조 영수증으로 CANONICAL 승격). 영수증은 우리가 쓰는 게 아니라
+    현실이 끊어 준다.
+      • 계보 SHAPE 끊김(dangling/비-source root) → False(차단; 기존 F-CON-1 동작 보존, 나생문 CON-1/F-CON-1-A/B).
+      • SHAPE 는 맞으나 source sha 검증 불가(파일 부재/불일치) → None(증명 못 함 → floor 영수증 못 줌, 차단은 안 함).
+      • result_path 없음/계보 미기록 → None(증명 노드 등 — 게이트 비적용).
+    ★완전 무위조(실제 producer replay 실행)는 G-Web Part A 후속(미구현). 현재는 root source 산출물의 sha 현실대조까지.
     이게 set_verdict 에서 synthesize_promotion(reproducible=) 으로 흘러 RebuildFromRaw 게이트 발동.
     """
     rows = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -369,11 +374,16 @@ def _reproducible_for_node(name: str, tag: str) -> bool | None:
     bo = by_output(ds)
     if rp not in bo:
         return None
-    declared = {d.output for d in ds if d.kind == 'source'}
-    if rp in declared:
-        return True
     rts = lin_roots(rp, bo)   # 궁극 root 집합 (derivation 없거나 inputs 빈 leaf 포함)
-    return bool(rts) and rts.issubset(declared)   # 빈 closure(사이클/고립)=재현불가
+    declared = {d.output for d in ds if d.kind == 'source'}
+    if not rts or not rts.issubset(declared):
+        return False   # 빈 closure(사이클/고립)·dangling·비-source root = 재현불가(차단)
+    recorded = {d.output: d.output_sha for d in ds}
+    for src in rts:   # ★현실 대조: 선언 source 의 sha 를 서버가 디스크서 재계산해 일치 확인
+        server_sha = _path_sha(src)
+        if not server_sha or server_sha != recorded.get(src):
+            return None   # 파일 부재/sha 불일치 → client 자기선언만으론 영수증 못 줌(증명 불가)
+    return True
 
 
 def _foundation_rows(name: str):
