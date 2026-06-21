@@ -37,7 +37,23 @@ def test_eigentrust_dangling_redistribution():   # 나생문 F-MATH-3
 
 
 # ── P6 배선: 실 observation 그래프 → 글로벌 출처신뢰 (eigentrust 런타임 배선) ──
-from lakatos.trust import build_trust_graph, global_source_trust
+from lakatos.trust import build_trust_graph, global_source_trust, authoritative_url
+
+
+def test_authoritative_url_matches_real_publisher_host():
+    for u in ('https://www.sciencedirect.com/science/article/x', 'https://sciencedirect.com/x',
+              'https://datatracker.ietf.org/doc/rfc1', 'https://www.iso.org/standard/1.html'):
+        assert authoritative_url(u) is True, u
+
+
+def test_authoritative_url_rejects_domain_spoofing():
+    # ★적대 재검증 2026-06-21: substring 매칭이 뚫리던 스푸핑 벡터 — host 경계로 전부 차단
+    for u in ('https://www.sciencedirect.com.attacker.com/x',   # suffix 부착
+              'https://evil.com/?ref=ietf.org',                  # query 삽입
+              'https://attacker.com/iso.org/paper',              # path 삽입
+              'https://ietf.org.evil.io/rfc',                    # 도메인 접두 + 다른 TLD
+              'https://notsciencedirect.com/x'):                 # 접두 결합(. 경계 없음)
+        assert authoritative_url(u) is False, u
 
 
 def test_build_graph_seeds_from_authoritative_url_domain():

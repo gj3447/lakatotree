@@ -8,7 +8,10 @@ floor·credibility 가 각자 이 술어를 재유도하다 6라운드 drift 했
 verdict_source(현실이 끊어 준 영수증의 출처)를 normalize_source 로 정본화한 뒤 force(COUNTS)·무영수증
 (INCONCLUSIVE)·자기보고/구조(SELF_REPORT)로 가른다. *미래의 모든 게이트는 이 술어를 import 한다 — 재유도 금지*
 (spine.synthesize_promotion floor / quant.metrics inconclusive / judgement_service credibility 가 그 예).
-★verdict_source 는 server-set-only 다 — client 입력으로 받는 순간 모든 구멍이 동시에 재개방된다(스키마 가드).
+★verdict_source 는 server-set-only 다 — client 입력으로 받는 순간 모든 구멍이 동시에 재개방된다. 이 불변식은
+*두 겹*으로 강제된다: (1) write-facing 스키마(NodeIn/VerdictIn/PredictionIn/TestResultIn)에 verdict_source
+필드가 없고 model_config=extra='forbid' 라 client 가 보내면 422; (2) 모든 write 는 Cypher 리터럴('scripted'/
+'engine'/'admin'/'pre_receipt')로만 SET 한다(by-construction). docstring 이 아니라 코드가 막는다.
 # KG: span_lakatotree_verdict_registry
 """
 

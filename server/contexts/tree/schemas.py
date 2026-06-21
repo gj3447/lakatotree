@@ -6,7 +6,12 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# ★server-set-only 경계(적대 재검증 2026-06-21): verdict_source 등 server 전용 필드는 client 가 절대 못 쓴다.
+#   pydantic 기본 extra='ignore' 는 client 가 보낸 verdict_source 를 *조용히 drop* 할 뿐 — 미래에 누군가
+#   필드를 추가하거나 SET e += row 로 바꾸면 'no receipt=green' 이 재개방된다. extra='forbid' 로 *명시 거부*(422).
+_SERVER_SET_ONLY = ConfigDict(extra="forbid")
 
 from lakatos.engine import FoundationRequirement, KnowledgeKind, Realm, ResearchEvent
 
@@ -19,6 +24,7 @@ class ParentEdgeIn(BaseModel):
 
 
 class NodeIn(BaseModel):
+    model_config = _SERVER_SET_ONLY   # client 가 verdict_source 등 server 전용 필드 못 실음(422)
     tag: str = Field(min_length=1)
     parent: str | None = None
     parents: list[str] = Field(default_factory=list)
@@ -36,6 +42,7 @@ class NodeIn(BaseModel):
 
 
 class VerdictIn(BaseModel):
+    model_config = _SERVER_SET_ONLY   # verdict_source 는 server 가 set — client 입력이면 422
     verdict: str
     note: str = ""
     scope: str = ""
@@ -55,6 +62,7 @@ class QuestionIn(BaseModel):
 class PredictionIn(BaseModel):
     """Preregistered prediction. Judgement must happen after this contract exists."""
 
+    model_config = _SERVER_SET_ONLY
     metric_name: str
     direction: str = "lower"
     baseline_value: float
@@ -71,6 +79,7 @@ class PredictionIn(BaseModel):
 class TestResultIn(BaseModel):
     """Judge-script result. The server derives the verdict from this payload."""
 
+    model_config = _SERVER_SET_ONLY
     metric_value: float
     script: str = Field(min_length=1)
     script_sha: str | None = None
