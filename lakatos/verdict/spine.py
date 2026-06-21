@@ -18,7 +18,7 @@ _CRED_INF = GROUNDED['credibility_inferred_trust']['value']    # 0.35
 
 
 def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False,
-                           has_human_verdict: bool = False) -> dict:
+                           has_human_verdict: bool = False, trust_backed: bool = False) -> dict:
     """노드의 source_trust(상계 인터넷 증거 신뢰) → CredibilityPromotionGate 입력.
 
     CANONICAL 승격 = EXTRACTED 등급 승격으로 본다. 현재 등급은 trust 로 도출:
@@ -27,21 +27,23 @@ def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False
     즉 게이트는 source_trust<0.70 인 진짜 저신뢰 인터넷 영향 노드만 직접출처/인간판정 없이 차단.
     엔진 SourceCredibilityScore.tier 의 trust 임계와 동형 (provenance 미상이라 trust-only 보수 매핑).
     """
-    # 정직 한계(적대 재검증 R2 2026-06-21): source_trust 는 TestResultIn 의 client-supplied 필드(기본 1.0)라,
-    #   기본값 그대로면 credibility 가닥은 EXTRACTED 로 통과(promotion gate 단락) = self-report 로 무력화.
-    #   ★단독으로 CANONICAL 을 만들진 못한다 — stands(Dung)·reproducible(lineage)·foundation 가닥은 진짜
-    #   영수증이라 그대로 문다. credibility 강화는 source_trust 를 eigentrust/관측 provenance 로 뒷받침하는
-    #   후속(현재는 trust-permissive 기본을 명시). cf. metrics 의 source_trust_map(eigentrust 글로벌 신뢰).
-    if source_trust >= _CRED_EXT:
+    # prom-honesty/credibility (정본 prom 2026-06-21): trust 는 *eigentrust 로 뒷받침될 때만*(trust_backed=True)
+    #   credibility 영수증으로 인정한다. raw client source_trust(TestResultIn 기본 1.0=self-report)는 inconclusive
+    #   → 직접출처 없음·현재등급 AMBIGUOUS 로 강등해 EXTRACTED(CANONICAL)는 has_human_verdict 를 요구한다.
+    #   게이트 *의도*(고신뢰 grounded 통과)는 보존하되 '고신뢰'를 self-report 가 아니라 네트워크 eigentrust 로
+    #   판정한다 — set_verdict 가 노드의 인터넷 관측 그래프 eigentrust 로 backed/value 를 결정해 넘긴다.
+    #   (3치 논리: 뒷받침 없는 trust = inconclusive ≠ pass.) internal 노드는 set_verdict 가 credibility=None 으로
+    #   아예 생략(constitution+reproducible 가 영수증) — fake source-trust 로 통과시키지 않는다.
+    if trust_backed and source_trust >= _CRED_EXT:
         current = CredibilityTier.EXTRACTED
-    elif source_trust >= _CRED_INF:
+    elif trust_backed and source_trust >= _CRED_INF:
         current = CredibilityTier.INFERRED
     else:
-        current = CredibilityTier.AMBIGUOUS
+        current = CredibilityTier.AMBIGUOUS   # unbacked(self-report) 또는 저신뢰 → inconclusive
     return {
         'current': current,
         'target': CredibilityTier.EXTRACTED,   # CANONICAL = 최강 주장
-        'has_direct_source': source_trust >= _CRED_EXT,
+        'has_direct_source': bool(trust_backed and source_trust >= _CRED_EXT),   # eigentrust-backed 만 직접출처
         'has_independent_corroboration': bool(novel_confirmed),
         'has_human_verdict': bool(has_human_verdict),
     }

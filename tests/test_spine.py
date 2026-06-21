@@ -87,17 +87,24 @@ def test_synthesize_per_gate_report():
     d = synthesize_promotion(scripted_verdict='progressive', stands=True)
     assert 'constitution' in d['gates']
 
-# credibility_from_trust 매핑 — source_trust → CredibilityPromotionGate 입력 (set_verdict 배선)
-def test_credibility_high_trust_is_extracted_passes():
-    # bash 지반·고신뢰(>=0.70) → EXTRACTED, target<=current → 게이트 자명 통과
-    c = credibility_from_trust(1.0)
+# credibility_from_trust 매핑 — eigentrust-backed trust → CredibilityPromotionGate (prom-honesty/credibility)
+def test_credibility_unbacked_high_trust_is_inconclusive_blocks():
+    # ★self-report 고신뢰(eigentrust 미뒷받침, 기본)는 inconclusive → 직접출처 없음·AMBIGUOUS → EXTRACTED 차단
+    c = credibility_from_trust(1.0)   # trust_backed=False (default)
+    assert c['current'] == CredibilityTier.AMBIGUOUS and c['has_direct_source'] is False
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
+    assert not d['ok'] and d['gates']['credibility']['passed'] is False
+
+def test_credibility_eigentrust_backed_high_trust_passes():
+    # eigentrust 로 뒷받침된 고신뢰만 직접출처 EXTRACTED → 통과(게이트 의도='고신뢰 grounded 통과' 보존)
+    c = credibility_from_trust(1.0, trust_backed=True)
     assert c['current'] == CredibilityTier.EXTRACTED and c['has_direct_source'] is True
     d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
     assert d['ok'] and d['gates']['credibility']['passed'] is True
 
-def test_credibility_low_trust_internet_blocks_canonical():
-    # source_trust 0.5 = 인터넷 영향 중간신뢰, 직접출처·인간판정 없음 → CANONICAL 차단
-    c = credibility_from_trust(0.5)
+def test_credibility_backed_mid_trust_blocks_canonical():
+    # eigentrust-backed 라도 중신뢰(0.5)는 INFERRED, 직접출처 없음 → CANONICAL 차단
+    c = credibility_from_trust(0.5, trust_backed=True)
     assert c['current'] == CredibilityTier.INFERRED and c['has_direct_source'] is False
     d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
     assert not d['ok'] and d['gates']['credibility']['passed'] is False
