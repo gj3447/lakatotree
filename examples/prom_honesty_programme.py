@@ -123,8 +123,9 @@ NODES: tuple[PromNode, ...] = (
     ),
     PromNode(
         tag="promC_oo_roundtrip", parent="hard_core",
-        story="[OPEN] PROM-C: 외부 store readback 이 CI 에선 같은 프로세스가 만든 응답을 대조(영수증 연극). "
-              "write→독립read→compare positive 왕복을 외부 백엔드 1개로 CI 에 고정.",
+        story="PROM-C: 옛 oo 테스트는 opener 주입 hand-crafted hits 대조(영수증 연극)였다. CI 영수증은 이제 "
+              "memory backend 의 *진짜* 왕복(실제 persist+독립 read, ooptdd conformance kit); 외부 백엔드 "
+              "positive 왕복은 gated(CONSUMER_LOGS_E2E). drop=True silent-loss 는 반드시 실패.",
         threat_needles=("oo_positive_roundtrip", "roundtrip_catches_silent"),
         prediction=Prediction(metric_name="unverified_external_arrival_open", direction="lower",
                               baseline_value=1.0, noise_band=0.0,

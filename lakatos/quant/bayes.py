@@ -85,9 +85,10 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
 
     target 키가 없으면(현 호출자 대부분) None → 항상 novel 취급(할인 없음) = 기존 동작 비트동일.
     source_trust_map (P6): {source: global_trust} 주면 판결의 `source` 를 eigentrust 글로벌 신뢰로 가중.
-    단조: novel target 추가/더 강한 확증은 비감소. 반환 (0,1] — 독립 강확증이 매우 많으면
-    (실 트리 경로 깊이로는 미도달) float odds 가 포화해 정확히 1.0 에 도달할 수 있다(prom-honesty/5: 옛
-    docstring 의 '[0,1)'은 이 포화를 부정하는 과장이었다 → 상한 1.0 포함으로 정정).
+    단조: novel target 추가/더 강한 확증은 비감소. 반환 (0,1] — 약 25개+ distinct *최대강도*(BF=6 포화)
+    확증이면 float odds 가 포화해 정확히 1.0 에 도달한다(n=20→0.99999…998, n≥25→1.0). 실 트리 정본경로
+    깊이(보통 ≤15, 그나마 전부 최대강도도 아님)로는 미도달 — 이 임계와 '깊이로는 미도달'을 test_doc_honesty
+    가 고정(hedge→tested). prom-honesty/5: 옛 '[0,1)'은 이 포화를 부정하는 과장이라 (0,1] 로 정정.
     dedup 은 같은 타깃 반복을 max 1회로 접어 이 포화를 *완화*한다.
     """
     odds = prior / (1 - prior)
