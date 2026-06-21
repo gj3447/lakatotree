@@ -13,6 +13,7 @@ novel 예측이 없는 프로그램 — engine 은 partial(퇴행)로 정직, se
 from __future__ import annotations
 
 from lakatos.grounding import wilson_lower_bound
+from lakatos.quant.calibrate import brier_score
 from lakatos.verdict.judge import NovelTarget, Prediction, judge
 
 PROGRESSIVE, DEGENERATING = 'progressive', 'degenerating'
@@ -98,6 +99,39 @@ def run() -> dict:
     return {'corpus_size': len(CORPUS),
             'engine': _score(engine_verdict),
             'self_report': _score(self_report_verdict)}
+
+
+# ── Phase 2 (prospective) — 전향 사전등록 harness. 독립 효과성 증명의 gold standard ───────────
+# ★정직: 실 해소는 *종단(longitudinal)* — open frontier 질문이 시간 두고 실세계서 해소돼야. 이 harness 는
+# 그 *기계장치*(register→resolve→score)일 뿐, 실 데이터는 대기. retrospective(위)의 순환성을 Phase-2 가 닫는다.
+def register_prospective(question_id: str, pred_credence: float, novel_target_desc: str) -> dict:
+    """open frontier 질문에 예측 사전등록(status=open). 결과 알기 전 등록 = researcher-DoF 차단."""
+    return {'question': question_id, 'pred_credence': float(pred_credence),
+            'novel': novel_target_desc, 'status': 'open', 'outcome': None, 'hit': None}
+
+
+def resolve_prospective(entry: dict, novel_confirmed: bool) -> dict:
+    """실세계 해소 → outcome 기록. hit = 사전등록 신뢰도(>0.5)가 실제 결과와 일치(보정 검증)."""
+    e = dict(entry)
+    e['status'] = 'resolved'
+    e['outcome'] = bool(novel_confirmed)
+    e['hit'] = (e['pred_credence'] > 0.5) == bool(novel_confirmed)
+    return e
+
+
+def score_prospective(entries: list) -> dict:
+    """해소된 prospective 예측의 적중률(Wilson 하한) + Brier(보정). open 은 제외(미해소)."""
+    resolved = [e for e in entries if e['status'] == 'resolved']
+    if not resolved:
+        return {'resolved': 0, 'open': len(entries),
+                'note': '아직 미해소 — Phase-2 는 종단(실세계 해소 대기). 기계장치만 준비됨.'}
+    hits = sum(1 for e in resolved if e['hit'])
+    fc = [(e['pred_credence'], 1 if e['outcome'] else 0) for e in resolved]
+    return {'resolved': len(resolved), 'open': len(entries) - len(resolved),
+            'accuracy': round(hits / len(resolved), 3),
+            'accuracy_wilson_lb': round(wilson_lower_bound(hits, len(resolved)), 3),
+            'brier': round(brier_score(fc), 3),
+            'note': '독립 효과성 증명 — corpus 순환성 없음(실 미래 결과). 표본 ≥9 해소 시 유의.'}
 
 
 if __name__ == '__main__':
