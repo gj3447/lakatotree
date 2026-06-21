@@ -39,9 +39,20 @@ def test_wolfram_absent_from_grounding_sources():
         "manifesto says Wolfram isn't in grounding.SOURCES — but a key contains it"
 
 
+def _max_strength_credence(n):
+    from lakatos.quant.bayes import branch_credence
+    return branch_credence([{"verdict": "progressive", "delta": -1e6, "noise_band": 1e-9, "target": f"t{i}"}
+                            for i in range(n)])
+
+
 def test_bayes_saturation_claim_is_true():
     """bayes 가 실제로 정확히 1.0 에 도달(=상한 1.0 포함, (0,1] 가 정직). [0,1) 였다면 거짓."""
-    from lakatos.quant.bayes import branch_credence
-    c = branch_credence([{"verdict": "progressive", "delta": -1e6, "noise_band": 1e-9, "target": f"t{i}"}
-                         for i in range(80)])
-    assert c == 1.0, f"docstring (0,1] 는 1.0 도달을 전제 — 실측 {c}"
+    assert _max_strength_credence(25) == 1.0, "docstring (0,1] 는 1.0 도달을 전제"
+
+
+def test_realistic_tree_depth_does_not_saturate():
+    """docstring 의 'hedge' 를 *테스트*로 승격: 실 트리 정본경로 깊이(≤15, 그나마 전부 최대강도도 아님)
+    로는 1.0 미도달 = 여전히 (0,1) 안. 포화는 ~25+ distinct 최대강도에서만(비현실적 깊이)."""
+    assert _max_strength_credence(15) < 1.0, "현실적 깊이에서 포화하면 dedup/경계 주장이 흔들린다"
+    assert _max_strength_credence(20) < 1.0   # 경계 바로 아래도 아직 미포화
+    assert _max_strength_credence(25) == 1.0   # 임계: 비현실적 깊이라야 도달

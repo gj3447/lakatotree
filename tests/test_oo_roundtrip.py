@@ -1,4 +1,4 @@
-"""PROM-C (prom-honesty): 외부 store write→독립 read→compare *positive* 왕복 receipt.
+"""PROM-C (prom-honesty): write→독립 read→compare *positive* 왕복 receipt — CI=hermetic memory, 외부=gated.
 
 감사 발견: oo/marquez 테스트가 전부 opener 주입(같은 프로세스가 만든 hand-crafted hits 대조 = 영수증
 연극)이고 write→독립 read→compare 왕복이 *어디에도 없다*; 유일한 실네트워크 테스트는 기본 OFF + 부정경로만.
