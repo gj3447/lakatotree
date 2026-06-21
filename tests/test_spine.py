@@ -119,6 +119,32 @@ def test_credibility_ambiguous_needs_human():
     passed = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c2)
     assert passed['ok']  # 인간이 vouch 하면 통과
 
+
+# === prom-honesty/provenance (정본 prom 2026-06-21): CANONICAL floor — *위조불가 영수증* ≥1 요구 ===
+def test_floor_blocks_canonical_with_no_receipt():
+    """R3 발견 봉쇄: 내부 proof 노드(미채점·무critique·무영수증)는 constitution-only 로 CANONICAL 못 됨.
+    하드코어(영수증 없는 green=거짓말)·3치(무영수증=inconclusive≠pass)·Lakatos(CANONICAL=최강주장)."""
+    d = synthesize_promotion(scripted_verdict='proof', stands=True)
+    assert not d['ok'] and d['gates']['floor']['passed'] is False
+    assert 'no_receipt_for_canonical' in d['gates']['floor']['reasons']
+
+def test_floor_satisfied_by_judge_scored_verdict():
+    """judge-scored 판결(scripted; PROM-A 가 노드 self-report 봉쇄)은 위조불가 영수증 → floor 통과."""
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True)
+    assert d['ok'] and d['gates']['floor']['passed'] is True
+
+def test_floor_satisfied_by_real_reproducibility():
+    """reproducible=True(실 lineage replay)는 위조불가 영수증 → proof 노드라도 floor 통과."""
+    d = synthesize_promotion(scripted_verdict='proof', stands=True, reproducible=True)
+    assert d['ok'] and d['gates']['floor']['passed'] is True
+
+def test_floor_satisfied_by_human_verdict():
+    """human verdict(명시적 attest)는 위조불가 영수증 → proof 노드라도 floor 통과."""
+    d = synthesize_promotion(scripted_verdict='proof', stands=True,
+                             credibility=credibility_from_trust(0.2, has_human_verdict=True))
+    assert d['ok'] and d['gates']['floor']['passed'] is True
+
+
 def test_credibility_human_verdict_unblocks():
     c = credibility_from_trust(0.5, has_human_verdict=True)
     d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)

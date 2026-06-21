@@ -125,6 +125,8 @@ def test_canonical_verdict_records_temporary_best_metadata(monkeypatch):
             scope="heldout:lotoff",
             assumptions=["only under current root artifacts"],
             evidence_window="node-001..node-010",
+            human_verdict=True,   # prom-honesty floor: proof 노드 승격엔 *위조불가 영수증* 필요 —
+                                  #   scope/assumptions 를 단 human admin 의 명시적 vouch 가 그 영수증.
         ),
     )
 
