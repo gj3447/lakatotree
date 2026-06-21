@@ -46,6 +46,43 @@ class JudgementService:
         self.foundation = foundation
         self.reproducible_for_node = reproducible_for_node
 
+    def _eigentrust_credibility(self, name: str, tag: str, *, novel_confirmed: bool,
+                                has_human_verdict: bool) -> dict | None:
+        """prom-honesty/credibility (정본 prom 2026-06-21): CANONICAL 승격의 credibility 게이트 입력을
+        client-self-reported source_trust 대신 *노드의 인터넷 관측 그래프 eigentrust* 로 산출한다.
+          - 인터넷 관측이 없으면 internal 노드 → None(credibility 게이트 생략; constitution+reproducible 가 영수증).
+          - 있으면 그 source 의 eigentrust(네트워크 신뢰, sybil 저항)로 backed 판정 — self-report 1.0 으론 통과 못 함.
+        (read_models._internet_observations 와 동형: source=url|source_type, 노드당 첫 관측.)"""
+        import json
+        rows = self.kg(
+            "MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:HAS_RESEARCH_EVENT]->"
+            "(ev:ResearchEvent {realm:'internet'}) RETURN ev.payload AS payload ORDER BY ev.created_at",
+            tree=name, tag=tag)
+        if not rows:
+            return None   # internal 노드: 인터넷 주장 없음 → credibility 생략(fake source-trust 통과 금지)
+        observations, src = [], None
+        for r in rows:
+            try:
+                p = json.loads(r.get('payload') or '{}')
+            except (ValueError, TypeError):
+                p = {}
+            s = (p.get('url') or p.get('source_type') or '').strip()
+            if not s:
+                continue
+            if src is None:
+                src = s
+            observations.append(dict(source=s, source_type=p.get('source_type') or '', node=tag,
+                                     corroboration_score=float(p.get('corroboration_score') or 0.0)))
+        if src is None:
+            return None   # 관측은 있으나 식별 가능한 source 없음 → internal 취급(constitution 이 영수증)
+        from lakatos.trust import global_source_trust
+        gst = global_source_trust(observations)
+        eigen = gst['trust'].get(src)
+        backed = eigen is not None and gst['coverage']['mode'] != 'uniform_unlearned'
+        return credibility_from_trust(
+            float(eigen) if backed else 0.0, trust_backed=backed,
+            novel_confirmed=novel_confirmed, has_human_verdict=has_human_verdict)
+
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
         # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
         #   회귀가드: tests/test_prom_honesty_node_gating.py::test_set_verdict_403_on_scripted_verdict.
@@ -73,12 +110,9 @@ class JudgementService:
                 arguments.add(short)
                 attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
             stands = varg in grounded_extension(arguments, attacks)
-            st = cand.get('source_trust')
-            credibility = credibility_from_trust(
-                float(st) if st is not None else 1.0,
-                novel_confirmed=bool(cand.get('novel_confirmed')),
-                has_human_verdict=bool(v.human_verdict),
-            )
+            credibility = self._eigentrust_credibility(
+                name, tag, novel_confirmed=bool(cand.get('novel_confirmed')),
+                has_human_verdict=bool(v.human_verdict))
             decision = synthesize_promotion(
                 scripted_verdict=cand.get('verdict') or 'proof',
                 stands=stands,

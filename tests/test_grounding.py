@@ -265,6 +265,8 @@ def test_p6_3_credibility_and_claim_thresholds_grounded():
     p = ClaimStandingPolicy()
     assert p.min_confidence == G.GROUNDED['claim_min_confidence']['value']
     assert p.strong_confidence == G.GROUNDED['claim_strong_confidence']['value']
-    # 경계가 grounded 값을 실제로 씀(spine·engine 공유)
-    assert spine.credibility_from_trust(0.70)['current'] == CredibilityTier.EXTRACTED
-    assert spine.credibility_from_trust(0.34)['current'] == CredibilityTier.AMBIGUOUS
+    # 경계가 grounded 값을 실제로 씀(spine·engine 공유). prom-honesty/credibility: 경계 매핑은
+    # *eigentrust-backed* 일 때만 등급화(trust_backed=True); unbacked self-report 는 AMBIGUOUS(inconclusive).
+    assert spine.credibility_from_trust(0.70, trust_backed=True)['current'] == CredibilityTier.EXTRACTED
+    assert spine.credibility_from_trust(0.34, trust_backed=True)['current'] == CredibilityTier.AMBIGUOUS
+    assert spine.credibility_from_trust(0.70)['current'] == CredibilityTier.AMBIGUOUS   # unbacked=inconclusive
