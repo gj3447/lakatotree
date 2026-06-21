@@ -117,6 +117,7 @@ STRUCTURAL_SOURCES = frozenset({'admin', 'kg_bootstrap', 'conjecture'})
 _SOURCE_ALIASES = {
     'dogfood': 'scripted',
     'cloc-measured': 'reproducible',
+    'measured': 'reproducible',   # "MEASURED: pytest 38 passed; grep=0; byte-identical" = 결정론 실행 측정(재현)
 }
 # server 가 쓴 prose 영수증(예: "engine judge() over ... 93/93 PASSED")은 *선두 토큰*이 정본 source 다.
 #   ★verdict_source 는 server-set-only 이므로 이 prose 는 신뢰된 주석 — client 입력이면 스키마가 막는다.

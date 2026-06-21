@@ -23,6 +23,7 @@ def test_normalize_source_absorbs_aliases_and_prose():
     """Occam step 6: normalize_source 가 별칭/prose 를 정본 토큰으로 흡수(force_of 단일 정규화 chokepoint)."""
     assert normalize_source("dogfood") == "scripted"                 # dogfood judge() = 실 pytest 영수증
     assert normalize_source("cloc-measured + adversarial 6-agent") == "reproducible"   # 결정론 실행 측정
+    assert normalize_source("MEASURED: pytest 168 passed; grep dispatch=0") == "reproducible"   # 라이브 실행 영수증
     assert normalize_source("engine judge() over bhgman pytest receipt 93/93 PASSED") == "engine"  # prose 선두토큰
     assert normalize_source("scripted") == "scripted"                # 정확 일치
     assert normalize_source("kg_bootstrap") == "kg_bootstrap"        # 구조(forceful 아님)
@@ -34,7 +35,8 @@ def test_force_of_over_live_vocabulary_golden():
     실 영수증(dogfood/engine-prose/cloc)은 COUNTS, 무영수증 마커는 INCONCLUSIVE, 구조/conjecture 는 SELF_REPORT."""
     counts = ["scripted", "engine", "reproducible", "human", "dogfood",
               "engine judge() over bhgman pytest receipt 93/93 PASSED (executed-not-asserted)",
-              "cloc-measured + adversarial 6-agent dissection workflow w3r9m5kny (deterministic LOC)"]
+              "cloc-measured + adversarial 6-agent dissection workflow w3r9m5kny (deterministic LOC)",
+              "MEASURED: len(PREDICATE_REGISTRY)==4; pytest 38 passed; ruff clean; executed-not-asserted"]
     for s in counts:
         assert force_of("progressive", s) == "COUNTS", s
     for s in ("pre_receipt", "prehistory"):
