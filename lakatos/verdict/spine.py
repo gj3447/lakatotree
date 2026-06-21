@@ -9,7 +9,9 @@
 """
 from lakatos.verdict.compose import GateOutcome, compose_gates
 from lakatos.verdict.promote import promotion_gate
-from lakatos.verdicts import is_scripted_verdict
+from lakatos.verdicts import is_scripted_verdict, force_of
+
+_UNSET = object()   # verdict_source 미전달(레거시 호출) — None(실 NULL-source 노드)과 구분
 from lakatos.engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
 from lakatos.verdict.pnr import PnRAppraisal
 from lakatos.grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(engine 과 공유)
@@ -141,7 +143,7 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
 
 
 def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
-                         foundation=None, credibility: dict | None = None) -> dict:
+                         foundation=None, credibility: dict | None = None, verdict_source=_UNSET) -> dict:
     """완전 합성 승격 게이트 — 헌법(promotion_gate) + FoundationGate(준비도) +
     CredibilityPromotionGate(인터넷 등급). 입력 있는 게이트만 실행, 단일 결정 + per-gate 리포트.
 
@@ -167,7 +169,12 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
     #   노드 self-report 봉쇄) | reproducible=True(실 lineage replay) | human verdict. credibility/foundation 은
     #   아직 self-report 우회(source_type/evidence)가 남아 floor 영수증으로 *안* 센다(보수적; 그 가닥은 후속 prom).
     has_human = bool(credibility and credibility.get('has_human_verdict'))
-    if is_scripted_verdict(scripted_verdict) or reproducible is True or has_human:
+    # judge/engine 영수증 가닥을 force_of(SSOT)로 — set_verdict 가 verdict_source 를 넘기면 그걸로 판정
+    #   (레거시 NULL-source progressive 는 force_of==INCONCLUSIVE → 영수증 아님). 미전달(레거시 호출)은
+    #   verdict 어휘로 폴백(PROM-A 가 새 scripted verdict 의 노드 self-report 를 봉쇄하므로 안전).
+    judge_receipt = (is_scripted_verdict(scripted_verdict) if verdict_source is _UNSET
+                     else force_of(scripted_verdict, verdict_source) == 'COUNTS')
+    if judge_receipt or reproducible is True or has_human:
         gates['floor'] = {'passed': True, 'reasons': []}
     else:
         gates['floor'] = {'passed': False, 'reasons': ['no_receipt_for_canonical']}

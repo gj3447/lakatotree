@@ -138,6 +138,15 @@ def test_floor_satisfied_by_real_reproducibility():
     d = synthesize_promotion(scripted_verdict='proof', stands=True, reproducible=True)
     assert d['ok'] and d['gates']['floor']['passed'] is True
 
+def test_floor_judge_receipt_via_verdict_source_excludes_legacy_null_source():
+    """set_verdict 경로(verdict_source 전달)는 force_of(SSOT)로 판정 — 레거시 NULL-source progressive 는
+    영수증 아님(force_of==INCONCLUSIVE). scripted source 만 judge 영수증으로 floor 통과."""
+    ok = synthesize_promotion(scripted_verdict='progressive', stands=True, verdict_source='scripted')
+    assert ok['ok'] and ok['gates']['floor']['passed'] is True
+    legacy = synthesize_promotion(scripted_verdict='progressive', stands=True, verdict_source=None)
+    assert not legacy['ok'] and legacy['gates']['floor']['passed'] is False
+
+
 def test_floor_satisfied_by_human_verdict():
     """human verdict(명시적 attest)는 위조불가 영수증 → proof 노드라도 floor 통과."""
     d = synthesize_promotion(scripted_verdict='proof', stands=True,
