@@ -99,6 +99,7 @@ class JudgementService:
             pre = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
                         OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
                         RETURN cur.verdict AS verdict,
+                               cur.verdict_source AS verdict_source,
                                cur.source_trust AS source_trust,
                                cur.novel_confirmed AS novel_confirmed,
                                collect({id:a.id, attacks:a.attacks}) AS args''', tree=name, tag=tag)
@@ -120,6 +121,7 @@ class JudgementService:
                 has_human_verdict=bool(v.human_verdict))
             decision = synthesize_promotion(
                 scripted_verdict=cand.get('verdict') or 'proof',
+                verdict_source=cand.get('verdict_source'),   # SSOT floor: 레거시 NULL-source 는 영수증 아님
                 stands=stands,
                 foundation=self.foundation(name),
                 credibility=credibility,
