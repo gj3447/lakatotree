@@ -334,6 +334,18 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     """트리 지표 오케스트레이터 — 공유 구조 1회 계산 후 각 지표 개념을 자기 함수에 위임.
     (개념별 분해는 위 `_*_layer`/`_*_metric`/`_*_screen` 참조 — 한 개념 = 한 함수.)"""
     cfg = cfg or {}
+    # prom-honesty (적대 재검증 R2 2026-06-21): 진보집계(PROGRESS_VERDICTS) verdict 인데 verdict_source 가
+    #   *명시적으로* 비어있는 노드 = 노드 self-report 로 들어온 미채점 진보(영수증 없는 green). 쓰기게이트
+    #   (9b85cf8)는 *앞으로*의 주입만 막았고 *읽기/집계* 경로·기존 KG 데이터는 안 막았다(쓰기게이트의 대칭
+    #   누락) → 항상 surface(provenance + alert). cfg.provenance_strict=True 면 집계(canonical/진보/fertility)
+    #   에서 제외. 기본 off(타 트리·레거시 비트동일). ★key 부재=레거시/테스트 픽스처는 신뢰(집계), key=None/''
+    #   =실 KG self-report 만 의심(실 KG 읽기는 verdict_source 키를 항상 싣는다 — read_models RETURN).
+    unprovenanced = [r['tag'] for r in nodes if r.get('verdict') in PROGRESS_VERDICTS
+                     and 'verdict_source' in r and not r['verdict_source']]
+    strict = bool(cfg.get('provenance_strict'))
+    if strict and unprovenanced:
+        _bad = set(unprovenanced)
+        nodes = [r if r['tag'] not in _bad else {**r, 'verdict': '_unscored_self_report'} for r in nodes]
     by = {r['tag']: r for r in nodes}
     n = len(nodes)
     path = _canonical_path(nodes, by)
@@ -363,6 +375,11 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
                               coverage_backlog=coverage['backlog'],
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
+    if unprovenanced:
+        alerts = [*alerts, (
+            f"영수증 없는 green: 진보어휘 노드 {len(unprovenanced)}개가 verdict_source 없이 self-report "
+            + ("→ strict 모드로 집계 제외됨" if strict
+               else "로 집계됨(미채점 진보 — green 부풀림). cfg.provenance_strict 로 제외 가능"))]
 
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
@@ -371,4 +388,6 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
-                eureka=eureka, multiplicity=multiplicity, alerts=alerts)
+                eureka=eureka, multiplicity=multiplicity, alerts=alerts,
+                provenance=dict(unprovenanced_progress=unprovenanced,
+                                count=len(unprovenanced), strict=strict))
