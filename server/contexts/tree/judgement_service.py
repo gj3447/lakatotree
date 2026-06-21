@@ -59,7 +59,10 @@ class JudgementService:
             "(ev:ResearchEvent {realm:'internet'}) RETURN ev.payload AS payload ORDER BY ev.created_at",
             tree=name, tag=tag)
         if not rows:
-            return None   # internal 노드: 인터넷 주장 없음 → credibility 생략(fake source-trust 통과 금지)
+            # internal 노드(인터넷 주장 없음): credibility 게이트 생략. 단 human 이 vouch 하면 그 영수증을
+            #   보존한다 — credibility=None 이면 floor/게이트가 human 신호를 못 봐서 유실(D2↔floor 상호작용).
+            return (credibility_from_trust(0.0, trust_backed=False, novel_confirmed=novel_confirmed,
+                                           has_human_verdict=True) if has_human_verdict else None)
         observations, src = [], None
         for r in rows:
             try:
@@ -74,7 +77,9 @@ class JudgementService:
             observations.append(dict(source=s, source_type=p.get('source_type') or '', node=tag,
                                      corroboration_score=float(p.get('corroboration_score') or 0.0)))
         if src is None:
-            return None   # 관측은 있으나 식별 가능한 source 없음 → internal 취급(constitution 이 영수증)
+            # 관측은 있으나 식별 가능한 source 없음 → internal 취급. human vouch 는 보존(위와 동형).
+            return (credibility_from_trust(0.0, trust_backed=False, novel_confirmed=novel_confirmed,
+                                           has_human_verdict=True) if has_human_verdict else None)
         from lakatos.trust import global_source_trust
         gst = global_source_trust(observations)
         eigen = gst['trust'].get(src)

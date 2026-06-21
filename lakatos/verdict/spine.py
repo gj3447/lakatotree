@@ -9,6 +9,7 @@
 """
 from lakatos.verdict.compose import GateOutcome, compose_gates
 from lakatos.verdict.promote import promotion_gate
+from lakatos.verdicts import is_scripted_verdict
 from lakatos.engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
 from lakatos.verdict.pnr import PnRAppraisal
 from lakatos.grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(engine 과 공유)
@@ -159,5 +160,17 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
         cr = CredibilityPromotionGate.evaluate(**credibility)
         gates['credibility'] = {'passed': cr.passed, 'reasons': list(cr.reasons)}
         outcomes.append(GateOutcome('credibility', () if cr.passed else tuple(cr.reasons)))
+    # prom-honesty/provenance (정본 prom 2026-06-21): CANONICAL FLOOR — *위조불가 영수증* ≥1 요구.
+    #   R3 발견: skip-on-omission 으로 게이트가 constitution-only("기각아님+무critique")로 붕괴하면 내부 proof
+    #   노드가 영수증 0으로 CANONICAL 이 된다. 하드코어("영수증은 현실이 끊어준다")·3치(무영수증=inconclusive≠
+    #   pass)·Lakatos(CANONICAL=최강주장→최강영수증). 위조불가 영수증 = judge-scored 판결(scripted; PROM-A 가
+    #   노드 self-report 봉쇄) | reproducible=True(실 lineage replay) | human verdict. credibility/foundation 은
+    #   아직 self-report 우회(source_type/evidence)가 남아 floor 영수증으로 *안* 센다(보수적; 그 가닥은 후속 prom).
+    has_human = bool(credibility and credibility.get('has_human_verdict'))
+    if is_scripted_verdict(scripted_verdict) or reproducible is True or has_human:
+        gates['floor'] = {'passed': True, 'reasons': []}
+    else:
+        gates['floor'] = {'passed': False, 'reasons': ['no_receipt_for_canonical']}
+        outcomes.append(GateOutcome('floor', ('no_receipt_for_canonical',)))
     out = compose_gates(*outcomes)
     return {'ok': out.passed, 'reasons': out.reasons, 'gates': gates}
