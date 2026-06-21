@@ -46,13 +46,14 @@ def _max_strength_credence(n):
 
 
 def test_bayes_saturation_claim_is_true():
-    """bayes 가 실제로 정확히 1.0 에 도달(=상한 1.0 포함, (0,1] 가 정직). [0,1) 였다면 거짓."""
-    assert _max_strength_credence(25) == 1.0, "docstring (0,1] 는 1.0 도달을 전제"
+    """bayes 가 실제로 정확히 1.0 에 도달(=상한 1.0 포함, (0,1] 가 정직). [0,1) 였다면 거짓.
+    robust 마진(40, 임계 ~21 훨씬 위)으로 — n=20~25 경계는 1 ulp 차라 platform-fragile."""
+    assert _max_strength_credence(40) == 1.0, "docstring (0,1] 는 1.0 도달을 전제"
 
 
 def test_realistic_tree_depth_does_not_saturate():
     """docstring 의 'hedge' 를 *테스트*로 승격: 실 트리 정본경로 깊이(≤15, 그나마 전부 최대강도도 아님)
-    로는 1.0 미도달 = 여전히 (0,1) 안. 포화는 ~25+ distinct 최대강도에서만(비현실적 깊이)."""
+    로는 1.0 미도달 = 여전히 (0,1) 안. 포화는 ~21+ distinct 최대강도에서만(비현실적 깊이).
+    robust 마진만 단언(15 미포화 ~1e-12, 40 포화) — n=20 은 1 ulp 차라 platform-fragile 이라 제외."""
     assert _max_strength_credence(15) < 1.0, "현실적 깊이에서 포화하면 dedup/경계 주장이 흔들린다"
-    assert _max_strength_credence(20) < 1.0   # 경계 바로 아래도 아직 미포화
-    assert _max_strength_credence(25) == 1.0   # 임계: 비현실적 깊이라야 도달
+    assert _max_strength_credence(40) == 1.0   # 충분히 깊으면(비현실적) 포화 — 상한 1.0 포함
