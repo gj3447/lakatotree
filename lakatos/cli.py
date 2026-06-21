@@ -98,6 +98,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('eureka', help='노드별 measurement-grade eureka (felt/true/hallucinated)')
     sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('graph', help='시각 트리 GUI 데이터 척추 (node 색/klass/패널 + edge + frontier + 안건, E Phase 1)')
+    sp.add_argument('name')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
@@ -234,6 +236,8 @@ def main(argv=None):
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/standing')
     elif a.cmd == 'eureka':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/eureka')
+    elif a.cmd == 'graph':
+        out = call('GET', f'/api/graph/{a.name}')
     elif a.cmd == 'agm':
         out = call('POST', '/api/agm/revise', json.loads(open(a.spec).read()))
     elif a.cmd == 'cycle':

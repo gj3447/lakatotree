@@ -67,6 +67,7 @@ from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
+from server.graph_view import tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
 from server.container import AppContainer
 from server.settings import ServerSettings
@@ -435,6 +436,14 @@ def _competitor_for_tree(n: str) -> Competitor:
     return Competitor(name=n, verdicts=verdicts, nodes=td['nodes'],
                       metric_improvement_pct=imp,
                       closed=m['frontier']['closed'], opened=m['frontier']['open'])
+
+@app.get('/api/graph/{name}')
+def tree_graph_view(name: str):
+    """E Phase 1 — 시각 트리 GUI 데이터 척추: node(색/klass/패널) + edge + frontier + 안건.
+    프론트엔드(Phase 2)가 렌더(브랜치 줌, 노드 클릭 패널, 본류·퇴행·생존 색). /api/tree 아님(app-owned)."""
+    td = tree_data(name)
+    return tree_graph(td, compute_metrics(td))
+
 
 @app.get('/api/leaderboard')
 def leaderboard_view(trees: str, snapshot: bool = False):
