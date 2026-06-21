@@ -95,6 +95,11 @@ def is_engine_verdict(verdict: str) -> bool:
 #   INCONCLUSIVE; 그 외(admin/구조 또는 비진보)는 SELF_REPORT. 키 *부재*(레거시/테스트 픽스처)는 신뢰(집계 보존).
 #   ★verdict_source 는 server-set-only — client 입력으로 받으면 모든 구멍이 동시에 재개방된다(스키마 가드).
 FORCEFUL_SOURCES = frozenset({'scripted', 'engine', 'reproducible', 'human'})
+# 명시적 *무영수증* 마커(Occam step 5): 레거시 노드가 영수증 체제(prom-honesty) *이전*에 승격됐고
+#   검증 가능한 영수증이 없음을 *명시*한다 — NULL(미기록인지 의도적 withhold 인지 모호)보다 정직하다.
+#   force 가 아니므로 COUNTS 되지 않고, 진보집계에서 빠지도록 INCONCLUSIVE 로 매핑(NULL 진보어휘와 동일 취급).
+#   ★fabrication 아님: 영수증의 *부재*를 단언할 뿐(참), 영수증을 날조하지 않는다.
+INCONCLUSIVE_SOURCES = frozenset({'pre_receipt', 'prehistory'})
 _SOURCE_ABSENT = object()   # verdict_source 키 자체가 없음(레거시/픽스처) — None(영수증 미도래)과 구분
 
 
@@ -102,6 +107,8 @@ def force_of(verdict: str, verdict_source=_SOURCE_ABSENT) -> str:
     """단일 영수증 술어 → 'COUNTS' | 'INCONCLUSIVE' | 'SELF_REPORT'. verdict_source 생략 = 키 부재(신뢰)."""
     if verdict_source in FORCEFUL_SOURCES:
         return 'COUNTS'
+    if verdict_source in INCONCLUSIVE_SOURCES:
+        return 'INCONCLUSIVE'   # 명시적 무영수증 마커(legacy/prehistory) — NULL 진보어휘와 동일 취급
     if verdict_source is _SOURCE_ABSENT:
         return 'SELF_REPORT'   # 키 부재 = 레거시/픽스처(force 없으나 inconclusive 도 아님 → 기존 집계 보존)
     if not verdict_source and verdict in PROGRESS_VERDICTS:

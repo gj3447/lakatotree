@@ -19,6 +19,16 @@ def test_force_of_truth_table():
     assert force_of("CANONICAL", "admin") == "SELF_REPORT"   # admin = 구조, forceful 아님
 
 
+def test_explicit_pre_receipt_marker_is_inconclusive_not_self_report():
+    """Occam step 5: 명시적 무영수증 마커(pre_receipt/prehistory)는 INCONCLUSIVE — NULL 진보어휘와 동일.
+    fabrication 아님(영수증 부재를 단언). force 아니므로 COUNTS 절대 아님."""
+    for src in ("pre_receipt", "prehistory"):
+        assert force_of("progressive", src) == "INCONCLUSIVE"
+        assert force_of("CANONICAL", src) == "INCONCLUSIVE"
+        assert force_of("proof", src) == "INCONCLUSIVE"      # 비진보 구조어휘라도 명시 마커는 inconclusive
+    assert force_of_row({"verdict": "CANONICAL", "verdict_source": "pre_receipt"}) == "INCONCLUSIVE"
+
+
 def test_force_of_row_distinguishes_absent_from_none():
     assert force_of_row({"verdict": "CANONICAL"}) == "SELF_REPORT"                       # 키 부재
     assert force_of_row({"verdict": "CANONICAL", "verdict_source": None}) == "INCONCLUSIVE"   # 키 None
