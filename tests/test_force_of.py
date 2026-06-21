@@ -5,7 +5,7 @@
 (behavior-preserving 머지의 golden test).
 # KG: span_lakatotree_verdict_registry
 """
-from lakatos.verdicts import PROGRESS_VERDICTS, force_of, force_of_row
+from lakatos.verdicts import PROGRESS_VERDICTS, force_of, force_of_row, normalize_source
 
 
 def test_force_of_truth_table():
@@ -17,6 +17,30 @@ def test_force_of_truth_table():
     assert force_of("progressive") == "SELF_REPORT"          # 키 부재(레거시/픽스처) → 신뢰(집계 보존)
     assert force_of("proof", None) == "SELF_REPORT"          # 비진보 + 빈 source = inconclusive 아님
     assert force_of("CANONICAL", "admin") == "SELF_REPORT"   # admin = 구조, forceful 아님
+
+
+def test_normalize_source_absorbs_aliases_and_prose():
+    """Occam step 6: normalize_source 가 별칭/prose 를 정본 토큰으로 흡수(force_of 단일 정규화 chokepoint)."""
+    assert normalize_source("dogfood") == "scripted"                 # dogfood judge() = 실 pytest 영수증
+    assert normalize_source("cloc-measured + adversarial 6-agent") == "reproducible"   # 결정론 실행 측정
+    assert normalize_source("engine judge() over bhgman pytest receipt 93/93 PASSED") == "engine"  # prose 선두토큰
+    assert normalize_source("scripted") == "scripted"                # 정확 일치
+    assert normalize_source("kg_bootstrap") == "kg_bootstrap"        # 구조(forceful 아님)
+    assert normalize_source("admin root (conjecture established)") == "admin"
+
+
+def test_force_of_over_live_vocabulary_golden():
+    """통제 어휘 lock — 실 KG 에서 관측된 모든 verdict_source 형태가 sane 하게 분류되는지(유령/오분류 차단).
+    실 영수증(dogfood/engine-prose/cloc)은 COUNTS, 무영수증 마커는 INCONCLUSIVE, 구조/conjecture 는 SELF_REPORT."""
+    counts = ["scripted", "engine", "reproducible", "human", "dogfood",
+              "engine judge() over bhgman pytest receipt 93/93 PASSED (executed-not-asserted)",
+              "cloc-measured + adversarial 6-agent dissection workflow w3r9m5kny (deterministic LOC)"]
+    for s in counts:
+        assert force_of("progressive", s) == "COUNTS", s
+    for s in ("pre_receipt", "prehistory"):
+        assert force_of("CANONICAL", s) == "INCONCLUSIVE", s
+    for s in ("admin", "kg_bootstrap", "conjecture", "admin root (conjecture established, not scored)"):
+        assert force_of("CANONICAL", s) == "SELF_REPORT", s
 
 
 def test_explicit_pre_receipt_marker_is_inconclusive_not_self_report():
