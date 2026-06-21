@@ -4,7 +4,7 @@ GUI 가 렌더할 구조: node(색/klass 본류·퇴행·생존/클릭 패널) +
 (human-in-the-loop 안건). 프론트엔드 없이도 이 데이터가 옳게 나오는지 핀(docs/UI_AND_HUMAN_LOOP §2-4).
 """
 from server.dashboard_view import VERDICT_COLORS
-from server.graph_view import tree_graph
+from server.graph_view import tree_dot, tree_dot_view, tree_graph
 
 
 def _td():
@@ -70,3 +70,21 @@ def test_graph_route_handler_wires_tree_data_and_metrics(monkeypatch):
     g = app.tree_graph_view('T')
     assert g['name'] == 'T' and g['counts']['nodes'] == 4
     assert any(n['klass'] == 'canonical' for n in g['nodes'])
+
+
+# ── E Phase 2: 시각 렌더(DOT + 브라우저 뷰어) ────────────────────────────────
+def test_tree_dot_is_valid_graphviz_with_colors_and_edges():
+    dot = tree_dot(tree_graph(_td(), _m()))
+    assert dot.startswith('digraph lakatotree {') and dot.rstrip().endswith('}')
+    assert '"top"' in dot and 'doubleoctagon' in dot           # 정본 경로 노드 모양
+    assert '"p1" -> "top"' in dot or '"p1"->"top"' in dot.replace(' ', '')  # parent->child 엣지
+    assert VERDICT_COLORS['rejected'] in dot                   # verdict 색 매핑
+    assert '#dafbe1' in dot and '#ffebe9' in dot               # klass fill(본류/퇴행)
+
+
+def test_tree_dot_view_embeds_dot_and_renderer():
+    dot = tree_dot(tree_graph(_td(), _m()))
+    view = tree_dot_view('T', dot)
+    assert '<html' in view and 'LakatoTree: T' in view
+    assert 'viz-standalone.js' in view and 'renderSVGElement' in view   # 빌드 0 브라우저 렌더
+    assert 'digraph lakatotree' in view                                  # DOT 임베드
