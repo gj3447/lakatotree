@@ -18,7 +18,7 @@ from lakatos.quant.fertility import predictive_fertility, nobel_grade
 from lakatos.eureka import eureka_over_tree
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
-from lakatos.verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE
+from lakatos.verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row
 
 
 def _primary_parent(row: dict) -> str | None:
@@ -341,8 +341,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     #   provenance 로 surface(영수증 없는 green=거짓말; 울프람 '추측 말고 돌려라'→재검증으로 inconclusive 해소).
     #   비파괴(노드 보존)·가역: cfg.provenance_lenient=True 면 옛 동작(집계 포함)으로 opt-out(append-only 존중).
     #   ★key 부재=레거시/테스트 픽스처는 신뢰(집계 — 실 KG 읽기만 verdict_source 키를 싣는다, read_models RETURN).
-    inconclusive = [r['tag'] for r in nodes if r.get('verdict') in PROGRESS_VERDICTS
-                    and 'verdict_source' in r and not r['verdict_source']]
+    inconclusive = [r['tag'] for r in nodes if force_of_row(r) == 'INCONCLUSIVE']   # SSOT: verdicts.force_of
     lenient = bool(cfg.get('provenance_lenient'))
     if inconclusive and not lenient:
         _inc = set(inconclusive)

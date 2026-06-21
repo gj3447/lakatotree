@@ -88,6 +88,33 @@ def is_engine_verdict(verdict: str) -> bool:
     return verdict in ENGINE_VERDICTS or verdict in REBUILD_VERDICTS
 
 
+# ── 정본 prom (Occam 통합 2026-06-21): "영수증 vs 자기보고"의 *단일 3치 술어* ──────────────────
+#   6라운드 동안 metrics·CANONICAL floor·credibility 가 이 술어를 각자 재유도하다 drift 했다(버그의 근원).
+#   레지스트리가 어휘를 소유하듯 이 술어도 한 곳에서 소유한다. verdict_source 가 *현실이 다시 끊을 수 있는
+#   영수증*({scripted,engine,reproducible,human})이면 COUNTS; 진보어휘인데 영수증 미도래(키 있고 빈 source)면
+#   INCONCLUSIVE; 그 외(admin/구조 또는 비진보)는 SELF_REPORT. 키 *부재*(레거시/테스트 픽스처)는 신뢰(집계 보존).
+#   ★verdict_source 는 server-set-only — client 입력으로 받으면 모든 구멍이 동시에 재개방된다(스키마 가드).
+FORCEFUL_SOURCES = frozenset({'scripted', 'engine', 'reproducible', 'human'})
+_SOURCE_ABSENT = object()   # verdict_source 키 자체가 없음(레거시/픽스처) — None(영수증 미도래)과 구분
+
+
+def force_of(verdict: str, verdict_source=_SOURCE_ABSENT) -> str:
+    """단일 영수증 술어 → 'COUNTS' | 'INCONCLUSIVE' | 'SELF_REPORT'. verdict_source 생략 = 키 부재(신뢰)."""
+    if verdict_source in FORCEFUL_SOURCES:
+        return 'COUNTS'
+    if verdict_source is _SOURCE_ABSENT:
+        return 'SELF_REPORT'   # 키 부재 = 레거시/픽스처(force 없으나 inconclusive 도 아님 → 기존 집계 보존)
+    if not verdict_source and verdict in PROGRESS_VERDICTS:
+        return 'INCONCLUSIVE'   # 키 있고 빈 source + 진보어휘 = 영수증 미도래
+    return 'SELF_REPORT'
+
+
+def force_of_row(row: dict) -> str:
+    """노드 dict → force_of. verdict_source 키 부재(레거시)와 None(영수증 미도래)을 구분해 넘긴다."""
+    return force_of(row.get('verdict'),
+                    row['verdict_source'] if 'verdict_source' in row else _SOURCE_ABSENT)
+
+
 def is_self_report_blocked_verdict(verdict: str) -> bool:
     """노드 수동 작성으로 self-report 금지 어휘 — 채점(scripted/engine) ∪ 진보집계(PROGRESS_VERDICTS,
     CANONICAL/former_canonical 포함). 적대 재검증(2026-06-21): scripted/engine 만 막으면 정본급 진보어휘
