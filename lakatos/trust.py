@@ -7,6 +7,8 @@
 """
 
 
+from urllib.parse import urlparse
+
 from lakatos.grounding import GROUNDED   # T-H-1: damping/alpha 단일 정본(하드코딩 금지 — drift/G5 우회 방지)
 
 
@@ -105,14 +107,27 @@ _AUTHORITATIVE_URL_DOMAINS = (
 )
 
 
-def authoritative_url(url: str) -> bool:
-    """URL 이 *서버 검증 가능한* 권위 도메인이면 True(eigentrust pre-trusted seed 자격).
+def _host(url: str) -> str:
+    """URL → 소문자 host(끝점 제거). scheme 없으면 '//' 붙여 netloc 으로 파싱."""
+    u = url or ''
+    if '://' not in u:
+        u = '//' + u
+    return (urlparse(u).hostname or '').lower().rstrip('.')
 
+
+def authoritative_url(url: str) -> bool:
+    """URL 의 *host* 가 서버검증 권위 도메인이면 True(eigentrust pre-trusted seed 자격).
+
+    ★host 경계로 매칭한다 — substring 매칭은 도메인 스푸핑에 뚫린다(적대 재검증 2026-06-21):
+      sciencedirect.com.attacker.com / evil.com?ref=ietf.org / attacker.com/iso.org 모두 'in url' 은 참이나
+      권위 출처가 아니다. host==domain 또는 host.endswith('.'+domain) 만 인정.
     client 가 자기선언하는 source_type 라벨과 달리 도메인은 외부 referent 에 commit 한다 — 잔여
-    forge(URL 문자열 자체가 client 공급)는 G-Web 재fetch 가 닫는다.
+    forge(URL 문자열 자체가 client 공급)는 G-Web 재fetch 가 닫는다(world_gates Part A, 미구현).
     """
-    u = (url or '').lower()
-    return any(d in u for d in _AUTHORITATIVE_URL_DOMAINS)
+    host = _host(url)
+    if not host:
+        return False
+    return any(host == d or host.endswith('.' + d) for d in _AUTHORITATIVE_URL_DOMAINS)
 
 
 def build_trust_graph(observations: list, *,
