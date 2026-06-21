@@ -35,6 +35,15 @@ def test_lenient_mode_opts_out_to_legacy_counting():
     assert any("부풀림" in a for a in m["alerts"])
 
 
+def test_read_models_projects_verdict_source_so_d1_fires_in_prod():
+    """R3 적대 재검증 발견: read_models 가 verdict_source 를 *투영하지 않아* 실 KG 노드는 키 부재 →
+    D1 의 inconclusive 검출이 prod 에서 한 번도 안 떴다(inert). 투영을 강제하는 회귀 가드."""
+    import inspect
+    from server import read_models
+    assert "verdict_source" in inspect.getsource(read_models.load_tree_data), \
+        "read_models nodes 투영에 verdict_source 누락 → D1 prod inert(영수증 없는 green 통과)"
+
+
 def test_legacy_nodes_without_verdict_source_key_unaffected():
     """verdict_source *키 부재*(레거시/테스트 픽스처)는 신뢰 — inconclusive 아님, 집계 정상(타 트리 비트동일)."""
     legit = {"tag": "c", "parent": "root", "verdict": "CANONICAL",
