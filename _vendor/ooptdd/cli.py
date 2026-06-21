@@ -37,7 +37,15 @@ from .config import from_mapping, load_pyproject
 from .domain.model import signature_status, verify_chain
 from .domain.ontology import Ontology, check_conformance, ontology_compat
 from .domain.ports import backend_caps
-from .engine.gate import can_i_deploy, evaluate, load_gate
+from .engine.gate import (
+    can_i_deploy,
+    compare_strength,
+    evaluate,
+    green_banner,
+    lint_spec,
+    load_gate,
+    strength_fingerprint,
+)
 from .engine.verify import verify_gate, verify_trace
 from .mutation import mutation_report
 
@@ -77,12 +85,23 @@ def _load_json_file(path: str):
         return json.load(fh)
 
 
+def _resolve_probe(spec: dict):
+    """A spec may name an external-oracle probe (``probe: {name: file, root: ...}``); resolve it
+    via the probe registry so an ``external:`` check is usable from the CLI. None if absent."""
+    p = spec.get("probe")
+    if isinstance(p, dict) and p.get("name"):
+        from .probes import get_probe
+        return get_probe(p["name"], **{k: v for k, v in p.items() if k != "name"})
+    return None
+
+
 # ── verify (pytest summary, or an arbitrary --gate spec) ───────────────────────
 def _cmd_verify(args) -> int:
     backend = _backend(args)
     if args.gate:
-        res = verify_gate(backend, args.cid, load_gate(args.gate), retries=args.retries,
-                          delay=args.delay)
+        gate = load_gate(args.gate)
+        res = verify_gate(backend, args.cid, gate, retries=args.retries,
+                          delay=args.delay, probe=_resolve_probe(gate))
         print(json.dumps(res, ensure_ascii=False, indent=2))
         v = res["verdict"]
         msg = {"present": "GREEN — arrival confirmed", "absent": "RED — not all expected "
@@ -107,13 +126,14 @@ def _cmd_verify(args) -> int:
 
 def _cmd_gate(args) -> int:
     backend = _backend(args)
-    res = evaluate(backend, load_gate(args.spec))
+    spec = load_gate(args.spec)
+    res = evaluate(backend, spec, probe=_resolve_probe(spec))
     print(json.dumps(res, ensure_ascii=False, indent=2))
     if res.get("optional_failed"):
         print(f"WARN — optional checks failed (not gating): {res['optional_failed']}",
               file=sys.stderr)
     if res["ok"]:
-        print(f"GREEN — gate passed (cid={res['cid']})", file=sys.stderr)
+        print(green_banner(res), file=sys.stderr)
         return 0
     if not res["reachable"]:
         print("INCONCLUSIVE — store unreachable", file=sys.stderr)
@@ -121,8 +141,52 @@ def _cmd_gate(args) -> int:
     if not res.get("complete", True):
         print("INCONCLUSIVE — readback truncated (incomplete evidence)", file=sys.stderr)
         return 2
+    if not res.get("probe_reachable", True):
+        print("INCONCLUSIVE — external probe unreachable", file=sys.stderr)
+        return 2
+    if res.get("vacuous"):
+        print("RED — vacuous gate: every check is optional/pending, nothing can fail "
+              "(mark at least one check gating)", file=sys.stderr)
+        return 1
+    if res.get("uncorroborated"):
+        print("RED — uncorroborated: every gating check is the system's own self-report "
+              "(no separate-source external: corroboration); require_corroboration on",
+              file=sys.stderr)
+        return 1
     print("RED — gate failed", file=sys.stderr)
     return 1
+
+
+def _cmd_lint(args) -> int:
+    findings = lint_spec(load_gate(args.spec))
+    if getattr(args, "json", False):
+        print(json.dumps({"vacuity": findings}, ensure_ascii=False, indent=2))
+    for f in findings:
+        print(f"  [{f['severity']}] {f['code']} {f['label']}: {f['message']}", file=sys.stderr)
+    high = [f for f in findings if f["severity"] == "high"]
+    if high:
+        print(f"VACUOUS — {len(high)} blocking finding(s); the gate is weak by construction",
+              file=sys.stderr)
+        return 1
+    print("OK — no vacuity findings" if not findings
+          else f"WARN — {len(findings)} strength finding(s)", file=sys.stderr)
+    return 0
+
+
+def _cmd_strength(args) -> int:
+    fp = strength_fingerprint(load_gate(args.spec))
+    if args.write:
+        with open(args.write, "w", encoding="utf-8") as fh:
+            json.dump(fp, fh, indent=2)
+    if args.baseline:
+        cmp = compare_strength(_load_json_file(args.baseline), fp)
+        _emit({"fingerprint": fp, **cmp}, args,
+              ("WEAKENED — " + "; ".join(cmp["regressions"])) if cmp["weakened"]
+              else f"OK — strength held (score {fp['score']} >= baseline {cmp['baseline_score']})")
+        return 1 if cmp["weakened"] else 0
+    _emit(fp, args, f"strength score={fp['score']} gating={fp['gating']} "
+          f"by_strength={fp['by_strength']} min_threshold={fp['min_threshold']}")
+    return 0
 
 
 def _cmd_can_i_deploy(args) -> int:
@@ -204,7 +268,8 @@ def _cmd_monitor(args) -> int:
     view = {"cid": res["cid"], "ok": res["ok"], "reachable": res["reachable"],
             "complete": res.get("complete", True),
             "checks": [{"label": c.get("event") or next((k for k in
-                        ("present", "absent", "must_order", "conforms", "heartbeat", "ratio")
+                        ("present", "absent", "must_order", "conforms", "heartbeat", "ratio",
+                         "invariant")
                         if k in c), "check"),
                         "verdict": c.get("verdict"), "settled_at": c.get("settled_at"),
                         "passed": c["passed"]} for c in res["checks"]]}
@@ -243,10 +308,18 @@ _GATE_SCHEMA = """gate spec (gates/*.yaml) — keys:
     - {must_order: [a, b, c], within_s: S}           # sequencing (a.k.a. trajectory:)
     - {heartbeat: NAME, every_s: S}                  # liveness
     - {ratioMetric: {good: {...}, total: {...}}, op: gte, target: 0.99}
+    - {invariant: {left: {reduce: sum, field: amount, event: A},   # cross-event conservation
+                   right: {reduce: count|sum|min|max|last, field: F, event: B},
+                   op: "==", tol: 0.01}}
+    - {metamorphic: {relation: equal|scaled|subset|monotone|idempotent,  # oracle-FREE relation
+                     a: {event: A}, b: {event: B}, reduce: sum, field: F, factor: 2, tol: 0.01}}
+    - {external: {kind: db_row, selector: {...}, op: "==", want: 42}}  # INDEPENDENT oracle (not
+                                                     #   the trace) — needs evaluate(probe=...)
     - {conforms: EVENTTYPE, closed_world: true}      # ontology conformance
     - {indicatorRef: NAME}  with top-level indicators: {NAME: {event:.., where:..}}
   optional: true / pending: true / weight: N    (per-check modifiers)
   cid: ... | cid_env: OOPTDD_CID | timeWindow: 1h | threshold: 0.9
+  require_corroboration: true    # single-authority gate (no separate-source external:) -> RED
   forbid_errors: true | error_levels: [ERROR, CRITICAL] | allow_errors: [{event: ..}]
 """
 _ONTOLOGY_SCHEMA = """ontology file (yaml) — shape:
@@ -290,6 +363,18 @@ def main(argv=None) -> int:
     g.add_argument("spec")
     g.add_argument("--backend")
     g.set_defaults(func=_cmd_gate)
+
+    ln = sub.add_parser("lint", help="static strength audit of a gate spec (catch vacuous gates)")
+    ln.add_argument("spec")
+    _add_json(ln)
+    ln.set_defaults(func=_cmd_lint)
+
+    st = sub.add_parser("strength", help="gate strength fingerprint; --baseline catches weakening")
+    st.add_argument("spec")
+    st.add_argument("--baseline", help="JSON fingerprint to compare against (exit 1 if weaker)")
+    st.add_argument("--write", help="write the fingerprint JSON to this path (a new baseline)")
+    _add_json(st)
+    st.set_defaults(func=_cmd_strength)
 
     d = sub.add_parser("can-i-deploy", help="Pact-style multi-gate deploy decision")
     d.add_argument("specs", nargs="+")
