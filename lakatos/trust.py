@@ -93,15 +93,40 @@ AUTHORITATIVE_SOURCE_TYPES = (
     'standard', 'specification', 'textbook', 'literature',
 )
 
+# 권위 seed 분류는 *URL 도메인*(서버 검증 가능 allowlist)으로 — client 의 source_type 라벨이 아니라.
+#   R3 발견(prom-honesty): 인터넷 관측에 source_type='peer_reviewed' 자기선언만으로 pre-trusted eigentrust
+#   seed 를 위조할 수 있었다. URL 도메인은 클라가 특정 *실제* 출판사 URL 에 commit 해야 하고, 그 문자열의
+#   진위는 후속 url+content_hash 재fetch(world_gates G-Web/Part A)가 닫는다 — 라벨보다 위조면이 좁다.
+#   (research_import._source_type 의 권위 도메인을 미러; 이 모듈은 leaf 라 도메인 상수를 자체 보유.)
+_AUTHORITATIVE_URL_DOMAINS = (
+    'sciencedirect.com', 'springer.com', 'frontiersin.org', 'ncbi.nlm.nih.gov',
+    'openaccess.thecvf.com', 'mvtec.com',                 # 1차/peer-reviewed 출판사·벤더 공식문서
+    'ietf.org', 'w3.org', 'iso.org', 'iec.ch',            # 표준화 기구(official anchor)
+)
+
+
+def authoritative_url(url: str) -> bool:
+    """URL 이 *서버 검증 가능한* 권위 도메인이면 True(eigentrust pre-trusted seed 자격).
+
+    client 가 자기선언하는 source_type 라벨과 달리 도메인은 외부 referent 에 commit 한다 — 잔여
+    forge(URL 문자열 자체가 client 공급)는 G-Web 재fetch 가 닫는다.
+    """
+    u = (url or '').lower()
+    return any(d in u for d in _AUTHORITATIVE_URL_DOMAINS)
+
 
 def build_trust_graph(observations: list, *,
-                      authoritative_types=AUTHORITATIVE_SOURCE_TYPES) -> tuple[dict, dict]:
+                      authoritative_types=AUTHORITATIVE_SOURCE_TYPES,
+                      trust_source_type_label: bool = False) -> tuple[dict, dict]:
     """실 관측 리스트 → (local_trust, pre_trusted) — eigentrust 입력 그래프.
 
-    observation dict 기대 키: 'source'(또는 url/source_type 로 식별), 'source_type',
+    observation dict 기대 키: 'source'(또는 url/source_type 로 식별), 'url', 'source_type',
     'node'(어느 주장/노드를 받치나), 'corroboration_score'(0..1, 있으면 edge 가중).
     같은 node 를 받치는 관측 i,j 는 서로 corroboration edge(상호신뢰) — co-support 그래프.
-    권위 source_type 관측은 pre_trusted seed(sybil 저항 앵커).
+
+    seed(pre-trusted) 자격은 기본 *URL 도메인*(authoritative_url, 서버 검증)으로 판정 — client 의
+    source_type 라벨은 seed 를 통제하지 못한다(R3 forge 봉쇄). 신뢰된 구조/문헌 앵커(URL 없는 textbook
+    인용 등)를 라벨로 seed 하려면 trust_source_type_label=True 로 *명시 opt-in*(그 신뢰는 호출자가 소유).
     """
     sources = {}
     by_node: dict = {}
@@ -112,7 +137,10 @@ def build_trust_graph(observations: list, *,
             continue
         sources.setdefault(src, o.get('source_type') or '')
         by_node.setdefault(o.get('node') or o.get('tag') or '', []).append((src, o))
-        if (o.get('source_type') or '').lower() in {t.lower() for t in authoritative_types}:
+        seeded = authoritative_url(o.get('url') or o.get('source') or '')   # 서버 검증 도메인
+        if not seeded and trust_source_type_label:                          # 명시 opt-in 시에만 라벨 신뢰
+            seeded = (o.get('source_type') or '').lower() in {t.lower() for t in authoritative_types}
+        if seeded:
             pre_trusted[src] = 1.0
 
     local_trust: dict = {s: {} for s in sources}
@@ -147,5 +175,7 @@ def global_source_trust(observations: list, **kw) -> dict:
             'n_seeds': len(pre_trusted),
             'n_edges': n_edges,
             'mode': mode,   # 정직: edge 없으면 seed_dominated(고유벡터 heavy-lifting 아직 아님)
+            # seed 가 서버검증 URL 도메인인지, 호출자-소유 라벨 opt-in 인지 노출(숨김 금지)
+            'seed_basis': 'source_type_label' if kw.get('trust_source_type_label') else 'url_domain',
         },
     }

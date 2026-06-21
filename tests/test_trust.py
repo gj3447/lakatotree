@@ -40,14 +40,30 @@ def test_eigentrust_dangling_redistribution():   # 나생문 F-MATH-3
 from lakatos.trust import build_trust_graph, global_source_trust
 
 
-def test_build_graph_seeds_from_authoritative_types():
+def test_build_graph_seeds_from_authoritative_url_domain():
+    # 기본(서버검증): seed 는 URL 도메인으로 — client source_type 라벨은 seed 통제 못 함
+    local, pre = build_trust_graph([
+        {'source': 'https://www.sciencedirect.com/x', 'url': 'https://www.sciencedirect.com/x',
+         'source_type': 'blog', 'node': 'v1'},   # 라벨은 blog 라도 권위 도메인 → seed
+        {'source': 'blog_x', 'url': 'https://blog.example/y', 'source_type': 'peer_reviewed', 'node': 'v1'},
+    ])  # 비권위 도메인 + peer_reviewed *라벨* → seed 아님(forge 봉쇄)
+    assert 'https://www.sciencedirect.com/x' in pre and 'blog_x' not in pre
+
+
+def test_forged_label_without_authoritative_url_is_not_seeded_by_default():
+    # ★R3 봉쇄: peer_reviewed 라벨 자기선언만으론(권위 URL 없이) 기본 모드에서 seed 안 됨
+    _local, pre = build_trust_graph([{'source': 'fake', 'source_type': 'peer_reviewed', 'node': 'v1'}])
+    assert pre == {}
+
+
+def test_label_seeding_requires_explicit_opt_in():
+    # 신뢰된 구조/문헌 앵커(URL 없는 textbook 인용)는 trust_source_type_label=True 로 *명시 opt-in* 시에만
     local, pre = build_trust_graph([
         {'source': 'jeffreys1961', 'source_type': 'literature', 'node': 'v1'},
         {'source': 'blog_x', 'source_type': 'blog', 'node': 'v1'},
-    ])
-    assert 'jeffreys1961' in pre and 'blog_x' not in pre   # 권위 source_type 만 seed
-    # 같은 노드 v1 받친 두 관측 → corroboration edge
-    assert local['jeffreys1961'].get('blog_x', 0) > 0
+    ], trust_source_type_label=True)
+    assert 'jeffreys1961' in pre and 'blog_x' not in pre   # opt-in 하면 권위 라벨만 seed
+    assert local['jeffreys1961'].get('blog_x', 0) > 0      # 같은 노드 co-support edge
 
 
 def test_global_trust_authority_beats_blog():
@@ -55,15 +71,18 @@ def test_global_trust_authority_beats_blog():
         {'source': 'jeffreys1961', 'source_type': 'literature', 'node': 'v1', 'corroboration_score': 0.9},
         {'source': 'blog_x', 'source_type': 'blog', 'node': 'v1', 'corroboration_score': 0.4},
     ]
-    r = global_source_trust(obs)
+    r = global_source_trust(obs, trust_source_type_label=True)   # 문헌 앵커 opt-in
     assert r['trust']['jeffreys1961'] > r['trust']['blog_x']   # 문헌 앵커 > 블로그
     assert r['coverage']['mode'] == 'graph_propagated'
+    assert r['coverage']['seed_basis'] == 'source_type_label'   # 정직: 라벨 opt-in 표기
 
 
 def test_global_trust_honest_coverage_labels():
-    # edge 없으면 seed_dominated (정직 — 고유벡터 heavy-lifting 아님)
-    assert global_source_trust(
-        [{'source': 'a', 'source_type': 'primary', 'node': 'n1'}]
-    )['coverage']['mode'] == 'seed_dominated'
+    # edge 없으면 seed_dominated (정직 — 고유벡터 heavy-lifting 아님); 기본 seed_basis=url_domain
+    r = global_source_trust([{'source': 'a', 'source_type': 'primary', 'node': 'n1'}],
+                            trust_source_type_label=True)
+    assert r['coverage']['mode'] == 'seed_dominated'
+    assert global_source_trust([{'source': 'a', 'source_type': 'primary', 'node': 'n1'}]
+                               )['coverage']['seed_basis'] == 'url_domain'
     # 관측 0 → uniform_unlearned
     assert global_source_trust([])['coverage']['mode'] == 'uniform_unlearned'
