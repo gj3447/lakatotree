@@ -1,7 +1,14 @@
-"""라카토트리 verdict registry.
+"""라카토트리 verdict registry — *어휘*(verdict)와 *영수증 술어*(force_of)의 단일 정본(SSOT).
 
 판결 어휘는 서버, 메트릭, 문서가 같은 집합을 바라봐야 한다. 새 어휘는
 이 파일과 테스트를 바꾸는 규약 개정 사건으로만 들어온다.
+
+★force_of (정본 prom Occam 통합 2026-06-21): "영수증인가 자기보고인가"의 *단일 3치 술어*. metrics·CANONICAL
+floor·credibility 가 각자 이 술어를 재유도하다 6라운드 drift 했다(버그의 근원) → 한 곳에서 소유한다.
+verdict_source(현실이 끊어 준 영수증의 출처)를 normalize_source 로 정본화한 뒤 force(COUNTS)·무영수증
+(INCONCLUSIVE)·자기보고/구조(SELF_REPORT)로 가른다. *미래의 모든 게이트는 이 술어를 import 한다 — 재유도 금지*
+(spine.synthesize_promotion floor / quant.metrics inconclusive / judgement_service credibility 가 그 예).
+★verdict_source 는 server-set-only 다 — client 입력으로 받는 순간 모든 구멍이 동시에 재개방된다(스키마 가드).
 # KG: span_lakatotree_verdict_registry
 """
 
@@ -100,19 +107,54 @@ FORCEFUL_SOURCES = frozenset({'scripted', 'engine', 'reproducible', 'human'})
 #   force 가 아니므로 COUNTS 되지 않고, 진보집계에서 빠지도록 INCONCLUSIVE 로 매핑(NULL 진보어휘와 동일 취급).
 #   ★fabrication 아님: 영수증의 *부재*를 단언할 뿐(참), 영수증을 날조하지 않는다.
 INCONCLUSIVE_SOURCES = frozenset({'pre_receipt', 'prehistory'})
+# 구조/행정 source(영수증 아님, force 없음 → SELF_REPORT-tier). 통제 어휘에 *명시* 등록(유령 금지).
+STRUCTURAL_SOURCES = frozenset({'admin', 'kg_bootstrap', 'conjecture'})
+# 별칭: 같은 영수증의 다른 이름 → 정본 토큰. dogfood judge() 하네스는 *실 .venv pytest 영수증*에서
+#   점수를 낸다(self-report 아님) → scripted; cloc 측정은 결정론 실행 측정 → reproducible.
+_SOURCE_ALIASES = {
+    'dogfood': 'scripted',
+    'cloc-measured': 'reproducible',
+}
+# server 가 쓴 prose 영수증(예: "engine judge() over ... 93/93 PASSED")은 *선두 토큰*이 정본 source 다.
+#   ★verdict_source 는 server-set-only 이므로 이 prose 는 신뢰된 주석 — client 입력이면 스키마가 막는다.
+_CANONICAL_HEADS = FORCEFUL_SOURCES | INCONCLUSIVE_SOURCES | STRUCTURAL_SOURCES
+VALID_VERDICT_SOURCES = _CANONICAL_HEADS   # 통제 어휘(레지스트리) — 새 토큰은 여기서만
+
 _SOURCE_ABSENT = object()   # verdict_source 키 자체가 없음(레거시/픽스처) — None(영수증 미도래)과 구분
 
 
+def normalize_source(raw: str) -> str:
+    """raw verdict_source → 정본 토큰(통제 어휘). 별칭·prose 를 한 곳에서 흡수(force_of 의 단일 정규화 chokepoint).
+
+    규칙(순서): (1) 정확 일치 → 그대로 · (2) 별칭 맵 · (3) 선두 토큰이 정본이면 그것(prose 영수증) · (4) 미상은
+    선두 토큰 그대로 반환(force_of 가 SELF_REPORT 처리 — silent COUNTS 금지).
+    """
+    if not raw:
+        return raw
+    if raw in _CANONICAL_HEADS:
+        return raw
+    head = raw.strip().split()[0].lower().rstrip(':()')   # 'engine judge()...' → 'engine'
+    if head in _SOURCE_ALIASES:
+        return _SOURCE_ALIASES[head]
+    if head in _CANONICAL_HEADS:
+        return head
+    return head
+
+
 def force_of(verdict: str, verdict_source=_SOURCE_ABSENT) -> str:
-    """단일 영수증 술어 → 'COUNTS' | 'INCONCLUSIVE' | 'SELF_REPORT'. verdict_source 생략 = 키 부재(신뢰)."""
-    if verdict_source in FORCEFUL_SOURCES:
-        return 'COUNTS'
-    if verdict_source in INCONCLUSIVE_SOURCES:
-        return 'INCONCLUSIVE'   # 명시적 무영수증 마커(legacy/prehistory) — NULL 진보어휘와 동일 취급
+    """단일 영수증 술어 → 'COUNTS' | 'INCONCLUSIVE' | 'SELF_REPORT'. verdict_source 생략 = 키 부재(신뢰).
+
+    verdict_source 는 normalize_source 로 정본화한 뒤 판정한다 — 별칭/prose drift 를 한 곳에서 흡수.
+    """
     if verdict_source is _SOURCE_ABSENT:
         return 'SELF_REPORT'   # 키 부재 = 레거시/픽스처(force 없으나 inconclusive 도 아님 → 기존 집계 보존)
     if not verdict_source and verdict in PROGRESS_VERDICTS:
         return 'INCONCLUSIVE'   # 키 있고 빈 source + 진보어휘 = 영수증 미도래
+    src = normalize_source(verdict_source)
+    if src in FORCEFUL_SOURCES:
+        return 'COUNTS'
+    if src in INCONCLUSIVE_SOURCES:
+        return 'INCONCLUSIVE'   # 명시적 무영수증 마커(legacy/prehistory) — NULL 진보어휘와 동일 취급
     return 'SELF_REPORT'
 
 
