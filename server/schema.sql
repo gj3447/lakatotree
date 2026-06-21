@@ -7,6 +7,10 @@ CREATE TABLE IF NOT EXISTS history(
   payload JSONB
 );
 CREATE INDEX IF NOT EXISTS idx_history_tree_ts ON history(tree, ts DESC);
+-- B1(override 2026-06-21): reconcile_outbox 멱등 재적용 키. 정상 hist 는 event_id=NULL(append-only),
+-- KG OutboxEntry 재적용분만 event_id 채워 ON CONFLICT DO NOTHING 으로 이중적재 차단(부분 unique).
+ALTER TABLE history ADD COLUMN IF NOT EXISTS event_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_history_event_id ON history(event_id) WHERE event_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS metric_snapshots(
   id BIGSERIAL PRIMARY KEY,
   ts TIMESTAMPTZ NOT NULL DEFAULT now(),

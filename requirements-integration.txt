@@ -2,4 +2,4 @@
 # 실 Neo4j+PG 를 testcontainers 로 띄워 kg_tx(ROB-1) 롤백/복구 모델을 실 DB 로 characterize.
 # 사용: uv pip install -r requirements-integration.txt && LAKATOS_IT=1 pytest -m integration
 # (neo4j / psycopg2 드라이버는 requirements.txt 에 이미 있음.)
-testcontainers>=4.0
+testcontainers[neo4j,postgres]>=4.0

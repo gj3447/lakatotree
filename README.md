@@ -172,9 +172,9 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
 
 ### `io/` — evidence, provenance, persistence, observability
-`lineage` `replay` `rebuild` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`
+`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`
 - `lineage` manifest + env fingerprint + root-replay DAG · `replay` lineage-replay gates (`LineageReplayGate`/`ReproducibilityContract`, split out of `engine`)
-- `rebuild` "receipts not claims" rebuild-from-raw · `prov` W3C PROV-O triples + replay command · `envfp` environment fingerprint
+- `rebuild` "receipts not claims" rebuild-from-raw · `reconcile` KG↔PG transactional-outbox + idempotent reconcile (B1: hist 실패를 KG OutboxEntry 로 보존, 멱등 재적용) · `prov` W3C PROV-O triples + replay command · `envfp` environment fingerprint
 - `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export (OpenLineage / DVC / PROV)
 
 ```
