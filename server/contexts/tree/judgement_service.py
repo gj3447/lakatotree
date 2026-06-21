@@ -74,7 +74,8 @@ class JudgementService:
                 continue
             if src is None:
                 src = s
-            observations.append(dict(source=s, source_type=p.get('source_type') or '', node=tag,
+            observations.append(dict(source=s, url=p.get('url') or '',   # seed 는 서버검증 URL 도메인으로
+                                     source_type=p.get('source_type') or '', node=tag,
                                      corroboration_score=float(p.get('corroboration_score') or 0.0)))
         if src is None:
             # 관측은 있으나 식별 가능한 source 없음 → internal 취급. human vouch 는 보존(위와 동형).

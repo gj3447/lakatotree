@@ -29,10 +29,20 @@ def test_internal_node_skips_credibility_gate():
 
 
 def test_authoritative_internet_source_is_eigentrust_backed_extracted():
-    """권위 출처(peer_reviewed=seed) → eigentrust seed_dominated → backed, 직접출처 EXTRACTED(고신뢰 통과)."""
-    c = _svc([_obs("peer_reviewed")])._eigentrust_credibility("T", "n", novel_confirmed=False, has_human_verdict=False)
+    """권위 *URL 도메인*(서버검증 publisher) → eigentrust seed → backed, 직접출처 EXTRACTED(고신뢰 통과)."""
+    c = _svc([_obs("peer_reviewed", url="https://www.sciencedirect.com/science/article/x")]) \
+        ._eigentrust_credibility("T", "n", novel_confirmed=False, has_human_verdict=False)
     assert c is not None
     assert c["current"] == CredibilityTier.EXTRACTED and c["has_direct_source"] is True
+
+
+def test_forged_source_type_label_with_junk_url_is_not_backed():
+    """★R3 봉쇄(Step4): source_type='peer_reviewed' *라벨* 자기선언 + 비권위 URL 은 seed 안 됨
+    (seed 는 서버검증 URL 도메인 전용) → uniform_unlearned → 미뒷받침 AMBIGUOUS → CANONICAL 차단."""
+    c = _svc([_obs("peer_reviewed", url="https://junk.example/anything")]) \
+        ._eigentrust_credibility("T", "n", novel_confirmed=True, has_human_verdict=False)
+    assert c is not None
+    assert c["current"] == CredibilityTier.AMBIGUOUS and c["has_direct_source"] is False
 
 
 def test_nonauthoritative_internet_source_is_unbacked_inconclusive():
