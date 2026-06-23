@@ -7,6 +7,7 @@ import os
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 
 def load_app():
@@ -111,6 +112,73 @@ def test_prediction_in_carries_scale_type():
     assert p.scale_type == 'ordinal'
     assert PredictionIn(metric_name='m', baseline_value=1.0).scale_type == 'ratio'   # 기본 하위호환
     assert 'scale_type' in p.model_dump()   # register_prediction 가 **model_dump 로 KG(pred_scale_type)에 씀
+
+
+# ── #① Laudan 연구전통 authoring + appraise + series bridge (diagnostic-only) ──
+
+class _FakeTraditionKG:
+    """전통 authoring 라운드트립용 stateful fake kg (Cypher 키워드 매칭)."""
+    def __init__(self):
+        self.tradition = None
+        self.revisions = []
+
+    def __call__(self, q, **kw):
+        if 'MERGE (rt:ResearchTradition' in q:                 # set_tradition
+            self.tradition = kw
+            return [{'id': kw['tid']}]
+        if 'RETURN rt.tradition_id AS tid' in q:               # get_tradition
+            t = self.tradition
+            return [] if not t else [{'tid': t['tid'], 'tname': t['tname'], 'commitments': t['commitments'],
+                                      'onto': t['onto'], 'meth': t['meth'], 'exemplars': t['exemplars'],
+                                      'probs': t['probs'], 'bg': t['bg'], 'rpol': t['rpol'], 'cnotes': t['cnotes']}]
+        if 'RETURN rt.commitments AS commitments' in q:        # appraise read
+            return [{'commitments': self.tradition['commitments']}] if self.tradition else []
+        if 'HAS_TRADITION_REVISION]->(:TraditionRevision' in q:  # appraise write
+            self.revisions.append(kw['cp'])
+            return []
+        if 'sum(rv.conceptual_pressure)' in q:                 # series bridge
+            return [{'cp': sum(self.revisions)}]
+        return []
+
+
+def test_tradition_authoring_appraise_roundtrip(monkeypatch):
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _FakeTraditionKG())
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    c = TestClient(app.app)
+    r = c.post('/api/tree/T/tradition', json={'tradition_id': 't1', 'name': 'CAD 3D inspection',
+               'exemplars': ['euler'], 'commitments': [
+                   {'commitment_id': 'm1', 'kind': 'methodology', 'statement': 'CAD prior', 'revisability': 'costly'},
+                   {'commitment_id': 'o1', 'kind': 'ontology', 'statement': '결정성', 'revisability': 'identity_boundary'}]})
+    assert r.status_code == 200 and r.json()['commitments'] == 2 and r.json()['authority'] == 'diagnostic_only'
+    g = c.get('/api/tree/T/tradition')
+    assert g.status_code == 200 and g.json()['tradition_id'] == 't1' and 'euler' in g.json()['exemplars']
+    # costly methodology, 영수증 없음 → tradition_drift (직접 hard-core 위반 아님)
+    a = c.post('/api/tree/T/tradition/appraise', json={'commitment_id': 'm1', 'operation': 'modify'})
+    assert a.status_code == 200 and a.json()['outcome'] == 'tradition_drift'
+    assert a.json()['authority'] == 'diagnostic_only'
+    # identity_boundary ontology → different_programme_candidate (개념압력 1.0 누적)
+    a2 = c.post('/api/tree/T/tradition/appraise', json={'commitment_id': 'o1', 'operation': 'retire'})
+    assert a2.json()['outcome'] == 'different_programme_candidate' and a2.json()['conceptual_pressure'] == 1.0
+
+
+def test_set_tradition_bad_enum_422(monkeypatch):
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _FakeTraditionKG())
+    r = TestClient(app.app).post('/api/tree/T/tradition', json={'tradition_id': 't', 'name': 'x',
+                                 'commitments': [{'commitment_id': 'c', 'kind': 'bogus', 'statement': 's'}]})
+    assert r.status_code == 422   # tradition.py 도메인 불변식(kind enum) 위반
+
+
+def test_series_view_surfaces_tradition_conceptual_pressure(monkeypatch):
+    # #① bridge: 기록된 전통 개념압력이 series 진단에 반영(diagnostic_only, verdict 권위 불변)
+    app = load_app()
+    patch_tree(monkeypatch, app, {'T': HEALTHY_TD})
+    monkeypatch.setattr(app, 'kg', lambda *a, **k: [{'cp': 0.5}])   # 누적 전통 개념압력 합
+    out = app.series_view('T')
+    assert out['tradition_conceptual_pressure'] == 0.5
+    assert out['coverage']['conceptual_problem'] == 'tradition_wired'   # bridge 활성
+    assert out['authority'] == 'diagnostic_only'                        # 권위 불변
 
 
 def test_lifecycle_view_extinct_only_via_stack(monkeypatch):
