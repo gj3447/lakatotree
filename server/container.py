@@ -136,6 +136,15 @@ class AppContainer:
                 'replayed_count': len(replayed),
                 'still_pending': plan['pending_total'] - len(replayed), 'pg_down': pg_down}
 
+    def outbox_pending_count(self) -> int:
+        """관측(#③ outbox 경화): 미적용 OutboxEntry 수 = KG↔PG 발산 깊이. best-effort — KG 다운 시 -1(미상).
+        진짜 2PC 대신 outbox 정답패턴을 *관측가능*하게: pending 이 쌓이면 reconcile(자동 startup/수동 ops) 필요."""
+        try:
+            rows = self.kg("MATCH (o:OutboxEntry {status:'pending'}) RETURN count(o) AS n")
+            return int(rows[0]['n']) if rows else 0
+        except Exception:   # noqa: BLE001 — 관측은 어떤 예외도 운영을 막지 않음
+            return -1
+
     # ── lifecycle ──────────────────────────────────────────────────────
     def close(self) -> list:
         """OPS-LIFECYCLE-1: 종료 시 각 자원을 best-effort 로 닫고 실패목록을 반환(감사)."""

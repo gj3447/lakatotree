@@ -88,9 +88,24 @@ def _close_resources() -> list:
     return _container.close()
 
 
+def _startup_reconcile():
+    """startup best-effort outbox 복구(#③ outbox 경화) — PG-down 중 쌓인 OutboxEntry 를 *자동* 재적용해
+    KG↔PG 발산을 부팅 시 좁힌다(진짜 2PC 아님 — outbox 정답패턴의 자동복구 절반). 실패해도 startup 안 막음
+    (멱등이라 재호출 안전; 수동 트리거 POST /api/ops/reconcile-outbox 도 남아있음)."""
+    try:
+        r = _container.reconcile_outbox()
+        if r.get('replayed_count'):
+            logger.info('startup outbox reconcile: %s 재적용, %s pending', r['replayed_count'], r['still_pending'])
+        return r
+    except Exception as e:   # noqa: BLE001 — 부팅 복구 실패가 서버 기동을 막지 않음
+        logger.warning('startup outbox reconcile 실패(무시 — 수동 트리거 가능): %s', type(e).__name__)
+        return None
+
+
 @asynccontextmanager
 async def _lifespan(app):
-    yield                                    # startup: 지연연결(드라이버 lazy) — 별도 작업 없음
+    _startup_reconcile()                     # startup: outbox 자동복구(best-effort, #③)
+    yield
     for e in _close_resources():             # shutdown: 커넥션 누수 차단
         logger.warning('shutdown 리소스 close 실패: %s', e)
 
@@ -170,6 +185,13 @@ def reconcile_outbox_op():
     멱등(ON CONFLICT event_id DO NOTHING)이라 재호출 안전. mutating → LAKATOS_API_TOKEN 설정 시
     Bearer 강제(_bearer_auth). 반환 {pending, replayed, replayed_count, still_pending, pg_down}."""
     return _container.reconcile_outbox()
+
+
+@app.get('/api/ops/outbox-status')
+def outbox_status_op():
+    """관측(#③ outbox 경화): 미적용 OutboxEntry depth = KG↔PG 발산 깊이. GET=비변이(무인증).
+    pending>0 = reconcile 필요(startup 자동 + POST /api/ops/reconcile-outbox 수동). -1=KG 미상."""
+    return {'pending': _container.outbox_pending_count()}
 
 
 # 자원 접근 모듈 API — AppContainer 위임(구현은 server.container, server.app 은 얇은 facade).
