@@ -36,6 +36,18 @@ def test_series_tool_routes_with_optional_leaf(monkeypatch):   # #5 프로그램
     assert seen[1] == '/api/tree/T/series?leaf=v22'
 
 
+def test_tradition_tools_route(monkeypatch):   # ① CLI/MCP parity
+    seen_get, seen_post = [], []
+    monkeypatch.setattr(m, '_get', lambda p: (seen_get.append(p), {'ok': True})[1])
+    monkeypatch.setattr(m, '_post', lambda p, b: (seen_post.append((p, b)), {'ok': True})[1])
+    json.loads(m.tradition('T'))
+    json.loads(m.tradition_appraise('T', 'm1', operation='retire'))
+    json.loads(m.tradition_set('T', '{"tradition_id":"t1","name":"x","commitments":[]}'))
+    assert seen_get == ['/api/tree/T/tradition']
+    assert seen_post[0][0] == '/api/tree/T/tradition/appraise' and seen_post[0][1]['operation'] == 'retire'
+    assert seen_post[1][0] == '/api/tree/T/tradition' and seen_post[1][1]['tradition_id'] == 't1'
+
+
 def test_lifecycle_tool_routes(monkeypatch):
     seen = _cap(monkeypatch)
     json.loads(m.lifecycle('T', leaf='best'))
