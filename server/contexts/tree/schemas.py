@@ -280,3 +280,36 @@ class FoundationRequirementIn(BaseModel):
             owner=self.owner,
             risk_if_missing=self.risk_if_missing,
         )
+
+
+# ── #① Laudan 연구전통 authoring (diagnostic-only) — programme/tradition.py 도메인 객체로 검증 ──
+class TraditionCommitmentIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    commitment_id: str
+    kind: str                       # ontology|methodology|exemplar|problem_type|background_theory
+    statement: str
+    revisability: str = "routine"   # routine|costly|identity_boundary
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class TraditionIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    tradition_id: str
+    name: str
+    commitments: list[TraditionCommitmentIn] = Field(default_factory=list)
+    ontology_commitments: list[str] = Field(default_factory=list)
+    methodology_rules: list[str] = Field(default_factory=list)
+    exemplars: list[str] = Field(default_factory=list)
+    accepted_problem_types: list[str] = Field(default_factory=list)
+    background_theories: list[str] = Field(default_factory=list)
+    revision_policy: str = ""
+    compatibility_notes: str = ""
+
+
+class TraditionAppraiseIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    commitment_id: str
+    operation: str                  # add|modify|retire|reclassify
+    reason: str = ""
+    receipt_refs: list[str] = Field(default_factory=list)
+    compatibility_claim: str = ""

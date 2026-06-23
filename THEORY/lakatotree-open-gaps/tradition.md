@@ -26,5 +26,8 @@ objects (`ResearchTradition`, `TraditionCommitment`, `TraditionRevision`,
 design invariants — hard-core identity still routes through `LakatosGate` /
 `HardCoreProtected`; `identity_boundary` revision yields a
 `different_programme_candidate` diagnostic, never a silent hard-core rewrite.
-Step 5 (optional: feeding tradition conceptual pressure into
-`programme_series_appraisal`) remains future work.
+Step 5 (feeding tradition conceptual pressure into the series diagnostic) is now
+DONE (2026-06-23): tradition is authorable+persisted (`POST/GET /api/tree/{name}/tradition`),
+revisions are appraised+recorded append-only (`POST /api/tree/{name}/tradition/appraise`),
+and `series_view` surfaces the accumulated `tradition_conceptual_pressure`
+(diagnostic_only). CLI/MCP parity for the tradition surface remains a minor follow-up.
