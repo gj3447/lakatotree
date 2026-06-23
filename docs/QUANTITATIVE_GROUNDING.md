@@ -10,7 +10,7 @@
 
 - **literature** (4): `bf_partial_equivalent`, `default_prior`, `pagerank_damping`, `ucb_c`
 - **policy_in_scale** (12): `abandon_credence`, `abandon_k`, `bf_progressive`, `bf_rejected`, `ece_bins`, `eff_cap`, `eigentrust_alpha`, `fdr_q`, `log_score_eps`, `nobel_min_hitrate_lb`, `nobel_min_predictions`, `stack_quorum`
-- **policy** (15): `abandon_b`, `abandon_budget`, `claim_min_confidence`, `claim_strong_confidence`, `credibility_extracted_trust`, `credibility_inferred_trust`, `demote_canonical_penalty`, `effect_size_floor`, `evidence_action_confidence`, `evidence_realm_confidence`, `injection_high_risk_floor`, `lifecycle_stall_window`, `supersession_window`, `w_problem`, `weight_floor`
+- **policy** (16): `abandon_b`, `abandon_budget`, `claim_min_confidence`, `claim_strong_confidence`, `credibility_extracted_trust`, `credibility_inferred_trust`, `crisis_exploration_scale`, `demote_canonical_penalty`, `effect_size_floor`, `evidence_action_confidence`, `evidence_realm_confidence`, `injection_high_risk_floor`, `lifecycle_stall_window`, `supersession_window`, `w_problem`, `weight_floor`
 
 ## 해석 척도 (raw 점수 → 문헌 등급)
 
@@ -66,6 +66,7 @@
 | `lifecycle_stall_window` | 3 | policy | policy | 수확/발산 판정 최근 노드 윈도우 | lifecycle 종료판정(수확=novel 등록 고갈+안정, 발산=문제수지 적자+정본 정체)의 관측 윈도우. ABANDON_K=3 과 같은 규모의 정책값(SPRT |
 | `fdr_q` | 0.05 | policy_in_scale | benjamini_hochberg1995 | BH false discovery rate 목표 | gap8 다중비교: 가지가 많을수록 우연 통과(false-progressive)가 늘어남 — BH 절차(문헌)로 FDR 통제. q=0.05 컷 자체는 Fisher |
 | `ucb_c` | 1.414 | literature | auer2002 | UCB1 탐색계수 | explore.py bandit UCB1 탐색항 계수 c=√2 = Auer et al.(2002) 정본값(문헌 직접). 전엔 explore.py 에 1.414 하 |
+| `crisis_exploration_scale` | 2 | policy | policy | Kuhn 위기 시 UCB 탐색항(c) 배율 | Kuhn(1962) 위기(incumbent 퇴행 ∧ 지배 rival 부재)=가설공간 확장 신호 → UCB1 탐색항 c=√2 를 ×2.0 으로 넓혀 덜 본 fron |
 | `credibility_extracted_trust` | 0.7 | policy | policy | EXTRACTED 등급 trust 문턱 | trust>=0.70 → 최강 등급 EXTRACTED(게이트 자명통과). spine+engine 공유 정책값. |
 | `credibility_inferred_trust` | 0.35 | policy | policy | INFERRED 등급 trust 문턱 | trust>=0.35 → INFERRED, 미만 → AMBIGUOUS. spine+engine 공유 정책값. |
 | `claim_strong_confidence` | 0.75 | policy | policy | ClaimStanding strong 문턱 | ClaimStandingPolicy: confidence>=0.75 = 강한 주장. 엔지니어링 정책값. |

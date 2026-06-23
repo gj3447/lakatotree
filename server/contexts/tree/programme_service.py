@@ -19,6 +19,7 @@ from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.quant.metrics import branch_inputs
 from lakatos.programme.series import series_from_path
+from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
 from server.contexts.tree.diagnostics import diagnose_required_constraints
 from server.contexts.tree.schemas import (
@@ -96,6 +97,9 @@ class ProgrammeService:
         can = next((r for r in td['nodes'] if r['verdict'] == 'CANONICAL'), None)
         metrics = self.compute_metrics(td)
         cred = (metrics.get('bayes') or {}).get('canonical_credence') or 0.5
+        # crisis→explore(#9): 퇴행깊이(가지 연속 비진보 최대) ≥ k = Kuhn 위기(가설공간 확장 신호) → 탐색 폭 확대.
+        #   정본 leaf 는 진보판결이라 그 경로 consec 은 무용 → 트리 전역 max_degeneration_depth 를 쓴다.
+        crisis = incumbent_degenerating([], int(metrics.get('max_degeneration_depth', 0)))
         opens = [q for q in td['frontier'] if q['status'] == 'OPEN']
 
         def _num(q, k, d):
@@ -133,12 +137,13 @@ class ProgrammeService:
                               on_canonical_frontier=q['name'] in front_qnames,
                               gain_source='explicit' if q.get('expected_gain') is not None else 'derived'))
         total_visits = max(sum(q['n_visits'] for q in qmeta), len(qmeta), 1)
-        ranked = self.rank_questions(qmeta, total_visits=total_visits)
+        ranked = self.rank_questions(qmeta, total_visits=total_visits, crisis=crisis)
         for q in ranked:
             q['branch_from'] = (can or {}).get('tag')
             q['suggested_tag'] = q['name'].replace('q-', 'exp-') + '-try1'
         return dict(canonical=(can or {}).get('tag'), canonical_credence=cred,
-                    branch_pressure=round(pressure, 4), ranked_directions=ranked,
+                    branch_pressure=round(pressure, 4), crisis_exploration=crisis,
+                    ranked_directions=ranked,
                     protocol=['① prediction 사전등록(구조적 novel_metric/threshold + script_sha 권장)',
                               '② 변경 하나 실행', '③ test_result 스크립트 채점', '④ 자동 판결+질문 close'])
 
