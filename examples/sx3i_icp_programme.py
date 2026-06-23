@@ -47,6 +47,16 @@ BLOOM_NODES = [
        limitation='실 lot 적용(evidence/c1b_consistency_20260623): interior-gated 79개/52종, ≥2마커 뷰 9개, '
                   '공동관측 쌍이 전부 단1뷰 → min_pair_views=2 통과 쌍 0 → 채택 0(REFUTED). 게이트는 옳으나 '
                   '신호부족. denoise 프론트엔드(다리1)가 선결과제 — decode 반복 공동관측↑ 후 재적용.'),
+
+    # ── C1b 다리1(denoise): salvage 가설 반증 → C1b 경로 degenerate ──
+    _n('c1b_denoise', 'degenerating', 'c1_marker_detect',
+       comment='denoise 프론트엔드 측정(scripts/c1b_denoise_eval.py + c1_salvage_denoise.py). triage 정본 '
+               'bilateral(9,50,50)+CLAHE(3,16²)+EC0.4 가 이미 최적 denoise — 전 211뷰에서 ≥3뷰+side_mm안정 '
+               '마커 = 172 단 1개, 최다반복 190(13뷰)은 노이즈 attractor(불안정)→탈락. '
+               'evidence/c1b_denoise_20260623.md.',
+       limitation='최적 2D denoise 로도 신뢰가능 반복 마커집합 不생성(172 1개=정합 불가). DICT_4X4_250 16비트 '
+                  '+ speckle → valid-but-wrong flip 구조적. "재촬영 없이 살린다" denoise-salvage 반증. '
+                  'C1 CONFIRM 경로(C1b)는 이 lot 에서 degenerate → 재촬영/markerless 분기 필요(q_recapture_markerless).'),
 ]
 
 # ── SX3i frontier (Laudan open questions = PROGRAMME.md 의 C1~C5 계획) ────────
@@ -61,10 +71,15 @@ BLOOM_FRONTIER = [
          body='C4: C2 puzzle INIT 위 raw-res ICP(geom+intensity) 로 overlap RMS sub-0.1mm?'),
     dict(name='q_crosscam', status='OPEN', closed_by=None,
          body='C5: XL250 ↔ MR60(zivid2Plus, BPC lot) cross-camera feature |Δ| < 0.15mm?'),
-    # 측정이 새로 연 질문(C1b) — denoise 선결과제. consistency 게이트는 구축됐으나 신호부족.
-    dict(name='q_denoise_coverage', status='OPEN', closed_by=None,
-         body='C1b: edge-preserving despeckle(CLAHE/bilateral/NLM)로 decode 반복 공동관측↑ → '
-              'cross-view consistency 게이트가 진짜 마커집합을 채택(P1≥2,P2≥20px)하는가?'),
+    # C1b denoise 질문 — 측정으로 부정 답(CLOSED by c1b_denoise): denoise 로는 못 살림.
+    dict(name='q_denoise_coverage', status='CLOSED', closed_by='c1b_denoise',
+         body='C1b: edge-preserving despeckle 로 decode 반복 공동관측↑? → 답 NO. bilateral+CLAHE 최적 '
+              'denoise 로도 ≥3뷰 안정 마커 172 1개뿐(190 노이즈 attractor). salvage 반증.'),
+    # 위 부정답이 연 분기전환 질문 (degenerate → 다른 가지).
+    dict(name='q_recapture_markerless', status='OPEN', closed_by=None,
+         body='C1 대안: (a) 재촬영(노출/마커대비↑, 큰 dict DICT_5X5/6X6, GSD↑) 또는 '
+              '(b) markerless(CAD surface-match / C3 feature-coincidence 마커무관 직접) 중 무엇이 '
+              'XL250 sub-0.1mm 독립검증을 여는가?'),
 ]
 
 
@@ -86,17 +101,19 @@ def run():
     sx3i_open = [q['name'] for q in BLOOM_FRONTIER if q['status'] == 'OPEN']
     _line(f"  SX3i open frontier   : {len(sx3i_open)}개  {sx3i_open}")
     _line(f"  핵심 정밀게이트      : q_independent_accuracy (C3⭐, median ≤ 0.10mm)")
-    sx3i_tags = {nd['tag'] for nd in BLOOM_NODES}
     n_prog = sum(1 for nd in BLOOM_NODES if nd['verdict'] in ('progressive', 'CANONICAL'))
     partials = [nd['tag'] for nd in BLOOM_NODES if nd['verdict'] == 'partial']
+    degen = [nd['tag'] for nd in BLOOM_NODES if nd['verdict'] == 'degenerating']
     _line(f"  진보 노드(SX3i)      : {n_prog}  ← CANONICAL 미획득=정직(정본 진보 아직 없음).")
-    _line(f"  측정 마디(SX3i)      : {len(partials)}개 partial {partials} ← 설계완료→측정 개시(0개 아님).")
+    _line(f"  측정 마디(SX3i)      : partial {partials} + degenerating {degen}")
     _line(f"  C1 verdict           : PARTIAL (마커 실재·dict ✅ / speckle 신뢰검출 미달)")
-    _line(f"  C1b 게이트           : 구축+합성검정 ✅, 실lot 신호부족(공동관측쌍 0) → denoise 선결")
+    _line(f"  C1b 경로             : geom✅+consistency✅(합성), 그러나 denoise 다리1 반증 → degenerate")
+    _line(f"  → 분기전환           : denoise-salvage 불가(172 1개,190 노이즈) → 재촬영/markerless (q_recapture_markerless)")
     _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
     _line('\n' + '═' * 72)
     return dict(metrics=m, bloom_at=BLOOM_AT, open_frontier=sx3i_open,
-                sx3i_progressive=n_prog, sx3i_partial=partials, canonical=m['canonical'])
+                sx3i_progressive=n_prog, sx3i_partial=partials, sx3i_degenerating=degen,
+                canonical=m['canonical'])
 
 
 if __name__ == '__main__':

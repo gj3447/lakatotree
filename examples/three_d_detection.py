@@ -69,11 +69,12 @@ def run():
     sx3i_open = [q for q in sx3i.BLOOM_FRONTIER if q['status'] == 'OPEN']
     sx3i_prog = [n['tag'] for n in sx3i.BLOOM_NODES if n['verdict'] in ('progressive', 'CANONICAL')]
     sx3i_partial = [n['tag'] for n in sx3i.BLOOM_NODES if n['verdict'] == 'partial']
+    sx3i_degen = [n['tag'] for n in sx3i.BLOOM_NODES if n['verdict'] == 'degenerating']
     lx3_prog = [n['tag'] for n in lx3.BLOOM_NODES if n['verdict'] == 'progressive']
     lx3_degen = [n['tag'] for n in lx3.BLOOM_NODES if n['verdict'] == 'degenerating']
     _line(f"  BPC  : CANONICAL(v8 sub-1mm) — 줄기 확립. 미해소=interior CMM 미검증(step 6.1).")
-    _line(f"  SX3i : 실측개시 — 진보노드 {len(sx3i_prog)}(정본 미획득), 측정마디 {len(sx3i_partial)}개 partial "
-          f"{sx3i_partial}, open frontier {len(sx3i_open)}개. C1=PARTIAL(speckle 신뢰검출 미달), C1b=denoise 선결.")
+    _line(f"  SX3i : 실측 — 진보 {len(sx3i_prog)}, partial {sx3i_partial}, degenerating {sx3i_degen}. "
+          f"C1=PARTIAL, C1b denoise-salvage 반증 → 재촬영/markerless 분기(open frontier {len(sx3i_open)}).")
     _line(f"  LX3  : 실측 — progressive {lx3_prog} (R&R σ 37µm), "
           f"degenerating {lx3_degen} (auto-path ceiling + collapse 재확인).")
 

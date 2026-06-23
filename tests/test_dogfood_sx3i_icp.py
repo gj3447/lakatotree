@@ -38,14 +38,26 @@ def test_sx3i_c1_c1b_measured_as_partial():
     assert set(out['sx3i_partial']) == {'c1_marker_detect', 'c1b_consistency'}
 
 
-def test_sx3i_remaining_frontier_open():
+def test_sx3i_denoise_refuted_branch_switch():
+    """denoise 다리1 반증 — degenerating 노드 + denoise 질문 CLOSED(부정답) + 분기전환 OPEN."""
     out = run()
-    # C2~C5 는 아직 미측정 → OPEN. 측정이 C1b denoise 선결과제(q_denoise_coverage)를 새로 엶.
-    assert all(q['status'] == 'OPEN' for q in BLOOM_FRONTIER)
+    by = {n['tag']: n for n in BLOOM_NODES}
+    # denoise salvage 가 degenerating 으로 기록(가짜green 아님 — 반증)
+    assert by['c1b_denoise']['verdict'] == 'degenerating'
+    assert out['sx3i_degenerating'] == ['c1b_denoise']
+    fr = {q['name']: q for q in BLOOM_FRONTIER}
+    # denoise 질문은 측정으로 답(부정) → CLOSED, 그 degenerating 노드가 닫음
+    assert fr['q_denoise_coverage']['status'] == 'CLOSED'
+    assert fr['q_denoise_coverage']['closed_by'] == 'c1b_denoise'
+    # 분기전환 질문이 새로 열림
+    assert fr['q_recapture_markerless']['status'] == 'OPEN'
+
+
+def test_sx3i_remaining_frontier():
+    out = run()
+    # C2~C5 미측정 → OPEN. C3⭐ 정밀게이트 존재. denoise 는 닫힘(부정답).
     assert out['open_frontier'] == ['q_xl250_gsd', 'q_sx3i_assemble',
                                     'q_independent_accuracy', 'q_raw_refine',
-                                    'q_crosscam', 'q_denoise_coverage']
-    # C3⭐ 독립 정밀게이트가 존재(precision≠accuracy 를 닫는 관문)
+                                    'q_crosscam', 'q_recapture_markerless']
     assert 'q_independent_accuracy' in out['open_frontier']
-    # 측정이 연 새 질문
-    assert 'q_denoise_coverage' in out['open_frontier']
+    assert 'q_denoise_coverage' not in out['open_frontier']  # 측정으로 닫힘
