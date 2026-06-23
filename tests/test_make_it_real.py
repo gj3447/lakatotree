@@ -254,3 +254,23 @@ def test_artifact_prov_format_prov_json(monkeypatch):
     pj = app.artifact_prov('out', format='prov-json')
     assert 'prov' in plain                          # format 없으면 내부 dict
     assert 'prefix' in pj and 'entity' in pj and 'activity' in pj   # 표준 W3C PROV-JSON 키
+
+
+def test_rebuild_verify_static_surface_uses_distinct_token(monkeypatch):
+    """#7 정직: /rebuild-verify 는 *정적* DAG 체크(재실행 아님)다 → executor 재실행 영수증과 같은
+    'rebuildable' 을 뱉으면 영수증급 과장. 정적 surface 는 rebuildable_static + verified='static' 을 뱉어야."""
+    from server.contexts.lineage import service as svc
+    s = svc.LineageService(kg=None, pg=None, path_sha=lambda p: None,
+                           load_lineage=lambda: [], safe_rebuild_plan=lambda a, bo: [])
+    monkeypatch.setattr(s, '_lineage_for', lambda a: ([], {}))
+    monkeypatch.setattr(s, '_current_input_shas', lambda ds: {})
+    monkeypatch.setattr(s, '_safe_rebuild_plan', lambda a, bo: [])
+    monkeypatch.setattr(svc, 'reproducibility_gaps', lambda *a, **k: set())
+
+    class _M:
+        final = 'out.json'; roots = []; env_sha = '0' * 64; recipe = []
+    monkeypatch.setattr(svc, 'build_manifest', lambda *a, **k: _M)
+
+    out = s.rebuild_verify('out.json')
+    assert out['verdict'] == 'rebuildable_static'   # 'rebuildable'(executor 영수증) 아님
+    assert out['verified'] == 'static'

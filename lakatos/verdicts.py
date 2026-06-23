@@ -48,7 +48,8 @@ ENGINE_VERDICTS = frozenset({
 })
 
 REBUILD_VERDICTS = frozenset({
-    "rebuildable",
+    "rebuildable",          # executor 재실행 영수증(rebuild.py) — 실제 bash 재실행 + metric 일치
+    "rebuildable_static",   # #7: 정적 /rebuild-verify DAG 체크(재실행 아님) — 영수증급 'rebuildable' 과 구분
     "progressive_conditional",
     "metric_mismatch",
     "env_drift",

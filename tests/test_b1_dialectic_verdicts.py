@@ -20,7 +20,8 @@ def test_promotion_blocks_degenerating_and_withdrawn():
 
 
 def test_promotion_allows_progress_verdicts():
-    for v in ('progressive', 'progressive_conditional', 'partial', 'equivalent', 'CANONICAL'):
+    # partial/equivalent 는 진보 어휘가 아니다(verdicts.NONPROGRESSIVE) → 승격 불가로 이관(test_promote 파티션).
+    for v in ('progressive', 'progressive_conditional', 'CANONICAL'):
         ok, _ = promotion_gate(scripted_verdict=v, stands=True, reproducible=True)
         assert ok is True, f'{v} 가 부당하게 차단됨'
 

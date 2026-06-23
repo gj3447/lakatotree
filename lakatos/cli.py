@@ -9,6 +9,7 @@
   trust <name>                   eigentrust 글로벌 출처신뢰(실 관측 그래프, coverage 정직표기, P6)
   stack <name> [--leaf L]        포퍼/베이즈/라우든 3층 명시투표+정족수 메타규칙(gap3)
   lifecycle <name> [--leaf L]    프로그램 종료판정 — 수확/발산/소멸/활성(P1)
+  series <name> [--leaf L]       프로그램-시계열 진단 — 정본경로 verdict 진보/퇴행 경향(diagnostic_only, #5)
   leaderboard <a,b,..> [--snapshot]  경쟁 트리 Pareto+Borda 리더보드(P2)
   paradigm <incumbent> <a,b>     정상과학/위기/shift_candidate(gap7, shift=인간 안건)
   certificate <name> <tag>       5게이트 AND 인증서(P2)
@@ -69,6 +70,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('stack'); sp.add_argument('name')
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sp = sub.add_parser('lifecycle'); sp.add_argument('name')
+    sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
+    sp = sub.add_parser('series'); sp.add_argument('name')   # #5 프로그램-시계열 진단(diagnostic_only)
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sp = sub.add_parser('heuristic'); sp.add_argument('name')
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
@@ -141,6 +144,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--risk-if-missing', default='')
     sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
     sp = sub.add_parser('script-history'); sp.add_argument('producer')
+    sp = sub.add_parser('reconcile-outbox')   # B1 복구 운영 트리거(#4) — pending OutboxEntry 멱등 재적용
     sp = sub.add_parser('rebuild-verify'); sp.add_argument('artifact')
     sp = sub.add_parser('rebuild-run'); sp.add_argument('artifact'); sp.add_argument('--recorded', type=float, required=True)
     sp.add_argument('--cmd-template', default='echo metric=0')
@@ -201,6 +205,10 @@ def main(argv=None):
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
         out = call('GET', f'/api/tree/{a.name}/lifecycle{q}')
+    elif a.cmd == 'series':
+        import urllib.parse as up
+        q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
+        out = call('GET', f'/api/tree/{a.name}/series{q}')   # #5 프로그램-시계열 진단
     elif a.cmd == 'heuristic':
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
@@ -304,6 +312,8 @@ def main(argv=None):
     elif a.cmd == 'rebuild-verify':
         import urllib.parse as up
         out = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
+    elif a.cmd == 'reconcile-outbox':
+        out = call('POST', '/api/ops/reconcile-outbox')   # B1 복구(#4) — 멱등 재적용
     elif a.cmd == 'rebuild-run':
         import urllib.parse as up, subprocess, uuid
         from lakatos.io.rebuild import RebuildExecutor
@@ -318,7 +328,10 @@ def main(argv=None):
         recs = []
         def emit(rec):
             recs.append(rec); oo_sink.ship([rec])   # oo 적재(게이트 OFF면 no-op)
-        ex = RebuildExecutor(run_bash=lambda c: (subprocess.run(c, shell=True, capture_output=True, text=True).stdout, 0),
+        def run_bash(c):   # 실제 exit code 전달 — 0 박제 금지(크래시 단계가 step_failed 로 정직히 보고)
+            r = subprocess.run(c, shell=True, capture_output=True, text=True)
+            return (r.stdout, r.returncode)
+        ex = RebuildExecutor(run_bash=run_bash,
                              emit=emit, env_now=fingerprint_sha(environment_fingerprint())[:12], cid=cid)
         res = ex.run(mani, recorded_metric=a.recorded, cmd_for=lambda st: a.cmd_template)
         out = dict(cid=cid, verdict=res.verdict, regenerated=res.regenerated_metric,

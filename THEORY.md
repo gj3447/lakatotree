@@ -75,7 +75,7 @@
 
 | 모듈 | 이론 | 라카토트리 역할 |
 |---|---|---|
-| `trust.py` | TrustRank(시드전파)·EigenTrust(고유벡터) | **인터넷 증거에 정량 신뢰가중** → 베이즈 P(E|H) 결합. ★배선 정직(LKT-T1): 런타임 trust→bayes 경로는 `evidence_weight(source_trust)`(bayes.bayes_factor 가 실사용). `trustrank`/`eigentrust`(그래프 고유벡터)는 citation 그래프용 *라이브러리* 함수 — 아직 런타임 미배선(P6). |
+| `trust.py` | TrustRank(시드전파)·EigenTrust(고유벡터) | **인터넷 증거에 정량 신뢰가중** → 베이즈 P(E|H) 결합. ★배선 정직(LKT-T1): 런타임 trust→bayes 경로는 `evidence_weight(source_trust)`(bayes.bayes_factor 가 실사용). `eigentrust`(고유벡터)는 **이제 런타임 배선됨**: `global_source_trust`(trust.py) → `programme_service.trust_view` → `/api/tree/{name}/trust`(+ judgement_service credence/credibility·eureka 구동). `trustrank`(시드전파)는 아직 citation 그래프용 *라이브러리* 함수 — 런타임 미배선(P6). |
 | `argue.py` | Dung 추상 논증(grounded extension) | **인간+agent 비판 채널**: 의문=공격, 반박=재공격. 판결이 grounded extension 에 서야 정당 |
 | `calibrate.py` | proper scoring(Brier/log/ECE) | 예측 **신뢰도 보정** — prior 주관성 gap 경험적 측정, 정직성 강제 |
 | `world_gates.py` | G-Web/G-WorldAction 강제 + injection scan | **상계/하계 증거의 구조화 게이트**(prom32 finding_06/07/08). 인터넷 fetch 는 url/content_hash/source_type/trust/injection-scan/lakatos-location 전수(`web_gate`+`/observation`), bash 는 command/cwd/exit/stdout(+git_diff) 전수(`world_action_gate`+`/world-action`) 통과해야 evidence 적재(미통과 422). injection 은 차단 아닌 risk 부착(상계 untrusted). ★전엔 모델만 있고 게이트 미강제 → enforced 배선. |

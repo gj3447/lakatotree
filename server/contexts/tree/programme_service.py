@@ -18,6 +18,7 @@ from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _
                                expected_progress_gain, realized_reward)
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.quant.metrics import branch_inputs
+from lakatos.programme.series import series_from_path
 from lakatos.programme.stack import evaluate_stack
 from server.contexts.tree.diagnostics import diagnose_required_constraints
 from server.contexts.tree.schemas import (
@@ -190,6 +191,30 @@ class ProgrammeService:
                              bi['problem_balance_windowed'], bi['canonical_improved_recent'])
         return dict(leaf=bi['leaf'], state=ls.state, reason=ls.reason, regret=ls.regret,
                     window=ls.window, stack=self.stack_dict(sv))
+
+    def series_view(self, name: str, leaf: str | None = None) -> dict:
+        """프로그램-시계열 진단(#5) — 정본경로 verdict 시퀀스를 series_from_path 로 평가.
+        authority=diagnostic_only(promotion_authority=False) — verdict 권위 절대 부여 안 함.
+        개념(internal/external)·비교 anomaly(rival) 입력은 아직 KG 미배선이라 coverage 로 *명시*한다
+        (overclaim 금지). bridge 가 laudan.conceptual_problem_score 를 노드마다 실호출(현재 0 입력)하므로
+        고아였던 laudan 진단 함수가 런타임 caller 를 얻는다. 풍부한 입력 배선은 후속 prom."""
+        _, bi, _ = self.branch_stack(name, leaf)
+        ap = series_from_path(bi['path'])
+        return dict(
+            leaf=bi['leaf'], trend=ap.trend, authority=ap.authority,
+            promotion_authority=ap.promotion_authority, steps=ap.steps,
+            progressive_count=ap.progressive_count, nonprogressive_count=ap.nonprogressive_count,
+            off_axis_count=ap.off_axis_count, problem_balance_total=ap.problem_balance_total,
+            rival_anomaly_count=ap.rival_anomaly_count,
+            conceptual_problem_score=ap.conceptual_problem_score, reasons=list(ap.reasons),
+            problem_balance_windowed=bi['problem_balance_windowed'],
+            coverage={
+                'verdict_sequence': 'wired',
+                'conceptual_problem': 'not_projected_from_kg',   # internal/external 미수집
+                'rival_anomaly': 'not_projected_from_kg',        # RivalProblemRecord 미수집
+                'note': 'diagnostic_only — series 는 정본경로 verdict 시퀀스 기반. 개념/비교 입력 미배선(후속). verdict 권위 없음.',
+            },
+        )
 
     def run_cycle(self, name: str, c: CycleIn) -> dict:
         self.add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),

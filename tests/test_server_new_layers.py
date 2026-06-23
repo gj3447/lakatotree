@@ -85,6 +85,17 @@ def test_stack_view_unknown_leaf_404(monkeypatch):
     assert e.value.status_code == 404
 
 
+def test_series_view_diagnostic_only_over_canonical_path(monkeypatch):
+    # #5: 고아였던 programme.series 에 런타임 read surface — 정본경로 verdict 시퀀스 진단(diagnostic_only)
+    app = load_app()
+    patch_tree(monkeypatch, app, {'T': HEALTHY_TD})
+    out = app.series_view('T')
+    assert out['leaf'] == 'best'
+    assert out['authority'] == 'diagnostic_only' and out['promotion_authority'] is False
+    assert out['trend'] == 'progressive' and out['progressive_count'] == 2  # CANONICAL leaf 는 진단축 밖 제외
+    assert out['coverage']['conceptual_problem'] == 'not_projected_from_kg'  # overclaim 금지(정직 표기)
+
+
 def test_lifecycle_view_extinct_only_via_stack(monkeypatch):
     app = load_app()
     patch_tree(monkeypatch, app, {'D': DYING_TD})

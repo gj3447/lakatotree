@@ -66,6 +66,14 @@ def lifecycle(name: str, leaf: str = '') -> str:
 
 
 @mcp.tool()
+def series(name: str, leaf: str = '') -> str:
+    """프로그램-시계열 진단(#5) — 정본경로 verdict 시퀀스의 진보/퇴행 경향(diagnostic_only, verdict 권위 없음)."""
+    import urllib.parse as up
+    q = ('?' + up.urlencode({'leaf': leaf})) if leaf else ''
+    return json.dumps(_get(f'/api/tree/{name}/series{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
 def heuristic(name: str, leaf: str = '') -> str:
     """MSRP 연구정책 — negative heuristic(hard core 보호/redirect) + positive heuristic(다음 실험 생성:
     ABANDON 퇴행가지/PUSH 진보전선/PROBE 미검 hard-core/PRIORITIZE 문제압). leaf 생략=정본 leaf."""
