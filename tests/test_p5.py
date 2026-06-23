@@ -89,7 +89,7 @@ def test_directions_total_visits_is_sum_of_visits(monkeypatch):
     app = load_app()
     captured = {}
 
-    def fake_rank(qmeta, total_visits):
+    def fake_rank(qmeta, total_visits, crisis=False):   # crisis: #9 crisis→explore 시그니처
         captured['tv'] = total_visits
         return qmeta
 

@@ -330,6 +330,13 @@ GROUNDED = {
         'rationale': 'explore.py bandit UCB1 탐색항 계수 c=√2 = Auer et al.(2002) 정본값(문헌 직접). '
                      '전엔 explore.py 에 1.414 하드코딩(부정확·G5 미감지) → grounding 정본화.',
     },
+    'crisis_exploration_scale': {
+        'value': 2.0, 'source': 'policy', 'tier': 'policy',
+        'band': 'Kuhn 위기 시 UCB 탐색항(c) 배율',
+        'rationale': 'Kuhn(1962) 위기(incumbent 퇴행 ∧ 지배 rival 부재)=가설공간 확장 신호 → UCB1 탐색항 '
+                     'c=√2 를 ×2.0 으로 넓혀 덜 본 frontier 질문 정찰을 강화(crisis→explore 배선, kuhn.py 의 '
+                     '"가설공간 확장 신호" 라벨을 실 신호로). 2.0 은 도메인 정책값(영감 kuhn1962, 정성 위기모델 — 도출 아님).',
+    },
     # 인터넷 출처신뢰 → credibility tier 문턱 (P6-3: spine.credibility_from_trust + engine.tier 가
     # 0.70/0.35 를 각자 하드코딩=drift 위험 → 단일 정본. 엔지니어링 정책값).
     'credibility_extracted_trust': {

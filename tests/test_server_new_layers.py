@@ -96,6 +96,14 @@ def test_series_view_diagnostic_only_over_canonical_path(monkeypatch):
     assert out['coverage']['conceptual_problem'] == 'not_projected_from_kg'  # overclaim 금지(정직 표기)
 
 
+def test_directions_crisis_widens_on_degenerating_tree(monkeypatch):
+    # #9 crisis→explore: 퇴행깊이 ≥ k(Kuhn 위기) → crisis_exploration True (UCB 탐색 폭 확대)
+    app = load_app()
+    patch_tree(monkeypatch, app, {'D': DYING_TD, 'T': HEALTHY_TD})
+    assert app.directions('D')['crisis_exploration'] is True     # root→e1/e2/e3 rejected = 퇴행깊이 3
+    assert app.directions('T')['crisis_exploration'] is False    # 건강한 정본경로
+
+
 def test_prediction_in_carries_scale_type():
     # C(Stevens): PredictionIn 이 scale_type 을 운반해 judge.Prediction 가드를 reachable 하게(orphan 아님).
     from server.contexts.tree.schemas import PredictionIn
