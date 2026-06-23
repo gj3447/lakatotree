@@ -1,6 +1,6 @@
 # Research Tradition Axis
 
-Prometheus decision: `DESIGN_FIRST_DOC_READY`.
+Prometheus decision: `IMPLEMENTED` (2026-06-23 — was `DESIGN_FIRST_DOC_READY`).
 
 Laudan's research tradition is broader than a Lakatos hard core. It can include
 assumptions about entities, processes, and accepted methods. Lakatotree's hard
@@ -18,5 +18,13 @@ It covers:
 - migration/compatibility rules;
 - relation to existing `LakatosGate` and `HardCoreProtected`.
 
-The gap remains implementation-open until `lakatos/programme/tradition.py`
-exists with OOPTDD tests and Longinus bindings.
+CLOSED (2026-06-23): `lakatos/programme/tradition.py` now implements the four
+objects (`ResearchTradition`, `TraditionCommitment`, `TraditionRevision`,
+`TraditionAppraisal`) + `appraise_tradition_revision`, with OOPTDD tests
+(`tests/test_tradition.py`) and Longinus bindings (5 public objects +
+`span_lakatotree_tradition` kg_anchor). `authority == "diagnostic_only"` per the
+design invariants — hard-core identity still routes through `LakatosGate` /
+`HardCoreProtected`; `identity_boundary` revision yields a
+`different_programme_candidate` diagnostic, never a silent hard-core rewrite.
+Step 5 (optional: feeding tradition conceptual pressure into
+`programme_series_appraisal`) remains future work.

@@ -165,11 +165,12 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
 ### `programme/` — programme-level / comparative / meta-policy
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition`
 - `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
 - `flip` per-layer verdict-flip metric — counterfactual pivotality: how often each rigor layer (Popper/Bayes/Laudan) actually *changed* the `stack` decision (composes `quant.metrics.branch_inputs` + `stack`; surfaced in server `read_models` as `m["layer_flips"]` → dashboard)
 - `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
 - `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
+- `tradition` [Laudan] research tradition (revisable ontology/methodology/exemplars) — same_tradition_revision / tradition_drift / different_programme_candidate, `diagnostic_only` (hard-core identity still routes through `LakatosGate`)
 
 ### `io/` — evidence, provenance, persistence, observability
 `lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`
