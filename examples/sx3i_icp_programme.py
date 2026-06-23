@@ -1,0 +1,103 @@
+"""Dogfood — SX3i(XL250 ArUco → 독립검증 sub-0.1mm)를 3D 형상 검출 트리의 가지로 모델링.
+
+3D 형상 검출(3D-shape detection from 3D data) 통합 프로그램의 SX3i 가지.
+BPC 줄기(examples/bpc_icp_programme)에서 **`v8_pipeline` 마디에 피어난다** — BPC v8 의
+미완 step 6.1(precision≠accuracy 독립검증, interior 0.90mm CMM 미검증)을 XL250 에서
+처음 닫으려는 *수직 심화* 가지(같은 ArUco 정합법, 정밀도만 sub-1mm→sub-0.1mm).
+
+★정직성: 측정 없는 conjecture 를 progressive 로 박는 것은 자기채점=가짜green 이므로 금지.
+2026-06-23 첫 실데이터 구동으로 C1/C1b 가 **partial**(측정으로 자란 마디, progressive 아님)
+로 등록됐다 — 마커 실재·dict 는 확인됐으나 speckle 로 신뢰검출 미달이라 CONFIRMED 아님.
+C2~C5 는 여전히 **OPEN frontier**(미측정). 공통 퇴행/기각 교훈은 BPC 줄기에서 상속(중복 등록 안 함).
+
+정본 사양: /data/kjra/PROJECT/3D/SX3i_ICP_SPEC/PROGRAMME.md
+실행: python -m examples.sx3i_icp_programme   (서버/DB 불필요 — 순수 엔진)
+"""
+from __future__ import annotations
+
+from lakatos.quant.metrics import tree_metrics
+from examples.bpc_icp_programme import _n, NODES as BPC_NODES, FRONTIER as BPC_FRONTIER
+
+# 이 가지가 BPC 줄기의 어느 마디에서 피어나는가.
+BLOOM_AT = 'v8_pipeline'
+
+# ── SX3i 가지 노드 — 2026-06-23 첫 실데이터 구동: C1 측정 시작(PARTIAL) ──────────
+# progressive 0개(CANONICAL 미획득=정직). 측정으로 자란 마디 = C1/C1b partial 2개.
+BLOOM_NODES = [
+    _n('sx3i_prob', 'canonical_stage', BLOOM_AT, algo='problem',
+       comment='SX3i = Zivid3 XL250 lot(sx3i_20260615 ×212). XL250 ArUco 정합 → 독립검증 sub-0.1mm. '
+               'BPC v8_pipeline 의 미완 step 6.1(precision≠accuracy) 을 XL250 에서 처음 닫는 수직심화 가지. '
+               '2026-06-23 첫 실데이터 구동 — C1 측정 개시(미측정 → PARTIAL).',
+       limitation='C2~C5 는 여전히 OPEN frontier(미측정). 정합법/퇴행교훈은 BPC 줄기 상속.'),
+
+    # ── C1: XL250 ArUco 검출 — 실데이터 PARTIAL (마커 실재·dict ✅ / 신뢰검출 미달) ──
+    _n('c1_marker_detect', 'partial', 'sx3i_prob', nr=True, nc=False, q=['q_xl250_gsd'],
+       comment='212 zdf ArUco 검출(scripts/c1_marker_detect.py, prismv2 zdf_reader). zdf→aruco 경로 ✅, '
+               'DICT_4X4_250 정답(id 110/120 = BPC marker 111 대역) ✅, 마커 물리실재 ✅ '
+               '(evidence/c1_preliminary_20260623.md).',
+       limitation='organized-intensity speckle → cv2.aruco 가 valid-but-wrong ID flip. 실측 211뷰 raw quad 520 '
+                  '→ decode 70뷰/distinct ID 52종(노이즈 FP 양산), side_px median 신뢰 산출 불가. P1 부분/P2 미확정. '
+                  'C1 은 하위가지 C1b 닫혀야 CONFIRMED.'),
+
+    # ── C1b: denoise+geom+consistency 게이트 (C1 신뢰검출 하위문제) ──
+    _n('c1b_consistency', 'partial', 'c1_marker_detect', nr=True, nc=False, q=['q_denoise_coverage'],
+       comment='cross-view 마커맵 일관성 게이트 구축(scripts/marker_map.py) — 강체 거리불변 + intra-view '
+               'uniqueness 로 노이즈 FP 학살. 합성 falsify 통과(scripts/test_marker_map.py: 진짜 4마커 채택, '
+               'FP 3종 기각, 강체거리 0.77mm 복원). 3D 기하게이트(다리2)는 interior_plane_lift 로 기존재.',
+       limitation='실 lot 적용(evidence/c1b_consistency_20260623): interior-gated 79개/52종, ≥2마커 뷰 9개, '
+                  '공동관측 쌍이 전부 단1뷰 → min_pair_views=2 통과 쌍 0 → 채택 0(REFUTED). 게이트는 옳으나 '
+                  '신호부족. denoise 프론트엔드(다리1)가 선결과제 — decode 반복 공동관측↑ 후 재적용.'),
+]
+
+# ── SX3i frontier (Laudan open questions = PROGRAMME.md 의 C1~C5 계획) ────────
+BLOOM_FRONTIER = [
+    dict(name='q_xl250_gsd', status='OPEN', closed_by=None,
+         body='C1: XL250 organized RGBA 에서 DICT_4X4_250 검출 & 마커 GSD ≥ 20px 룰 통과?'),
+    dict(name='q_sx3i_assemble', status='OPEN', closed_by=None,
+         body='C2: incremental puzzle 가 212뷰를 1 connected component, self-consistency p95 < 0.2mm?'),
+    dict(name='q_independent_accuracy', status='OPEN', closed_by=None,
+         body='C3⭐: feature-coincidence median ≤ 0.10mm — 마커 무관 독립 정밀게이트(BPC step 6.1 을 닫음).'),
+    dict(name='q_raw_refine', status='OPEN', closed_by=None,
+         body='C4: C2 puzzle INIT 위 raw-res ICP(geom+intensity) 로 overlap RMS sub-0.1mm?'),
+    dict(name='q_crosscam', status='OPEN', closed_by=None,
+         body='C5: XL250 ↔ MR60(zivid2Plus, BPC lot) cross-camera feature |Δ| < 0.15mm?'),
+    # 측정이 새로 연 질문(C1b) — denoise 선결과제. consistency 게이트는 구축됐으나 신호부족.
+    dict(name='q_denoise_coverage', status='OPEN', closed_by=None,
+         body='C1b: edge-preserving despeckle(CLAHE/bilateral/NLM)로 decode 반복 공동관측↑ → '
+              'cross-view consistency 게이트가 진짜 마커집합을 채택(P1≥2,P2≥20px)하는가?'),
+]
+
+
+def _line(c=''):
+    print(c)
+
+
+def run():
+    """SX3i 가지를 BPC 줄기에 접붙여 통합 sub-tree 로 구동(가지 단독은 줄기 없이 무의미)."""
+    nodes = BPC_NODES + BLOOM_NODES
+    frontier = BPC_FRONTIER + BLOOM_FRONTIER
+    m = tree_metrics(nodes, frontier)
+
+    _line('═' * 72)
+    _line('  SX3i 가지 — XL250 ArUco → 독립검증 sub-0.1mm (3D 형상 검출 / BPC 줄기 접붙임)')
+    _line('═' * 72)
+    _line(f"\n  피어나는 마디        : {BLOOM_AT} (BPC v8 의 step 6.1 = precision≠accuracy 갭)")
+    _line(f"  통합 트리 정본       : {m['canonical']}  ← 여전히 BPC(SX3i 미측정이라 정본 미획득=정직)")
+    sx3i_open = [q['name'] for q in BLOOM_FRONTIER if q['status'] == 'OPEN']
+    _line(f"  SX3i open frontier   : {len(sx3i_open)}개  {sx3i_open}")
+    _line(f"  핵심 정밀게이트      : q_independent_accuracy (C3⭐, median ≤ 0.10mm)")
+    sx3i_tags = {nd['tag'] for nd in BLOOM_NODES}
+    n_prog = sum(1 for nd in BLOOM_NODES if nd['verdict'] in ('progressive', 'CANONICAL'))
+    partials = [nd['tag'] for nd in BLOOM_NODES if nd['verdict'] == 'partial']
+    _line(f"  진보 노드(SX3i)      : {n_prog}  ← CANONICAL 미획득=정직(정본 진보 아직 없음).")
+    _line(f"  측정 마디(SX3i)      : {len(partials)}개 partial {partials} ← 설계완료→측정 개시(0개 아님).")
+    _line(f"  C1 verdict           : PARTIAL (마커 실재·dict ✅ / speckle 신뢰검출 미달)")
+    _line(f"  C1b 게이트           : 구축+합성검정 ✅, 실lot 신호부족(공동관측쌍 0) → denoise 선결")
+    _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
+    _line('\n' + '═' * 72)
+    return dict(metrics=m, bloom_at=BLOOM_AT, open_frontier=sx3i_open,
+                sx3i_progressive=n_prog, sx3i_partial=partials, canonical=m['canonical'])
+
+
+if __name__ == '__main__':
+    run()
