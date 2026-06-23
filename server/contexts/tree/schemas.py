@@ -67,6 +67,7 @@ class PredictionIn(BaseModel):
     direction: str = "lower"
     baseline_value: float
     noise_band: float = Field(0.0, ge=0)
+    scale_type: str = "ratio"   # Stevens 측정척도 — judge.Prediction 가 검증(ordinal=순서만, nominal=거부)
     novel_prediction: str = ""
     novel_metric: str | None = None
     novel_direction: str | None = None

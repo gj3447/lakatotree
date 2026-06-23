@@ -16,6 +16,15 @@ class PredictionLocked(Exception):
     """채점 후 예측 변경 금지 (조작 차단)."""
 
 
+# Stevens(1946) 측정척도 — 크기연산(빼기·크기 밴드·effect-size)의 적법성은 척도형에 달렸다.
+#   ratio/interval : delta=measured−baseline + noise_band 크기 밴드 + effect-size 전부 적법
+#   ordinal        : *순서*만 의미(rank/Likert) — 빼기 크기 무의미 → noise_band 금지(부호 비교만)
+#   nominal        : 순서조차 없음 → '개선 방향' 정의 불가 → 채점 불가(구성 거부)
+# '정밀·재현 ≠ 타당'(THEORY §8): 순서형에 interval 산술을 묵시 적용하던 구멍을 막는다. 라이선스: stevens1946.
+SCALE_TYPES = ('ratio', 'interval', 'ordinal', 'nominal')
+_MAGNITUDE_SCALES = ('ratio', 'interval')   # 빼기·크기 밴드·effect-size 적법
+
+
 @dataclass(frozen=True)
 class Prediction:
     metric_name: str
@@ -24,8 +33,18 @@ class Prediction:
     noise_band: float = 0.0
     novel_prediction: str = ''   # 무엇이 "새로" 맞아야 하는가
     closes_question: str = ''
+    scale_type: str = 'ratio'    # Stevens 측정척도 (기본 ratio = 하위호환·크기연산 적법)
 
     def __post_init__(self):
+        if self.scale_type not in SCALE_TYPES:
+            raise ValueError(f"scale_type 은 {SCALE_TYPES} 중 (Stevens 측정척도)")
+        # 명목형: 순서 부재 → 개선 방향 정의 불가 → 채점 불가(일찍 거부)
+        if self.scale_type == 'nominal':
+            raise ValueError('nominal metric 은 순서가 없어 진보 방향이 정의 불가 — judge 채점 불가 (Stevens)')
+        # 순서형: 크기연산 불가 → 크기 밴드(noise_band) 부적법. 묵시적 interval 산술 차단.
+        if self.scale_type == 'ordinal' and self.noise_band != 0:
+            raise ValueError('ordinal metric 에 noise_band(크기 밴드) 부적법 — 순서형은 크기연산 불가, '
+                             'noise_band=0 으로 순서 비교만 (Stevens)')
         # 조작 차단(나생문 F-FG-2): 음수 노이즈밴드 = worse-is-progressive 게임
         if self.noise_band < 0:
             raise ValueError('noise_band 음수 불가 (worse-is-progressive 조작 차단)')
