@@ -65,11 +65,21 @@ def test_neo4j_constraint_diagnostics_emit_safe_missing_migrations():
     assert report["ok"] is False
     assert "LakatosTree.name" in report["present"]
     assert "LakatosNode.name" in report["present"]
-    assert {"OpenQuestion.name", "ResearchEvent.id"} <= set(report["missing"])
+    assert {"OpenQuestion.name", "ResearchEvent.id", "ResearchTradition.tradition_id"} <= set(report["missing"])
     assert report["migration_cypher"] == [
         "CREATE CONSTRAINT lkt_open_question_name_unique IF NOT EXISTS FOR (n:OpenQuestion) REQUIRE n.name IS UNIQUE",
         "CREATE CONSTRAINT lkt_research_event_id_unique IF NOT EXISTS FOR (n:ResearchEvent) REQUIRE n.id IS UNIQUE",
+        "CREATE CONSTRAINT lkt_research_tradition_id_unique IF NOT EXISTS FOR (n:ResearchTradition) REQUIRE n.tradition_id IS UNIQUE",
     ]
+
+
+def test_research_tradition_constraint_required():
+    # ① real-KG 연동: 전통 tradition_id uniqueness 강제(MERGE 키 중복 방지)
+    from server.contexts.tree.diagnostics import REQUIRED_CONSTRAINTS
+    spec = next(s for s in REQUIRED_CONSTRAINTS if s.label == "ResearchTradition")
+    assert spec.property == "tradition_id" and spec.name == "lkt_research_tradition_id_unique"
+    assert spec.migration_cypher == ("CREATE CONSTRAINT lkt_research_tradition_id_unique IF NOT EXISTS "
+                                     "FOR (n:ResearchTradition) REQUIRE n.tradition_id IS UNIQUE")
 
 
 def test_neo4j_constraint_diagnostic_facade_reads_show_constraints(monkeypatch):
