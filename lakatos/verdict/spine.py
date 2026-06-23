@@ -6,6 +6,7 @@
   reconcile_verdict  = judge(메트릭) + LakatosGate(질적) → 둘 다 진보여야 진보
   promotion_decision = promotion_gate + FoundationGate(준비도) + 재현성 + CredibilityPromotionGate
 # KG: span_lakatotree_spine / q-lkt-engine-unify
+라이선스(THEORY §8): hanson1958
 """
 from lakatos.verdict.compose import GateOutcome, compose_gates
 from lakatos.verdict.promote import promotion_gate

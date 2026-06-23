@@ -3,6 +3,7 @@
 진보(progressive) = 새로운 예측(novel_prediction)이 적중하는 것.
 땜빵(partial)     = 개선됐으나 새 예측이 없는 것 (라카토스가 경계한 보호대 패치).
 # KG: SA_LakatoTree_Server_20260612 / span_lakatotree_S2_judge_tdd
+라이선스(THEORY §8): stevens1946 duhem1906 goodman1955 cronbach_meehl1955 hempel1945 mayo1996 hanson1958 pearl2009
 """
 import math
 from dataclasses import dataclass

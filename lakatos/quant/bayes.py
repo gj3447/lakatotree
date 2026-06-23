@@ -14,6 +14,7 @@
 한계 정직(사용자 정리 #10): ①사전확률 주관 → prior 명시 인자(감사 가능) ②새 가설 탄생은
   베이즈 범위 밖 → frontier/directions(가설공간 확장)가 담당, 베이즈는 within-tree 신뢰도만.
 # KG: span_lakatotree_bayes
+라이선스(THEORY §8): royall1997 ramsey1926 definetti1937 cox1946
 """
 import math
 from lakatos.trust import evidence_weight
