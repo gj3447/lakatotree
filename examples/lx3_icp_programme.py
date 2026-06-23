@@ -14,6 +14,9 @@ BPC 와 같은 fiducial 정합 계열로 복귀(과거 "마커 不在" 가정 �
   - ★(2026-06-22 ArUco-턴테이블, LX3RT MIP_36H12) 검출 classic 101/121 → 보정(nlm+2× upscale) 119/121뷰,
     최대 연결성분 115/121(DeepArUco++ 보강중) = 막혀있던 "ArUco init data" enabler 확보(progressive).
     단 정합 *정확도* sub-mm 미측정(OPEN) — 검출커버리지 ≠ 정확도(가짜green 금지).
+  - ★(2026-06-23 grounded, q_lx3_aruco_accuracy OPEN 유지): 정합 LSQ=FAILED(id-collision로 8마커/14쌍 starved,
+    LM degenerate·precision 1193mm 발산); 독립 부시-vs-CAD 정확도=측정됐으나 OVER_TOL(FRT거리 -2.34mm>±1.0mm,
+    더구나 단일 정면station=ArUco 정합 우회). precision(반복도 0.19mm)≠accuracy. → 가짜green 금지, OPEN 정직.
 
 정본 사양: /data/kjra/PROJECT/3D/LX3_ICP_SPEC/{README,PRODUCTION_REPORT}.md
 실행: python -m examples.lx3_icp_programme   (서버/DB 불필요 — 순수 엔진)
@@ -57,7 +60,14 @@ BLOOM_NODES = [
                '학습) 어려운 뷰 보강중. novel=턴테이블 fiducial 이 연결된 멀티뷰 정합그래프 산출(confirmed).',
        limitation='검출 커버리지/그래프 연결만 grounded. 정합 *정확도* sub-mm(±1.0mm)는 미측정=OPEN '
                   '(q_lx3_aruco_accuracy). 검출≠정확도. ⚠️DeepArUco GPU=타워 Blackwell(sm_120)↔CUDA11.7 '
-                  '비호환(torch cu117 garbage) → CPU+다운스케일로만 신뢰.'),
+                  '비호환(torch cu117 garbage) → CPU+다운스케일로만 신뢰. '
+                  '★2026-06-23 known-3° 단일축 턴테이블 LSQ 정합 시도=FAILED(grounded, lx3_turntable_register_'
+                  '20260623.json): 134 robust-3D center/80 id 중 ≥2뷰 32 id이나 24개가 3D span>1.4m '
+                  '(=1.3m 회전체에 단일 물리마커로 불가능) → MIP_36H12 id-collision/오검출, 같은 id가 같은 '
+                  '물리마커 아님. id-collision gate 후 8 마커/14 view-pair(<30 임계)로 starved, LM 해는 '
+                  'degenerate(축 95m밖·precision 1193mm 발산=신뢰 0, accuracy로 보고 금지). 병목=검출/대응'
+                  '(solver 튜닝 아님): 멀티뷰 id 대응이 도장된 캐스팅에서 비신뢰 → geometry-gated id matching '
+                  '(RANSAC) 또는 마커-무관 부시 fallback 필요.'),
 
     # 퇴행 가지(보존) — BPC 줄기 hard-core 재확인 + markerless 자동경로 한계
     _n('lx3_identity_basin', 'degenerating', 'lx3_prob', m=4.35, base=None,
@@ -79,8 +89,20 @@ BLOOM_FRONTIER = [
          body='정합 enabler: HALCON SurfaceMatch license OR ArUco init data — 둘 중 하나 확보. '
               '→ 2026-06-22 ArUco init data 확보(LX3RT MIP_36H12 턴테이블, 검출 119/121뷰·연결성분 115).'),
     dict(name='q_lx3_aruco_accuracy', status='OPEN', closed_by=None,
-         body='ArUco-턴테이블 정합이 sub-mm(±1.0mm) 정확도를 다는가 — 검출 커버리지(115뷰 component)는 '
-              '확보됐으나 정합 후 정확도(외부기준/feature-coincidence) 미측정. precision≠accuracy.'),
+         body='ArUco-턴테이블 정합이 sub-mm(±1.0mm) 정확도를 다는가. **OPEN 유지** — 2026-06-23 grounded '
+              '측정 2건이 둘 다 닫지 못함: '
+              '(1) 정합 자체 FAILED(lx3_turntable_register_20260623.json): known-3° 단일축 LSQ가 '
+              'id-collision으로 starved(32 멀티뷰 id 중 24개 span>1.4m=오검출, 잔여 8마커/14쌍<30; LM '
+              'degenerate, precision 1193mm 발산 → 신뢰 0, precision_rmse=null). 같은 ArUco id가 같은 '
+              '물리마커가 아님 = 검출/대응 병목(solver 아님). 따라서 정합 precision조차 미확보. '
+              '(2) 독립 정확도 측정(lx3_bush_accuracy_20260623.json, 기둥2 부시 vs CAD nominal): 측정됐으나 '
+              '**OVER_TOL** — FRT_LH-FRT_RH 거리 1090.96mm vs nominal 1093.30mm = error -2.34mm(>±1.0mm). '
+              '게다가 이 측정은 단일 정면(-90°)station을 시간평균한 것으로 **ArUco 정합을 우회**(검증한 것은 '
+              '단일뷰 부시 거리 정확도이지 ArUco-턴테이블 정합 정확도가 아님). FRT 한 쌍만 측정가능(RR 부시 '
+              '정면 occlusion). 반복도(precision) 0.19mm는 깨끗하나 precision≠accuracy. '
+              'CLOSE 조건=마커 우회 아닌 ArUco-턴테이블 정합으로 부시(독립피처)가 sub-mm. 미달=OPEN. '
+              '병목 체인: 검출 recall+id-collision(→geometry-gated RANSAC id matching/DeepArUco++)→robust lift→'
+              '턴테이블모델(기지 3°단일축, -90°정면)→부시 vs CAD nominal accuracy.'),
     dict(name='q_lx3_full_surface_anchor', status='OPEN', closed_by=None,
          body='proper full-surface scan↔CAD anchor transform 을 자동으로 확보(markerless 자동경로 정본화)'),
     dict(name='q_lx3_gauge_boundary', status='OPEN', closed_by=None,
