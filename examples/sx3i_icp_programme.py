@@ -56,7 +56,27 @@ BLOOM_NODES = [
                'evidence/c1b_denoise_20260623.md.',
        limitation='최적 2D denoise 로도 신뢰가능 반복 마커집합 不생성(172 1개=정합 불가). DICT_4X4_250 16비트 '
                   '+ speckle → valid-but-wrong flip 구조적. "재촬영 없이 살린다" denoise-salvage 반증. '
-                  'C1 CONFIRM 경로(C1b)는 이 lot 에서 degenerate → 재촬영/markerless 분기 필요(q_recapture_markerless).'),
+                  'C1 CONFIRM 경로(C1b)는 이 lot 에서 degenerate → 재촬영/markerless 분기.'),
+
+    # ── 분기 A: 재촬영(root cause = Settings2D 누락) — C1 을 새 수단으로 푸는 신선한 시도 ──
+    #    부모=c1_marker_detect (denoise 퇴행의 연속이 아니라 C1 검출문제의 대체 해법).
+    _n('c1_rootcause_settings2d', 'partial', 'c1_marker_detect', nr=True, nc=False,
+       q=['q_recapture_settings2d'],
+       comment='C1 검출불가 근본원인 규명(capture_clean_2d3d.py): zdf 컬러가 3D 구조광 stripe 프레임에서 나옴 '
+               '= capture 에 settings.color=Settings2D(flat-flash) 누락. 마커 부족/denoise 문제 아님. '
+               'fix 스크립트 존재 + 사전등록 acceptance gate(scripts/recapture_gate.py, G1~G4) + 합성검정. '
+               'evidence/recapture_spec_20260623.md.',
+       limitation='gate 가 현 오염 lot 을 G1~G4 전부 FAIL 로 정확히 기각(변별력 검증). 재촬영(Settings2D + '
+                  '마커≥22mm·DICT_5X5) 실행=하드웨어 대기(XL250 노트북). PASS 시 C1 CONFIRMED.'),
+
+    # ── 분기 B: markerless C3 — 마커 우회 → 부모=sx3i_prob(가지 root). instrument 완성, 입력 블록 ──
+    _n('c3_markerless_instrument', 'partial', 'sx3i_prob', nr=True, nc=False,
+       q=['q_markerless_c3_inputs'],
+       comment='C3(precision≠accuracy 독립게이트)를 마커 무관으로 치는 instrument 구축(scripts/markerless_c3.py: '
+               'cross_view_coincidence + pairwise_spacing, 사전등록 band median≤0.10/p95≤0.15). 합성검정 통과 '
+               '(진짜 CONFIRMED, 스케일오차 REFUTED). evidence/markerless_c3_20260623.md.',
+       limitation='SX3i 즉시적용 불가: (i) 뷰 feature(hole/boss) 추출기 미존재, (ii) SX3i CAD nominal 은 '
+                  '.igs BREP 추출 실패(STEP/mesh 필요). instrument ready, 입력 대기. A 성공 시 C3 에서 합류.'),
 ]
 
 # ── SX3i frontier (Laudan open questions = PROGRAMME.md 의 C1~C5 계획) ────────
@@ -75,11 +95,13 @@ BLOOM_FRONTIER = [
     dict(name='q_denoise_coverage', status='CLOSED', closed_by='c1b_denoise',
          body='C1b: edge-preserving despeckle 로 decode 반복 공동관측↑? → 답 NO. bilateral+CLAHE 최적 '
               'denoise 로도 ≥3뷰 안정 마커 172 1개뿐(190 노이즈 attractor). salvage 반증.'),
-    # 위 부정답이 연 분기전환 질문 (degenerate → 다른 가지).
-    dict(name='q_recapture_markerless', status='OPEN', closed_by=None,
-         body='C1 대안: (a) 재촬영(노출/마커대비↑, 큰 dict DICT_5X5/6X6, GSD↑) 또는 '
-              '(b) markerless(CAD surface-match / C3 feature-coincidence 마커무관 직접) 중 무엇이 '
-              'XL250 sub-0.1mm 독립검증을 여는가?'),
+    # 위 부정답이 연 두 분기전환 질문 (degenerate → 다른 가지; 배타 아님, C3 에서 합류).
+    dict(name='q_recapture_settings2d', status='OPEN', closed_by=None,
+         body='분기A: Settings2D(flat-flash) 재촬영(마커≥22mm·DICT_5X5)이 acceptance gate G1~G4 를 '
+              'PASS 하는가? (근본원인=stripe-light color, recapture_gate.py 사전등록)'),
+    dict(name='q_markerless_c3_inputs', status='OPEN', closed_by=None,
+         body='분기B: 뷰 feature 추출기 + SX3i STEP nominal 이 마련되면 markerless C3 게이트가 '
+              'feature-coincidence median ≤ 0.10mm 를 내는가? (instrument=markerless_c3.py ready)'),
 ]
 
 
@@ -108,7 +130,8 @@ def run():
     _line(f"  측정 마디(SX3i)      : partial {partials} + degenerating {degen}")
     _line(f"  C1 verdict           : PARTIAL (마커 실재·dict ✅ / speckle 신뢰검출 미달)")
     _line(f"  C1b 경로             : geom✅+consistency✅(합성), 그러나 denoise 다리1 반증 → degenerate")
-    _line(f"  → 분기전환           : denoise-salvage 불가(172 1개,190 노이즈) → 재촬영/markerless (q_recapture_markerless)")
+    _line(f"  → 분기 A(재촬영)     : 근본원인=Settings2D 누락, acceptance gate 사전등록(현 lot FAIL 검증). 촬영대기")
+    _line(f"  → 분기 B(markerless) : C3 instrument 구축+합성검정✅, SX3i feature/STEP 입력 대기 (A와 C3서 합류)")
     _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
     _line('\n' + '═' * 72)
     return dict(metrics=m, bloom_at=BLOOM_AT, open_frontier=sx3i_open,

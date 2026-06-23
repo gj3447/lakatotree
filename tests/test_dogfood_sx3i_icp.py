@@ -27,7 +27,7 @@ def test_sx3i_no_fake_green():
 
 
 def test_sx3i_c1_c1b_measured_as_partial():
-    """측정으로 자란 마디 — C1/C1b 는 partial(실재·dict 확인, 신뢰검출 미달)."""
+    """측정으로 자란 마디 — C1/C1b + 분기전환 A/B 노드 모두 partial(가짜green 아님)."""
     out = run()
     by = {n['tag']: n for n in BLOOM_NODES}
     assert by['c1_marker_detect']['verdict'] == 'partial'
@@ -35,7 +35,11 @@ def test_sx3i_c1_c1b_measured_as_partial():
     # 접붙임 체인: C1←sx3i_prob, C1b←C1
     assert by['c1_marker_detect']['parent'] == 'sx3i_prob'
     assert by['c1b_consistency']['parent'] == 'c1_marker_detect'
-    assert set(out['sx3i_partial']) == {'c1_marker_detect', 'c1b_consistency'}
+    # 분기전환 A(재촬영 root cause)·B(markerless C3 instrument) 도 측정 partial 마디
+    assert by['c1_rootcause_settings2d']['verdict'] == 'partial'
+    assert by['c3_markerless_instrument']['verdict'] == 'partial'
+    assert set(out['sx3i_partial']) == {'c1_marker_detect', 'c1b_consistency',
+                                        'c1_rootcause_settings2d', 'c3_markerless_instrument'}
 
 
 def test_sx3i_denoise_refuted_branch_switch():
@@ -49,15 +53,18 @@ def test_sx3i_denoise_refuted_branch_switch():
     # denoise 질문은 측정으로 답(부정) → CLOSED, 그 degenerating 노드가 닫음
     assert fr['q_denoise_coverage']['status'] == 'CLOSED'
     assert fr['q_denoise_coverage']['closed_by'] == 'c1b_denoise'
-    # 분기전환 질문이 새로 열림
-    assert fr['q_recapture_markerless']['status'] == 'OPEN'
+    # 분기전환 질문이 두 갈래로 새로 열림 (A 재촬영 / B markerless)
+    assert fr['q_recapture_settings2d']['status'] == 'OPEN'
+    assert fr['q_markerless_c3_inputs']['status'] == 'OPEN'
 
 
 def test_sx3i_remaining_frontier():
     out = run()
-    # C2~C5 미측정 → OPEN. C3⭐ 정밀게이트 존재. denoise 는 닫힘(부정답).
+    # C2~C5 미측정 → OPEN. C3⭐ 정밀게이트 존재. denoise 닫힘. 분기 A·B 질문 열림.
     assert out['open_frontier'] == ['q_xl250_gsd', 'q_sx3i_assemble',
-                                    'q_independent_accuracy', 'q_raw_refine',
-                                    'q_crosscam', 'q_recapture_markerless']
+                                    'q_independent_accuracy', 'q_raw_refine', 'q_crosscam',
+                                    'q_recapture_settings2d', 'q_markerless_c3_inputs']
     assert 'q_independent_accuracy' in out['open_frontier']
     assert 'q_denoise_coverage' not in out['open_frontier']  # 측정으로 닫힘
+    # 분기전환이 두 갈래로 열림(A 재촬영 / B markerless)
+    assert {'q_recapture_settings2d', 'q_markerless_c3_inputs'} <= set(out['open_frontier'])
