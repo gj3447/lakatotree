@@ -10,6 +10,9 @@
   stack <name> [--leaf L]        포퍼/베이즈/라우든 3층 명시투표+정족수 메타규칙(gap3)
   lifecycle <name> [--leaf L]    프로그램 종료판정 — 수확/발산/소멸/활성(P1)
   series <name> [--leaf L]       프로그램-시계열 진단 — 정본경로 verdict 진보/퇴행 경향(diagnostic_only, #5)
+  tradition <name>               Laudan 연구전통 조회(ontology/methodology/exemplars, diagnostic_only, ①)
+  tradition-set <name> <spec>    연구전통 선언/갱신 — TraditionIn JSON 파일
+  tradition-appraise <name> <cid> [--operation modify] [--receipt R] [--compat C]   commitment 수정 진단
   leaderboard <a,b,..> [--snapshot]  경쟁 트리 Pareto+Borda 리더보드(P2)
   paradigm <incumbent> <a,b>     정상과학/위기/shift_candidate(gap7, shift=인간 안건)
   certificate <name> <tag>       5게이트 AND 인증서(P2)
@@ -73,6 +76,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sp = sub.add_parser('series'); sp.add_argument('name')   # #5 프로그램-시계열 진단(diagnostic_only)
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
+    sp = sub.add_parser('tradition'); sp.add_argument('name')   # ① Laudan 연구전통 조회(diagnostic_only)
+    sp = sub.add_parser('tradition-set'); sp.add_argument('name'); sp.add_argument('spec', help='TraditionIn JSON 파일')
+    sp = sub.add_parser('tradition-appraise'); sp.add_argument('name'); sp.add_argument('commitment_id')
+    sp.add_argument('--operation', default='modify', choices=['add', 'modify', 'retire', 'reclassify'])
+    sp.add_argument('--reason', default=''); sp.add_argument('--receipt', action='append', default=[])
+    sp.add_argument('--compat', default='', help='compatibility_claim(양립 정당화 — costly 표류 막음)')
     sp = sub.add_parser('heuristic'); sp.add_argument('name')
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sub.add_parser('trust').add_argument('name')
@@ -209,6 +218,14 @@ def main(argv=None):
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
         out = call('GET', f'/api/tree/{a.name}/series{q}')   # #5 프로그램-시계열 진단
+    elif a.cmd == 'tradition':
+        out = call('GET', f'/api/tree/{a.name}/tradition')   # ① 연구전통 조회
+    elif a.cmd == 'tradition-set':
+        out = call('POST', f'/api/tree/{a.name}/tradition', json.loads(open(a.spec).read()))
+    elif a.cmd == 'tradition-appraise':
+        out = call('POST', f'/api/tree/{a.name}/tradition/appraise',
+                   dict(commitment_id=a.commitment_id, operation=a.operation, reason=a.reason,
+                        receipt_refs=a.receipt, compatibility_claim=a.compat))
     elif a.cmd == 'heuristic':
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''

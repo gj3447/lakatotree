@@ -153,6 +153,19 @@ def test_series_cli_routes(monkeypatch, capsys):
     assert calls[1] == ('GET', '/api/tree/T/series?leaf=best', None)
 
 
+def test_tradition_cli_routes(monkeypatch, tmp_path, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['tradition', 'T'])                    # ① GET
+    spec = tmp_path / 'trad.json'
+    spec.write_text(json.dumps({'tradition_id': 't1', 'name': 'CAD', 'commitments': []}), encoding='utf-8')
+    cli.main(['tradition-set', 'T', str(spec)])     # ① POST(file)
+    cli.main(['tradition-appraise', 'T', 'm1', '--operation', 'retire', '--compat', 'ok'])  # ① POST(args)
+    assert ('GET', '/api/tree/T/tradition', None) in calls
+    assert any(m == 'POST' and p == '/api/tree/T/tradition' and b['tradition_id'] == 't1' for m, p, b in calls)
+    ap = [b for m, p, b in calls if p == '/api/tree/T/tradition/appraise'][0]
+    assert ap['commitment_id'] == 'm1' and ap['operation'] == 'retire' and ap['compatibility_claim'] == 'ok'
+
+
 def test_calibration_cli_routes(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['calibration', 'T'])

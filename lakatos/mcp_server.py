@@ -74,6 +74,33 @@ def series(name: str, leaf: str = '') -> str:
 
 
 @mcp.tool()
+def tradition(name: str) -> str:
+    """Laudan 연구전통 조회(①) — ontology/methodology/exemplars + commitments (diagnostic_only)."""
+    return json.dumps(_get(f'/api/tree/{name}/tradition'), ensure_ascii=False)
+
+
+@mcp.tool()
+def tradition_set(name: str, spec_json: str) -> str:
+    """연구전통 선언/갱신(①) — spec_json={tradition_id,name,commitments[{commitment_id,kind,statement,
+    revisability}],ontology_commitments[],methodology_rules[],exemplars[],...}. diagnostic_only(hard core 불침범)."""
+    try:
+        spec = json.loads(spec_json or '{}')
+    except json.JSONDecodeError as e:
+        return json.dumps({'error': 'invalid_spec_json', 'detail': str(e)}, ensure_ascii=False)
+    return json.dumps(_post(f'/api/tree/{name}/tradition', spec), ensure_ascii=False)
+
+
+@mcp.tool()
+def tradition_appraise(name: str, commitment_id: str, operation: str = 'modify',
+                       reason: str = '', compatibility_claim: str = '') -> str:
+    """전통 commitment 수정 진단(①) — same_tradition_revision / tradition_drift / different_programme_candidate
+    (diagnostic_only; identity_boundary 도 *후보*일 뿐 hard-core 는 LakatosGate/AGM 경유 확정)."""
+    return json.dumps(_post(f'/api/tree/{name}/tradition/appraise',
+                            dict(commitment_id=commitment_id, operation=operation, reason=reason,
+                                 compatibility_claim=compatibility_claim)), ensure_ascii=False)
+
+
+@mcp.tool()
 def heuristic(name: str, leaf: str = '') -> str:
     """MSRP 연구정책 — negative heuristic(hard core 보호/redirect) + positive heuristic(다음 실험 생성:
     ABANDON 퇴행가지/PUSH 진보전선/PROBE 미검 hard-core/PRIORITIZE 문제압). leaf 생략=정본 leaf."""
