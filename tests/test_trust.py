@@ -102,3 +102,23 @@ def test_global_trust_honest_coverage_labels():
                                )['coverage']['seed_basis'] == 'url_domain'
     # 관측 0 → uniform_unlearned
     assert global_source_trust([])['coverage']['mode'] == 'uniform_unlearned'
+
+
+# ── ② P6: trustrank 교차검증 — eigentrust 와 독립 알고리즘 일치 확인(robustness) ──
+
+def test_global_trust_crosscheck_trustrank_agrees_on_propagated_graph():
+    obs = [
+        {'source': 'jeffreys1961', 'source_type': 'literature', 'node': 'v1', 'corroboration_score': 0.9},
+        {'source': 'blog_x', 'source_type': 'blog', 'node': 'v1', 'corroboration_score': 0.4},
+    ]
+    cc = global_source_trust(obs, trust_source_type_label=True)['coverage']['crosscheck']
+    assert cc['method'] == 'trustrank'
+    assert cc['top_agrees'] is True                    # eigentrust·trustrank 둘 다 최상위 일치
+    assert cc['top_eigentrust'] == 'jeffreys1961'      # 문헌 앵커가 최상위(블로그 아님)
+
+
+def test_crosscheck_skipped_when_empty_or_opted_out():
+    assert 'crosscheck' not in global_source_trust([])['coverage']                 # 빈 그래프 = skip
+    r = global_source_trust([{'source': 'a', 'source_type': 'primary', 'node': 'n1'}],
+                            crosscheck=False)
+    assert 'crosscheck' not in r['coverage']                                       # opt-out
