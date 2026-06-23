@@ -5,6 +5,11 @@
   "kg_mirror": "ReferenceSite:Longinus (commit baseline 7723a4c, HAS_REFERENCE_SITE)",
   "commit_baseline": "7723a4c",
   "bindings": [
+    {"sourceId": "tradition.ResearchTradition", "file": "lakatos/programme/tradition.py", "symbol": "ResearchTradition", "kind": "class", "line_hint": 70, "sha256": "64336c434dd79909", "layer": "research_tradition", "frege_sinn": "Laudan 연구전통 컨테이너(가변 ontology/methodology/exemplar)"},
+    {"sourceId": "tradition.TraditionCommitment", "file": "lakatos/programme/tradition.py", "symbol": "TraditionCommitment", "kind": "class", "line_hint": 34, "sha256": "577f082117393804", "layer": "research_tradition", "frege_sinn": "전통 약속 — revisability 가 정체성 경계"},
+    {"sourceId": "tradition.TraditionRevision", "file": "lakatos/programme/tradition.py", "symbol": "TraditionRevision", "kind": "class", "line_hint": 53, "sha256": "ac409313cbd8f5c2", "layer": "research_tradition", "frege_sinn": "commitment 수정 제안 + 양립 영수증"},
+    {"sourceId": "tradition.TraditionAppraisal", "file": "lakatos/programme/tradition.py", "symbol": "TraditionAppraisal", "kind": "class", "line_hint": 91, "sha256": "82a0c106d1669907", "layer": "research_tradition", "frege_sinn": "전통 수정 진단 — diagnostic_only(승격 권위 0)"},
+    {"sourceId": "tradition.appraise_tradition_revision", "file": "lakatos/programme/tradition.py", "symbol": "appraise_tradition_revision", "kind": "def", "line_hint": 102, "sha256": "0d1951023a831b70", "layer": "research_tradition", "frege_sinn": "same_tradition/drift/different_programme_candidate 판정"},
     {
       "sourceId": "world_gates.web_gate",
       "file": "lakatos/world_gates.py",
@@ -1500,6 +1505,7 @@
     "kg:finding_lkt_traceability_bidirectional_20260618"
   ],
   "kg_anchors": [
+    "span_lakatotree_tradition",
     "span_lakatotree_prom_honesty_dogfood",
     "CT_LakatoTree_BPC_PrismV2_KnowledgePack_20260612",
     "Doctrine_InternetFirst_RequestSecond_ReasonJoyThird_20260612",
