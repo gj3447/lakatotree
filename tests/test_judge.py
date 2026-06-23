@@ -180,3 +180,31 @@ def test_novelty_sense_tag_only_does_not_change_scoring():
         v = judge(Prediction(**P, noise_band=0.01, novel_prediction='x'),
                   measured=0.279, novel_target=nt, novel_measured=0.7)
         assert v.verdict == 'progressive' and v.novel
+
+
+# === C: Stevens(1946) 측정척도 가드 — '정밀·재현 ≠ 타당'. 크기연산(delta/effect-size)은 ratio/interval 만 ===
+def test_scale_type_default_ratio_unchanged():
+    # 기본 scale_type='ratio' = 기존 동작 완전 불변(하위호환)
+    v = judge(Prediction(**P, noise_band=0.01, novel_prediction=''), 0.279)
+    assert v.verdict == 'partial'
+
+def test_nominal_metric_refused_at_construction():
+    # 명목형은 순서가 없어 '개선 방향'이 정의 불가 → 채점 불가(Stevens)
+    with pytest.raises(ValueError, match='nominal'):
+        Prediction(metric_name='category', direction='higher', baseline_value=0.0, scale_type='nominal')
+
+def test_ordinal_metric_forbids_magnitude_band():
+    # 순서형은 크기연산 불가 → noise_band(크기 밴드) 부적법(Stevens). 묵시적 interval 산술 차단.
+    with pytest.raises(ValueError, match='ordinal'):
+        Prediction(metric_name='rank', direction='lower', baseline_value=3, noise_band=1.0, scale_type='ordinal')
+
+def test_invalid_scale_type_refused():
+    with pytest.raises(ValueError, match='scale_type'):
+        Prediction(metric_name='m', direction='lower', baseline_value=1.0, scale_type='bogus')
+
+def test_ordinal_scores_by_order_only():
+    # 순서형(noise_band=0): 순서 비교만 — 크기 무관. 5→3 개선(partial), 동순위=equivalent, 악화=rejected.
+    p = Prediction(metric_name='rank', direction='lower', baseline_value=5, noise_band=0.0, scale_type='ordinal')
+    assert judge(p, 3).improved and judge(p, 3).verdict == 'partial'
+    assert judge(p, 5).verdict == 'equivalent'
+    assert judge(p, 7).verdict == 'rejected'

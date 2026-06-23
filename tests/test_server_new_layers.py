@@ -96,6 +96,15 @@ def test_series_view_diagnostic_only_over_canonical_path(monkeypatch):
     assert out['coverage']['conceptual_problem'] == 'not_projected_from_kg'  # overclaim 금지(정직 표기)
 
 
+def test_prediction_in_carries_scale_type():
+    # C(Stevens): PredictionIn 이 scale_type 을 운반해 judge.Prediction 가드를 reachable 하게(orphan 아님).
+    from server.contexts.tree.schemas import PredictionIn
+    p = PredictionIn(metric_name='rank', baseline_value=3.0, scale_type='ordinal', noise_band=0.0)
+    assert p.scale_type == 'ordinal'
+    assert PredictionIn(metric_name='m', baseline_value=1.0).scale_type == 'ratio'   # 기본 하위호환
+    assert 'scale_type' in p.model_dump()   # register_prediction 가 **model_dump 로 KG(pred_scale_type)에 씀
+
+
 def test_lifecycle_view_extinct_only_via_stack(monkeypatch):
     app = load_app()
     patch_tree(monkeypatch, app, {'D': DYING_TD})

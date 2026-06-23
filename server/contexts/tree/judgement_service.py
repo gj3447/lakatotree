@@ -179,6 +179,7 @@ class JudgementService:
                   WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                       e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
+                      e.pred_scale_type=$scale_type,
                       e.pred_novel=$novel_prediction, e.pred_closes=$closes_question,
                       e.pred_novel_metric=$novel_metric, e.pred_novel_direction=$novel_direction,
                       e.pred_novel_threshold=$novel_threshold, e.pred_script_sha=$judge_script_sha,
@@ -198,7 +199,8 @@ class JudgementService:
     def submit_test_result(self, name: str, tag: str, r: TestResultIn) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                      RETURN e.pred_metric AS m, e.pred_direction AS d, e.pred_baseline AS b,
-                            e.pred_noise_band AS nb, e.pred_novel AS novel, e.verdict_source AS vsrc,
+                            e.pred_noise_band AS nb, e.pred_scale_type AS scale,
+                            e.pred_novel AS novel, e.verdict_source AS vsrc,
                             e.pred_novel_metric AS nmet, e.pred_novel_direction AS ndir,
                             e.pred_novel_threshold AS nthr, e.pred_script_sha AS psha,
                             e.pred_closes AS closes,
@@ -216,7 +218,8 @@ class JudgementService:
         try:
             v = judge(None if pr['m'] is None else Prediction(
                 metric_name=pr['m'], direction=pr['d'], baseline_value=pr['b'],
-                noise_band=pr['nb'] or 0.0, novel_prediction=pr['novel'] or ''),
+                noise_band=pr['nb'] or 0.0, novel_prediction=pr['novel'] or '',
+                scale_type=pr.get('scale') or 'ratio'),   # Stevens 가드 reachable (옛 노드 null→ratio)
                 r.metric_value, novel_target=nt, novel_measured=r.novel_measured,
                 # prom-honesty/sha: 예측 측정 출처 = 채점 스크립트 sha, novel 측정 출처 = r.novel_sha.
                 #   둘 다 있고 다르면 같은 metric 이어도 독립(epsilon 우회 봉쇄); 같으면 비독립 → demote.
