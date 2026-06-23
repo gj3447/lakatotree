@@ -171,26 +171,45 @@ def build_trust_graph(observations: list, *,
     return local_trust, pre_trusted
 
 
-def global_source_trust(observations: list, **kw) -> dict:
+def global_source_trust(observations: list, *, crosscheck: bool = True, **kw) -> dict:
     """실 관측 그래프 → 글로벌 출처신뢰 {source: trust} + coverage 메타.
 
     eigentrust(전이적 신뢰의 고유벡터)를 build_trust_graph 산출 그래프에 돌린다. edge 가 없으면
     eigentrust 는 pre_trusted 분포로 환원(seed-dominated) — 정직하게 coverage 로 표기.
-    반환: {'trust': {src: val}, 'coverage': {n_sources, n_seeds, n_edges, mode}}.
+    반환: {'trust': {src: val}, 'coverage': {n_sources, n_seeds, n_edges, mode, [crosscheck]}}.
+
+    crosscheck=True(기본, P6 배선): 같은 그래프에 trustrank(시드전파 biased PageRank, brin_page1998)도
+    돌려 eigentrust(고유벡터, kamvar2003)와 *최상위 신뢰 출처* 일치를 확인한다 — 독립 알고리즘 robustness
+    교차검증(argue mu-toksia 패턴; trustrank=evidence, eigentrust=권위). 발산(top_agrees=False)은
+    graph_propagated 모드서 의미있는 경보(seed_dominated 면 둘 다 시드분포로 환원돼 자명 일치).
     """
     local_trust, pre_trusted = build_trust_graph(observations, **kw)
     n_edges = sum(len(d) for d in local_trust.values())
     trust = eigentrust(local_trust, pre_trusted) if local_trust else {}
     mode = ('graph_propagated' if n_edges > 0
             else ('seed_dominated' if pre_trusted else 'uniform_unlearned'))
-    return {
-        'trust': {k: round(v, 6) for k, v in trust.items()},
-        'coverage': {
-            'n_sources': len(local_trust),
-            'n_seeds': len(pre_trusted),
-            'n_edges': n_edges,
-            'mode': mode,   # 정직: edge 없으면 seed_dominated(고유벡터 heavy-lifting 아직 아님)
-            # seed 가 서버검증 URL 도메인인지, 호출자-소유 라벨 opt-in 인지 노출(숨김 금지)
-            'seed_basis': 'source_type_label' if kw.get('trust_source_type_label') else 'url_domain',
-        },
+    coverage = {
+        'n_sources': len(local_trust),
+        'n_seeds': len(pre_trusted),
+        'n_edges': n_edges,
+        'mode': mode,   # 정직: edge 없으면 seed_dominated(고유벡터 heavy-lifting 아직 아님)
+        # seed 가 서버검증 URL 도메인인지, 호출자-소유 라벨 opt-in 인지 노출(숨김 금지)
+        'seed_basis': 'source_type_label' if kw.get('trust_source_type_label') else 'url_domain',
     }
+    if crosscheck and trust:   # P6: trustrank 를 *실제로* 런타임에 돌려 eigentrust 와 교차검증
+        graph = {s: list(nbrs) for s, nbrs in local_trust.items()}   # i→j out-edges
+        tr = trustrank(graph, pre_trusted)
+        srcs = list(trust)
+
+        def _top(d):
+            return max(srcs, key=lambda s: d.get(s, 0.0)) if srcs else None
+
+        top_e, top_t = _top(trust), _top(tr)
+        coverage['crosscheck'] = {
+            'method': 'trustrank',
+            'top_agrees': top_e == top_t,
+            'top_eigentrust': top_e,
+            'top_trustrank': top_t,
+            'note': 'graph_propagated 모드서 의미; seed_dominated 면 자명 일치',
+        }
+    return {'trust': {k: round(v, 6) for k, v in trust.items()}, 'coverage': coverage}
