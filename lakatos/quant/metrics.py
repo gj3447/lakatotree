@@ -65,6 +65,8 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
     recent = chain[:window]
     return dict(
         leaf=leaf, window=window, verdicts=seq,
+        # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
+        path=[{'tag': r['tag'], 'verdict': r['verdict']} for r in reversed(chain)],
         consecutive_nonprogressive=consec, nodes_spent=len(chain),
         prediction_hits=sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,

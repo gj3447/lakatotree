@@ -28,6 +28,14 @@ def test_stack_tool_routes_with_optional_leaf(monkeypatch):
     assert out['ok'] is True
 
 
+def test_series_tool_routes_with_optional_leaf(monkeypatch):   # #5 프로그램-시계열 진단 surface
+    seen = _cap(monkeypatch)
+    json.loads(m.series('T'))
+    json.loads(m.series('T', leaf='v22'))
+    assert seen[0] == '/api/tree/T/series'
+    assert seen[1] == '/api/tree/T/series?leaf=v22'
+
+
 def test_lifecycle_tool_routes(monkeypatch):
     seen = _cap(monkeypatch)
     json.loads(m.lifecycle('T', leaf='best'))

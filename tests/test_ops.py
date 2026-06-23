@@ -65,6 +65,24 @@ def test_auth_blocks_post_without_token(monkeypatch):
     assert r.status_code == 401
 
 
+# ── #4: B1 outbox 복구 운영 트리거(고아 메서드 → 운영 surface) ──
+
+def test_reconcile_outbox_ops_endpoint(monkeypatch):
+    app = load_app()
+    fake = {'pending': 2, 'replayed': ['o1', 'o2'], 'replayed_count': 2,
+            'still_pending': 0, 'pg_down': False}
+    monkeypatch.setattr(app._container, 'reconcile_outbox', lambda: fake)
+    r = TestClient(app.app).post('/api/ops/reconcile-outbox')
+    assert r.status_code == 200 and r.json() == fake
+
+
+def test_reconcile_outbox_ops_endpoint_is_auth_gated(monkeypatch):
+    app = load_app()
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')   # mutating POST → Bearer 강제
+    r = TestClient(app.app).post('/api/ops/reconcile-outbox')
+    assert r.status_code == 401
+
+
 def test_auth_allows_get_and_correct_token(monkeypatch):
     app = load_app()
     monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')

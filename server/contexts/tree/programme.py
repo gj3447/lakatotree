@@ -43,6 +43,10 @@ def create_programme_router(service_factory: Callable[[], ProgrammeService]) -> 
     def lifecycle_view(name: str, leaf: str | None = None):
         return service_factory().lifecycle_view(name, leaf=leaf)
 
+    @router.get("/api/tree/{name}/series")
+    def series_view(name: str, leaf: str | None = None):
+        return service_factory().series_view(name, leaf=leaf)
+
     @router.get("/api/tree/{name}/heuristic")
     def heuristic_view(name: str, leaf: str | None = None):
         return service_factory().heuristic_view(name, leaf=leaf)

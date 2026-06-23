@@ -162,6 +162,16 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
+@app.post('/api/ops/reconcile-outbox')
+def reconcile_outbox_op():
+    """B1 복구 운영 트리거(#4) — pending OutboxEntry(KG 정본)를 PG history 에 *멱등* 재적용.
+    PG-down 동안 쌓인 outbox 가 영영 미적용(KG↔PG 발산)되지 않도록 운영자가 명시 호출한다 —
+    in-process 메서드(container.reconcile_outbox)는 전엔 테스트 외 호출자가 없는 고아였다.
+    멱등(ON CONFLICT event_id DO NOTHING)이라 재호출 안전. mutating → LAKATOS_API_TOKEN 설정 시
+    Bearer 강제(_bearer_auth). 반환 {pending, replayed, replayed_count, still_pending, pg_down}."""
+    return _container.reconcile_outbox()
+
+
 # 자원 접근 모듈 API — AppContainer 위임(구현은 server.container, server.app 은 얇은 facade).
 # 모듈 전역 `global _PG_POOL` 변이 제거: 풀 lazy 상태가 컨테이너 인스턴스에 캡슐화됨.
 def pg():
@@ -433,6 +443,9 @@ def stack_view(name: str, leaf: str | None = None):
 
 def lifecycle_view(name: str, leaf: str | None = None):
     return _programme_service().lifecycle_view(name, leaf=leaf)
+
+def series_view(name: str, leaf: str | None = None):
+    return _programme_service().series_view(name, leaf=leaf)   # #5 프로그램-시계열 진단(diagnostic_only)
 
 def _competitor_for_tree(n: str) -> Competitor:
     td = tree_data(n)
