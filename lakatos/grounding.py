@@ -55,6 +55,34 @@ SOURCES = {
     'fisher1925': 'Fisher, R.A. (1925). Statistical Methods for Research Workers (α=0.05 관행의 기원).',
     'auer2002': 'Auer, P., Cesa-Bianchi, N. & Fischer, P. (2002). Finite-time Analysis of the Multiarmed Bandit Problem. Machine Learning 47:235-256 (UCB1, c=√2).',
     'howard1966': 'Howard, R.A. (1966). Information Value Theory. IEEE Trans. Systems Science and Cybernetics 2(1):22-26 (Value of Information).',
+    # ── 정성적 토대 라이선스 (Longinus 토대 바인딩 감사, 2026-06-23) ─────────────────────────
+    #  간판 메커니즘의 *철학적 라이선스* — 상수 도출 0(GROUNDED 미사용), kuhn1962/laudan1977/feyerabend1975
+    #  와 동급의 정성/공개 인용. grounding 이 *숫자*를 출처에 묶듯 이 키들은 메커니즘의 *권위 근거*를 묶는다
+    #  (THEORY §8). "영수증 없는 상수 금지"의 한 층 위 = "라이선스 없는 메커니즘 금지"의 자기적용.
+    'duhem1906': 'Duhem, P. (1906/1954). The Aim and Structure of Physical Theory (trans. Wiener), Princeton UP, Pt II ch.VI — 미결정성(이론은 전체로만 시험됨; 핵/보호대 split 의 근거).',
+    'quine1951': 'Quine, W.V.O. (1951). Two Dogmas of Empiricism. Phil. Review 60(1):20-43 — 확증 홀리즘(belief web; judge "partial"=belt patch 의 근거).',
+    'simmons2011': 'Simmons, J.P., Nelson, L.D. & Simonsohn, U. (2011). False-Positive Psychology. Psychological Science 22(11):1359-1366 — 연구자 자유도/p-hacking(사전등록 게이트의 경험적 동기).',
+    'ioannidis2005': 'Ioannidis, J.P.A. (2005). Why Most Published Research Findings Are False. PLoS Medicine 2(8):e124 — 재현성 위기.',
+    'nosek2018': 'Nosek, B.A. et al. (2018). The Preregistration Revolution. PNAS 115(11):2600-2606 — predict-and-lock 의 방법론 근거.',
+    'chambers2013': 'Chambers, C.D. (2013). Registered Reports. Cortex 49(3):609-610 — 결과 보기 전 예측 고정(certify G1).',
+    'royall1997': 'Royall, R.M. (1997). Statistical Evidence: A Likelihood Paradigm. Chapman & Hall (cf. Hacking 1965; Edwards 1972) — 우도법칙(BF=증거 라이선스; jeffreys/kass-raftery 는 *척도*만). 정직 긴장: 본 엔진은 Laplace prior+Wald 정지규칙 → 우도주의-코어 베이즈.',
+    'hanson1958': 'Hanson, N.R. (1958). Patterns of Discovery, ch.1. Cambridge UP — 관찰의 이론적재성("영수증=중립"은 아르키메데스적 아님; 사전약속+독립조달된 적재성).',
+    'cronbach_meehl1955': 'Cronbach, L.J. & Meehl, P.E. (1955). Construct Validity in Psychological Tests. Psychological Bulletin 52(4):281-302 — 구성타당도(정밀·재현 ≠ 타당; metric_name 이 구성을 진짜 operationalize 하나).',
+    'stevens1946': 'Stevens, S.S. (1946). On the Theory of Scales of Measurement. Science 103(2684):677-680 (caveat Velleman & Wilkinson 1993) — 측정척도(순서형에 delta/effect-size 부적법).',
+    'mayo1996': 'Mayo, D.G. (1996). Error and the Growth of Experimental Knowledge. U Chicago Press (cf. Mayo 2018; Mayo & Spanos 2006 BJPS 57(2):323-357) — severe testing/오류통계(predict-lock-measure 의 현대 NP-근거 통합).',
+    'goodman1955': 'Goodman, N. (1955). Fact, Fiction, and Forecast. Harvard UP — grue/투사가능성(novel 예측의 선결문제; 본 엔진은 사전등록자에게 위임 = 공개 scope-limit).',
+    'ramsey1926': 'Ramsey, F.P. (1926/1931). Truth and Probability (in The Foundations of Mathematics) — 신념도=내기율, Dutch-book.',
+    'definetti1937': 'de Finetti, B. (1937). La prévision. Ann. Inst. Henri Poincaré 7:1-68 — Dutch-book 정리(주관적이되 일관된 prior; 왜 확률공리 준수).',
+    'cox1946': 'Cox, R.T. (1946). Probability, Frequency and Reasonable Expectation. Am. J. Phys. 14(1):1-13 (caveat Halpern 1999) — 합/곱 규칙의 논리적 도출(odds*=bf 의 비-내기 형제).',
+    'neyman_pearson1933': 'Neyman, J. & Pearson, E.S. (1933). On the Most Efficient Tests of Statistical Hypotheses. Phil. Trans. R. Soc. Lond. A 231:289-337 — Type I/II 오류율·최강력검정(α/β 의 정의; sprt 경계가 쓰는 양 자체).',
+    'hempel1945': 'Hempel, C.G. (1945). Studies in the Logic of Confirmation. Mind 54(213):1-26 & 54(214):97-121 — 확증 논리/까마귀 역설(H-D 진보규칙이 상속).',
+    'glymour1980': 'Glymour, C. (1980). Theory and Evidence. Princeton UP — tacking/무관한 연언 문제(pnr excess_content 가 일부 방어).',
+    'pearl2009': 'Pearl, J. (2009). Causality (2nd ed.). Cambridge UP (with Rubin 1974; Hill 1965) — 인과/교란(corroborated()=연관만; 장치 일부 범위밖, 공개 한계).',
+    'dung1995': 'Dung, P.M. (1995). On the Acceptability of Arguments... Artificial Intelligence 77(2):321-357 — 추상 논증 AF/grounded extension(argue.py 가 구현; 전엔 산문 인용만=고아).',
+    'toulmin1958': 'Toulmin, S.E. (1958). The Uses of Argument. Cambridge UP (cf. Pollock 1987; Prakken 2010 ASPIC+) — 논증 내부구조/defeater 유형(rebut/undercut/undermine).',
+    'walton_reed_macagno2008': 'Walton, D., Reed, C. & Macagno, F. (2008). Argumentation Schemes. Cambridge UP — 비판질문 카탈로그(critique kind 의 원리적 근거).',
+    'kuhn1977': 'Kuhn, T.S. (1977). Objectivity, Value Judgment, and Theory Choice. In The Essential Tension, pp.320-339. U Chicago Press — 다섯 가치가 이론선택을 미결정(leaderboard 무스칼라 Pareto 의 근거; kuhn1962 는 위기/혁명 어휘만 cover).',
+    'lindley1957': 'Lindley, D.V. (1957). A Statistical Paradox. Biometrika 44(1-2):187-192 — 베이즈/빈도 발산이 n 과 함께 커짐(stack 층-독립 근사가 낙관적인 구조적 이유).',
     'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
