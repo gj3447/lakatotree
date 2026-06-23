@@ -5,6 +5,7 @@
 판결이 '선다(stands)' = grounded extension 에 포함 = 막아낸 의문 없음.
 출처: Dung 1995, Abstract Argumentation Framework (A, R), grounded extension = 최소 완전.
 # KG: span_lakatotree_argue
+라이선스(THEORY §8): dung1995 toulmin1958 walton_reed_macagno2008
 """
 
 

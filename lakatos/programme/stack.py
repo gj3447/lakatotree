@@ -16,6 +16,7 @@
 한계 정직: 층 독립성(Condorcet 가정)은 근사다 — 세 층 모두 같은 판결 시퀀스를 입력으로
 공유한다. 정족수는 '독립 표본 3개'가 아니라 '서로 다른 철학적 렌즈 3개'의 합의다.
 # KG: span_lakatotree_stack_meta_rule / THEORY gap3
+라이선스(THEORY §8): lindley1957 condorcet1785
 """
 from dataclasses import dataclass, field
 

@@ -17,6 +17,7 @@ AGM(1985)은 그 '바뀜'을 공준으로 형식화한다: expansion(+), contrac
   - CANONICAL demote(전 정본 강등) = revision 의 한 사례: 새 정본 belief 가 옛 정본과
     모순 → 옛것 contraction 후 expansion (Levi identity).
 # KG: span_lakatotree_agm_revision / THEORY gap5 / P1
+라이선스(THEORY §8): duhem1906 quine1951
 """
 from dataclasses import dataclass, field, replace
 

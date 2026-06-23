@@ -270,3 +270,31 @@ def test_p6_3_credibility_and_claim_thresholds_grounded():
     assert spine.credibility_from_trust(0.70, trust_backed=True)['current'] == CredibilityTier.EXTRACTED
     assert spine.credibility_from_trust(0.34, trust_backed=True)['current'] == CredibilityTier.AMBIGUOUS
     assert spine.credibility_from_trust(0.70)['current'] == CredibilityTier.AMBIGUOUS   # unbacked=inconclusive
+
+
+# ── 정직성: 고아 라이선스 0 (코드의 '라이선스(THEORY §8): <id>' 앵커가 모두 SOURCES 에 등록) ──────────
+def test_license_anchors_resolve_to_sources():
+    """test_no_orphan_citations 의 *메커니즘 라이선스* 판 — 숫자(상수)뿐 아니라 간판 메커니즘의 철학적
+    라이선스도 grounding.SOURCES 에 못 박혀야(THEORY §8 dogfooding: "라이선스 없는 메커니즘 금지").
+    코드의 '라이선스(THEORY §8): a b c' 앵커가 가리키는 모든 sourceId 가 SOURCES 에 실재하는지 전수 검증."""
+    import re
+    from pathlib import Path
+    import lakatos.grounding as G
+    pkg = Path(G.__file__).parent
+    orphans = []
+    for f in pkg.rglob('*.py'):
+        for ids in re.findall(r'라이선스\(THEORY §8\):\s*([a-z0-9_ ]+)', f.read_text(encoding='utf-8')):
+            for sid in ids.split():
+                if sid not in G.SOURCES:
+                    orphans.append(f'{f.name}:{sid}')
+    assert not orphans, f'고아 라이선스 앵커(grounding.SOURCES 미등록): {orphans}'
+
+
+def test_license_anchors_present_on_key_modules():
+    """앵커가 실제로 박혔는지(빈 가드 방지) — 핵심 모듈에 라이선스 앵커가 존재."""
+    from pathlib import Path
+    import lakatos.grounding as G
+    pkg = Path(G.__file__).parent
+    anchored = {f.name for f in pkg.rglob('*.py')
+                if '라이선스(THEORY §8):' in f.read_text(encoding='utf-8')}
+    assert {'judge.py', 'agm.py', 'bayes.py', 'argue.py', 'leaderboard.py'} <= anchored
