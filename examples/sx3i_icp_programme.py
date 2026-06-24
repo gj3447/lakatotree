@@ -84,6 +84,19 @@ BLOOM_NODES = [
        limitation='markerless-홀 경로=보존 음의분기 — 정합 미성립이지 trueness 측정 아님(13mm 는 대응불량 산물). '
                   '★1차 경로는 리더fix 로 부활한 마커(c1_marker_detect progressive)→C2 assembly→C3. '
                   'CAD nominal 도 scan재구성=precision≠accuracy(GD&T truth 아님, 정밀 trueness 엔 STEP/CMM 필요).'),
+
+    # ── C3 물리관문 측정(2026-06-24): 마커-coincidence path 도 sub-0.1mm 11× 미달 → 사전등록 예측 REFUTE ──
+    _n('sx3i_precision_floor_marker', 'degenerating', 'sx3i_prob', m=1.076, base=0.10,
+       scope='registration', nr=True, nc=False, q=['q_sx3i_precision_floor'],
+       comment='q_sx3i_precision_floor 측정(scripts/c3pre_precision_floor.py): SX3i=삼각대 자유이동(기하구속0, 정합 '
+               '100% ArUco DICT_4X4_250). held-out 마커 코너 독립정밀도(공유≥4 중 1개 빼고 Kabsch→빼낸 코너 |Δ|): '
+               '181 뷰쌍·6188 코너 → median **1.076mm**·p95 242mm·min 0.029mm·<0.1mm 비율 0.2%. '
+               '사전등록 예측(median ≤0.10mm) **REFUTE**(11× 초과). 즉 삼각대+XL250+마커정합으로 sub-0.1mm 물리 불가.',
+       limitation='병목=삼각대 자유이동 registration(기하구속 0, pairwise Kabsch) + XL250 250µm 카메라 floor + lift 노이즈. '
+                  'markerless 경로(c3_markerless_real 13mm)도 동반 미달 → 두 경로 모두 sub-0.1mm refute. '
+                  '카메라(MR60 80µm)/근접WD/고정지그/CMM 재고 근거. ⚠️caveat: pairwise Kabsch(global bundle-adjust 미시도)·'
+                  'crude median lift — 개선여지 있으나 10× gap+기하구속0 은 강한 음의신호. grounded record='
+                  'evidence/c3pre_precision_floor_20260624.json.'),
 ]
 
 # ── SX3i frontier (Laudan open/closed) ───────────────────────────────────────

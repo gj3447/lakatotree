@@ -101,9 +101,14 @@ BLOOM_NODES = [
                '정본 evidence/lx3_aruco_{50mm_independent_verify,register_precision_knownaxis}_20260624.json.',
        limitation='이것은 PRECISION(반복도)이지 ACCURACY 아님 — 부시(독립피처) vs CAD nominal ±1.0mm 미측정(q_lx3_aruco_accuracy '
                   'OPEN 유지). dict4x4 한계 "②흰면 3D약(~18mm)" 은 본 노드가 **반증**(코너3D=sub-mm; 18mm/429mm 는 흰면 아니라 '
-                  'self-cal 발산이 원인; id-collision 도 부차적=no-decluster 도 1.0mm·64id→59track). 다음 수=이 포즈로 part 점군 '
-                  '정합→부시 거리 vs CAD nominal accuracy. (DeepArUco++ 사전학습=실코너 OOD near-constant 6px WORSE(팀 BPC verdict '
-                  '도 WORSE)=재학습 필요; Blackwell GPU 는 torch cu128 정상=옛 cu117 garbage 경고 무효.)'),
+                  'self-cal 발산이 원인; id-collision 도 부차적=no-decluster 도 1.0mm·64id→59track). '
+                  '★accuracy ATTEMPT(2026-06-24, evidence/lx3_aruco_cad_register_accuracy_attempt): 신뢰축으로 121뷰 융합'
+                  '(isolate_turntable_part)→CAD 형상정합 실행=lx3_registered_bush_accuracy 가 "registration_axis_available:false"로 '
+                  '**실행조차 못했던 경로를 실행가능**하게 만듦(진보). 그러나 fused part 가 잔여 정적배경(perp 링 r700+축방향 spread, '
+                  'motion-isolation 불완전 제거)으로 오염→CAD 정합 median 21mm·fitness 0.36=**±1mm 미달**, 부시 accuracy 미측정. '
+                  '⇒accuracy 는 **여전히 OPEN**(가짜green 금지): 남은 병목=co-located 배경 잔여 제거+표면 커버리지+CAD 부시 1:1 매핑. '
+                  '(DeepArUco++ 사전학습=실코너 OOD near-constant 6px WORSE(팀 BPC verdict 도 WORSE)=재학습 필요; '
+                  'Blackwell GPU 는 torch cu128 정상=옛 cu117 garbage 경고 무효.)'),
 
     # ★2026-06-24 CAD-side 정확도 기준값(ruler) — STEP_REORIENT→LX3_LOCAL 변환 + 4부시 nominal (docs/10 미해결 #5)
     _n('lx3_cad_bush_nominal', 'progressive', 'lx3_aruco_knownaxis_precision', m=0.064, scope='cad_frame_map',

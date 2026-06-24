@@ -125,18 +125,18 @@ BLOOM_NODES = [
 
 # ── DATUM frontier (Laudan open/closed questions) ────────────────────────────
 BLOOM_FRONTIER = [
-    dict(name='q_cad_datum_triple', status='CLOSED', closed_by='cad_datum_extract',
+    dict(name='q_cad_datum_triple', status='CLOSED', closed_by=['cad_datum_extract'],
          body='D1: CAD 형상(면적)만으로 직교 3-2-1 triple 자동선택? → 답 NO. 평판형 weldment 는 상위 40면이 '
               '전부 평행(±Y). datum 지정은 도면 GD&T 가 정해야 함(hard core 실증).'),
-    dict(name='q_drf_recovers', status='CLOSED', closed_by='drf_instrument',
+    dict(name='q_drf_recovers', status='CLOSED', closed_by=['drf_instrument'],
          body='D2: 3-2-1 DRF 가 임의 강체로 옮긴 datum 으로 원 프레임 복원? → 답 YES. max_dev 0.0 (synthetic).'),
-    dict(name='q_drf_vs_bestfit', status='CLOSED', closed_by='exposes_hidden_error',
+    dict(name='q_drf_vs_bestfit', status='CLOSED', closed_by=['exposes_hidden_error'],
          body='D3⭐: DRF 가 best-fit 보다 위치오차에 충실? → 답 YES. DRF 전부 노출·누설0, best-fit 21~62% 은폐 '
               '(기하의존)+누설. 불변 4충족. (synthetic) +REAL(2026-06-24): LX3 부등식 실데이터 확증(은폐 '
               '22.8mm=55.9%) + BPC verdict-flip 2건(best-fit PASS·datum NG). 단 도면 datum·CMM 미정→magnitude UNVERIFIED.'),
-    dict(name='q_drf_noise', status='CLOSED', closed_by='noise_stability',
+    dict(name='q_drf_noise', status='CLOSED', closed_by=['noise_stability'],
          body='D4: datum 면 다점적합이 단일점보다 안정? → 답 YES. 원점 σ 0.021mm<0.05, tilt p95 0.033°<0.5°.'),
-    dict(name='q_gdt_datum_designation', status='CLOSED', closed_by='gdt_datum_designation',
+    dict(name='q_gdt_datum_designation', status='CLOSED', closed_by=['gdt_datum_designation'],
          body='도면 GD&T 가 datum A/B/C 지정? → 답 YES(전사). A110 도면: [A] RR_BODY_LH_BUSH(0,0,0) · '
               '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), ⊕⌀1.5|A|B|C. 3 독립출처 일치 '
               '(PPAP PDF+outline+asme_datum). CAD 형상 자동선택은 q_cad_datum_triple 로 부정 → 도면이 정함(hard core 실현).'),

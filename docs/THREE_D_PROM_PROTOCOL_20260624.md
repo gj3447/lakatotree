@@ -90,3 +90,7 @@ promotion discipline.
 - Use `docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md` for the hard
   industrial-release judgement. That document is stricter than research
   progress appraisal and carries branch-level Longinus comments.
+- Use `docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md` for the current root-cause
+  critique of why perfect industrial accuracy/precision is not yet closed.
+- Use `docs/LONGINUS_KUSARI_COMMENTARY_20260624.md` for review-ready claim bans,
+  branch comments, and promotion review questions.

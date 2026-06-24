@@ -314,3 +314,6 @@ No branch should become `adopted` unless every production result carries:
 
 If any of these fields is missing, the branch may be progressive, but not
 industrial-production-adopted.
+
+For the root-cause critique behind these gates, see
+`docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md`.
