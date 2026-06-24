@@ -87,3 +87,6 @@ promotion discipline.
 - Use `docs/PROM_MEASUREMENT_AUDIT_20260624.md` as the current measurement
   honesty audit: document volume, industrial metrology fields, registration
   metrics, and self-scoring gaps.
+- Use `docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md` for the hard
+  industrial-release judgement. That document is stricter than research
+  progress appraisal and carries branch-level Longinus comments.

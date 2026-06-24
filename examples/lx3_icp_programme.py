@@ -174,15 +174,16 @@ BLOOM_FRONTIER = [
               '점군 정합→부시(독립피처) vs CAD nominal ±1.0mm accuracy(precision≠accuracy 견지).'),
     dict(name='q_lx3_full_surface_anchor', status='OPEN', closed_by=None,
          body='proper full-surface scan↔CAD anchor transform 을 자동으로 확보(markerless 자동경로 정본화)'),
-    dict(name='q_lx3_turntable_runout', status='OPEN', closed_by=None,
-         body='★사전등록(2026-06-24, prom blind-spot — ★공차 정정: LX3 는 ±1.0mm 이지 sub-0.1mm 아님. '
-              'sub-0.1mm 는 SX3i C3 얘기고 SX3i 는 턴테이블도 아닌 ArUco-puzzle stitch → runout 무관, q_sx3i_precision_floor 로). '
-              'LX3 맥락의 올바른 질문: LX3RT 턴테이블 물리축 runout 이 ±1mm 마진을 잡아먹는가? 정합 precision 0.99mm '
-              '(≈±1mm 경계)에 *물리축 wobble* 이 lift-노이즈와 미분리로 섞여있을 수 있음(완벽 단일 3°/뷰 강체축 가정 미검증). '
-              '측정: 동일각도 재방문 반복도 또는 known-3° 정합잔차의 각도-주기 성분으로 runout 분해. '
-              '판정: runout 이 0.99mm 의 큰 몫이면 그걸 줄여 ±1mm 마진 확보; 작으면 lift/bush-fit 이 진짜 병목. '
-              '(prom "runout>0.1mm→sub-0.1mm 불가"는 LX3 가 sub-0.1mm 가 아니라 직접 적용 안 됨 — ±1mm 마진 진단으로 격하). '
-              '미측정=OPEN, 가짜green 금지.'),
+    dict(name='q_lx3_jig_runout', status='OPEN', closed_by=None,
+         body='★사전등록(2026-06-24, prom blind-spot — ★캡처/공차 정정: LX3 는 **회전지그(rotating jig)**, 턴테이블 아님. '
+              '부품을 지그에 고정·3°씩 회전. 공차 ±1.0mm(sub-0.1mm 아님). [sub-0.1mm 는 SX3i C3 — SX3i 는 삼각대 자유이동 '
+              'ArUco-puzzle 이라 회전축 자체가 없어 runout 무관, q_sx3i_precision_floor 로]. '
+              'LX3 올바른 질문: 회전지그 축 반복도/wobble 이 ±1mm 마진을 갉아먹는가? 정합 precision 0.99mm(≈±1mm 경계)에 '
+              '*지그 축 반복오차* 가 lift-노이즈와 미분리로 섞여있을 수 있음(완벽 단일 3°/뷰 강체축 가정 미검증). '
+              '측정: 동일각도 재방문 반복도 또는 known-3° 정합잔차의 각도-주기 성분으로 분해. '
+              '판정: 지그오차가 0.99mm 의 큰 몫이면 줄여 마진 확보; 작으면 lift/bush-fit 이 진짜 병목. '
+              '(prom "runout>0.1mm→sub-0.1mm 불가"는 LX3 가 sub-0.1mm 가 아니라 직접 적용 안 됨 — ±1mm 마진 진단으로 격하. '
+              '정밀 회전지그는 턴테이블보다 축 반복도가 좋아 작을 가능성). 미측정=OPEN, 가짜green 금지.'),
     dict(name='q_lx3_gauge_boundary', status='OPEN', closed_by=None,
          body='B_LH tol-경계(0.999→1.067) gauge 위태 — 공차 class 재설계 필요한가'),
 ]

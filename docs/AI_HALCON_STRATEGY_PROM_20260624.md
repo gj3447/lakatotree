@@ -34,9 +34,12 @@
 
 ## 4. ⭐ 우리가 **못 보던 blind-spot** (Q4 — prom이 surface)
 
-> ⚠️ **공차 정정(2026-06-24, 사용자 지적):** 두 케이스 분리. **LX3**=LX3RT **턴테이블**(3°/뷰), 공차 **±1.0mm**
-> (sub-0.1mm 아님; GROUND_TRUTH σ 37µm 이미 충족). **SX3i**=XL250 212뷰 **ArUco puzzle-assemble**(공유마커
-> 자유위치 stitch, **턴테이블 아님**), 목표 **sub-0.1mm**(C3). runout 은 LX3(턴테이블)에만, sub-0.1mm 는 SX3i 에만.
+> ⚠️ **캡처·공차 정정(2026-06-24, 사용자 지적 2회):** 두 케이스 분리.
+> **LX3** = **회전지그(rotating jig)** — 부품을 지그에 고정·3°씩 회전(턴테이블 아님; 정밀지그라 축 반복도 양호 →
+> 정합 precision 이미 0.99mm). 공차 **±1.0mm**(sub-0.1mm 아님, GROUND_TRUTH σ 37µm 충족).
+> **SX3i** = **삼각대 자유이동** — 카메라를 마구 옮겨가며 촬영. **기하 구속 0**, 정합이 **100% ArUco 마커**에만 의존
+> (공유마커 puzzle stitch). 목표 **sub-0.1mm**(C3). → 회전축 자체가 없어 runout 무관; sub-0.1mm 는 *마커 정합품질 +
+> 카메라 floor* 가 전부(가장 어려운 케이스).
 
 1. **(SX3i) Zivid 구조광 sub-0.1mm *accuracy* 한계 — sub-0.1mm 의 진짜 blind-spot.** XL250 단일샷 250µm(이미 앎).
    prom: 대형 금속부품 structured-light 는 interferometric cal 없이 sub-0.1mm *accuracy* 도달 불확실(precision≠
