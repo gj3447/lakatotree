@@ -16,22 +16,23 @@ def test_lx3_blooms_at_aruco_metric():
     assert prob['parent'] == 'aruco_metric'
 
 
-def test_lx3_groundtruth_progressive_but_markerless_autopath_ceiling():
+def test_lx3_groundtruth_reconciled_degenerating_canonical_bpc():
+    """★엔진 라이브 reconcile: 수동 GROUND_TRUTH oracle(σ37µm)은 자동 프로그램을 전진시키는 novel
+    진보가 아닌 베이스라인(anomaly 없음) → 엔진 judge=degenerating. 측정 자체는 유효(σ ACCEPTABLE)."""
     out = run()
-    # 실측 GROUND_TRUTH 는 progressive (R&R σ 37µm BPC-grade)
-    assert 'lx3_groundtruth_oracle' in out['lx3_progressive']
-    # markerless 자동 정합 경로는 degenerating (보존된 음의분기)
-    assert 'lx3_auto_path_ceiling' in out['lx3_degenerating']
+    by = {n['tag']: n for n in BLOOM_NODES}
+    assert by['lx3_groundtruth_oracle']['verdict'] == 'degenerating'   # 수동 oracle=비진보 베이스라인
+    assert by['lx3_auto_path_ceiling']['verdict'] == 'rejected'        # markerless 자동경로 ceiling
     # LX3 정합정확도 미측정 → 통합 정본은 BPC v8 유지 (정직)
     assert out['canonical'] == 'v8_pipeline'
 
 
 def test_lx3_reconfirms_free_icp_collapse_hardcore():
     out = run()
-    # markerless multi-view ICP identity-basin = BPC hard-core(free-ICP collapse) 재확인
-    assert 'lx3_identity_basin' in out['lx3_degenerating']
-    basin = next(n for n in BLOOM_NODES if n['tag'] == 'lx3_identity_basin')
-    assert basin['verdict'] == 'degenerating'
+    by = {n['tag']: n for n in BLOOM_NODES}
+    # markerless multi-view ICP identity-basin = BPC hard-core(free-ICP collapse) 재확인 —
+    # 엔진 reconcile 후 rejected(가설 falsify, 음의결과 보존). 삭제 아님(기둥5).
+    assert by['lx3_identity_basin']['verdict'] == 'rejected'
 
 
 def test_lx3_aruco_markers_real_grounded_by_brightening():
@@ -48,6 +49,7 @@ def test_lx3_aruco_markers_real_grounded_by_brightening():
     assert fr['q_lx3_enabler']['status'] == 'CLOSED'
     assert 'lx3_aruco_turntable' in fr['q_lx3_enabler']['closed_by']
     assert fr['q_lx3_aruco_accuracy']['status'] == 'OPEN'   # 검출≠정확도 — 가짜green 금지
-    # markerless 음의분기·collapse 교훈은 그대로 보존(pillar 5)
-    assert 'lx3_auto_path_ceiling' in out['lx3_degenerating']
-    assert 'lx3_groundtruth_oracle' in out['lx3_progressive']
+    # markerless 음의분기·oracle 베이스라인은 엔진 reconcile 후 rejected/degenerating 로 보존(pillar 5)
+    by = {n['tag']: n for n in BLOOM_NODES}
+    assert by['lx3_auto_path_ceiling']['verdict'] == 'rejected'
+    assert by['lx3_groundtruth_oracle']['verdict'] == 'degenerating'

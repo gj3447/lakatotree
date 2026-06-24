@@ -28,6 +28,7 @@ REAL_RECORDS = [
     f'{DATUM_EVID}/gdt_datum_designation_a110_20260624.json',  # 도면 datum A/B/C 전사(3출처 일치)
     f'{DATUM_EVID}/bestfit_vs_datum_real_lx3_20260624.json',   # LX3 실 lot: 부등식 + 은폐폭
     f'{DATUM_EVID}/verdict_flip_hunt_bpc_20260624.json',       # BPC 실 lot: verdict-flip 사냥
+    f'{DATUM_EVID}/d5_real_part_drf_lx3_20260624.json',        # D5: 실 2-캡처 도면-datum repro σ
 ]
 
 
@@ -102,6 +103,18 @@ BLOOM_NODES = [
                '원점 σ_o<0.05mm·tilt p95<0.5°. 실측 σ_o=0.021mm ✅, tilt p95=0.033° ✅.',
        limitation='합성 GT. 실 datum 면 평탄도/segment 품질은 D5 에서.'),
 
+    # ── D5: 실부품 DRF 재현성 — 실 2-캡처 PARTIAL (도면 datum, σ 부분측정) ──
+    _n('real_part_drf', 'partial', 'drf_instrument', m=0.0485, base=0.05, nr=True, nc=False,
+       q=['q_real_part_drf'],
+       comment='실 2-캡처(GROUND_TRUTH trial_1·2) 도면 datum[A][B][C] DRF repro σ '
+               '(scripts/d5_real_part_drf.py). datum σ_p95=0.0485mm < band 0.05 → PASS(경계). '
+               'best-fit σ_p95=0.037 < datum 0.0485 → datum-target *점* anchoring 이 3 노이즈 점의 '
+               'frame 노이즈 전파로 σ 키움 = 일방 datum-*면*(다점 평균)으로 가야 하는 동기. '
+               '합성 linearity self-test 통과(ratio 2.06). evidence/d5_real_part_drf_lx3_20260624.json.',
+       limitation='n=2 캡처=1-DOF 약추정. datum-면 평탄도 rms(raw-zdf datum-면 추출=SX3i 분기B 공유) + '
+                  '더많은 캡처 + 일방 tangent-plane DRF 미포함 → q_real_part_drf OPEN 유지(σ 부분만). '
+                  'trueness CMM 부재 UNVERIFIED.'),
+
     # ── 기각: best-fit 을 DRF 로 착각 (이 가지가 정립) ──
     _n('bestfit_as_drf', 'rejected', 'datum_prob',
        comment='대칭 best-fit(전 피처 or datum 중심점 Kabsch)을 DRF 로 사용 = cad_metrology.align_and_deviate '
@@ -128,9 +141,11 @@ BLOOM_FRONTIER = [
               '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), ⊕⌀1.5|A|B|C. 3 독립출처 일치 '
               '(PPAP PDF+outline+asme_datum). CAD 형상 자동선택은 q_cad_datum_triple 로 부정 → 도면이 정함(hard core 실현).'),
     dict(name='q_real_part_drf', status='OPEN', closed_by=None,
-         body='D5🔬(사전등록, 미측정): 실 zdf 에서 datum 면(점군)+피처 추출 → DRF 정합 cross-capture σ<0.05mm, '
-              'datum 면 평탄도 rms<0.1mm? 반증: σ>0.1mm or collapse → datum 면 부족. 블록된 입력=뷰 datum-면/'
-              'feature 추출기(= SX3i 분기B markerless_c3 feature 추출기와 공유). 닫히면 SX3i C3⭐ 와 합류.'),
+         body='D5🔬: 실 zdf 에서 datum 면(점군)+피처 추출 → DRF 정합 cross-capture σ<0.05mm, datum 면 평탄도 '
+              'rms<0.1mm? **부분측정(real_part_drf partial)**: 실 2-캡처 도면-datum DRF σ_p95=0.0485<0.05 '
+              'PASS(경계, n=2 약추정)·best-fit 0.037<datum 0.0485(점 anchoring 노이즈전파). **OPEN 유지** — '
+              'datum-면 평탄도 미측정 + n=2 + 일방 tangent-plane DRF 미구현. 잔여입력=raw-zdf datum-면 추출기'
+              '(=SX3i 분기B feature 추출기 공유). 닫히면 SX3i C3⭐ 와 합류.'),
 ]
 
 

@@ -41,15 +41,20 @@ BLOOM_NODES = [
                   'markerless(CAD anchor/HALCON SurfaceMatch)는 보존된 음의 분기.'),
 
     # 실측 정본 후보 가지 (oracle anchor 기준)
-    _n('lx3_groundtruth_oracle', 'progressive', 'lx3_prob', m=0.0368, base=None, scope='measurement',
+    _n('lx3_groundtruth_oracle', 'degenerating', 'lx3_prob', m=0.0368, base=None, scope='measurement',
        nr=True, nc=True, q=['q_lx3_full_surface_anchor'],
        comment='GROUND_TRUTH self-verify: R&R σ=36.8µm, AIAG MSA P/T 22.08% 🟢ACCEPTABLE(±1.0mm). '
-               '12측정 11 OK+1 NG. BPC-grade σ 도달 — production GROUND_TRUTH 는 이미 sub-mm.',
+               '12측정 11 OK+1 NG. BPC-grade σ 도달 — production GROUND_TRUTH 는 이미 sub-mm. '
+               '★라이브엔진 reconcile(2026-06-24, LakatosTree_LX3_PLACEHOLDER): 원저자 라벨 progressive → '
+               '엔진 judge 판정 **degenerating**. 이유=oracle/수동 anchor 는 자동 프로그램을 전진시키는 novel 예측이 '
+               '아닌 베이스라인(anomaly 없음) → MSRP상 비진보. 측정 자체는 유효(σ ACCEPTABLE)이나 프로그램 진보는 아님.',
        limitation='oracle/수동 anchor 기준 — 자동 정합 경로 아님(lx3_auto_path_ceiling 참조). precision≠accuracy.'),
-    _n('lx3_cylinder_fit', 'progressive', 'lx3_groundtruth_oracle', m=0.39, base=None, scope='measurement',
+    _n('lx3_cylinder_fit', 'partial', 'lx3_groundtruth_oracle', m=0.39, base=None, scope='measurement',
        nr=True, nc=False, q=['q_lx3_gauge_boundary'],
        comment='hole 중심=cylinder fit. mean pos dev 0.39mm part-wide sub-mm. '
-               '5-gate: G1 rigid / G2 hole-align / G3 local-min audit / G4 signed-dist / G5 noise-floor.',
+               '5-gate: G1 rigid / G2 hole-align / G3 local-min audit / G4 signed-dist / G5 noise-floor. '
+               '★라이브엔진 reconcile(2026-06-24): 원저자 progressive → 엔진 **partial**. 이유=novel 미확인(nc=False)·'
+               'excess empirical content 없음 → sub-mm 달성하나 초과내용 없는 부분진보.',
        limitation='B_LH 0.999→1.067mm tol-경계 flip = gauge 위태(σ shift 시 verdict 뒤집힘).'),
 
     # ★2026-06-24 grounded(검출) — ArUco-턴테이블 마커는 brightening 으로 실재·검출됨(progressive)
@@ -112,13 +117,15 @@ BLOOM_NODES = [
                   'lx3_aruco_knownaxis_precision 포즈로 정합한 스캔 부시를 이 기준에 대보아야(±1.0mm). 기준은 이제 준비됨(ruler ready).'),
 
     # 퇴행 가지(보존) — BPC 줄기 hard-core 재확인 + markerless 자동경로 한계
-    _n('lx3_identity_basin', 'degenerating', 'lx3_prob', m=4.35, base=None,
+    _n('lx3_identity_basin', 'rejected', 'lx3_prob', m=4.35, base=None,
        comment='markerless multi-view ICP 28 pair rmse 4.35-5.77mm cluster = identity-init basin. '
-               '"진짜 R&R 아님" — BPC free-ICP collapse(평판 rank-deficiency) 교훈을 LX3 형상에서 재확인.',
+               '"진짜 R&R 아님" — BPC free-ICP collapse(평판 rank-deficiency) 교훈을 LX3 형상에서 재확인. '
+               '★라이브엔진 reconcile(2026-06-24): 원저자 degenerating → 엔진 **rejected**(sub-mm 예측이 4.35mm로 hard 미달=반증). 둘 다 비진보(NONPROGRESSIVE).',
        limitation='마커/anchor 없는 free ICP 는 이 형상에서도 collapse. → ArUco-턴테이블 fiducial 이 그 해법.'),
-    _n('lx3_auto_path_ceiling', 'degenerating', 'lx3_cylinder_fit', m=25.0, base=0.39,
+    _n('lx3_auto_path_ceiling', 'rejected', 'lx3_cylinder_fit', m=25.0, base=0.39,
        comment='markerless 자동 정합 경로 ceiling: production pipeline 4/6 valid, pos_dev 25-42mm(voxel5 '
-               'sparse). proper full-surface scan↔CAD anchor transform 부재 → software-only 천장.',
+               'sparse). proper full-surface scan↔CAD anchor transform 부재 → software-only 천장. '
+               '★라이브엔진 reconcile(2026-06-24): 원저자 degenerating → 엔진 **rejected**(oracle 0.39mm 자동화 예측이 25mm로 미달=반증). 둘 다 비진보.',
        limitation='HALCON SurfaceMatch = license blocked. (ArUco init data 는 2026-06-24 grounded 확보 — 고친 색프레임 '
                   '+ brightening 으로 실 마커 검출, lx3_aruco_turntable progressive.) markerless 천장은 그 대안경로로 보존.'),
 ]

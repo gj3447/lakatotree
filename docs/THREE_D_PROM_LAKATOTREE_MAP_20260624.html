@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Three-D PROM LakatoTree Map</title>
+  <style>
+    body {
+      margin: 24px;
+      background: #f8fafc;
+      color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: #64748b; margin-bottom: 18px; }
+    .map {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(180px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+    .node {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 12px;
+      min-height: 58px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    }
+    .node strong { display: block; font-size: 13px; margin-bottom: 4px; }
+    .root { grid-column: 1 / -1; background: #dbeafe; border-color: #2563eb; }
+    .hard { grid-column: 1 / -1; background: #e0f2fe; border-color: #0284c7; }
+    .adopted { background: #dcfce7; border-color: #16a34a; }
+    .pending { background: #ffedd5; border-color: #ea580c; }
+    .research { background: #f3e8ff; border-color: #9333ea; }
+    .blocked { background: #e5e7eb; border-color: #6b7280; }
+    .tooling { grid-column: 1 / -1; background: #ede9fe; border-color: #7c3aed; }
+    .gate { background: #fef9c3; border-color: #ca8a04; }
+    .kill { background: #fee2e2; border-color: #dc2626; }
+    .receipt { grid-column: 1 / -1; background: #f1f5f9; border-color: #475569; }
+    .stack { display: grid; gap: 8px; }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .chip {
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: #fff;
+      color: #334155;
+    }
+  </style>
+</head>
+<body>
+  <h1>Three-D PROM LakatoTree Map</h1>
+  <div class="sub">BPC/LX3/SX3i/OMD operating map. Static offline view, no build step.</div>
+
+  <div class="map">
+    <div class="node root">
+      <strong>3D Shape Inspection PROM</strong>
+      multi-view 3D data -> measurable conformance
+    </div>
+
+    <div class="node hard">
+      <strong>Hard Core</strong>
+      precision != accuracy; ICP residual != GD&T conformance; marker repeatability != part accuracy
+    </div>
+
+    <div class="stack">
+      <div class="node adopted">
+        <strong>BPC Current Production</strong>
+        status: adopted
+      </div>
+      <div class="node">
+        <strong>Production Path</strong>
+        frozen per-view transforms; DC375 measure-lot fusion; no free global ICP verdict
+      </div>
+      <div class="node gate">
+        <strong>Next Gate</strong>
+        uncertainty_mm + decision_rule fields
+      </div>
+      <div class="node kill">
+        <strong>Kill Criterion</strong>
+        silent BPC GICP fallback
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="node pending">
+        <strong>LX3 Migration</strong>
+        status: pending-port
+      </div>
+      <div class="node">
+        <strong>Current Evidence</strong>
+        known-axis ArUco precision; corner 3D + turntable self-consistency
+      </div>
+      <div class="node gate">
+        <strong>Next Gate</strong>
+        bush/CAD independent accuracy
+      </div>
+      <div class="node kill">
+        <strong>Kill Criterion</strong>
+        bush/CAD error over tolerance
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="node research">
+        <strong>SX3i Research Branch</strong>
+        status: research-only
+      </div>
+      <div class="node">
+        <strong>C1 Evidence</strong>
+        marker detection grounded; reader frame provenance fixed
+      </div>
+      <div class="node gate">
+        <strong>C2 -> C3 Gates</strong>
+        connected assembly, then feature-coincidence independent precision
+      </div>
+      <div class="node kill">
+        <strong>Kill Criterion</strong>
+        cannot beat XL250 precision floor
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="node blocked">
+        <strong>OMD</strong>
+        status: blocked-definition-missing
+      </div>
+      <div class="node gate">
+        <strong>Unblock Gate</strong>
+        source/interface/test contract appears
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="node tooling">
+        <strong>PROM Tooling Board</strong>
+        DVC, pytest/JUnit, Open3D scripts, MLflow pilot
+      </div>
+    </div>
+
+    <div class="node receipt">
+      <strong>Receipt Contract</strong>
+      claim + command + inputs + outputs + metrics + negative control
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="chip">green: adopted</span>
+    <span class="chip">orange: pending-port</span>
+    <span class="chip">purple: research-only</span>
+    <span class="chip">gray: blocked</span>
+    <span class="chip">yellow: next gate</span>
+    <span class="chip">red: kill criterion</span>
+  </div>
+</body>
+</html>

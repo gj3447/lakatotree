@@ -101,7 +101,7 @@ NODES = [
        limitation='dup ID 가 BA collapse 연료 → 기각'),
 
     # ── 2026-06-24 궤도: SEG→SEM 라벨 partition A-D 검증 (생산 라벨링 무결성) ──
-    _n('seg_sem_partition', 'partial', 'v8_pipeline', nr=True, nc=False, q=['q_seg_sem_canonical'],
+    _n('seg_sem_partition', 'progressive', 'v8_pipeline', nr=True, nc=True, q=['q_seg_sem_canonical'],
        comment='instance seg(COCO overlap) → 1-of-N semantic partition A-D 검증(scripts/seg2sem_partition_remap.py 등). '
                'CAD-geom 으로 메커니즘 CONFIRMED: C1 whole(BPC) footprint 가 part feature 168/168 포함(dual-membership '
                '38205px), C2 argmax remap 후 multi-membership 37824→0px, C3-a 2D CC instance==CAD count 5/5클래스(delta0), '
@@ -110,7 +110,11 @@ NODES = [
        limitation='★C1 canonical hand-label = 2026-06-24 CONFIRMED(diamondperl coco_v3 rsync): 실 라벨 28img·424 feature inst, '
                   'feature 픽셀 99.66% dual-membership·median containment 1.0 (v6 3dtruth 99.67%·458inst 동일) → CAD-geom 아닌 '
                   '실 라벨러 데이터서 overlap 실재 확증. evidence/seg_vs_sem_C1_canonical_handlabel_20260624.json. '
-                  '남은 BLOCKED: v3 모델 CC회수(C3-a)·3D-fusion 회귀(C3-c)=best.pt 가중치(diamondperl) 필요. '
+                  '★C3-a v3 모델 instance recovery = 2026-06-24 CONFIRMED(diamondperl bpc_seg_v3 best.pt, bead_trt ultralytics, '
+                  '42 eval img CPU): feature instance pred/GT 1.02×(CUP43→46·EXT74→73·OUTER44→44·PLATE89→93·TAB207→210) → '
+                  '모델이 라벨 인스턴스 회수 + semantic partition 이 인스턴스 보존. evidence/seg_vs_sem_C3a_model_cc_recovery_20260624.json. '
+                  '남은 BLOCKED: C3-c 3D-fusion 비퇴행 회귀(96/128 p50 2.2mm)=production 3D fusion 파이프라인+zdf 필요(무거움·fleet 영역). '
+                  '★날짜형상 함정(DATE_SHAPE_MAP_20260624.md): PLATE_HOLE Y 06-17 전후 다름 → 교차날짜 trueness/3D-fusion 은 그룹화 필수. '
                   'precision≠accuracy 잔존(2D 라벨 무결성 ≠ 3D 측정정확도).'),
 ]
 
@@ -130,8 +134,9 @@ FRONTIER = [
          closed_by=None),
     dict(name='q_seg_sem_canonical', status='OPEN',
          body='SEG→SEM partition 이 정식 hand-label IoU·v3 모델 CC회수·3D-fusion 회귀에서도 검증되는가. '
-              '★2026-06-24 진척: C1(overlap 실재)=실 hand-label 로 CONFIRMED(diamondperl coco_v3, 99.7% dual·median 1.0). '
-              '남은 OPEN: C3-a(v3 CC회수)·C3-c(3D-fusion 회귀)=best.pt 가중치 diamondperl rsync 필요. '
+              '★2026-06-24 진척: C1(overlap 실재)=실 hand-label CONFIRMED(99.7% dual·median 1.0), '
+              'C3-a(v3 모델 instance recovery)=CONFIRMED(1.02× GT, 42 eval). 남은 OPEN: C3-c(3D-fusion 비퇴행 회귀)=production '
+              '파이프라인+zdf 필요(무거움). + 전제: 날짜형상(PLATE_HOLE Y 06-17 전후 다름) 그룹화(DATE_SHAPE_MAP_20260624.md). '
               '(read_rgb 버퍼버그와 별건 — BPC 는 다른 stride 이슈.)',
          closed_by=None),
 ]

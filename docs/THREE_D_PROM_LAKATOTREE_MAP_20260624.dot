@@ -1,0 +1,58 @@
+digraph three_d_prom_lakatotree_map {
+  rankdir=TB;
+  graph [fontname="monospace", labelloc=t, label="Three-D PROM LakatoTree Map"];
+  node [shape=box, style="rounded,filled", fontname="monospace", fontsize=10, color="#64748b", fillcolor="#f8fafc"];
+  edge [fontname="monospace", fontsize=9, color="#94a3b8"];
+
+  root [label="3D Shape Inspection PROM\nmulti-view 3D -> measurable conformance", shape=doubleoctagon, fillcolor="#dbeafe", color="#2563eb"];
+  hard [label="Hard Core\nprecision != accuracy\nICP residual != GD&T conformance\nmarker repeatability != part accuracy", fillcolor="#e0f2fe", color="#0284c7"];
+  root -> hard;
+
+  bpc [label="BPC Current Production\nstatus: adopted", fillcolor="#dcfce7", color="#16a34a"];
+  bpc_path [label="Frozen per-view transforms\nDC375 measure-lot fusion\nno free global ICP verdict", fillcolor="#dcfce7", color="#16a34a"];
+  bpc_next [label="Next gate\nuncertainty_mm + decision_rule fields", fillcolor="#fef9c3", color="#ca8a04"];
+  bpc_kill [label="Kill criterion\nsilent BPC GICP fallback", fillcolor="#fee2e2", color="#dc2626"];
+  hard -> bpc;
+  bpc -> bpc_path;
+  bpc -> bpc_next;
+  bpc -> bpc_kill;
+
+  lx3 [label="LX3 Migration\nstatus: pending-port", fillcolor="#ffedd5", color="#ea580c"];
+  lx3_precision [label="Known-axis ArUco precision\ncorner 3D + turntable self-consistency", fillcolor="#dbeafe", color="#2563eb"];
+  lx3_accuracy [label="Next gate\nbush/CAD independent accuracy", fillcolor="#fef9c3", color="#ca8a04"];
+  lx3_kill [label="Kill criterion\nbush/CAD error over tolerance", fillcolor="#fee2e2", color="#dc2626"];
+  hard -> lx3;
+  lx3 -> lx3_precision;
+  lx3 -> lx3_accuracy;
+  lx3 -> lx3_kill;
+
+  sx3i [label="SX3i Research Branch\nstatus: research-only", fillcolor="#f3e8ff", color="#9333ea"];
+  sx3i_c1 [label="C1 marker detection grounded\nreader frame provenance fixed", fillcolor="#dbeafe", color="#2563eb"];
+  sx3i_c2 [label="Next gate C2\nconnected assembly", fillcolor="#fef9c3", color="#ca8a04"];
+  sx3i_c3 [label="Next gate C3\nfeature-coincidence independent precision", fillcolor="#fef9c3", color="#ca8a04"];
+  sx3i_kill [label="Kill criterion\ncannot beat XL250 precision floor", fillcolor="#fee2e2", color="#dc2626"];
+  hard -> sx3i;
+  sx3i -> sx3i_c1;
+  sx3i -> sx3i_c2;
+  sx3i_c2 -> sx3i_c3;
+  sx3i -> sx3i_kill;
+
+  omd [label="OMD\nstatus: blocked-definition-missing", fillcolor="#e5e7eb", color="#6b7280"];
+  omd_gate [label="Unblock gate\nsource/interface/test contract appears", fillcolor="#fef9c3", color="#ca8a04"];
+  hard -> omd;
+  omd -> omd_gate;
+
+  tooling [label="PROM Tooling Board", fillcolor="#ede9fe", color="#7c3aed"];
+  dvc [label="DVC\nscan fixtures + metric artifacts", fillcolor="#f8fafc"];
+  pytest [label="pytest/JUnit\nproduction adoption gates", fillcolor="#f8fafc"];
+  open3d [label="Open3D scripts\ngeometry metrics + negative controls", fillcolor="#f8fafc"];
+  mlflow [label="MLflow\npilot only for large sweeps", fillcolor="#f8fafc"];
+  root -> tooling;
+  tooling -> dvc;
+  tooling -> pytest;
+  tooling -> open3d;
+  tooling -> mlflow;
+
+  records [label="Receipt Contract\nclaim + command + inputs + outputs + metrics + negative control", fillcolor="#f1f5f9", color="#475569"];
+  root -> records;
+}

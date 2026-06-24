@@ -82,3 +82,5 @@ promotion discipline.
 - Use `docs/THREE_D_PROM_OPEN_SOURCE_TOOLING_20260624.md` as the tooling board
   for CLI-backed receipts. The default first stack is DVC, pytest/JUnit, and
   Open3D scripts.
+- Use `docs/THREE_D_PROM_LAKATOTREE_MAP_20260624.md` as the compact operator
+  map for the current BPC/LX3/SX3i/OMD PROM tree.
