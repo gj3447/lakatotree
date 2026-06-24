@@ -17,6 +17,7 @@ from __future__ import annotations
 from lakatos.quant.metrics import tree_metrics
 from examples.bpc_icp_programme import _n, NODES as BPC_NODES, FRONTIER as BPC_FRONTIER
 from examples._evidence import load_record, is_grounded, summarize
+from examples.record_judge import judge_record
 
 # 이 가지가 BPC 줄기의 어느 마디에서 피어나는가 = 정합 프레임 결정점.
 BLOOM_AT = 'aruco_metric'
@@ -33,18 +34,26 @@ REAL_RECORDS = [
 
 
 def ground_real_records(paths=REAL_RECORDS):
-    """실 evidence 레코드를 엔진 계약으로 검증·요약. OPEN(파일부재)·거부(미검증) 정직 처리."""
+    """실 evidence 레코드를 엔진 계약으로 검증 + **엔진 판결 커널(judge_record)로 verdict 생성**.
+    손-설정 0: 숫자 사전등록(value_leq/value_geq) 있으면 엔진이 verdict 생성, 없으면 ABSTAIN(정직)."""
     out = []
     for p in paths:
         try:
             rec = load_record(p)
         except FileNotFoundError:
-            out.append(dict(path=p, status='OPEN(파일 부재)'))
+            out.append(dict(path=p, status='OPEN(파일 부재)', engine_verdict='OPEN'))
             continue
         s = summarize(rec)
+        jr = judge_record(p)                          # 엔진 판결 — verdict 생성 or ABSTAIN
+        if jr['status'] == 'judged':
+            v = jr['verdict']
+            ev = getattr(v, 'verdict', None) or (v.get('verdict') if isinstance(v, dict) else str(v))
+        else:
+            ev = jr['status'].upper()                 # ABSTAIN(숫자baseline 부재) / INVALID
         out.append(dict(path=p, status='GROUNDED' if is_grounded(rec) else f'REJECTED {s["errors"]}',
                         conjecture=rec.get('conjecture'), branch=rec.get('branch'),
                         metric=s['metric'], measured=s['measured'], unit=s['unit'],
+                        engine_verdict=ev,
                         findings=[f.get('body') for f in s['findings']]))
     return out
 
@@ -183,21 +192,26 @@ def run():
     _line(f"  → 관문 D5(실부품)    : zdf datum-면 추출기(SX3i 분기B 공유) + GD&T 도면 datum 대기")
     _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
 
-    # ── D3 실데이터 grounding (엔진 _evidence 계약 검증 — 자기채점 차단) ──
+    # ── 실데이터 grounding + 엔진 판결(judge_record) — 손-설정 0, 엔진이 verdict 생성 ──
     real = ground_real_records()
     _line('\n' + '─' * 72)
-    _line('  D3⭐ exposes_hidden_error — 실데이터 grounded 레코드 (synthetic→real, 엔진 검증)')
+    _line('  실데이터 grounded 레코드 — 엔진 _evidence 검증 + judge_record 판결(verdict 손-설정 아님)')
     for r in real:
-        _line(f"  [{r['status']}] {r.get('branch')}: {r['metric']}={r['measured']} {r.get('unit','')}")
+        _line(f"  [{r['status']}] {r.get('branch')}: {r['metric']}={r['measured']} {r.get('unit','')} "
+              f"→ 엔진 verdict={r.get('engine_verdict')}")
         for fb in (r.get('findings') or []):
             _line(f"       · {fb}")
     n_grounded = sum(1 for r in real if r['status'] == 'GROUNDED')
-    _line(f"  → 엔진 수용 {n_grounded}/{len(real)} (verdict 금지·사전등록·grounded 통과). "
-          f"D3 verdict=partial 유지(도면 datum·CMM 미정 → progressive 아님=정직).")
+    n_judged = sum(1 for r in real if r.get('engine_verdict') in ('progressive', 'partial', 'equivalent', 'rejected'))
+    n_abstain = sum(1 for r in real if r.get('engine_verdict') == 'ABSTAIN')
+    _line(f"  → 엔진 grounded {n_grounded}/{len(real)} · **엔진 판결 {n_judged} judged + {n_abstain} abstain**. "
+          f"judged=숫자 사전등록(value_leq/geq) → 엔진 생성 verdict(전부 partial=정직). "
+          f"abstain=전사/노이즈-count = 기계판결 불가(엔진이 손-verdict 거부, 루프 진짜갭 노출).")
     _line('\n' + '═' * 72)
     return dict(metrics=m, bloom_at=BLOOM_AT, open_frontier=datum_open, closed_frontier=datum_closed,
                 datum_progressive=n_prog, datum_partial=partials, datum_rejected=rej,
-                canonical=m['canonical'], real_records=real, n_grounded=n_grounded)
+                canonical=m['canonical'], real_records=real, n_grounded=n_grounded,
+                n_judged=n_judged, n_abstain=n_abstain)
 
 
 if __name__ == '__main__':
