@@ -4,3 +4,8 @@ __pycache__/
 *.log
 .coverage
 htmlcov/
+
+# 3D 형상 검출 대시보드 생성물(재생성 가능)
+three_d_detection.html
+three_d_detection.dot
+three_d_detection.svg

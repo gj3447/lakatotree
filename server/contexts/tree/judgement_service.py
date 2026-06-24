@@ -46,23 +46,18 @@ class JudgementService:
         self.foundation = foundation
         self.reproducible_for_node = reproducible_for_node
 
-    def _eigentrust_credibility(self, name: str, tag: str, *, novel_confirmed: bool,
-                                has_human_verdict: bool) -> dict | None:
-        """prom-honesty/credibility (정본 prom 2026-06-21): CANONICAL 승격의 credibility 게이트 입력을
-        client-self-reported source_trust 대신 *노드의 인터넷 관측 그래프 eigentrust* 로 산출한다.
-          - 인터넷 관측이 없으면 internal 노드 → None(credibility 게이트 생략; constitution+reproducible 가 영수증).
-          - 있으면 그 source 의 eigentrust(네트워크 신뢰, sybil 저항)로 backed 판정 — self-report 1.0 으론 통과 못 함.
-        (read_models._internet_observations 와 동형: source=url|source_type, 노드당 첫 관측.)"""
+    def _node_eigentrust(self, name: str, tag: str) -> tuple[str | None, float | None, bool]:
+        """노드의 인터넷 관측 그래프 eigentrust → (src, eigen, backed). src=None: internal 노드
+        (인터넷 주장 없음 / 식별 source 없음). seed 자격은 *서버검증 URL 도메인*(#1 R3 forge 봉쇄) —
+        client 의 source_type 라벨이 아니다. credibility 게이트(#1)와 eureka source_trust(#4)가
+        *동일* 산출을 공유한다(no whack-a-mole). (read_models._internet_observations 와 동형.)"""
         import json
         rows = self.kg(
             "MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:HAS_RESEARCH_EVENT]->"
             "(ev:ResearchEvent {realm:'internet'}) RETURN ev.payload AS payload ORDER BY ev.created_at",
             tree=name, tag=tag)
         if not rows:
-            # internal 노드(인터넷 주장 없음): credibility 게이트 생략. 단 human 이 vouch 하면 그 영수증을
-            #   보존한다 — credibility=None 이면 floor/게이트가 human 신호를 못 봐서 유실(D2↔floor 상호작용).
-            return (credibility_from_trust(0.0, trust_backed=False, novel_confirmed=novel_confirmed,
-                                           has_human_verdict=True) if has_human_verdict else None)
+            return None, None, False
         observations, src = [], None
         for r in rows:
             try:
@@ -78,16 +73,39 @@ class JudgementService:
                                      source_type=p.get('source_type') or '', node=tag,
                                      corroboration_score=float(p.get('corroboration_score') or 0.0)))
         if src is None:
-            # 관측은 있으나 식별 가능한 source 없음 → internal 취급. human vouch 는 보존(위와 동형).
-            return (credibility_from_trust(0.0, trust_backed=False, novel_confirmed=novel_confirmed,
-                                           has_human_verdict=True) if has_human_verdict else None)
+            return None, None, False
         from lakatos.trust import global_source_trust
         gst = global_source_trust(observations)
         eigen = gst['trust'].get(src)
         backed = eigen is not None and gst['coverage']['mode'] != 'uniform_unlearned'
+        return src, eigen, backed
+
+    def _eigentrust_credibility(self, name: str, tag: str, *, novel_confirmed: bool,
+                                has_human_verdict: bool) -> dict | None:
+        """prom-honesty/credibility (정본 prom 2026-06-21): CANONICAL 승격의 credibility 게이트 입력을
+        client-self-reported source_trust 대신 *노드의 인터넷 관측 그래프 eigentrust* 로 산출한다.
+          - 인터넷 관측이 없으면 internal 노드 → None(credibility 게이트 생략; constitution+reproducible 가 영수증).
+            단 human 이 vouch 하면 그 영수증을 보존한다(credibility=None 이면 floor 가 human 신호 유실, D2↔floor).
+          - 있으면 그 source 의 eigentrust(네트워크 신뢰, sybil 저항)로 backed 판정 — self-report 1.0 으론 통과 못 함."""
+        src, eigen, backed = self._node_eigentrust(name, tag)
+        if src is None:
+            return (credibility_from_trust(0.0, trust_backed=False, novel_confirmed=novel_confirmed,
+                                           has_human_verdict=True) if has_human_verdict else None)
         return credibility_from_trust(
             float(eigen) if backed else 0.0, trust_backed=backed,
             novel_confirmed=novel_confirmed, has_human_verdict=has_human_verdict)
+
+    def _eigentrust_source_trust(self, name: str, tag: str) -> float:
+        """#4 (prom-honesty/provenance_reality_derived): eureka BF 의 source_trust 를 client-self-reported
+        r.source_trust 가 아니라 *노드 인터넷 관측 eigentrust* 로 재유도 — forged source_trust 로 BF 를
+        부풀려 true-eureka 를 살 수 없다(credibility 게이트와 동일 원천). internal 노드(인터넷 주장 없음)
+        =1.0(스크립트 측정 영수증, credibility 주장 아님). 인터넷 노드: backed=그 source eigentrust,
+        미뒷받침(forged source_type/junk URL → #1 URL-도메인 seed gating)=0.0(BF 중립). receipt:
+        tests/test_eureka_source_trust_eigentrust.py."""
+        src, eigen, backed = self._node_eigentrust(name, tag)
+        if src is None:
+            return 1.0
+        return float(eigen) if backed else 0.0
 
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
         # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
@@ -273,9 +291,13 @@ class JudgementService:
         # (require_promotion=False: standing lives in the standing layer, not on a node) and persisted
         # in the SAME kg_tx op-list below — atomic with the verdict, no second non-atomic write (B1).
         # opened = questions this node raises (n_opened); closed = 1 if it closes a frontier question.
+        # #4 (provenance_reality_derived): eureka BF 의 source_trust 는 client r.source_trust 가 아니라
+        # 노드 인터넷 관측 eigentrust 로 재유도 — forged source_trust 로 true-eureka 를 못 산다(credibility 와
+        # 동일 원천). internal 노드=1.0. 영속(e.source_trust)도 이 값으로 → tree-level eureka_over_tree 도 정직.
+        est = self._eigentrust_source_trust(name, tag)
         eu = eureka_classify({
             'novel_registered': bool(pr['nmet']), 'novel_confirmed': v.novel, 'verdict': verdict,
-            'delta': v.delta, 'noise_band': pr['nb'] or 0.0, 'source_trust': r.source_trust,
+            'delta': v.delta, 'noise_band': pr['nb'] or 0.0, 'source_trust': est,
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)
         ts = datetime.now(timezone.utc).isoformat()
@@ -289,7 +311,7 @@ class JudgementService:
                        e.eureka_bf=$eu_bf""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
                      script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel,
-                     st=r.source_trust, lstat=lakatos_status,
+                     st=est, lstat=lakatos_status,
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
         for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):

@@ -91,6 +91,20 @@ BLOOM_FRONTIER = [
          body='C4: C2 puzzle INIT 위 raw-res ICP(geom+intensity) 로 overlap RMS sub-0.1mm?'),
     dict(name='q_crosscam', status='OPEN', closed_by=None,
          body='C5: XL250 ↔ MR60(zivid2Plus, BPC lot) cross-camera feature |Δ| < 0.15mm?'),
+    # ── C3 앞 물리 관문 — 사전등록(2026-06-24, 측정 전. 분기 A/B 무관하게 선결) ──
+    dict(name='q_sx3i_precision_floor', status='OPEN', closed_by=None,
+         body='C3 物理관문(사전등록 2026-06-24, 미측정=OPEN): XL250 단일샷 정밀도 250µm(zivid.py '
+              'LensSpec precision_um, capture_qc "0.1mm washer XY 불가")가 C3 목표 100µm 의 2.5배 — '
+              'multi-view 평균으로 floor 를 목표 아래로 끌어내릴 수 있는가? '
+              '★사전등록 예측: (a) per-view feature(hole/boss) 중심 반복도 σ_view(다점 fit 이라 단일점 250µm '
+              '보다 이미 우수), (b) N 중첩뷰 융합 → σ_fused ≈ σ_view/√N_eff 로 축소, (c) 중첩뷰쌍 '
+              'feature-coincidence median |Δcenter| ≤ 0.10mm·p95 ≤ 0.15mm(C3 band, 측정 전 고정). '
+              'noise_band 0.05, direction=lower. '
+              '★반증(kill): 융합 median > 0.10mm 또는 σ_fused 가 √N 으로 안 줄면 → "XL250 단일카메라 '
+              'sub-0.1mm 불가" 확정 → cross-camera(C5, MR60 precision 80µm) 또는 고밀도 재촬영으로 분기. '
+              '측정수단: 분기B instrument(markerless_c3.py, cross_view_coincidence)로 212 zdf 에서 직접 — '
+              '마커 문제(C1) 우회 가능. 입력=뷰 feature 추출기(분기B 선결과제와 공유). '
+              'C3 검증 없이 C4 refine 얹으면 헛디딤(BPC 반복실수). 이 관문이 C3⭐의 물리 전제다.'),
     # C1b denoise 질문 — 측정으로 부정 답(CLOSED by c1b_denoise): denoise 로는 못 살림.
     dict(name='q_denoise_coverage', status='CLOSED', closed_by='c1b_denoise',
          body='C1b: edge-preserving despeckle 로 decode 반복 공동관측↑? → 답 NO. bilateral+CLAHE 최적 '

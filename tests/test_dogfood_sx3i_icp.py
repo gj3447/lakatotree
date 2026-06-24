@@ -60,11 +60,22 @@ def test_sx3i_denoise_refuted_branch_switch():
 
 def test_sx3i_remaining_frontier():
     out = run()
-    # C2~C5 미측정 → OPEN. C3⭐ 정밀게이트 존재. denoise 닫힘. 분기 A·B 질문 열림.
+    # C2~C5 미측정 → OPEN. C3⭐ 정밀게이트 + C3-pre 물리관문 존재. denoise 닫힘. 분기 A·B 질문 열림.
     assert out['open_frontier'] == ['q_xl250_gsd', 'q_sx3i_assemble',
                                     'q_independent_accuracy', 'q_raw_refine', 'q_crosscam',
+                                    'q_sx3i_precision_floor',
                                     'q_recapture_settings2d', 'q_markerless_c3_inputs']
     assert 'q_independent_accuracy' in out['open_frontier']
     assert 'q_denoise_coverage' not in out['open_frontier']  # 측정으로 닫힘
     # 분기전환이 두 갈래로 열림(A 재촬영 / B markerless)
     assert {'q_recapture_settings2d', 'q_markerless_c3_inputs'} <= set(out['open_frontier'])
+
+
+def test_sx3i_precision_floor_preregistered_open_not_fake_green():
+    """C3 앞 물리관문 q_sx3i_precision_floor 는 사전등록됐으나 미측정 → OPEN(가짜green 금지)."""
+    from examples.sx3i_icp_programme import BLOOM_FRONTIER, BLOOM_NODES
+    q = next(q for q in BLOOM_FRONTIER if q['name'] == 'q_sx3i_precision_floor')
+    assert q['status'] == 'OPEN' and q['closed_by'] is None        # 측정 전 — 안 닫힘
+    assert '250' in q['body'] and '0.10mm' in q['body']            # 사전등록 예측·band 명시
+    # 사전등록이 progressive 노드를 만들지 않음(측정 없는 승급 금지)
+    assert not any(n['verdict'] in ('progressive', 'CANONICAL') for n in BLOOM_NODES)
