@@ -384,3 +384,6 @@ Until then, the honest status is:
 
 For the specific BPC Z-height / CAD surface layer failure mode, see
 `docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md`.
+
+For the day-to-day self-verification help sheet and reusable review macros, see
+`docs/LONGINUS_SELF_VERIFICATION_HELP_20260624.md`.

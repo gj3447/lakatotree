@@ -28,9 +28,9 @@ NODES = [
     ("c3_markerless_instrument", "sx3i_prob", f"{EV}/view_feature_extract_selftest_20260624.v1.json", "measured"),
     ("c3_markerless_real", "c3_markerless_instrument", f"{EV}/markerless_c3_real_20260624.v1.json", "measured"),
     ("sx3i_precision_floor_marker", "sx3i_prob", f"{EV}/c3pre_precision_floor_20260624.json", "measured"),
-    # ↓ 측정 record 없음 — 엔진판결 불가(손입력 progressive 였던 narrative). 정직하게 분리·flag.
-    ("reader_frame_provenance_fix", "c1_marker_detect", None, "narrative"),
-    ("misdiag_reader_frame", "c1_marker_detect", None, "narrative"),
+    # ↓ 2026-06-24: narrative 였던 2노드에 genuine grounded record 부여 → 엔진판결화(이제 measured).
+    ("reader_frame_provenance_fix", "c1_marker_detect", f"{EV}/reader_frame_fix_20260624.json", "measured"),
+    ("misdiag_reader_frame", "c1_marker_detect", f"{EV}/misdiag_reader_frame_20260624.json", "measured"),
 ]
 
 

@@ -37,28 +37,33 @@ BLOOM_NODES = [
                '2026-06-24 리더버그 정정 후 C1 검출 grounded.',
        limitation='C2~C5 + precision_floor 는 여전히 OPEN frontier(미측정). 정합법/퇴행교훈은 BPC 줄기 상속.'),
 
-    # ── C1: XL250 ArUco 검출 — 재grounding PROGRESSIVE (리더fix 후 깨끗이 검출) ──
-    _n('c1_marker_detect', 'progressive', 'sx3i_prob', m=8.28, scope='detection',
+    # ── C1: XL250 ArUco 검출 — ★엔진 reconcile: 손입력 progressive → 엔진 record_judge **partial** ──
+    _n('c1_marker_detect', 'partial', 'sx3i_prob', m=8.28, scope='detection',
        nr=True, nc=True, q=['q_xl250_gsd'],
        comment='고친 zdf_reader(float RGBA 색) + STRICT DICT_4X4_250(denoise 0) 재검출: 40뷰 중 34뷰·'
                '총 331마커·평균 8.28/뷰·max 21·side_px median 90.6px(20px 룰 100% 통과)·cross-view 반복 ID 28종. '
-               '마커 물리실재·DICT 정답 확인. grounded record=evidence/c1_marker_detect_refixed_20260624.json.',
+               '마커 물리실재·DICT 정답 확인. grounded record=evidence/c1_marker_detect_refixed_20260624.json. '
+               '★엔진 reconcile(2026-06-24): 손입력 progressive → record_judge 판결 **partial**(임계초과지만 '
+               'novel 초과내용 없음 = 손입력이 과대였음). 엔진에 올라탐.',
        limitation='CONFIRMED 아님: 전 212뷰 lot-경계 인지 확정 미완(40뷰 샘플·다중-lot 혼재 6/40 무마커=딴 장면). '
-                  'progressive 근거. C2(assembly)부터 다음.'),
+                  'partial(엔진판결) 근거. C2(assembly)부터 다음.'),
 
-    # ── 리더 프레임-오선택 버그 규명+수정 = 이번 라운드의 진짜 진보 ──
-    _n('reader_frame_provenance_fix', 'progressive', 'c1_marker_detect', nr=True, nc=True,
+    # ── 리더 프레임-오선택 버그 규명+수정 — ★엔진 reconcile: progressive → record_judge **partial** ──
+    _n('reader_frame_provenance_fix', 'partial', 'c1_marker_detect', nr=True, nc=True,
        comment='근본원인 규명+수정(novel, confirmed): prismv2 zdf_reader.read_rgb 의 _read_native_rgba 가 '
                '바이트길이로만 색 프레임을 골라 N*4-byte SNR(float32) 맵을 색으로 오선택→uint8 캐스팅(보라쓰레기). '
                'fix=float-색-우선(8+N*16) + SNR-가드 + read_snr 노출, uint8 contract/back-compat 보존(15 테스트 GREEN). '
-               '6가지로 SNR 정체 증명(ch3==float32>>24 100% 등).',
+               '검출 0(SNR프레임)→331(float프레임) 복원. grounded record=evidence/reader_frame_fix_20260624.json. '
+               '★엔진 reconcile: 손입력 progressive → record_judge **partial**(novel 초과내용 없는 임계초과). 엔진에 올라탐.',
        limitation='BPC 는 다른 stride 버그(N*16 색프레임 부재, side불일치 moiré) — 이 패치로 안 고쳐짐(별건).'),
 
-    # ── 폐기 가지(보존=교훈): speckle/denoise/재촬영 가설 — 전부 리더버그의 그림자 ──
+    # ── 폐기 가지(보존=교훈): speckle/denoise/재촬영 가설 — ★엔진 record_judge=rejected (손입력과 일치, grounded) ──
     _n('misdiag_reader_frame', 'rejected', 'c1_marker_detect',
        comment='2026-06-23 의 가설들 — (a) "organized speckle 로 검출취약", (b) "denoise-salvage 불가"(c1b), '
                '(c) "Settings2D 누락→재촬영 필요"(분기A) — 전부 REJECTED. 실제론 read_rgb 가 SNR 프레임을 '
-               '색으로 오선택했을 뿐, 데이터·캡처는 멀쩡. 고친 색프레임에선 STRICT 기본파라미터로 검출됨.',
+               '색으로 오선택했을 뿐, 데이터·캡처는 멀쩡. 고친 색프레임에선 STRICT 기본파라미터로 검출됨(331≫가설 ≤5). '
+               '★엔진 record_judge=rejected(손입력과 일치, 이제 grounded record로 뒷받침). '
+               'grounded record=evidence/misdiag_reader_frame_20260624.json.',
        limitation='보존 교훈(기둥5): 물리적으로 그럴듯한 서사(structured-light speckle)가 잘못된 바이트 위에 '
                   '얹히면 검증을 늦춘다. 자기채점 차단도 GIGO 를 못 막음 — grounded 게이트에 디코드-프레임 '
                   '검증을 추가하라. 보존된 자산: consistency 게이트·recapture_gate 사전등록 골격·합성검정.'),
@@ -73,8 +78,8 @@ BLOOM_NODES = [
                   'scripts/view_feature_extract.py(self-test 0.284mm), (ii) IGS scan-mesh nominal '
                   'CAD/sx3i_cad_nominal.json(홀9, scripts/cad_nominal_mesh.py). 실데이터 결과=c3_markerless_real.'),
 
-    # ── 분기B 실데이터 시도(2026-06-24 궤도) — 입력 마련됐으나 markerless 정합 미성립(보존 음의분기) ──
-    _n('c3_markerless_real', 'degenerating', 'c3_markerless_instrument', m=13.18, base=0.10,
+    # ── 분기B 실데이터 — ★엔진 reconcile: 손입력 degenerating → 엔진 record_judge **rejected**(예측 falsify) ──
+    _n('c3_markerless_real', 'rejected', 'c3_markerless_instrument', m=13.18, base=0.10,
        scope='registration', nr=True, nc=False, q=['q_markerless_c3_inputs'],
        comment='분기B 실데이터(2026-06-24): 마련된 입력(view_feature_extract + IGS scan-mesh nominal)으로 5뷰 '
                'markerless 정합 시도→실패. 1/5뷰만 CAD정합(허위 10.18mm RMS), 0/15 뷰쌍 ≥3홀 합동삼각형 공유'

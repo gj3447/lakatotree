@@ -32,12 +32,15 @@ def test_node_table_has_no_hand_input_verdict():
             assert v not in (str(parent or ""), str(rec or "")), f"{tag}: 튜플에 verdict 리터럴"
 
 
-def test_narrative_nodes_get_no_verdict():
-    """측정 record 없는 narrative 노드(reader_frame_provenance_fix·misdiag)는 verdict 못 받음(no_record)."""
+def test_all_sx3i_nodes_engine_judged_no_narrative():
+    """★2026-06-24 엔진에 올라탐: 옛 narrative 2노드(reader-fix·misdiag)에 grounded record 부여 →
+    이제 전부 엔진판결(measured). narrative(record 없음) 0 = 측정 뒷받침 없는 verdict 0."""
     rows = {r["tag"]: r for r in judged_nodes()}
-    for tag in ("reader_frame_provenance_fix", "misdiag_reader_frame"):
-        assert rows[tag]["verdict"] is None and rows[tag].get("status") == "no_record", \
-            f"{tag}: 측정 뒷받침 없는데 verdict 부여됨(자기채점)"
+    assert not any(r.get("status") == "no_record" for r in rows.values()), \
+        "측정 record 없는 노드 잔존(자기채점 위험)"
+    # 옛 narrative 2노드가 이제 엔진판결됨
+    assert rows["reader_frame_provenance_fix"]["verdict"] == "partial"
+    assert rows["misdiag_reader_frame"]["verdict"] == "rejected"
 
 
 def test_c1_engine_judges_partial_not_progressive():

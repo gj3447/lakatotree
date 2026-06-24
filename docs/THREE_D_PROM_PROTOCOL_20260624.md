@@ -96,3 +96,5 @@ promotion discipline.
   branch comments, and promotion review questions.
 - Use `docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md` for the BPC-specific
   Z-height/CAD-surface-layer critique and required layer-aware result contract.
+- Use `docs/LONGINUS_SELF_VERIFICATION_HELP_20260624.md` as the everyday
+  self-check and review macro sheet before accepting any green claim.

@@ -18,15 +18,16 @@ def test_sx3i_blooms_at_v8_step6_1():
     assert prob['parent'] == 'v8_pipeline'
 
 
-def test_sx3i_c1_regrounded_progressive_not_confirmed():
-    """리더fix 후 C1 검출 grounded → progressive. 단 CANONICAL/CONFIRMED 아님(가짜green 금지)."""
+def test_sx3i_c1_engine_reconciled_partial_not_confirmed():
+    """★엔진 reconcile(2026-06-24, 엔진에 올라탐): C1·reader-fix 손입력 progressive → record_judge **partial**
+    (novel 초과내용 없는 임계초과 = 손입력 과대였음). CANONICAL/CONFIRMED 아님(가짜green 금지)."""
     out = run()
     by = {n['tag']: n for n in BLOOM_NODES}
-    assert by['c1_marker_detect']['verdict'] == 'progressive'
-    assert by['reader_frame_provenance_fix']['verdict'] == 'progressive'
-    assert set(out['sx3i_progressive_tags']) == {'c1_marker_detect', 'reader_frame_provenance_fix'}
-    # SX3i 는 CANONICAL 노드가 없다(CONFIRMED 아님) — 통합 정본은 여전히 BPC v8
-    assert not any(n['verdict'] == 'CANONICAL' for n in BLOOM_NODES)
+    # 손입력 progressive 였으나 엔진 record_judge 판결 = partial 로 reconcile
+    assert by['c1_marker_detect']['verdict'] == 'partial'
+    assert by['reader_frame_provenance_fix']['verdict'] == 'partial'
+    # SX3i 진보노드 0(엔진 기준) — CANONICAL 미획득, 통합 정본 여전히 BPC v8
+    assert not any(n['verdict'] in ('progressive', 'CANONICAL') for n in BLOOM_NODES)
     assert out['canonical'] == 'v8_pipeline'
 
 
