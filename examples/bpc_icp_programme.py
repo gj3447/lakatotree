@@ -134,9 +134,13 @@ FRONTIER = [
          closed_by=None),
     dict(name='q_seg_sem_canonical', status='OPEN',
          body='SEG→SEM partition 이 정식 hand-label IoU·v3 모델 CC회수·3D-fusion 회귀에서도 검증되는가. '
-              '★2026-06-24 진척: C1(overlap 실재)=실 hand-label CONFIRMED(99.7% dual·median 1.0), '
-              'C3-a(v3 모델 instance recovery)=CONFIRMED(1.02× GT, 42 eval). 남은 OPEN: C3-c(3D-fusion 비퇴행 회귀)=production '
-              '파이프라인+zdf 필요(무거움). + 전제: 날짜형상(PLATE_HOLE Y 06-17 전후 다름) 그룹화(DATE_SHAPE_MAP_20260624.md). '
+              '★2026-06-24 4/4 디멘션 답함: C1(overlap 실재)=실 hand-label CONFIRMED(99.7% dual·median 1.0), '
+              'C2(sem 제거)=CONFIRMED(argmax 37824→0px), C3-a(v3 모델 instance recovery)=CONFIRMED(1.02× GT, 42 eval), '
+              'C3-c(3D-fusion 비퇴행)=구조적 CONFIRMED — production 측정=CAD-anchor+해석적마스크(seg 의존 제거 46facb4), '
+              'run_new_lot smoke 128/128 CAD-anchor(dxy_nom p50~2.2mm) → seg→sem 라벨변경이 측정 소비경로에 없음. '
+              'evidence/seg_vs_sem_{C1_canonical,C3a_model_cc_recovery,C3c_measurement_independence}_20260624. '
+              'caveat(가짜green 금지): seg vs CAD-anchor 직접 A/B 측정은 미재구동(저번주 lot↔파이프라인 미 co-location), '
+              '단 측정이 seg 미소비라 A/B 차=0 이 구조적 귀결. 전제: 날짜형상 그룹화(DATE_SHAPE_MAP). '
               '(read_rgb 버퍼버그와 별건 — BPC 는 다른 stride 이슈.)',
          closed_by=None),
 ]

@@ -84,3 +84,6 @@ promotion discipline.
   Open3D scripts.
 - Use `docs/THREE_D_PROM_LAKATOTREE_MAP_20260624.md` as the compact operator
   map for the current BPC/LX3/SX3i/OMD PROM tree.
+- Use `docs/PROM_MEASUREMENT_AUDIT_20260624.md` as the current measurement
+  honesty audit: document volume, industrial metrology fields, registration
+  metrics, and self-scoring gaps.

@@ -34,21 +34,25 @@
 
 ## 4. ⭐ 우리가 **못 보던 blind-spot** (Q4 — prom이 surface)
 
-1. **★턴테이블 기계적 runout (가장 중요·미특성화).** prom: "**runout이 0.1mm 넘으면 어떤 소프트웨어(bundle
-   adjustment)로도 sub-0.1mm 못 맞춤.**" 우리는 턴테이블을 *완벽한 단일 3°/뷰 강체축*으로 가정했는데 —
-   **우리 정합 precision 0.99mm 자체가 이미 0.1mm의 ~10배.** 그 0.99mm 안에 *물리 축 wobble/runout*이
-   섞여 있을 수 있다(lift 노이즈와 미분리). → **다음 측정 1순위 = runout 특성화**(축이 진짜 강체인가).
-   이게 accuracy 벽의 *진짜 원인*일 수 있고, 안 그러면 sub-mm는 하드웨어상 불가.
-2. **Zivid 구조광 sub-0.1mm *정확도* 한계.** XL250 단일샷 정밀도 250µm(이미 앎). prom: 대형 금속부품
-   structured-light는 interferometric cal 없이 sub-0.1mm *accuracy* 도달 불확실. → **목표를 정직하게**:
-   ±0.1mm가 물리적으로 가능한가, 아니면 ±1mm(LX3 GROUND_TRUTH 이미 달성)로 둘 건가.
+> ⚠️ **공차 정정(2026-06-24, 사용자 지적):** 두 케이스 분리. **LX3**=LX3RT **턴테이블**(3°/뷰), 공차 **±1.0mm**
+> (sub-0.1mm 아님; GROUND_TRUTH σ 37µm 이미 충족). **SX3i**=XL250 212뷰 **ArUco puzzle-assemble**(공유마커
+> 자유위치 stitch, **턴테이블 아님**), 목표 **sub-0.1mm**(C3). runout 은 LX3(턴테이블)에만, sub-0.1mm 는 SX3i 에만.
+
+1. **(SX3i) Zivid 구조광 sub-0.1mm *accuracy* 한계 — sub-0.1mm 의 진짜 blind-spot.** XL250 단일샷 250µm(이미 앎).
+   prom: 대형 금속부품 structured-light 는 interferometric cal 없이 sub-0.1mm *accuracy* 도달 불확실(precision≠
+   accuracy). SX3i 는 턴테이블 아닌 ArUco-puzzle → runout 無, 벽은 **카메라 floor 250µm + 멀티뷰 √N 평균**(=이미
+   사전등록 `q_sx3i_precision_floor`). prom 이 그 kill-condition 강화: 평균해도 구조광 accuracy 천장 가능 →
+   **목표 정직화**: SX3i ±0.1mm 가 XL250 으로 물리적으로 가능한가, 아니면 다른 카메라/방법 필요한가.
+2. **(LX3) 턴테이블 runout — ±1mm 마진 질문(1순위 아님).** prom "runout>0.1mm→sub-0.1mm 불가"는 LX3 가
+   sub-0.1mm 가 **아니라 직접 적용 안 됨.** LX3 올바른 질문: LX3RT 물리축 runout 이 ±1mm 마진을 갉아먹는가
+   (정합 precision 0.99mm≈±1mm 경계). LX3 의 진짜 병목은 **bush-fit(4부시 robust 검출)** = SAM2 적용처(§2).
 3. **흰면 약한 리턴 = multi-exposure HDR / projector intensity 최적화** 미시도(bore 림에 여전히 유효).
 4. **DL 라벨 GT 전략 부재** — SAM2/PointMAE 학습 시 GT를 Sim2Real 합성으로 할지 CMM-검증 수동라벨로 할지.
 5. **NIR/multi-spectral 분리**(흰면용) — Zivid 옵션 따라.
 
 ## 5. 다음 액션 (우선순위)
 
-1. **턴테이블 runout 특성화** (사전등록 frontier `q_lx3_turntable_runout`) — 0.99mm 정합 산포를 *축-runout vs
+1. **(SX3i) q_sx3i_precision_floor 측정** — 멀티뷰 √N 평균이 XL250 250µm 를 100µm 아래로? = sub-0.1mm feasibility 판정(진짜 sub-0.1mm 질문). 안 되면 ±0.1mm 목표/카메라 재고. *(과거 §5-1 "LX3 runout 1순위"는 공차혼동 — 격하)*
    lift-노이즈*로 분해. runout>0.1mm면 sub-mm 불가 확정(목표 ±1mm로) — accuracy 벽의 근본 진단.
 2. **부시 bore SAM2 세그멘테이션** — 내 자동fit 3/4 실패 해결, 4부시 robust 검출 → CAD ruler 대조로 accuracy 측정.
 3. **HALCON S-BASE license 상태 확인** — 블록이 절대인가, 확보 가능한가 (LX3 markerless 경로 재개 여부).
