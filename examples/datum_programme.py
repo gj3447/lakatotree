@@ -25,6 +25,7 @@ BLOOM_AT = 'aruco_metric'
 # 엔진이 _evidence 계약(verdict 금지·사전등록·grounded)으로 수용/거부한다(자기채점 차단).
 DATUM_EVID = '/data/kjra/PROJECT/3D/DATUM/evidence'
 REAL_RECORDS = [
+    f'{DATUM_EVID}/gdt_datum_designation_a110_20260624.json',  # 도면 datum A/B/C 전사(3출처 일치)
     f'{DATUM_EVID}/bestfit_vs_datum_real_lx3_20260624.json',   # LX3 실 lot: 부등식 + 은폐폭
     f'{DATUM_EVID}/verdict_flip_hunt_bpc_20260624.json',       # BPC 실 lot: verdict-flip 사냥
 ]
@@ -62,6 +63,17 @@ BLOOM_NODES = [
        limitation='직교 3-2-1 triple = 0 — 상위 40개 큰 평면이 전부 ±Y 법선(평판형 weldment). 면적 휴리스틱 '
                   'datum 자동선택 반증 → hard core "datum 지정은 도면 GD&T 가 정한다" 실증. GD&T 폴더 datum '
                   '지정 들어와야 CONFIRMED.'),
+
+    # ── D1b: 도면 GD&T datum 지정 전사 — 실 PPAP 도면 PARTIAL (q_cad_datum_triple 의 답) ──
+    _n('gdt_datum_designation', 'partial', 'cad_datum_extract', nr=True, nc=False,
+       q=['q_gdt_datum_designation'],
+       comment='A110 도면 datum A/B/C 전사(scripts/gdt_datum_designation.py): [A] RR_BODY_LH_BUSH(0,0,0) · '
+               '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), GD&T ⊕⌀1.5|A|B|C. '
+               '3 독립출처(PPAP drawing_a110_revA.pdf + drawing_outline.md §3.2 + asme_datum LX3_DATUM_FRAME) 일치 '
+               '→ D1 hard core "datum 은 도면이 정한다" 실현. evidence/gdt_datum_designation_a110_20260624.json. '
+               '소급: LX3 best-fit↔datum Δ 가 이미 이 3 bush 사용=확정 도면 datum 이었음.',
+       limitation='전사(측정 아님). BPC 적용 GATED: 3 body bush 가 183-피처 inspection report 에 부재 → '
+                  'true-datum BPC flip 은 datum-bush 측정(D5) 필요. 현 verdict_flip_hunt_bpc 는 proxy(bush_clean).'),
 
     # ── D2: 3-2-1 DRF instrument 강체 복원 — synthetic PASS ──
     _n('drf_instrument', 'partial', 'datum_prob', m=0.0, base=1e-6, nr=True, nc=False,
@@ -111,9 +123,10 @@ BLOOM_FRONTIER = [
               '22.8mm=55.9%) + BPC verdict-flip 2건(best-fit PASS·datum NG). 단 도면 datum·CMM 미정→magnitude UNVERIFIED.'),
     dict(name='q_drf_noise', status='CLOSED', closed_by='noise_stability',
          body='D4: datum 면 다점적합이 단일점보다 안정? → 답 YES. 원점 σ 0.021mm<0.05, tilt p95 0.033°<0.5°.'),
-    dict(name='q_gdt_datum_designation', status='OPEN', closed_by=None,
-         body='도면 GD&T 가 datum A/B/C 를 지정(GD&T 폴더)해야 D1 직교 triple·DRF nominal datum 이 확정된다. '
-              'CAD 형상 자동선택은 q_cad_datum_triple 로 부정됨.'),
+    dict(name='q_gdt_datum_designation', status='CLOSED', closed_by='gdt_datum_designation',
+         body='도면 GD&T 가 datum A/B/C 지정? → 답 YES(전사). A110 도면: [A] RR_BODY_LH_BUSH(0,0,0) · '
+              '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), ⊕⌀1.5|A|B|C. 3 독립출처 일치 '
+              '(PPAP PDF+outline+asme_datum). CAD 형상 자동선택은 q_cad_datum_triple 로 부정 → 도면이 정함(hard core 실현).'),
     dict(name='q_real_part_drf', status='OPEN', closed_by=None,
          body='D5🔬(사전등록, 미측정): 실 zdf 에서 datum 면(점군)+피처 추출 → DRF 정합 cross-capture σ<0.05mm, '
               'datum 면 평탄도 rms<0.1mm? 반증: σ>0.1mm or collapse → datum 면 부족. 블록된 입력=뷰 datum-면/'

@@ -107,9 +107,11 @@ NODES = [
                '38205px), C2 argmax remap 후 multi-membership 37824→0px, C3-a 2D CC instance==CAD count 5/5클래스(delta0), '
                'z-layer 19 CAD vs 1 2D CC=다층 2D 불가(천장). evidence/seg_overlap_iou_matrix_20260624.json + '
                'seg_vs_sem_zlayer_separability_20260624.json (적대검증 confirmed, 무커밋).',
-       limitation='정식 hand-label IoU(C1 canonical)·v3 모델 CC회수 비교(C3-a)·3D-fusion 회귀(C3-c)는 BLOCKED — '
-                  'COCO 라벨/가중치가 이 타워 아닌 diamondperl(/mnt/hdd/kjra) 에 있음(rsync 필요). 즉 메커니즘은 CAD-geom '
-                  '확증, 데이터-사실 검증 미완. precision≠accuracy: 전부 CAD-nominal raster self-consistency(GT==CAD).'),
+       limitation='★C1 canonical hand-label = 2026-06-24 CONFIRMED(diamondperl coco_v3 rsync): 실 라벨 28img·424 feature inst, '
+                  'feature 픽셀 99.66% dual-membership·median containment 1.0 (v6 3dtruth 99.67%·458inst 동일) → CAD-geom 아닌 '
+                  '실 라벨러 데이터서 overlap 실재 확증. evidence/seg_vs_sem_C1_canonical_handlabel_20260624.json. '
+                  '남은 BLOCKED: v3 모델 CC회수(C3-a)·3D-fusion 회귀(C3-c)=best.pt 가중치(diamondperl) 필요. '
+                  'precision≠accuracy 잔존(2D 라벨 무결성 ≠ 3D 측정정확도).'),
 ]
 
 FRONTIER = [
@@ -128,8 +130,9 @@ FRONTIER = [
          closed_by=None),
     dict(name='q_seg_sem_canonical', status='OPEN',
          body='SEG→SEM partition 이 정식 hand-label IoU·v3 모델 CC회수·3D-fusion 회귀에서도 검증되는가. '
-              'CAD-geom 메커니즘은 CONFIRMED(seg_sem_partition) but canonical 데이터검증 BLOCKED: COCO/가중치 '
-              'diamondperl /mnt/hdd/kjra rsync 필요. (read_rgb 버퍼버그와 별건 — BPC 는 다른 stride 이슈.)',
+              '★2026-06-24 진척: C1(overlap 실재)=실 hand-label 로 CONFIRMED(diamondperl coco_v3, 99.7% dual·median 1.0). '
+              '남은 OPEN: C3-a(v3 CC회수)·C3-c(3D-fusion 회귀)=best.pt 가중치 diamondperl rsync 필요. '
+              '(read_rgb 버퍼버그와 별건 — BPC 는 다른 stride 이슈.)',
          closed_by=None),
 ]
 

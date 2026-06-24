@@ -83,6 +83,34 @@ BLOOM_NODES = [
                   'un-rotate 후 per-id 공간클러스터(collision 분리)+코너 plane-fit 리프트. 3D-direct 밀집정합(CAD fitness0.72)이 '
                   '정밀도 더 견고 → corrected ArUco 는 init/검증용. 단 enabler(검출)는 재촬영 없이 기존 lot 에서 확보됨.'),
 
+    # ★2026-06-24 독립검증 + 정밀도 grounded — corner 3D sub-mm 확정 + known-axis 정합 self-consistency 513mm→0.99mm
+    _n('lx3_aruco_knownaxis_precision', 'progressive', 'lx3_aruco_dict4x4', m=0.99, base=513.4, scope='registration',
+       direction='lower', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
+       comment='타워 Zivid SDK 2.17.2(소스빌드 cp39/cp310, OpenCL nvidia.icd OK) 깨끗한 rgba+gamma0.45+DICT_4X4_250 독립 '
+               '재현: 121뷰 2088검출·60 distinct id·17.3마커/뷰(≈dict4x4 의 18/뷰, 강한 교차확인). **코너 3D sub-mm 확정**: '
+               '변 median 50.0mm·within-id σ 0.37mm(naive 5×5)~0.96mm(plane-raycast)·평면 residual 0.9mm·대각/변 1.417≈√2; '
+               '서로 다른 3개 3D방법(49.77/49.685/49.78mm)+6에이전트 적대워크플로(verify-aruco-50mm) 수렴=단일버그 면역. '
+               '**정밀도 grounded**: self-cal 6DOF(13m 발산) 대신 robust 단일축(SVD chord-null dir + lstsq (I-R)a=P\'-RP pt, '
+               '턴테이블 3°/뷰)+per-id declustering → self-consistency RMS median **0.99mm**·p95 2.4mm(59 물리트랙·2017점 '
+               '전부<5mm). 음성대조: 틀린축(수직)=64mm. prior 513mm(13m garbage 축)·429mm 대비 ~500×. '
+               '정본 evidence/lx3_aruco_{50mm_independent_verify,register_precision_knownaxis}_20260624.json.',
+       limitation='이것은 PRECISION(반복도)이지 ACCURACY 아님 — 부시(독립피처) vs CAD nominal ±1.0mm 미측정(q_lx3_aruco_accuracy '
+                  'OPEN 유지). dict4x4 한계 "②흰면 3D약(~18mm)" 은 본 노드가 **반증**(코너3D=sub-mm; 18mm/429mm 는 흰면 아니라 '
+                  'self-cal 발산이 원인; id-collision 도 부차적=no-decluster 도 1.0mm·64id→59track). 다음 수=이 포즈로 part 점군 '
+                  '정합→부시 거리 vs CAD nominal accuracy. (DeepArUco++ 사전학습=실코너 OOD near-constant 6px WORSE(팀 BPC verdict '
+                  '도 WORSE)=재학습 필요; Blackwell GPU 는 torch cu128 정상=옛 cu117 garbage 경고 무효.)'),
+
+    # ★2026-06-24 CAD-side 정확도 기준값(ruler) — STEP_REORIENT→LX3_LOCAL 변환 + 4부시 nominal (docs/10 미해결 #5)
+    _n('lx3_cad_bush_nominal', 'progressive', 'lx3_aruco_knownaxis_precision', m=0.064, scope='cad_frame_map',
+       direction='lower', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
+       comment='정합 정확도의 *기준값(ruler)* 도출(CAD-only, 스캔 무관 — docs/10 미해결 항목 #5 STEP_REORIENT→LX3_LOCAL). '
+               'STEP_REORIENT 4부시 + LX3_LOCAL 3부시(알려진 1:1 대응)로 Kabsch → **rigid 확정(resid 0.064mm·거리보존 0.000mm)**. '
+               '미지였던 FRT_RH(LX3_LOCAL)=(-921,950,140) 도출. 정본 부시간 거리: RR쌍 805·RR-FRT 942.8·FRT쌍 1094mm. '
+               '★독립 교차검증: 도출 FRT쌍 1094.0mm vs 측정 nominal 1093.3mm = **0.70mm 일치**(<±1.0mm tol). '
+               'grounded record=evidence/lx3_bush_nominal_lx3local_20260624.json.',
+       limitation='정확도 *기준값*(CAD nominal)이지 정확도 *측정* 아님 — q_lx3_aruco_accuracy 닫으려면 '
+                  'lx3_aruco_knownaxis_precision 포즈로 정합한 스캔 부시를 이 기준에 대보아야(±1.0mm). 기준은 이제 준비됨(ruler ready).'),
+
     # 퇴행 가지(보존) — BPC 줄기 hard-core 재확인 + markerless 자동경로 한계
     _n('lx3_identity_basin', 'degenerating', 'lx3_prob', m=4.35, base=None,
        comment='markerless multi-view ICP 28 pair rmse 4.35-5.77mm cluster = identity-init basin. '
@@ -130,7 +158,13 @@ BLOOM_FRONTIER = [
               '정면 occlusion). 반복도(precision) 0.19mm는 깨끗하나 precision≠accuracy. '
               'CLOSE 조건=마커 우회 아닌 ArUco-턴테이블 정합으로 부시(독립피처)가 sub-mm. 미달=OPEN. '
               '병목 체인: 검출 recall+id-collision(→geometry-gated RANSAC id matching/DeepArUco++)→robust lift→'
-              '턴테이블모델(기지 3°단일축, -90°정면)→부시 vs CAD nominal accuracy.'),
+              '턴테이블모델(기지 3°단일축, -90°정면)→부시 vs CAD nominal accuracy. '
+              '★★★2026-06-24 정밀도 sub-step CLOSED, accuracy OPEN 유지(lx3_aruco_knownaxis_precision): 잔존 병목이 '
+              'dict/검출/흰면-3D 가 아니라 **self-cal 6DOF 축 옵티마이저 발산(→13m garbage 축, 513mm)** 임을 규명. '
+              'robust 단일축(SVD chord+lstsq pt)+per-id declustering 으로 self-consistency RMS median **0.99mm**·p95 2.4mm'
+              '(59 물리트랙, 음성대조 틀린축=64mm) = ~500× 개선. 코너3D 도 sub-mm 으로 독립확정(변 50.0mm·σ<1mm·3방법수렴=한계 '
+              '"②흰면3D약" 반증). id-collision 은 이 lot 에선 부차적(no-decluster 도 1.0mm). 남은 CLOSE 조건=이 포즈로 part '
+              '점군 정합→부시(독립피처) vs CAD nominal ±1.0mm accuracy(precision≠accuracy 견지).'),
     dict(name='q_lx3_full_surface_anchor', status='OPEN', closed_by=None,
          body='proper full-surface scan↔CAD anchor transform 을 자동으로 확보(markerless 자동경로 정본화)'),
     dict(name='q_lx3_gauge_boundary', status='OPEN', closed_by=None,
@@ -163,6 +197,9 @@ def run():
     _line("  ★★2026-06-24 dict정정 : 마커 dict = DICT_4X4_250 (MIP_36H12 오식별, 비트단위 증거). 올바른 dict 재실행 →")
     _line("                         turntable_register success False→True·usable 8→61·제약 <30→43867. 단 precision 429mm")
     _line("                         (id-collision+흰면 3D약) = 정확도 OPEN. lx3_aruco_dict4x4 (progressive).")
+    _line("  ★★★2026-06-24 정밀도   : (lx3_aruco_knownaxis_precision) 독립검증=코너3D sub-mm(변 50.0mm·σ<1mm·3방법수렴, '흰면3D약' 반증).")
+    _line("                         정밀도 병목=흰면 아니라 self-cal 6DOF 발산(13m축,513mm). robust 단일축+decluster → self-consistency")
+    _line("                         RMS median 0.99mm(59트랙,틀린축대조 64mm)=~500×. accuracy(부시 vs CAD)는 q_lx3_aruco_accuracy OPEN.")
     _line(f"  LX3 퇴행 노드        : {lx3_degen}  ← markerless identity-basin = BPC collapse 교훈 재확인")
     _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
     _line('\n' + '═' * 72)
