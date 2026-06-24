@@ -2044,6 +2044,116 @@
    "sha256": "544d05bc738baf6c",
    "layer": "viewer",
    "frege_sinn": "layer×drift status×provenance 구조화 페이지 조립"
+  },
+  {
+   "sourceId": "three_d_detection.run",
+   "file": "examples/three_d_detection.py",
+   "symbol": "run",
+   "kind": "function",
+   "line_hint": 79,
+   "sha256": "cccceec311f96125",
+   "layer": "three_d_detection",
+   "frege_sinn": "통합 3D 형상검출 나무 조립(consumer_b 줄기+SX3i/consumer_c/DATUM 가지)+hard-core 3축+q_external_trueness 외부정확도(trueness) 천장 키스톤"
+  },
+  {
+   "sourceId": "consumer_d_engine_judged.judged_nodes",
+   "file": "examples/consumer_d_engine_judged.py",
+   "symbol": "judged_nodes",
+   "kind": "function",
+   "line_hint": 37,
+   "sha256": "c13b4ad52c57f08e",
+   "layer": "measurement_judgment_loop",
+   "frege_sinn": "SX3i 가지 verdict 를 record_judge 가 grounded record 에서 엔진생성(손입력0=자기채점 차단)"
+  },
+  {
+   "sourceId": "lx3_engine_judged.judged_nodes",
+   "file": "examples/lx3_engine_judged.py",
+   "symbol": "judged_nodes",
+   "kind": "function",
+   "line_hint": 44,
+   "sha256": "c13b4ad52c57f08e",
+   "layer": "measurement_judgment_loop",
+   "frege_sinn": "consumer_c 가지 verdict 를 record_judge 가 grounded record 에서 엔진생성(손입력0=자기채점 차단)"
+  },
+  {
+   "sourceId": "lx3_engine_judged._judge_aligned",
+   "file": "examples/lx3_engine_judged.py",
+   "symbol": "_judge_aligned",
+   "kind": "function",
+   "line_hint": 33,
+   "sha256": "a5e378dcb4378bd5",
+   "layer": "measurement_judgment_loop",
+   "frege_sinn": "consumer_c record 사전등록 플래그(임계예측=사양) 세팅 + migrate.align 후 judge"
+  },
+  {
+   "sourceId": "_evidence.validate_record",
+   "file": "examples/_evidence.py",
+   "symbol": "validate_record",
+   "kind": "function",
+   "line_hint": 24,
+   "sha256": "c4ba9649d94b9dfe",
+   "layer": "measurement_judgment_loop",
+   "frege_sinn": "grounded record 정직성·구조 검증(verdict 미포함·grounded·사전등록 표명) — 자기채점 차단 게이트"
+  },
+  {
+   "sourceId": "_evidence.load_record",
+   "file": "examples/_evidence.py",
+   "symbol": "load_record",
+   "kind": "function",
+   "line_hint": 19,
+   "sha256": "5d1557b08948b8bd",
+   "layer": "measurement_judgment_loop",
+   "frege_sinn": "grounded measurement record 로더(JSON)"
+  },
+  {
+   "sourceId": "_evidence.is_grounded",
+   "file": "examples/_evidence.py",
+   "symbol": "is_grounded",
+   "kind": "function",
+   "line_hint": 49,
+   "sha256": "6e62f5073a0dba89",
+   "layer": "measurement_judgment_loop",
+   "frege_sinn": "record 가 실측 grounded(scan/CMM 출처) 인지 판정"
+  },
+  {
+   "sourceId": "consumer_d_icp_programme.run",
+   "file": "examples/consumer_d_icp_programme.py",
+   "symbol": "run",
+   "kind": "function",
+   "line_hint": 151,
+   "sha256": "cccceec311f96125",
+   "layer": "three_d_detection",
+   "frege_sinn": "SX3i 가지 프로그램 트리(v8_pipeline 개화, 삼각대 자유이동 ArUco DICT_4X4_250, C1~C5 frontier)"
+  },
+  {
+   "sourceId": "lx3_icp_programme.run",
+   "file": "examples/lx3_icp_programme.py",
+   "symbol": "run",
+   "kind": "function",
+   "line_hint": 207,
+   "sha256": "cccceec311f96125",
+   "layer": "three_d_detection",
+   "frege_sinn": "consumer_c 가지 프로그램 트리(aruco_metric 개화, 회전지그 ArUco·markerless 음의분기 보존)"
+  },
+  {
+   "sourceId": "datum_programme.run",
+   "file": "examples/datum_programme.py",
+   "symbol": "run",
+   "kind": "function",
+   "line_hint": 177,
+   "sha256": "cccceec311f96125",
+   "layer": "three_d_detection",
+   "frege_sinn": "DATUM 가지 프로그램 트리(3-2-1 DRF 계측기, best-fit 21~62% 위치오차 은폐 실증)"
+  },
+  {
+   "sourceId": "datum_programme.ground_real_records",
+   "file": "examples/datum_programme.py",
+   "symbol": "ground_real_records",
+   "kind": "function",
+   "line_hint": 37,
+   "sha256": "7d0457c01ca022dc",
+   "layer": "three_d_detection",
+   "frege_sinn": "DATUM D3 실 lot grounded record 주입(best-fit vs datum-DRF 부등식 + 은폐폭)"
   }
  ],
  "accepted_grounding_refs": [
