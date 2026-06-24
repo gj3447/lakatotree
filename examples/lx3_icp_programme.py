@@ -58,7 +58,8 @@ BLOOM_NODES = [
        limitation='B_LH 0.999→1.067mm tol-경계 flip = gauge 위태(σ shift 시 verdict 뒤집힘).'),
 
     # ★2026-06-24 grounded(검출) — ArUco-턴테이블 마커는 brightening 으로 실재·검출됨(progressive)
-    _n('lx3_aruco_turntable', 'progressive', 'lx3_prob', m=4.2, scope='detection',
+    # ★엔진 reconcile(2026-06-24, 엔진에 올라탐): 손입력 progressive → record_judge **partial**
+    _n('lx3_aruco_turntable', 'partial', 'lx3_prob', m=4.2, scope='detection',
        nr=True, nc=True, q=['q_lx3_enabler'],
        comment='ArUco-턴테이블 정합 경로(LX3RT_20260622, MIP_36H12). 정정 이력: (1) 옛 "119/121 검출, id-collision"의 '
                'COUNT 은 buggy read_rgb(b09b2b2)가 SNR 맵을 색으로 오선택한 노이즈(무작위 ID→>1.4m span)였음. '
@@ -89,7 +90,8 @@ BLOOM_NODES = [
                   '정밀도 더 견고 → corrected ArUco 는 init/검증용. 단 enabler(검출)는 재촬영 없이 기존 lot 에서 확보됨.'),
 
     # ★2026-06-24 독립검증 + 정밀도 grounded — corner 3D sub-mm 확정 + known-axis 정합 self-consistency 513mm→0.99mm
-    _n('lx3_aruco_knownaxis_precision', 'progressive', 'lx3_aruco_dict4x4', m=0.99, base=513.4, scope='registration',
+    # ★엔진 reconcile(2026-06-24): 손입력 progressive → record_judge **partial**(임계초과·novel 초과내용 없음)
+    _n('lx3_aruco_knownaxis_precision', 'partial', 'lx3_aruco_dict4x4', m=0.99, base=513.4, scope='registration',
        direction='lower', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
        comment='타워 Zivid SDK 2.17.2(소스빌드 cp39/cp310, OpenCL nvidia.icd OK) 깨끗한 rgba+gamma0.45+DICT_4X4_250 독립 '
                '재현: 121뷰 2088검출·60 distinct id·17.3마커/뷰(≈dict4x4 의 18/뷰, 강한 교차확인). **코너 3D sub-mm 확정**: '
@@ -111,7 +113,8 @@ BLOOM_NODES = [
                   'Blackwell GPU 는 torch cu128 정상=옛 cu117 garbage 경고 무효.)'),
 
     # ★2026-06-24 CAD-side 정확도 기준값(ruler) — STEP_REORIENT→LX3_LOCAL 변환 + 4부시 nominal (docs/10 미해결 #5)
-    _n('lx3_cad_bush_nominal', 'progressive', 'lx3_aruco_knownaxis_precision', m=0.064, scope='cad_frame_map',
+    # ★엔진 reconcile(2026-06-24): 손입력 progressive → record_judge **partial**
+    _n('lx3_cad_bush_nominal', 'partial', 'lx3_aruco_knownaxis_precision', m=0.064, scope='cad_frame_map',
        direction='lower', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
        comment='정합 정확도의 *기준값(ruler)* 도출(CAD-only, 스캔 무관 — docs/10 미해결 항목 #5 STEP_REORIENT→LX3_LOCAL). '
                'STEP_REORIENT 4부시 + LX3_LOCAL 3부시(알려진 1:1 대응)로 Kabsch → **rigid 확정(resid 0.064mm·거리보존 0.000mm)**. '

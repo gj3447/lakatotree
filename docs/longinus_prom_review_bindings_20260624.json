@@ -1,0 +1,92 @@
+{
+  "name": "longinus_prom_review_bindings_20260624",
+  "purpose": "Machine-readable correction layer for 2026-06-24 3D/BPC PROM critique artifacts. These are Longinus ReferenceSite candidates unless explicitly marked PIERCED.",
+  "created_at": "2026-06-24",
+  "policy": {
+    "pierced_requires": [
+      "sourceId",
+      "sourcePath",
+      "kg_anchor",
+      "evidence",
+      "drift_type",
+      "rerunnable_acceptance_check"
+    ],
+    "allowed_confidence": [
+      "EXTRACTED",
+      "INFERRED",
+      "AMBIGUOUS"
+    ],
+    "allowed_binding_state": [
+      "CANDIDATE",
+      "PRELIMINARY",
+      "PIERCED"
+    ],
+    "note": "PIERCED is a verified binding state, not a critique style."
+  },
+  "kg_refs": [
+    "lesson-longinus-prom-review-realignment-20260624",
+    "CT_LakatoTree_3D_PROM_LonginusReview_20260624"
+  ],
+  "bindings": [
+    {
+      "sourceId": "LakatoTree.LonginusPromReviewRealignment",
+      "sourcePath": "docs/LONGINUS_REALIGNMENT_20260624.md:1",
+      "kg_anchor": "lesson-longinus-prom-review-realignment-20260624",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "claim": "2026-06-24 critique artifacts require explicit ReferenceSite status instead of implicit Longinus tone.",
+      "evidence": [
+        "docs/LONGINUS_REALIGNMENT_20260624.md:1",
+        "../bhgman_tool/symposium-skills/longinus/SKILL.md:1"
+      ],
+      "acceptance_check": "python -m pytest tests/test_longinus_prom_review_bindings.py -q"
+    },
+    {
+      "sourceId": "BPC.ZHeightCadSurfaceFailureMode",
+      "sourcePath": "docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md:1",
+      "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
+      "confidence": "AMBIGUOUS",
+      "binding_state": "PRELIMINARY",
+      "drift_type": "PatternDiv",
+      "lens_law": "PutPut",
+      "claim": "Good CAD registration can still hide wrong feature z if global residual, CAD membership, and measured contact are collapsed.",
+      "evidence": [
+        "docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md:1",
+        "docs/PROM_MEASUREMENT_AUDIT_20260624.md:1"
+      ],
+      "acceptance_check": "Provide production result evidence with separate rigid residual, per-feature z residual, and frame/sign audit."
+    },
+    {
+      "sourceId": "BPC.IndustrialDimensionJudgementGate",
+      "sourcePath": "docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md:1",
+      "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
+      "confidence": "INFERRED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "SigMismatch",
+      "lens_law": "PutGet",
+      "claim": "Industrial dimensional judgement must separate accuracy, precision, uncertainty, repeatability, and CAD residual before accepting a measurement.",
+      "evidence": [
+        "docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md:1",
+        "docs/LONGINUS_SELF_VERIFICATION_HELP_20260624.md:1"
+      ],
+      "acceptance_check": "Add a rerunnable judge that fails when any dimension lacks uncertainty, repeatability, CAD residual, and traceability fields."
+    },
+    {
+      "sourceId": "BPC.RootCauseKusariChecklist",
+      "sourcePath": "docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md:1",
+      "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
+      "confidence": "INFERRED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "LabelRot",
+      "lens_law": "PutPut",
+      "claim": "Root-cause critique must name the exact coordinate frame, datum, algorithm, feature, and threshold under attack.",
+      "evidence": [
+        "docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md:1",
+        "docs/LONGINUS_KUSARI_COMMENTARY_20260624.md:1"
+      ],
+      "acceptance_check": "Every critique item must include target artifact, failure mode, expected observable, and blocking verdict."
+    }
+  ]
+}

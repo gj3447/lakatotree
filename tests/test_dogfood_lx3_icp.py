@@ -35,15 +35,13 @@ def test_lx3_reconfirms_free_icp_collapse_hardcore():
     assert by['lx3_identity_basin']['verdict'] == 'rejected'
 
 
-def test_lx3_aruco_markers_real_grounded_by_brightening():
-    """★2026-06-24 grounded 최종: 옛 '119/121'은 reader SNR-노이즈였으나, 고친 색프레임+brightening
-    (gamma+CLAHE)으로 실 MIP_36H12 마커 검출(23/24뷰·≥3뷰반복 10종·side_px 60px) → progressive,
-    enabler CLOSED. 어두움=전처리문제지 하드한계 아님. 정합 정확도는 여전히 OPEN(검출≠정확도)."""
+def test_lx3_aruco_markers_real_grounded_engine_partial():
+    """★엔진 reconcile(2026-06-24, 엔진에 올라탐): 실 마커 검출은 grounded 지만 손입력 progressive →
+    record_judge **partial**(임계초과·novel 초과내용 없음). enabler CLOSED·정확도 OPEN 은 불변."""
     out = run()
     node = next(n for n in BLOOM_NODES if n['tag'] == 'lx3_aruco_turntable')
-    assert node['verdict'] == 'progressive'              # 검출 grounded (실 마커, 노이즈 아님)
+    assert node['verdict'] == 'partial'                  # 손입력 progressive → 엔진 partial 로 reconcile
     assert node['parent'] == 'lx3_prob'
-    assert 'lx3_aruco_turntable' in out['lx3_progressive']
     fr = {q['name']: q for q in BLOOM_FRONTIER}
     # enabler(ArUco init data)는 실 마커 검출로 CLOSED, 정합 정확도는 미측정 OPEN
     assert fr['q_lx3_enabler']['status'] == 'CLOSED'
