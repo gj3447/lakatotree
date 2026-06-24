@@ -319,5 +319,61 @@
       "direction": "lower",
       "threshold": 0.1
     }
-  ]
+  ],
+  "capture_datasets": {
+    "note": "consumer_b zdf capture LOTs organized by capture date. Field 3D data source of truth (PLATE_HOLE etc. measured from these).",
+    "machine": "acme-Precision-7960-Tower",
+    "local_root": "<WORKSPACE>/DATA/3D",
+    "organized_by_date_root": "<WORKSPACE>/DATA/3D/BPC_BY_DATE",
+    "gdrive_backup": {
+      "tool": "rclone (remote 'gdrive', type=drive)",
+      "shared_drive_folder": "zdf log",
+      "root_folder_id": "1brFpgSkaZZg8NynWUqSpTLiqvW2_oAaP",
+      "verify_with": "rclone lsf -R / size  (MCP Google Drive search cannot see shared-drive contents)"
+    },
+    "dates": [
+      {
+        "date": "2026-06-04",
+        "lot_prefix": "VFDZ",
+        "lots": 8,
+        "files": 168,
+        "size_gb": 14.1,
+        "local_path": "BPC_BY_DATE/2026-06-04",
+        "source": "gdrive",
+        "also_contains": "MASTER_20260604_* golden master (8 files), hardlinked"
+      },
+      {
+        "date": "2026-06-05",
+        "lot_prefix": "VFEZ",
+        "lots": 46,
+        "files": 966,
+        "size_gb": 98.6,
+        "local_path": "BPC_BY_DATE/2026-06-05",
+        "source": "local laptop/BPC_FIELD (hardlinked)"
+      },
+      {
+        "date": "2026-06-17",
+        "lot_prefix": "VFQZ",
+        "lots": 56,
+        "files": 1150,
+        "size_gb": 119.3,
+        "local_path": "BPC_BY_DATE/2026-06-17",
+        "source": "gdrive",
+        "note": "PLATE_HOLE Y-axis change recapture (last-week shoot)"
+      },
+      {
+        "date": "2026-06-22",
+        "kind": "MASTER",
+        "capture": "치수측정 dimension-measurement master sequence (LX3RT ×7 runs)",
+        "folders": 7,
+        "files": 424,
+        "size_gb": 58.0,
+        "local_path": "BPC_BY_DATE/2026-06-22",
+        "source": "local 치수측정/ (hardlinked)",
+        "note": "v##_master_*.zdf; not on gdrive"
+      }
+    ],
+    "registered_at": "2026-06-23",
+    "master_note": "Master/golden-reference sequences are LOCAL ONLY (not in gdrive 'zdf log', which is field VF?Z). 06-04=BPC_MASTER golden, 06-22=치수측정 LX3RT master seq."
+  }
 }
