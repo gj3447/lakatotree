@@ -166,6 +166,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--no-require-environment', action='store_true')   # manifest-verify 전용 (merge 사고 복구)
     sp = sub.add_parser('longinus', help='코드↔KG ReferenceSite 바인딩 drift 감사 (로컬, 서버 불필요)')
     sp.add_argument('--json', action='store_true', help='JSON 출력')
+    sp.add_argument('--dashboard', action='store_true', help='오프라인 HTML 대시보드 생성(examples.longinus_dashboard)')
     # prom32 G-Web / G-WorldAction enforced gates
     sp = sub.add_parser('observation'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--url', default=''); sp.add_argument('--source-type', default='')
@@ -191,6 +192,11 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     if a.cmd == 'longinus':   # 로컬 감사 — 서버 호출 안 함 (코드↔KG 바인딩 정합성)
+        if getattr(a, 'dashboard', False):
+            from examples.longinus_dashboard import run as _dash
+            out = _dash(write=True)
+            print(f"대시보드: {out['html_path']}  (audit {out['audit']['passed']}/{out['audit']['total']})")
+            sys.exit(0 if out['audit']['ok'] else 1)
         from lakatos.longinus import audit, report
         res = audit()
         print(json.dumps(res, ensure_ascii=False, indent=2) if a.json else report(res))

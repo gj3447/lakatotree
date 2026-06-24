@@ -1934,6 +1934,116 @@
    "sha256": "db06f621a33faa10",
    "layer": "measurement_judgment_loop",
    "frege_sinn": "측정→판결 루프 닫힌 형태(손입력 verdict 0, record→judge_record)"
+  },
+  {
+   "sourceId": "test_record_judge._rec",
+   "file": "tests/test_record_judge.py",
+   "symbol": "_rec",
+   "kind": "function",
+   "line_hint": 16,
+   "sha256": "c4898ac95ed521f8",
+   "layer": "tests",
+   "frege_sinn": "테스트용 v1 record 빌더"
+  },
+  {
+   "sourceId": "test_record_judge.test_judged_partial_from_aligned_record",
+   "file": "tests/test_record_judge.py",
+   "symbol": "test_judged_partial_from_aligned_record",
+   "kind": "test",
+   "line_hint": 21,
+   "sha256": "eca561688a449883",
+   "layer": "tests",
+   "frege_sinn": "정합 record→엔진이 partial 생성(손입력0)"
+  },
+  {
+   "sourceId": "test_record_judge.test_measured_pulled_from_derived_when_metric_matches",
+   "file": "tests/test_record_judge.py",
+   "symbol": "test_measured_pulled_from_derived_when_metric_matches",
+   "kind": "test",
+   "line_hint": 33,
+   "sha256": "21ed76b2b85e96cf",
+   "layer": "tests",
+   "frege_sinn": "measurement.metric 달라도 derived[예측metric]서 실측 끌어옴"
+  },
+  {
+   "sourceId": "test_record_judge.test_abstain_on_metric_name_misalignment",
+   "file": "tests/test_record_judge.py",
+   "symbol": "test_abstain_on_metric_name_misalignment",
+   "kind": "test",
+   "line_hint": 44,
+   "sha256": "5a0efa0babe11072",
+   "layer": "tests",
+   "frege_sinn": "metric 이름 불일치→abstain(손-verdict 차단)"
+  },
+  {
+   "sourceId": "test_record_judge.test_invalid_when_record_carries_verdict",
+   "file": "tests/test_record_judge.py",
+   "symbol": "test_invalid_when_record_carries_verdict",
+   "kind": "test",
+   "line_hint": 55,
+   "sha256": "5773aa156d05aefd",
+   "layer": "tests",
+   "frege_sinn": "record에 verdict 있으면 거부(자기채점차단)"
+  },
+  {
+   "sourceId": "test_record_judge.test_real_consumer_d_records_audit",
+   "file": "tests/test_record_judge.py",
+   "symbol": "test_real_consumer_d_records_audit",
+   "kind": "test",
+   "line_hint": 65,
+   "sha256": "26b99e908355ce6e",
+   "layer": "tests",
+   "frege_sinn": "실 SX3i record 감사=마이그레이션분 judged·원본 abstain/invalid"
+  },
+  {
+   "sourceId": "test_migrate_record.test_align_makes_misaligned_record_judgeable",
+   "file": "tests/test_migrate_record.py",
+   "symbol": "test_align_makes_misaligned_record_judgeable",
+   "kind": "test",
+   "line_hint": 11,
+   "sha256": "de47b73aa752c0ad",
+   "layer": "tests",
+   "frege_sinn": "align로 미정합 record가 judge가능해짐"
+  },
+  {
+   "sourceId": "test_migrate_record.test_align_explicit_key",
+   "file": "tests/test_migrate_record.py",
+   "symbol": "test_align_explicit_key",
+   "kind": "test",
+   "line_hint": 24,
+   "sha256": "e0c7ab20b2d67e9e",
+   "layer": "tests",
+   "frege_sinn": "명시 measured_key 정합(equivalent)"
+  },
+  {
+   "sourceId": "test_migrate_record.test_wrap_adhoc_strips_verdict_and_judges",
+   "file": "tests/test_migrate_record.py",
+   "symbol": "test_wrap_adhoc_strips_verdict_and_judges",
+   "kind": "test",
+   "line_hint": 33,
+   "sha256": "78db18cfc287f49f",
+   "layer": "tests",
+   "frege_sinn": "ad-hoc+verdict→wrap시 strip·엔진 rejected 생성"
+  },
+  {
+   "sourceId": "longinus_dashboard.run",
+   "file": "examples/longinus_dashboard.py",
+   "symbol": "run",
+   "kind": "function",
+   "line_hint": 139,
+   "sha256": "16e00e51e39dbe22",
+   "layer": "viewer",
+   "frege_sinn": "Longinus 오프라인 HTML 대시보드 생성(self-binding=dogfood)"
+  },
+  {
+   "sourceId": "longinus_dashboard.build_html",
+   "file": "examples/longinus_dashboard.py",
+   "symbol": "build_html",
+   "kind": "function",
+   "line_hint": 109,
+   "sha256": "544d05bc738baf6c",
+   "layer": "viewer",
+   "frege_sinn": "layer×drift status×provenance 구조화 페이지 조립"
   }
  ],
  "accepted_grounding_refs": [
