@@ -174,6 +174,14 @@ BLOOM_FRONTIER = [
               '점군 정합→부시(독립피처) vs CAD nominal ±1.0mm accuracy(precision≠accuracy 견지).'),
     dict(name='q_lx3_full_surface_anchor', status='OPEN', closed_by=None,
          body='proper full-surface scan↔CAD anchor transform 을 자동으로 확보(markerless 자동경로 정본화)'),
+    dict(name='q_lx3_turntable_runout', status='OPEN', closed_by=None,
+         body='★사전등록(2026-06-24, prom 1순위 blind-spot): 턴테이블 물리축 runout/wobble 이 sub-mm 인가? '
+              'prom(Qwen3.6-35B 5에이전트) 합의: "runout이 0.1mm 넘으면 어떤 bundle-adjustment 소프트웨어로도 '
+              'sub-0.1mm accuracy 불가". 현 정합 precision 0.99mm 가 이미 0.1mm 의 ~10배 — 그 안에 *물리축 runout* 이 '
+              'lift-노이즈와 미분리로 섞여있을 수 있다(우리는 턴테이블을 완벽한 단일 3°/뷰 강체축으로 가정해왔음). '
+              '측정: 동일각도 재방문(lap) 반복도 또는 known-3° 정합잔차의 각도-주기 성분으로 runout 을 lift-노이즈와 분해. '
+              '판정: runout≫0.1mm → sub-0.1mm 하드웨어상 불가(목표 ±1mm 로 정직 확정); runout≪0.1mm → 정합 알고리즘이 '
+              '진짜 병목. = accuracy 벽의 근본원인 진단(q_lx3_aruco_accuracy 선결 가능성). 미측정=OPEN, 가짜green 금지.'),
     dict(name='q_lx3_gauge_boundary', status='OPEN', closed_by=None,
          body='B_LH tol-경계(0.999→1.067) gauge 위태 — 공차 class 재설계 필요한가'),
 ]
