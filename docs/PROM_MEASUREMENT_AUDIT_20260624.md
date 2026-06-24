@@ -148,3 +148,6 @@ It is not yet uniformly industrial-release-grade dimensional metrology. The
 right next move is not more narrative. It is structured evidence records with
 uncertainty, decision rules, gauge/MSA, independent truth, and negative controls
 as enforced promotion gates.
+
+For the stricter branch-by-branch industrial judgement and Longinus comments,
+see `docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md`.
