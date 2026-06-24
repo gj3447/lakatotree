@@ -23,9 +23,10 @@ NODES = [
      f"{EV}/lx3_aruco_register_precision_knownaxis_20260624.json", "measured"),
     ("lx3_cad_bush_nominal", "lx3_aruco_knownaxis_precision",
      f"{EV}/lx3_bush_nominal_lx3local_20260624.json", "measured"),
+    # ★2026-06-24: dict4x4 전용 grounded record 부여(dict정정 usable 마커 8→61) → 엔진판결화(measured).
+    ("lx3_aruco_dict4x4", "lx3_aruco_turntable", f"{EV}/lx3_aruco_dict4x4_20260624.json", "measured"),
     # ↓ record 미정비(동시편집자 migration WIP) 또는 narrative — flag.
     ("lx3_groundtruth_oracle", "lx3_prob", None, "narrative"),
-    ("lx3_aruco_dict4x4", "lx3_aruco_turntable", None, "narrative"),
 ]
 
 

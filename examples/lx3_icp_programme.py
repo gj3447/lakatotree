@@ -73,7 +73,8 @@ BLOOM_NODES = [
                   '강건성엔 도움되나 필수 아님. ⚠️relaxed params/equalize 는 FP 과증폭(100+/뷰) — default+gamma/CLAHE 만 신뢰.'),
 
     # ★2026-06-24 결정타 — dict 정정: 마커는 MIP_36H12 아니라 DICT_4X4_250 (lx3_aruco_turntable 의 dict 식별 정정)
-    _n('lx3_aruco_dict4x4', 'progressive', 'lx3_aruco_turntable', m=61.0, base=8.0, scope='registration',
+    # ★엔진 reconcile(2026-06-24): 손입력 progressive → record_judge **partial**(dict4x4 record 부여 후 자동판결)
+    _n('lx3_aruco_dict4x4', 'partial', 'lx3_aruco_turntable', m=61.0, base=8.0, scope='registration',
        direction='higher', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
        comment='lx3_aruco_turntable 가 "마커 실재"는 맞췄으나 **dict 를 MIP_36H12 로 오식별**했다. 진짜 dict = '
                '**DICT_4X4_250**. 비트단위 증거(반박불가): v60 실 마커를 정사영 보정→6×6 샘플 시 테두리 전부 검정(4×4 ArUco '
