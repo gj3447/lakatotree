@@ -45,7 +45,8 @@ def test_sx3i_reader_misdiagnosis_preserved_as_lesson():
     out = run()
     by = {n['tag']: n for n in BLOOM_NODES}
     assert by['misdiag_reader_frame']['verdict'] == 'rejected'
-    assert out['sx3i_rejected'] == ['misdiag_reader_frame']
+    # (다른 정당한 rejected 노드 — 예: sx3i_precision_floor_marker = sub-0.1mm 예측 falsify — 도 허용)
+    assert 'misdiag_reader_frame' in out['sx3i_rejected']
     fr = {q['name']: q for q in BLOOM_FRONTIER}
     assert fr['q_reader_frame_misdiagnosis']['status'] == 'CLOSED'
     assert fr['q_reader_frame_misdiagnosis']['closed_by'] == 'reader_frame_provenance_fix'
