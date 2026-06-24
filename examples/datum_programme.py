@@ -68,13 +68,13 @@ BLOOM_NODES = [
     # ── D1b: 도면 GD&T datum 지정 전사 — 실 PPAP 도면 PARTIAL (q_cad_datum_triple 의 답) ──
     _n('gdt_datum_designation', 'partial', 'cad_datum_extract', nr=True, nc=False,
        q=['q_gdt_datum_designation'],
-       comment='A110 도면 datum A/B/C 전사(scripts/gdt_datum_designation.py): [A] RR_BODY_LH_BUSH(0,0,0) · '
+       comment='A110 *내부 설계의도* datum 전사(scripts/gdt_datum_designation.py): [A] RR_BODY_LH_BUSH(0,0,0) · '
                '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), GD&T ⊕⌀1.5|A|B|C. '
-               '3 독립출처(PPAP drawing_a110_revA.pdf + drawing_outline.md §3.2 + asme_datum LX3_DATUM_FRAME) 일치 '
-               '→ D1 hard core "datum 은 도면이 정한다" 실현. evidence/gdt_datum_designation_a110_20260624.json. '
-               '소급: LX3 best-fit↔datum Δ 가 이미 이 3 bush 사용=확정 도면 datum 이었음.',
-       limitation='전사(측정 아님). BPC 적용 GATED: 3 body bush 가 183-피처 inspection report 에 부재 → '
-                  'true-datum BPC flip 은 datum-bush 측정(D5) 필요. 현 verdict_flip_hunt_bpc 는 proxy(bush_clean).'),
+               '좌표=설계 outline + 그 Matplotlib 렌더 placeholder PDF(같은 저자/mtime, 독립 아님)=좌표 독립출처 ≈1; '
+               'asme_datum LX3_DATUM_FRAME=라벨/DOF corrob(좌표 0). → D1 hard core "datum=도면이 정함" *내부* 실현. '
+               'evidence/gdt_datum_designation_a110_20260624.json. 소급: LX3 Δ 가 이미 이 3 bush 사용.',
+       limitation='전사(측정 아님). ⚠️외부 OEM/고객 도면 PENDING → 외부확정 아님(내부 설계의도만). '
+                  'BPC 적용 GATED: 3 body bush 가 183-피처 report 에 부재 → true-datum BPC flip 은 datum-bush 측정(D5) 필요.'),
 
     # ── D2: 3-2-1 DRF instrument 강체 복원 — synthetic PASS ──
     _n('drf_instrument', 'partial', 'datum_prob', m=0.0, base=1e-6, nr=True, nc=False,
@@ -88,9 +88,11 @@ BLOOM_NODES = [
        comment='hard core 실증(test_datum_frame T3): datum 무오차+비-datum 홀 1개 δ=0.30 주입. DRF 가 δ '
                '전부 노출(누설0), best-fit 은 21~62% 흡수(기하의존, 피처 적을수록↑)+무오차 홀 누설=은폐. '
                '재사전등록 불변부등식 4개 충족 ✅. evidence/d2_drf_synth_20260624.json. '
-               '+2026-06-24 synthetic→REAL grounding(엔진 _evidence GROUNDED 2건): LX3 실 lot 부등식 '
-               '확증(비-datum 은폐 22.8mm=55.9%, 250µm 바닥 91×) + BPC 183피처 verdict-flip 2건 '
-               '(best-fit PASS·datum NG: WASHER_015 0.72→0.89, WASHER_047 0.76→0.84). 비보수성 최악결과 실증.',
+               '+2026-06-24 synthetic→REAL grounding(엔진 _evidence GROUNDED): LX3 실 lot 부등식 *방향* '
+               '확증(best-fit RMS 13.46≤datum 20.41; 단 datum bush raw dev 25~42mm=조대-Z regime·비-datum n=1라 '
+               'magnitude는 정합 artifact, 250µm와 비교불가) + BPC forward-flip 2건 중 WASHER_015(0.086 over)=marginal·'
+               'WASHER_047(0.044 over)=MR60노이즈 내부, +역flip 1건(BIG_09 datum가 best-fit NG 0.966→0.782 구제, '
+               '비보수성과 모순)·all-bush 변종 0 → 정직=최대 1 marginal flip(proxy datum·CMM부재).',
        limitation='음의결과 보존: 최초 magnitude band "best-fit<0.6·δ" 가 5피처서 0.2377 흡수로 REFUTED — '
                   '흡수분율 기하의존이라 magnitude 사전등록이 틀림 → 불변부등식으로 sharpening(credence 보정 1건). '
                   'REAL grounding caveat: BPC datum=내 선택(도면 A/B/C 아님, q_gdt_datum_designation OPEN), '
@@ -132,14 +134,16 @@ BLOOM_FRONTIER = [
          body='D2: 3-2-1 DRF 가 임의 강체로 옮긴 datum 으로 원 프레임 복원? → 답 YES. max_dev 0.0 (synthetic).'),
     dict(name='q_drf_vs_bestfit', status='CLOSED', closed_by=['exposes_hidden_error'],
          body='D3⭐: DRF 가 best-fit 보다 위치오차에 충실? → 답 YES. DRF 전부 노출·누설0, best-fit 21~62% 은폐 '
-              '(기하의존)+누설. 불변 4충족. (synthetic) +REAL(2026-06-24): LX3 부등식 실데이터 확증(은폐 '
-              '22.8mm=55.9%) + BPC verdict-flip 2건(best-fit PASS·datum NG). 단 도면 datum·CMM 미정→magnitude UNVERIFIED.'),
+              '(기하의존)+누설. 불변 4충족. (synthetic) +REAL(2026-06-24): LX3 부등식 *방향* 확증(RMS 13.46≤20.41; '
+              'magnitude는 조대-Z·n=1 정합artifact, 비교불가) + BPC 최대 1 marginal flip(WASHER_015 0.086 over; '
+              'WASHER_047 노이즈내부; 역flip 1·all-bush 0). 도면 datum proxy·CMM 미정→magnitude UNVERIFIED.'),
     dict(name='q_drf_noise', status='CLOSED', closed_by=['noise_stability'],
          body='D4: datum 면 다점적합이 단일점보다 안정? → 답 YES. 원점 σ 0.021mm<0.05, tilt p95 0.033°<0.5°.'),
     dict(name='q_gdt_datum_designation', status='CLOSED', closed_by=['gdt_datum_designation'],
-         body='도면 GD&T 가 datum A/B/C 지정? → 답 YES(전사). A110 도면: [A] RR_BODY_LH_BUSH(0,0,0) · '
-              '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), ⊕⌀1.5|A|B|C. 3 독립출처 일치 '
-              '(PPAP PDF+outline+asme_datum). CAD 형상 자동선택은 q_cad_datum_triple 로 부정 → 도면이 정함(hard core 실현).'),
+         body='도면 GD&T 가 datum A/B/C 지정? → 답 YES(*내부* 설계의도 전사). A110: [A] RR_BODY_LH_BUSH(0,0,0) · '
+              '[B] RR_BODY_RH_BUSH(0,805,0) · [C] FRT_BODY_LH_BUSH(-921,-144,140), ⊕⌀1.5|A|B|C. 좌표 출처=설계 outline'
+              '+그 렌더 placeholder PDF(1저자, 독립 아님), asme_datum=라벨 corrob(좌표0). ⚠️외부 OEM 도면 PENDING. '
+              'CAD 형상 자동선택은 q_cad_datum_triple 로 부정 → 도면이 정함(hard core 내부 실현).'),
     dict(name='q_real_part_drf', status='OPEN', closed_by=None,
          body='D5🔬: 실 zdf 에서 datum 면(점군)+피처 추출 → DRF 정합 cross-capture σ<0.05mm, datum 면 평탄도 '
               'rms<0.1mm? **부분측정(real_part_drf partial)**: 실 2-캡처 도면-datum DRF σ_p95=0.0485<0.05 '

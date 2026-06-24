@@ -86,7 +86,8 @@ BLOOM_NODES = [
                   'CAD nominal 도 scan재구성=precision≠accuracy(GD&T truth 아님, 정밀 trueness 엔 STEP/CMM 필요).'),
 
     # ── C3 물리관문 측정(2026-06-24): 마커-coincidence path 도 sub-0.1mm 11× 미달 → 사전등록 예측 REFUTE ──
-    _n('sx3i_precision_floor_marker', 'degenerating', 'sx3i_prob', m=1.076, base=0.10,
+    # ★verdict='rejected' = 엔진 judge_record 판결과 정렬(손입력 'degenerating' 과대였음; 예측 falsify=rejected).
+    _n('sx3i_precision_floor_marker', 'rejected', 'sx3i_prob', m=1.076, base=0.10,
        scope='registration', nr=True, nc=False, q=['q_sx3i_precision_floor'],
        comment='q_sx3i_precision_floor 측정(scripts/c3pre_precision_floor.py): SX3i=삼각대 자유이동(기하구속0, 정합 '
                '100% ArUco DICT_4X4_250). held-out 마커 코너 독립정밀도(공유≥4 중 1개 빼고 Kabsch→빼낸 코너 |Δ|): '

@@ -381,3 +381,6 @@ Until then, the honest status is:
 - LX3: precision-progress, accuracy NO-GO.
 - SX3i: detection-progress, dimensional NO-GO.
 - OMD: blocked.
+
+For the specific BPC Z-height / CAD surface layer failure mode, see
+`docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md`.

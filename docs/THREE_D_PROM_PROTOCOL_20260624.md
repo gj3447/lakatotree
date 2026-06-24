@@ -94,3 +94,5 @@ promotion discipline.
   critique of why perfect industrial accuracy/precision is not yet closed.
 - Use `docs/LONGINUS_KUSARI_COMMENTARY_20260624.md` for review-ready claim bans,
   branch comments, and promotion review questions.
+- Use `docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md` for the BPC-specific
+  Z-height/CAD-surface-layer critique and required layer-aware result contract.
