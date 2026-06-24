@@ -20,14 +20,16 @@ def test_measured_verdicts_come_from_engine_not_hand():
             f"{tag}: 트리 verdict {rows[tag]['verdict']} != 엔진 {eng['verdict']}(손입력 의심)"
 
 
-def test_no_hand_input_verdict_literals_in_source():
-    """소스에 verdict 리터럴이 없어야(canonical_stage 문제-root 와 'no_record' flag 제외)."""
-    import pathlib
-    src = pathlib.Path(__file__).resolve().parent.parent / "examples" / "sx3i_engine_judged.py"
-    code = "".join(l for l in src.read_text(encoding="utf-8").splitlines()
-                   if "verdict 리터럴" not in l)  # 문서 라인 제외
-    for v in ("'progressive'", '"progressive"', "'degenerating'", "'rejected'", "'partial'"):
-        assert v not in code, f"손입력 verdict 리터럴 발견: {v} (엔진 생성이어야)"
+def test_node_table_has_no_hand_input_verdict():
+    """NODES 정의 자체에 verdict 가 없어야 — (tag, parent, record, role) 4-튜플, role 만.
+    verdict 는 run()/judged_nodes() 에서 record_judge 가 생성(손입력 행 없음)."""
+    for entry in NODES:
+        assert len(entry) == 4, f"NODES 튜플에 verdict 끼어듦?: {entry}"
+        tag, parent, rec, role = entry
+        assert role in ("problem", "measured", "narrative"), f"알 수 없는 role: {role}"
+        # verdict 어휘가 튜플 어디에도 없음
+        for v in ("progressive", "degenerating", "rejected", "partial", "canonical_stage"):
+            assert v not in (str(parent or ""), str(rec or "")), f"{tag}: 튜플에 verdict 리터럴"
 
 
 def test_narrative_nodes_get_no_verdict():
