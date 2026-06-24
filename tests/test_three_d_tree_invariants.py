@@ -6,8 +6,22 @@
 참조 유효·CANONICAL/CLOSED 정직)만 강제한다. 이 가드는 verdict reconcile 엔 안 깨지고, 진짜
 구조 손상(orphan·가짜green·dangling frontier)엔만 깨진다.
 """
-from examples.three_d_detection import UNIFIED_NODES as N, UNIFIED_FRONTIER as F
+from examples.three_d_detection import UNIFIED_NODES as N, UNIFIED_FRONTIER as F, HARD_CORE
 from lakatos.quant.metrics import tree_metrics
+
+
+def test_external_trueness_ceiling_is_registered_and_honest():
+    """★2026-06-24 사용자 적대검증: hard-core #3(precision≠accuracy)을 닫는 외부 trueness 노드가
+    트리 전체에 0개였다. 이 천장 frontier 는 (a) 존재해야 하고 (b) traceable(CMM/CT) grounded 닫는
+    노드 없이 조용히 CLOSED 되면 안 된다 — 사용자가 찾은 바로 그 갭의 가짜green 재발 방지."""
+    q = next((x for x in F if x['name'] == 'q_external_trueness'), None)
+    assert q is not None, 'q_external_trueness(외부 정확도 천장) 가 사라짐 — hard-core #3 닫는 노드 소실'
+    # precision≠accuracy 가 hard core 에 남아 있어야(조용히 빼서 갭을 가짜로 닫지 못하게)
+    assert any('precision' in h and 'accuracy' in h for h in HARD_CORE), \
+        'hard-core #3(precision≠accuracy) 가 사라짐'
+    # CLOSED 라면 닫은 노드가 traceable 근거여야(현재는 CMM 미수행 → OPEN 이 정직)
+    if q['status'] == 'CLOSED':
+        assert q.get('closed_by'), 'q_external_trueness CLOSED 인데 closer 없음(가짜green)'
 
 
 def test_single_connected_root():

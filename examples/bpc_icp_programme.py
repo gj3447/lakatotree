@@ -39,15 +39,20 @@ NODES = [
     _n('aruco_metric', 'progressive', 'prob_statement', m=1.60, base=12.0,
        nr=True, nc=True, q=['q_markerless_reuse', 'q_aruco_rgb_buffer_confound'],
        comment='ArUco shared-marker Kabsch+BA — 21뷰 1 connected component',
-       limitation='격자이웃≠마커공유, dup-ID 가짜다리 주의. ⚠검출 RGB원천=prismv2 자작 read_rgb(SDK無 역공학) → q_aruco_rgb_buffer_confound 미변별'),
+       limitation='격자이웃≠마커공유, dup-ID 가짜다리 주의. 검출 RGB원천=prismv2 자작 read_rgb(SDK無 역공학) → '
+                  'q_aruco_rgb_buffer_confound **변별완료 CLOSED**(파서버퍼=SNR프레임 오선택, reader fix 로 부활).'),
     _n('frozen_calib_reuse', 'progressive', 'aruco_metric', m=1.026, base=1.60,
        nr=True, nc=True, q=['q_crosslot'],
        comment='board calib 동결→markerless lot 직접 T_view_to_world 재사용(0040→0049 1.384→1.026)',
        limitation='seam=self-consistency, accuracy vs CAD 미검증'),
     _n('v8_pipeline', 'CANONICAL', 'frozen_calib_reuse', m=0.90, base=1.026,
-       nr=True, nc=True, q=['q_dc375_tol', 'q_outer004', 'q_washer_step'],
+       nr=True, nc=True, q=['q_dc375_tol', 'q_outer004', 'q_washer_step', 'q_external_trueness'],
        comment='v8: ZDF stride3 srgb+frozen calib+colfix+v7보정, mesh-exact QC, cross-lot 4.05mm',
-       limitation='interior 0.90mm CMM 미검증(precision≠accuracy)'),
+       limitation='interior 0.90mm CMM 미검증(precision≠accuracy). ⚠가지→줄기 전파(2026-06-24): v8 QC 는 대칭 '
+                  'best-fit(cad_metrology.align_and_deviate) 위에서 편차를 잰다 — DATUM 가지 D3(exposes_hidden_error/'
+                  'bestfit_as_drf rejected)가 그 best-fit 이 진짜 위치오차를 21~62% 흡수·은폐(비보수)하고 무오차 피처로 '
+                  '누설함을 실 lot 으로 실증. 즉 0.90mm 는 precision 이고, accuracy 추정엔 best-fit 비보수 bias 가 섞여 '
+                  '있다 — trueness 엔 GD&T datum-locked DRF + 외부 traceable(q_external_trueness) 필요.'),
     _n('prismv2_frozen_wiring', 'progressive', 'v8_pipeline', m=0.90, base=0.90,
        nr=True, nc=True, q=['q_recipev2_gicp_risk'],
        comment='2026-06-16 prismv2 production 배선 관통(Longinus + hitech-expert). v8 frozen-per-view 접근의 실 '
@@ -126,9 +131,16 @@ FRONTIER = [
     dict(name='q_dc375_tol', status='OPEN', body='interior 0.90mm 가 DC375 공차 T0 에 충분한가', closed_by=None),
     dict(name='q_outer004', status='OPEN', body='OUTER_004 분기 — outer hole 검출 커버리지', closed_by=None),
     dict(name='q_washer_step', status='OPEN', body='washer step +0.83mm 진짜인가 artifact 인가', closed_by=None),
-    dict(name='q_aruco_rgb_buffer_confound', status='OPEN',
-         body='ArUco 검출오염 원인 미변별(confound). 검출은 prismv2 자작 zdf_reader.read_rgb(Zivid SDK 없는 역공학 파서)가 뽑은 organized RGBA 위에서 돌렸다. evidence는 "stripe-light 오염 = 캡처문제(Settings2D 누락)"로 단정했으나, "SDK 없이 잘못된 버퍼를 추출"하는 경쟁가설을 깨끗이 배제하지 못함 — 두 가설(캡처설정 vs 파서버퍼)이 안 갈렸다(crucial experiment 미수행). 변별법: ①Zivid SDK 정식 read로 같은 zdf의 RGBA 추출해 read_rgb와 바이트/통계 비교 ②Settings2D 포함 정상캡처 재현해 stripe 사라지는지 ③알려진-정답 zdf로 read_rgb 디코드 검증(side/stride/PRGB·RB스왑). 2026-06-24 사용자 지적, 발원 [[lx3-laptop-zivid-prismv2-conn]] read_rgb 역공학.',
-         closed_by=None),
+    dict(name='q_aruco_rgb_buffer_confound', status='CLOSED', closed_by=['reader_frame_provenance_fix'],
+         body='ArUco 검출오염 confound(캡처설정 vs 파서버퍼) → **변별 완료: 파서버퍼**. crucial experiment ③(알려진 '
+              'zdf 디코드 검증)이 결정적 결과로 수행됨 — read_rgb 가 색프레임을 byte-length 만으로 골라 SNR float32 맵'
+              '(N×4B)을 진짜 색(N×16B) 대신 uint8 캐스트하던 frame-select 버그를 grounded 로 확정([[reader_frame_'
+              'provenance_fix]]: _looks_like_snr_float 가드 + float-first 선택). **재촬영·Settings2D 변경 0으로** 디코드만 '
+              '고쳐 마커가 부활(SX3i 34/40뷰, LX3 usable 8→61) = "캡처문제(Settings2D 누락)" 경쟁가설 결정적 반증'
+              '(마커가 미캡처였다면 디코드 수정으로 부활 불가). 즉 오염원=파서가 잘못된 버퍼 추출. '
+              '잔여(non-reopen): 공식 Zivid SDK byte-parity(①)는 SDK 부재로 미실행이나 부활 결과가 이미 confound 를 '
+              '변별했으므로 닫힘. 디코드 미세 정합성(side/stride/PRGB·RB스왑)은 별개 finer 질문. '
+              '2026-06-24 사용자 staleness 지적 수용, 발원 [[lx3-laptop-zivid-prismv2-conn]] read_rgb 역공학.'),
     dict(name='q_recipev2_gicp_risk', status='OPEN',
          body='GICP collapse 노출은 GATED/LATENT(정상 현장=노출0). 게이트=_should_concat_by_transform(stage_merge.py): views camera_transform real(FS2 dimconfig frozen pose)면 concat_by_transform(frozen,safe), all-identity(mock/FS2 unwired)면 legacy GICP merge_handles. 또 Branch0 verdict(per-view frozen)는 merge cloud와 독립이라 backend 무관. 노출=이중fault((a)FS2 unwired→silent GICP merge ∧ (b)Branch0 fail(bundle無)→RecipeV2가 GICP cloud로 verdict). 미티게이션 ✅LANDED(ooptdd RED→GREEN, prismv2 develop 8549900): concat→GICP silent fallback 시 BPC면 구조화 event merge.gicp_fallback_bpc 방출(stage_merge.py). LTDD: RED=airo_trace L3 oo 라운드트립 미방출 FAIL→GREEN=assert_trace oo 도착확인(C3 구조화). 동작불변·알람만',
          closed_by=None),

@@ -34,9 +34,27 @@ HARD_CORE = [
     '3) precision ≠ accuracy — 정합 self-consistency 는 정확도 증거가 아니다(독립검증 필요).',
 ]
 
-# 한 그루의 나무: 줄기(BPC) + 세 개의 개화 가지(SX3i, LX3, DATUM).
+# ── 나무 전체를 가로지르는 frontier — hard-core #3(precision≠accuracy)의 유일한 닫는 노드 ──
+# 2026-06-24 사용자 적대검증: 트리 전체에 외부 trueness(traceable) 독립검증 노드가 0개였다.
+# v8 0.90mm·SX3i C3·LX3 Kabsch·DATUM DRF 는 전부 precision(자기일관성) 또는 scan-재구성 CAD(GD&T truth 아님)
+# 만 측정 — 외부 traceable 표준 대비 accuracy 는 어느 가지도 닫지 못함. 이게 모든 가지의 천장.
+# 이 frontier 를 *명시적으로 OPEN* 으로 사전등록 = 가짜진보 은폐 금지(엔진이 빚을 보이게 한다).
+TREE_FRONTIER = [
+    dict(name='q_external_trueness', status='OPEN', closed_by=None,
+         body='★hard-core #3(precision≠accuracy)의 유일 닫는 노드 — 나무 전체 공통 천장(2026-06-24 사전등록). '
+              '현 모든 "정밀" 성취는 외부 trueness 미검증이다: v8 interior 0.90mm(=self-consistency, CMM無), '
+              'SX3i C3 feature-coincidence(=정합 자기일관성), LX3 Kabsch 0.064mm/known-axis 0.99mm(=재투영 잔차), '
+              'DATUM DRF(=CAD nominal 대비, 그 CAD 도 STEP 공칭이지 측정된 truth 아님). 어느 것도 traceable 표준'
+              '(CMM·CT·calibrated artifact)에 대조 안 됨. 사전등록 닫힘조건(측정 전 고정): 동일 부품을 traceable '
+              'CMM/CT 로 측정해 GD&T 피처별 |scan_dim − CMM_dim| 산출, 공차 band 내(예: ≤0.10mm·k=2 불확도 포함)면 '
+              'CLOSED. 그 전까지 hard-core #3 은 나무 전체에서 OPEN — 모든 가지 verdict 는 "정밀도까지"로 읽어야 한다. '
+              '비고: best-fit 비보수성(D3 21~62% 은폐)은 이 천장을 더 낮춤 → DRF-locked 측정이 전제.'),
+]
+
+# 한 그루의 나무: 줄기(BPC) + 세 개의 개화 가지(SX3i, LX3, DATUM) + 나무 전체 frontier.
 UNIFIED_NODES = BPC_NODES + sx3i.BLOOM_NODES + lx3.BLOOM_NODES + datum.BLOOM_NODES
-UNIFIED_FRONTIER = BPC_FRONTIER + sx3i.BLOOM_FRONTIER + lx3.BLOOM_FRONTIER + datum.BLOOM_FRONTIER
+UNIFIED_FRONTIER = (BPC_FRONTIER + sx3i.BLOOM_FRONTIER + lx3.BLOOM_FRONTIER
+                    + datum.BLOOM_FRONTIER + TREE_FRONTIER)
 
 
 def _line(c=''):
