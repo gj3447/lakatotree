@@ -334,46 +334,43 @@
     "dates": [
       {
         "date": "2026-06-04",
-        "lot_prefix": "VFDZ",
-        "lots": 8,
-        "files": 168,
-        "size_gb": 14.1,
-        "local_path": "BPC_BY_DATE/2026-06-04",
-        "source": "gdrive",
-        "also_contains": "MASTER_20260604_* golden master (8 files), hardlinked"
+        "content": "VFDZ field 168 + BPC_MASTER golden 8",
+        "zdf": 176
       },
       {
         "date": "2026-06-05",
-        "lot_prefix": "VFEZ",
-        "lots": 46,
-        "files": 966,
-        "size_gb": 98.6,
-        "local_path": "BPC_BY_DATE/2026-06-05",
-        "source": "local laptop/BPC_FIELD (hardlinked)"
+        "content": "VFEZ field 966 (+sidecar json)",
+        "zdf": 966
+      },
+      {
+        "date": "2026-06-08",
+        "content": "VFHZ field 34 + MASTER 4",
+        "zdf": 38
+      },
+      {
+        "date": "2026-06-10..16",
+        "content": "MASTER seq only (4/day: 0610,0611,0613,0615,0616)",
+        "zdf": 20
       },
       {
         "date": "2026-06-17",
-        "lot_prefix": "VFQZ",
-        "lots": 56,
-        "files": 1150,
-        "size_gb": 119.3,
-        "local_path": "BPC_BY_DATE/2026-06-17",
-        "source": "gdrive",
-        "note": "PLATE_HOLE Y-axis change recapture (last-week shoot)"
+        "content": "VFQZ field 1407 + MASTER 8 (PLATE_HOLE Y축 재촬영)",
+        "zdf": 1415
+      },
+      {
+        "date": "2026-06-18",
+        "content": "VFRZ field 105 + MASTER 4",
+        "zdf": 109
       },
       {
         "date": "2026-06-22",
-        "kind": "MASTER",
-        "capture": "치수측정 dimension-measurement master sequence (LX3RT ×7 runs)",
-        "folders": 7,
-        "files": 424,
-        "size_gb": 58.0,
-        "local_path": "BPC_BY_DATE/2026-06-22",
-        "source": "local 치수측정/ (hardlinked)",
-        "note": "v##_master_*.zdf; not on gdrive"
+        "content": "치수측정 LX3RT master seq 424 + MASTER 4",
+        "zdf": 428
       }
     ],
-    "registered_at": "2026-06-23",
-    "master_note": "Master/golden-reference sequences are LOCAL ONLY (not in gdrive 'zdf log', which is field VF?Z). 06-04=BPC_MASTER golden, 06-22=치수측정 LX3RT master seq."
+    "registered_at": "2026-06-24",
+    "master_note": "Master/golden-reference sequences are LOCAL ONLY (not in gdrive 'zdf log', which is field VF?Z). 06-04=BPC_MASTER golden, 06-22=치수측정 LX3RT master seq.",
+    "total_zdf": 3152,
+    "hitech_provenance": "하이테크 consumer_b 현장PC(tester-pc, D:\\consumer_a_zdf)가 원천. ZT링크 0.2MiB/s라 직접전송 불가→하이테크 rclone(D:\\rclone)이 자기 인터넷으로 gdrive 'zdf log'에 업로드→타워가 gdrive서 수신. 최근2주 = 06-08~06-22 (테스트 dir CAPTEST/CLAUDE_TEST/DEV_LOT/LIVE_TEST_ZIVID 제외)."
   }
 }
