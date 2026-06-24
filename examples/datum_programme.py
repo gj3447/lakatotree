@@ -1,0 +1,172 @@
+"""Dogfood — DATUM(GD&T Datum Reference Frame, 3-2-1)을 3D 형상 검출 트리의 가지로 모델링.
+
+3D 형상 검출 통합 프로그램의 DATUM 가지. BPC 줄기의 **`aruco_metric` 마디에서 피어난다** —
+ArUco 마커-Kabsch(BPC/SX3i)·markerless surface-match(LX3) 와 나란한 *세 번째 정합 프레임*:
+마커 없이 CAD GD&T datum 으로 프레임을 잡는다. 동기 = 마커 self-consistency 의 precision≠accuracy
+벽(+LX3RT color 깨짐)을 GD&T DRF 로 우회 — 편차가 곧 도면-적합 *독립검증*.
+
+★정직성: 측정 없는 conjecture 를 progressive 로 박는 것은 자기채점=가짜green 이므로 금지.
+2026-06-24 첫 구동: D2~D4 는 합성 ground-truth 로 instrument-valid(PARTIAL), D1 은 실 CAD 추출
+(PARTIAL, 직교 triple 0 = 음의결과), D5(실부품)는 OPEN frontier. progressive 0개(정직).
+
+정본 사양: /data/kjra/PROJECT/3D/DATUM/PROGRAMME.md
+실행: python -m examples.datum_programme   (서버/DB 불필요 — 순수 엔진)
+"""
+from __future__ import annotations
+
+from lakatos.quant.metrics import tree_metrics
+from examples.bpc_icp_programme import _n, NODES as BPC_NODES, FRONTIER as BPC_FRONTIER
+from examples._evidence import load_record, is_grounded, summarize
+
+# 이 가지가 BPC 줄기의 어느 마디에서 피어나는가 = 정합 프레임 결정점.
+BLOOM_AT = 'aruco_metric'
+
+# D3(exposes_hidden_error) 의 *실데이터* grounded 레코드 — 2026-06-24 synthetic→real.
+# 엔진이 _evidence 계약(verdict 금지·사전등록·grounded)으로 수용/거부한다(자기채점 차단).
+DATUM_EVID = '/data/kjra/PROJECT/3D/DATUM/evidence'
+REAL_RECORDS = [
+    f'{DATUM_EVID}/bestfit_vs_datum_real_lx3_20260624.json',   # LX3 실 lot: 부등식 + 은폐폭
+    f'{DATUM_EVID}/verdict_flip_hunt_bpc_20260624.json',       # BPC 실 lot: verdict-flip 사냥
+]
+
+
+def ground_real_records(paths=REAL_RECORDS):
+    """실 evidence 레코드를 엔진 계약으로 검증·요약. OPEN(파일부재)·거부(미검증) 정직 처리."""
+    out = []
+    for p in paths:
+        try:
+            rec = load_record(p)
+        except FileNotFoundError:
+            out.append(dict(path=p, status='OPEN(파일 부재)'))
+            continue
+        s = summarize(rec)
+        out.append(dict(path=p, status='GROUNDED' if is_grounded(rec) else f'REJECTED {s["errors"]}',
+                        conjecture=rec.get('conjecture'), branch=rec.get('branch'),
+                        metric=s['metric'], measured=s['measured'], unit=s['unit'],
+                        findings=[f.get('body') for f in s['findings']]))
+    return out
+
+# ── DATUM 가지 노드 — 2026-06-24 첫 구동: 계측기 검증(synthetic) + 실 CAD 추출 ──
+# progressive 0개(CANONICAL 미획득=정직). 측정으로 자란 마디 = D1~D4 partial 4개.
+BLOOM_NODES = [
+    _n('datum_prob', 'canonical_stage', BLOOM_AT, algo='problem',
+       comment='DATUM = 마커없이 CAD GD&T datum(3-2-1 Reference Frame)으로 3D 데이터 정합 → 편차=GD&T-적합 '
+               '독립검증. BPC aruco_metric(정합 프레임 결정점)에서 피어남 — 마커-Kabsch·markerless 와 나란한 '
+               '3번째 프레임. 2026-06-24 첫 구동: 계측기 합성검증 + 실 CAD 추출(미측정 → PARTIAL).',
+       limitation='D5(실부품 DRF)는 OPEN frontier. datum 지정 A/B/C 는 GD&T 도면 의존. 퇴행교훈은 BPC 상속.'),
+
+    # ── D1: CAD datum 면 추출 — 실 STEP PARTIAL (추출 ✅ / 자동 triple 음) ──
+    _n('cad_datum_extract', 'partial', 'datum_prob', nr=True, nc=False, q=['q_cad_datum_triple'],
+       comment='CAD(STEP) datum 면 추출(scripts/cad_datum.py, pythonocc). LX3 STEP → 평면면 3572 raw '
+               '→ 1862 병합(96s) ✅. evidence/d1_lx3_datum_candidates_20260624.json.',
+       limitation='직교 3-2-1 triple = 0 — 상위 40개 큰 평면이 전부 ±Y 법선(평판형 weldment). 면적 휴리스틱 '
+                  'datum 자동선택 반증 → hard core "datum 지정은 도면 GD&T 가 정한다" 실증. GD&T 폴더 datum '
+                  '지정 들어와야 CONFIRMED.'),
+
+    # ── D2: 3-2-1 DRF instrument 강체 복원 — synthetic PASS ──
+    _n('drf_instrument', 'partial', 'datum_prob', m=0.0, base=1e-6, nr=True, nc=False,
+       q=['q_drf_recovers'],
+       comment='3-2-1 DRF 구성기(scripts/datum_frame.py: build_drf/transform_between/deviate_in_drf). '
+               '사전등록 band: 임의 강체 200회 비-datum max_dev < 1e-6mm. 실측 max_dev=0.0 ✅(순수 기하).',
+       limitation='합성 GT 일 뿐 — 실측 datum 면 입력(D5)은 미연결.'),
+
+    # ── D3: DRF 노출 vs best-fit 은폐 ⭐ — synthetic PASS + 음의결과 보존 ──
+    _n('exposes_hidden_error', 'partial', 'drf_instrument', nr=True, nc=False, q=['q_drf_vs_bestfit'],
+       comment='hard core 실증(test_datum_frame T3): datum 무오차+비-datum 홀 1개 δ=0.30 주입. DRF 가 δ '
+               '전부 노출(누설0), best-fit 은 21~62% 흡수(기하의존, 피처 적을수록↑)+무오차 홀 누설=은폐. '
+               '재사전등록 불변부등식 4개 충족 ✅. evidence/d2_drf_synth_20260624.json. '
+               '+2026-06-24 synthetic→REAL grounding(엔진 _evidence GROUNDED 2건): LX3 실 lot 부등식 '
+               '확증(비-datum 은폐 22.8mm=55.9%, 250µm 바닥 91×) + BPC 183피처 verdict-flip 2건 '
+               '(best-fit PASS·datum NG: WASHER_015 0.72→0.89, WASHER_047 0.76→0.84). 비보수성 최악결과 실증.',
+       limitation='음의결과 보존: 최초 magnitude band "best-fit<0.6·δ" 가 5피처서 0.2377 흡수로 REFUTED — '
+                  '흡수분율 기하의존이라 magnitude 사전등록이 틀림 → 불변부등식으로 sharpening(credence 보정 1건). '
+                  'REAL grounding caveat: BPC datum=내 선택(도면 A/B/C 아님, q_gdt_datum_designation OPEN), '
+                  'flip Δ 0.09~0.17mm 가 MR60 노이즈 0.08mm 근처, trueness CMM부재 UNVERIFIED → partial 유지(progressive 아님).'),
+
+    # ── D4: datum 면 노이즈 안정성 — synthetic PASS ──
+    _n('noise_stability', 'partial', 'drf_instrument', m=0.0214, base=0.05, nr=True, nc=False,
+       q=['q_drf_noise'],
+       comment='datum 면 다점 LS 적합 평균화 이득(test_datum_frame T4). 사전등록: σ_pt=0.05mm 300회 → '
+               '원점 σ_o<0.05mm·tilt p95<0.5°. 실측 σ_o=0.021mm ✅, tilt p95=0.033° ✅.',
+       limitation='합성 GT. 실 datum 면 평탄도/segment 품질은 D5 에서.'),
+
+    # ── 기각: best-fit 을 DRF 로 착각 (이 가지가 정립) ──
+    _n('bestfit_as_drf', 'rejected', 'datum_prob',
+       comment='대칭 best-fit(전 피처 or datum 중심점 Kabsch)을 DRF 로 사용 = cad_metrology.align_and_deviate '
+               '기존 경로. D3 가 이를 반증: 잔차 민주분산이 진짜 위치오차를 흡수·은폐(21~62%)하고 무오차 피처로 '
+               '누설. datum 순서(A→B→C)·DOF 위계 없음.',
+       limitation='GD&T 적합 측정의 기준으로 부적격. DRF(3-2-1)로 대체.'),
+]
+
+# ── DATUM frontier (Laudan open/closed questions) ────────────────────────────
+BLOOM_FRONTIER = [
+    dict(name='q_cad_datum_triple', status='CLOSED', closed_by='cad_datum_extract',
+         body='D1: CAD 형상(면적)만으로 직교 3-2-1 triple 자동선택? → 답 NO. 평판형 weldment 는 상위 40면이 '
+              '전부 평행(±Y). datum 지정은 도면 GD&T 가 정해야 함(hard core 실증).'),
+    dict(name='q_drf_recovers', status='CLOSED', closed_by='drf_instrument',
+         body='D2: 3-2-1 DRF 가 임의 강체로 옮긴 datum 으로 원 프레임 복원? → 답 YES. max_dev 0.0 (synthetic).'),
+    dict(name='q_drf_vs_bestfit', status='CLOSED', closed_by='exposes_hidden_error',
+         body='D3⭐: DRF 가 best-fit 보다 위치오차에 충실? → 답 YES. DRF 전부 노출·누설0, best-fit 21~62% 은폐 '
+              '(기하의존)+누설. 불변 4충족. (synthetic) +REAL(2026-06-24): LX3 부등식 실데이터 확증(은폐 '
+              '22.8mm=55.9%) + BPC verdict-flip 2건(best-fit PASS·datum NG). 단 도면 datum·CMM 미정→magnitude UNVERIFIED.'),
+    dict(name='q_drf_noise', status='CLOSED', closed_by='noise_stability',
+         body='D4: datum 면 다점적합이 단일점보다 안정? → 답 YES. 원점 σ 0.021mm<0.05, tilt p95 0.033°<0.5°.'),
+    dict(name='q_gdt_datum_designation', status='OPEN', closed_by=None,
+         body='도면 GD&T 가 datum A/B/C 를 지정(GD&T 폴더)해야 D1 직교 triple·DRF nominal datum 이 확정된다. '
+              'CAD 형상 자동선택은 q_cad_datum_triple 로 부정됨.'),
+    dict(name='q_real_part_drf', status='OPEN', closed_by=None,
+         body='D5🔬(사전등록, 미측정): 실 zdf 에서 datum 면(점군)+피처 추출 → DRF 정합 cross-capture σ<0.05mm, '
+              'datum 면 평탄도 rms<0.1mm? 반증: σ>0.1mm or collapse → datum 면 부족. 블록된 입력=뷰 datum-면/'
+              'feature 추출기(= SX3i 분기B markerless_c3 feature 추출기와 공유). 닫히면 SX3i C3⭐ 와 합류.'),
+]
+
+
+def _line(c=''):
+    print(c)
+
+
+def run():
+    """DATUM 가지를 BPC 줄기에 접붙여 통합 sub-tree 로 구동."""
+    nodes = BPC_NODES + BLOOM_NODES
+    frontier = BPC_FRONTIER + BLOOM_FRONTIER
+    m = tree_metrics(nodes, frontier)
+
+    _line('═' * 72)
+    _line('  DATUM 가지 — GD&T Datum Reference Frame(3-2-1) (3D 형상 검출 / BPC 줄기 접붙임)')
+    _line('═' * 72)
+    _line(f"\n  피어나는 마디        : {BLOOM_AT} (정합 프레임 결정점 — 마커·markerless 와 나란한 3번째)")
+    _line(f"  통합 트리 정본       : {m['canonical']}  ← 여전히 BPC(DATUM 미측정이라 정본 미획득=정직)")
+    datum_open = [q['name'] for q in BLOOM_FRONTIER if q['status'] == 'OPEN']
+    datum_closed = [q['name'] for q in BLOOM_FRONTIER if q['status'] == 'CLOSED']
+    _line(f"  DATUM closed frontier: {len(datum_closed)}개  {datum_closed}")
+    _line(f"  DATUM open frontier  : {len(datum_open)}개  {datum_open}")
+    _line(f"  핵심 실증게이트      : q_drf_vs_bestfit (D3⭐, best-fit 21~62% 은폐 — DRF 가 노출)")
+    n_prog = sum(1 for nd in BLOOM_NODES if nd['verdict'] in ('progressive', 'CANONICAL'))
+    partials = [nd['tag'] for nd in BLOOM_NODES if nd['verdict'] == 'partial']
+    rej = [nd['tag'] for nd in BLOOM_NODES if nd['verdict'] == 'rejected']
+    _line(f"  진보 노드(DATUM)     : {n_prog}  ← CANONICAL 미획득=정직(정본 진보 아직 없음).")
+    _line(f"  측정 마디(DATUM)     : partial {partials} + rejected {rej}")
+    _line(f"  D1 CAD 추출          : 평면 1862 병합 ✅ / 직교 triple 0 → GD&T 도면 datum 필요(음)")
+    _line(f"  D2~D4 instrument     : synthetic PASS (복원 max_dev 0.0 · 은폐 실증 · 노이즈 σ0.021mm)")
+    _line(f"  → 관문 D5(실부품)    : zdf datum-면 추출기(SX3i 분기B 공유) + GD&T 도면 datum 대기")
+    _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
+
+    # ── D3 실데이터 grounding (엔진 _evidence 계약 검증 — 자기채점 차단) ──
+    real = ground_real_records()
+    _line('\n' + '─' * 72)
+    _line('  D3⭐ exposes_hidden_error — 실데이터 grounded 레코드 (synthetic→real, 엔진 검증)')
+    for r in real:
+        _line(f"  [{r['status']}] {r.get('branch')}: {r['metric']}={r['measured']} {r.get('unit','')}")
+        for fb in (r.get('findings') or []):
+            _line(f"       · {fb}")
+    n_grounded = sum(1 for r in real if r['status'] == 'GROUNDED')
+    _line(f"  → 엔진 수용 {n_grounded}/{len(real)} (verdict 금지·사전등록·grounded 통과). "
+          f"D3 verdict=partial 유지(도면 datum·CMM 미정 → progressive 아님=정직).")
+    _line('\n' + '═' * 72)
+    return dict(metrics=m, bloom_at=BLOOM_AT, open_frontier=datum_open, closed_frontier=datum_closed,
+                datum_progressive=n_prog, datum_partial=partials, datum_rejected=rej,
+                canonical=m['canonical'], real_records=real, n_grounded=n_grounded)
+
+
+if __name__ == '__main__':
+    run()

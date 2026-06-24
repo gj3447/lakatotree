@@ -23,6 +23,7 @@ from lakatos.quant.metrics import tree_metrics
 from examples.bpc_icp_programme import NODES as BPC_NODES, FRONTIER as BPC_FRONTIER
 from examples import sx3i_icp_programme as sx3i
 from examples import lx3_icp_programme as lx3
+from examples import datum_programme as datum
 
 TITLE = '3D 형상 검출 (3D-shape detection from 3D data)'
 
@@ -33,9 +34,9 @@ HARD_CORE = [
     '3) precision ≠ accuracy — 정합 self-consistency 는 정확도 증거가 아니다(독립검증 필요).',
 ]
 
-# 한 그루의 나무: 줄기(BPC) + 두 개의 개화 가지(SX3i, LX3).
-UNIFIED_NODES = BPC_NODES + sx3i.BLOOM_NODES + lx3.BLOOM_NODES
-UNIFIED_FRONTIER = BPC_FRONTIER + sx3i.BLOOM_FRONTIER + lx3.BLOOM_FRONTIER
+# 한 그루의 나무: 줄기(BPC) + 세 개의 개화 가지(SX3i, LX3, DATUM).
+UNIFIED_NODES = BPC_NODES + sx3i.BLOOM_NODES + lx3.BLOOM_NODES + datum.BLOOM_NODES
+UNIFIED_FRONTIER = BPC_FRONTIER + sx3i.BLOOM_FRONTIER + lx3.BLOOM_FRONTIER + datum.BLOOM_FRONTIER
 
 
 def _line(c=''):
@@ -52,7 +53,7 @@ def run():
 
     _line('═' * 72)
     _line(f'  {TITLE}')
-    _line('  BPC 줄기 + SX3i·LX3 개화 가지 — 한 그루의 나무')
+    _line('  BPC 줄기 + SX3i·LX3·DATUM 개화 가지 — 한 그루의 나무')
     _line('═' * 72)
 
     _line('\n[Hard core] 세 부품 공유 (반증불가)')
@@ -64,6 +65,7 @@ def run():
     _line(f"  통합 정본(CANONICAL) : {m['canonical']}  (BPC v8 — 유일하게 공차이하 확증된 마디)")
     _line(f"  SX3i 개화 마디       : {sx3i.BLOOM_AT}  → step 6.1(precision≠accuracy) 을 sub-0.1mm 로")
     _line(f"  LX3  개화 마디       : {lx3.BLOOM_AT}  → markerless CAD-anchor 측면 분기")
+    _line(f"  DATUM 개화 마디      : {datum.BLOOM_AT}  → 마커없이 CAD GD&T datum(3-2-1 DRF) 정합 (3번째 프레임)")
 
     _line('\n[가지별 상태 — 정직한 성숙도]')
     sx3i_open = [q for q in sx3i.BLOOM_FRONTIER if q['status'] == 'OPEN']
@@ -77,6 +79,11 @@ def run():
           f"C1=PARTIAL, C1b denoise-salvage 반증 → 재촬영/markerless 분기(open frontier {len(sx3i_open)}).")
     _line(f"  LX3  : 실측 — progressive {lx3_prog} (R&R σ 37µm), "
           f"degenerating {lx3_degen} (auto-path ceiling + collapse 재확인).")
+    datum_open = [q for q in datum.BLOOM_FRONTIER if q['status'] == 'OPEN']
+    datum_partial = [n['tag'] for n in datum.BLOOM_NODES if n['verdict'] == 'partial']
+    datum_rej = [n['tag'] for n in datum.BLOOM_NODES if n['verdict'] == 'rejected']
+    _line(f"  DATUM: 계측기 검증(synthetic) — partial {datum_partial}, rejected {datum_rej}. "
+          f"D2~D4 DRF instrument PASS·D3⭐ best-fit 21~62% 은폐 실증, D5 실부품 OPEN(frontier {len(datum_open)}).")
 
     _line('\n[통합 지표]')
     _line(f"  frontier 수지        : {m['laudan']['frontier_balance']}  (closed {m['frontier']['closed']} − open {m['frontier']['open']})")

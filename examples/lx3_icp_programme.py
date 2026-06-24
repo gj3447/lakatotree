@@ -11,9 +11,10 @@ BPC 와 같은 fiducial 정합 계열로 복귀(과거 "마커 不在" 가정 �
   - (2026-05-18) GROUND_TRUTH self-verify R&R σ=36.8µm, AIAG MSA P/T 22.08% 🟢ACCEPTABLE — BPC-grade σ(progressive).
   - (markerless 자동경로) ceiling: HALCON SurfaceMatch=license blocked, ArUco init=data missing(degenerating).
   - (markerless ICP) 28pair rmse 4.35-5.77mm = identity-init basin = BPC free-ICP collapse 재확인(degenerating).
-  - ★(2026-06-22 ArUco-턴테이블, LX3RT MIP_36H12) 검출 classic 101/121 → 보정(nlm+2× upscale) 119/121뷰,
-    최대 연결성분 115/121(DeepArUco++ 보강중) = 막혀있던 "ArUco init data" enabler 확보(progressive).
-    단 정합 *정확도* sub-mm 미측정(OPEN) — 검출커버리지 ≠ 정확도(가짜green 금지).
+  - ★(ArUco-턴테이블, LX3RT MIP_36H12) 검출 = 2026-06-24 grounded **progressive**. 정정 3겹: 옛 "119/121"의 COUNT 은
+    buggy read_rgb 가 SNR 맵을 색으로 오선택한 노이즈였고 / 그 다음 "markers≈0 하드한계" 판정은 brightening 미적용 탓 /
+    **진실**=고친 색프레임+gamma0.4+CLAHE+default 로 24뷰중 23뷰·≥3뷰반복 MIP_36H12 ID 10종·side_px 60px(육안확인).
+    어두움=전처리로 풀리는 문제지 하드한계 아님. enabler CLOSED(검출). 단 정합 *정확도* sub-mm 는 OPEN(검출≠정확도).
   - ★(2026-06-23 grounded, q_lx3_aruco_accuracy OPEN 유지): 정합 LSQ=FAILED(id-collision로 8마커/14쌍 starved,
     LM degenerate·precision 1193mm 발산); 독립 부시-vs-CAD 정확도=측정됐으나 OVER_TOL(FRT거리 -2.34mm>±1.0mm,
     더구나 단일 정면station=ArUco 정합 우회). precision(반복도 0.19mm)≠accuracy. → 가짜green 금지, OPEN 정직.
@@ -51,23 +52,36 @@ BLOOM_NODES = [
                '5-gate: G1 rigid / G2 hole-align / G3 local-min audit / G4 signed-dist / G5 noise-floor.',
        limitation='B_LH 0.999→1.067mm tol-경계 flip = gauge 위태(σ shift 시 verdict 뒤집힘).'),
 
-    # ★2026-06-22 ArUco-턴테이블 정합 가지 — markerless 천장의 "ArUco data missing" enabler 를 닫음
-    _n('lx3_aruco_turntable', 'progressive', 'lx3_prob', m=None, scope='registration',
+    # ★2026-06-24 grounded(검출) — ArUco-턴테이블 마커는 brightening 으로 실재·검출됨(progressive)
+    _n('lx3_aruco_turntable', 'progressive', 'lx3_prob', m=4.2, scope='detection',
        nr=True, nc=True, q=['q_lx3_enabler'],
-       comment='ArUco-턴테이블 정합 경로(LX3RT_20260622, MIP_36H12). 막혀있던 "ArUco init data missing"'
-               '(lx3_auto_path_ceiling) enabler 를 닫음: 마커 검출 classic 101/121뷰 → 보정(nlm denoise '
-               '+ 2× upscale) 119/121뷰, 최대 연결성분 115/121(멀티뷰 정합그래프 연결). DeepArUco++(MIP_36H12 '
-               '학습) 어려운 뷰 보강중. novel=턴테이블 fiducial 이 연결된 멀티뷰 정합그래프 산출(confirmed).',
-       limitation='검출 커버리지/그래프 연결만 grounded. 정합 *정확도* sub-mm(±1.0mm)는 미측정=OPEN '
-                  '(q_lx3_aruco_accuracy). 검출≠정확도. ⚠️DeepArUco GPU=타워 Blackwell(sm_120)↔CUDA11.7 '
-                  '비호환(torch cu117 garbage) → CPU+다운스케일로만 신뢰. '
-                  '★2026-06-23 known-3° 단일축 턴테이블 LSQ 정합 시도=FAILED(grounded, lx3_turntable_register_'
-                  '20260623.json): 134 robust-3D center/80 id 중 ≥2뷰 32 id이나 24개가 3D span>1.4m '
-                  '(=1.3m 회전체에 단일 물리마커로 불가능) → MIP_36H12 id-collision/오검출, 같은 id가 같은 '
-                  '물리마커 아님. id-collision gate 후 8 마커/14 view-pair(<30 임계)로 starved, LM 해는 '
-                  'degenerate(축 95m밖·precision 1193mm 발산=신뢰 0, accuracy로 보고 금지). 병목=검출/대응'
-                  '(solver 튜닝 아님): 멀티뷰 id 대응이 도장된 캐스팅에서 비신뢰 → geometry-gated id matching '
-                  '(RANSAC) 또는 마커-무관 부시 fallback 필요.'),
+       comment='ArUco-턴테이블 정합 경로(LX3RT_20260622, MIP_36H12). 정정 이력: (1) 옛 "119/121 검출, id-collision"의 '
+               'COUNT 은 buggy read_rgb(b09b2b2)가 SNR 맵을 색으로 오선택한 노이즈(무작위 ID→>1.4m span)였음. '
+               '(2) 그 다음 "markers≈0 하드한계" 판정도 틀림 — brightening 미적용 탓. (3) **grounded 진실**(고친 색프레임 '
+               '+ gamma0.4+CLAHE + default params): 24뷰 중 23뷰 검출·평균 4.2/뷰·**≥3뷰 반복 MIP_36H12 ID 10종**'
+               '(8,28,31,76,109,123,159,173,197,248)·side_px median 60.5px, 오버레이 육안확인. 턴테이블 회전에 같은 ID 가 '
+               '반복=실 마커(노이즈 아님). 어두운 씬(mean≈10/255)은 **전처리로 풀리는 문제지 하드한계 아님**(사용자 지적 정확). '
+               'grounded record=evidence/lx3_aruco_detect_refixed_20260624.json.',
+       limitation='검출만 grounded. 정합 *정확도* sub-mm(±1.0mm)는 미측정=OPEN(q_lx3_aruco_accuracy) — 옛 turntable LSQ 는 '
+                  '리더 노이즈 위에서 돌아 FAILED 였으니 corrected 검출로 재실행 필요. 수율 modest(4/뷰)라 노출↑ 재촬영이 '
+                  '강건성엔 도움되나 필수 아님. ⚠️relaxed params/equalize 는 FP 과증폭(100+/뷰) — default+gamma/CLAHE 만 신뢰.'),
+
+    # ★2026-06-24 결정타 — dict 정정: 마커는 MIP_36H12 아니라 DICT_4X4_250 (lx3_aruco_turntable 의 dict 식별 정정)
+    _n('lx3_aruco_dict4x4', 'progressive', 'lx3_aruco_turntable', m=61.0, base=8.0, scope='registration',
+       direction='higher', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
+       comment='lx3_aruco_turntable 가 "마커 실재"는 맞췄으나 **dict 를 MIP_36H12 로 오식별**했다. 진짜 dict = '
+               '**DICT_4X4_250**. 비트단위 증거(반박불가): v60 실 마커를 정사영 보정→6×6 샘플 시 테두리 전부 검정(4×4 ArUco '
+               '요건)이고 내부 4×4 비트가 표준 DICT_4X4_250 id56 과 **완전 동일** [[0,1,1,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]] '
+               '(evidence/lx3_marker_dict4x4_proof_20260624.png 패널·6×6 MIP id109 와 시각적으로 명백히 다름). MIP 의 "반복 ID '
+               '8,109,123,…"은 6×6 디코더가 4×4 마커를 체계적으로 오독한 것 → 바로 그래서 3D 상 >1m 흩어진 "id-collision". '
+               'DICT_4X4_250 로는 cross-source Jaccard 0.81(=SX3i 정상대조군급)·121뷰 2195 안정검출. detect_lift_4x4.py(decoder '
+               'color)→lx3_turntable_register: n_markers_usable 8→61, view-pair 제약 starved(<30)→43867, success False→True. '
+               '정본 evidence/aruco_via_zivid_sdk_verdict_20260624.md (Zivid SDK 2.17.2 타워빌드, env zivid).',
+       limitation='정밀도 미해결(q_lx3_aruco_accuracy OPEN, 가짜green 금지): precision_rmse 429mm·최선 단일마커 클러스터 18mm. '
+                  '원인은 더 이상 dict/검출 아님 — ①DICT_4X4_250 도 id-collision(같은 id 가 부품 여러 물리위치, 특히 회전축 X '
+                  '방향=un-rotate 불변) ②흰 마커면 Zivid 3D 리턴 약함(~18mm 중심노이즈). 다음 수=marker-free 축(turntable_full)으로 '
+                  'un-rotate 후 per-id 공간클러스터(collision 분리)+코너 plane-fit 리프트. 3D-direct 밀집정합(CAD fitness0.72)이 '
+                  '정밀도 더 견고 → corrected ArUco 는 init/검증용. 단 enabler(검출)는 재촬영 없이 기존 lot 에서 확보됨.'),
 
     # 퇴행 가지(보존) — BPC 줄기 hard-core 재확인 + markerless 자동경로 한계
     _n('lx3_identity_basin', 'degenerating', 'lx3_prob', m=4.35, base=None,
@@ -77,8 +91,8 @@ BLOOM_NODES = [
     _n('lx3_auto_path_ceiling', 'degenerating', 'lx3_cylinder_fit', m=25.0, base=0.39,
        comment='markerless 자동 정합 경로 ceiling: production pipeline 4/6 valid, pos_dev 25-42mm(voxel5 '
                'sparse). proper full-surface scan↔CAD anchor transform 부재 → software-only 천장.',
-       limitation='HALCON SurfaceMatch = license blocked. (ArUco init = data missing 절은 2026-06-22 해소: '
-                  'LX3RT 턴테이블 MIP_36H12 데이터 확보 → lx3_aruco_turntable.) markerless 천장 기록으로 보존.'),
+       limitation='HALCON SurfaceMatch = license blocked. (ArUco init data 는 2026-06-24 grounded 확보 — 고친 색프레임 '
+                  '+ brightening 으로 실 마커 검출, lx3_aruco_turntable progressive.) markerless 천장은 그 대안경로로 보존.'),
 ]
 
 # ── LX3 frontier (Laudan open/closed) ────────────────────────────────────────
@@ -87,9 +101,23 @@ BLOOM_FRONTIER = [
          body='GROUND_TRUTH R&R 이 AIAG MSA(±1.0mm) ACCEPTABLE 인가 → 22.08% 🟢'),
     dict(name='q_lx3_enabler', status='CLOSED', closed_by=['lx3_aruco_turntable'],
          body='정합 enabler: HALCON SurfaceMatch license OR ArUco init data — 둘 중 하나 확보. '
-              '→ 2026-06-22 ArUco init data 확보(LX3RT MIP_36H12 턴테이블, 검출 119/121뷰·연결성분 115).'),
+              '★2026-06-24 grounded: ArUco init data **확보(YES)** — 고친 색프레임 + brightening(gamma0.4+CLAHE)으로 '
+              '실 마커 검출(23/24뷰, ≥3뷰 반복 ID, side_px 60px, 육안확인). 옛 "119/121"은 reader 노이즈였고 '
+              '중간의 "markers≈0"도 brightening 미적용 탓이었음 — 마커는 실재. '
+              '★★2026-06-24 dict 정정(lx3_aruco_dict4x4): dict 는 MIP_36H12 아니라 **DICT_4X4_250**(비트단위 증거 — '
+              '실마커 4×4 비트가 표준 id56 과 완전동일). enabler(검출) CLOSED 는 유지되나(마커 실재 확정), 올바른 dict 로 '
+              '재검출 시 121뷰 2195 안정검출·Jaccard 0.81. (정합 *정확도*는 별 frontier q_lx3_aruco_accuracy.)'),
     dict(name='q_lx3_aruco_accuracy', status='OPEN', closed_by=None,
-         body='ArUco-턴테이블 정합이 sub-mm(±1.0mm) 정확도를 다는가. **OPEN 유지** — 2026-06-23 grounded '
+         body='ArUco-턴테이블 정합이 sub-mm(±1.0mm) 정확도를 다는가. **OPEN 유지**. '
+              '★★2026-06-24 결정타(lx3_aruco_dict4x4): 진짜 병목은 reader 도 노출도 아니라 **ArUco DICT** 였다. '
+              '마커 = DICT_4X4_250(MIP_36H12 아님) — 비트단위 증거(실마커 4×4 비트가 표준 id56 과 완전동일, '
+              'evidence/lx3_marker_dict4x4_proof_20260624.png). MIP 의 "반복 ID/id-collision"은 6×6 디코더가 4×4 마커를 '
+              '오독한 것. 올바른 dict 로 재실행: detect_lift_4x4.py→lx3_turntable_register **success False→True, '
+              'n_markers_usable 8→61, 제약 <30→43867**(검출/대응 병목 해소). 그러나 정확도는 아직 OPEN — '
+              'precision_rmse 429mm(최선 단일마커 18mm): 잔존 원인은 dict 아님 = ①DICT_4X4_250 내부 id-collision(축 X 방향 '
+              '동일 id 복수) ②흰 마커면 3D 리턴 약함(~18mm). CLOSE 조건=marker-free 축 un-rotate+collision 분리+코너 '
+              'plane-fit 로 부시(독립피처) sub-mm. (이하 2026-06-23/이전 기록은 dict 오식별·오염입력 위에서 쓰임 — 보존·맥락용) '
+              '— 2026-06-23 grounded '
               '측정 2건이 둘 다 닫지 못함: '
               '(1) 정합 자체 FAILED(lx3_turntable_register_20260623.json): known-3° 단일축 LSQ가 '
               'id-collision으로 starved(32 멀티뷰 id 중 24개 span>1.4m=오검출, 잔여 8마커/14쌍<30; LM '
@@ -128,7 +156,13 @@ def run():
     _line('═' * 72)
     _line(f"\n  피어나는 마디        : {BLOOM_AT} (초기 markerless 측면분기 → 2026-06-22 ArUco-턴테이블 피벗)")
     _line(f"  통합 트리 정본       : {m['canonical']}  (LX3 정합정확도 미측정 → 통합 정본은 BPC v8 유지, 정직)")
-    _line(f"  LX3 진보 노드        : {lx3_prog}  (R&R σ 37µm + ArUco-턴테이블 enabler 확보)")
+    _line(f"  LX3 진보 노드        : {lx3_prog}")
+    _line("  ★2026-06-24 grounded : 옛 '119/121'은 reader SNR-노이즈였으나, 고친 색+brightening(gamma/CLAHE)으로 실 MIP_36H12")
+    _line("                         마커 검출(23/24뷰·≥3뷰반복 10종·side_px 60px, 육안확인) → 어두움=전처리문제지 하드한계 아님.")
+    _line("                         enabler CLOSED(검출). 정합 정확도는 q_lx3_aruco_accuracy OPEN(corrected 검출로 재측정).")
+    _line("  ★★2026-06-24 dict정정 : 마커 dict = DICT_4X4_250 (MIP_36H12 오식별, 비트단위 증거). 올바른 dict 재실행 →")
+    _line("                         turntable_register success False→True·usable 8→61·제약 <30→43867. 단 precision 429mm")
+    _line("                         (id-collision+흰면 3D약) = 정확도 OPEN. lx3_aruco_dict4x4 (progressive).")
     _line(f"  LX3 퇴행 노드        : {lx3_degen}  ← markerless identity-basin = BPC collapse 교훈 재확인")
     _line(f"  frontier 수지(통합)  : {m['laudan']['frontier_balance']}  (closed−open)")
     _line('\n' + '═' * 72)

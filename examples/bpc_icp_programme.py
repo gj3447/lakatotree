@@ -37,9 +37,9 @@ NODES = [
     _n('prob_statement', 'canonical_stage', None,
        comment='20 BPC 뷰 metric 정합 → DC375 검사 sub-1mm', algo='problem'),
     _n('aruco_metric', 'progressive', 'prob_statement', m=1.60, base=12.0,
-       nr=True, nc=True, q=['q_markerless_reuse'],
+       nr=True, nc=True, q=['q_markerless_reuse', 'q_aruco_rgb_buffer_confound'],
        comment='ArUco shared-marker Kabsch+BA — 21뷰 1 connected component',
-       limitation='격자이웃≠마커공유, dup-ID 가짜다리 주의'),
+       limitation='격자이웃≠마커공유, dup-ID 가짜다리 주의. ⚠검출 RGB원천=prismv2 자작 read_rgb(SDK無 역공학) → q_aruco_rgb_buffer_confound 미변별'),
     _n('frozen_calib_reuse', 'progressive', 'aruco_metric', m=1.026, base=1.60,
        nr=True, nc=True, q=['q_crosslot'],
        comment='board calib 동결→markerless lot 직접 T_view_to_world 재사용(0040→0049 1.384→1.026)',
@@ -99,6 +99,17 @@ NODES = [
     _n('spurious_90lock', 'rejected', 'aruco_metric',
        comment='dup-marker 가짜다리 → spurious 90° lock',
        limitation='dup ID 가 BA collapse 연료 → 기각'),
+
+    # ── 2026-06-24 궤도: SEG→SEM 라벨 partition A-D 검증 (생산 라벨링 무결성) ──
+    _n('seg_sem_partition', 'partial', 'v8_pipeline', nr=True, nc=False, q=['q_seg_sem_canonical'],
+       comment='instance seg(COCO overlap) → 1-of-N semantic partition A-D 검증(scripts/seg2sem_partition_remap.py 등). '
+               'CAD-geom 으로 메커니즘 CONFIRMED: C1 whole(BPC) footprint 가 part feature 168/168 포함(dual-membership '
+               '38205px), C2 argmax remap 후 multi-membership 37824→0px, C3-a 2D CC instance==CAD count 5/5클래스(delta0), '
+               'z-layer 19 CAD vs 1 2D CC=다층 2D 불가(천장). evidence/seg_overlap_iou_matrix_20260624.json + '
+               'seg_vs_sem_zlayer_separability_20260624.json (적대검증 confirmed, 무커밋).',
+       limitation='정식 hand-label IoU(C1 canonical)·v3 모델 CC회수 비교(C3-a)·3D-fusion 회귀(C3-c)는 BLOCKED — '
+                  'COCO 라벨/가중치가 이 타워 아닌 diamondperl(/mnt/hdd/kjra) 에 있음(rsync 필요). 즉 메커니즘은 CAD-geom '
+                  '확증, 데이터-사실 검증 미완. precision≠accuracy: 전부 CAD-nominal raster self-consistency(GT==CAD).'),
 ]
 
 FRONTIER = [
@@ -109,8 +120,16 @@ FRONTIER = [
     dict(name='q_dc375_tol', status='OPEN', body='interior 0.90mm 가 DC375 공차 T0 에 충분한가', closed_by=None),
     dict(name='q_outer004', status='OPEN', body='OUTER_004 분기 — outer hole 검출 커버리지', closed_by=None),
     dict(name='q_washer_step', status='OPEN', body='washer step +0.83mm 진짜인가 artifact 인가', closed_by=None),
+    dict(name='q_aruco_rgb_buffer_confound', status='OPEN',
+         body='ArUco 검출오염 원인 미변별(confound). 검출은 prismv2 자작 zdf_reader.read_rgb(Zivid SDK 없는 역공학 파서)가 뽑은 organized RGBA 위에서 돌렸다. evidence는 "stripe-light 오염 = 캡처문제(Settings2D 누락)"로 단정했으나, "SDK 없이 잘못된 버퍼를 추출"하는 경쟁가설을 깨끗이 배제하지 못함 — 두 가설(캡처설정 vs 파서버퍼)이 안 갈렸다(crucial experiment 미수행). 변별법: ①Zivid SDK 정식 read로 같은 zdf의 RGBA 추출해 read_rgb와 바이트/통계 비교 ②Settings2D 포함 정상캡처 재현해 stripe 사라지는지 ③알려진-정답 zdf로 read_rgb 디코드 검증(side/stride/PRGB·RB스왑). 2026-06-24 사용자 지적, 발원 [[lx3-laptop-zivid-prismv2-conn]] read_rgb 역공학.',
+         closed_by=None),
     dict(name='q_recipev2_gicp_risk', status='OPEN',
          body='GICP collapse 노출은 GATED/LATENT(정상 현장=노출0). 게이트=_should_concat_by_transform(stage_merge.py): views camera_transform real(FS2 dimconfig frozen pose)면 concat_by_transform(frozen,safe), all-identity(mock/FS2 unwired)면 legacy GICP merge_handles. 또 Branch0 verdict(per-view frozen)는 merge cloud와 독립이라 backend 무관. 노출=이중fault((a)FS2 unwired→silent GICP merge ∧ (b)Branch0 fail(bundle無)→RecipeV2가 GICP cloud로 verdict). 미티게이션 ✅LANDED(ooptdd RED→GREEN, prismv2 develop 8549900): concat→GICP silent fallback 시 BPC면 구조화 event merge.gicp_fallback_bpc 방출(stage_merge.py). LTDD: RED=airo_trace L3 oo 라운드트립 미방출 FAIL→GREEN=assert_trace oo 도착확인(C3 구조화). 동작불변·알람만',
+         closed_by=None),
+    dict(name='q_seg_sem_canonical', status='OPEN',
+         body='SEG→SEM partition 이 정식 hand-label IoU·v3 모델 CC회수·3D-fusion 회귀에서도 검증되는가. '
+              'CAD-geom 메커니즘은 CONFIRMED(seg_sem_partition) but canonical 데이터검증 BLOCKED: COCO/가중치 '
+              'diamondperl /mnt/hdd/kjra rsync 필요. (read_rgb 버퍼버그와 별건 — BPC 는 다른 stride 이슈.)',
          closed_by=None),
 ]
 
