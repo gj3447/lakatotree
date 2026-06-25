@@ -392,15 +392,15 @@
           "2026-06-17 VFQZ",
           "2026-06-18 VFRZ"
         ],
-        "board": "없음 (markerless 생산; VFQZ0040 마커 0개 실측)",
-        "calib": "MISSING — 보드 재촬영 필요",
-        "status": "측정불가: group-A calib 적용 시 garbage (VFQZ 컵 boss_h 캡처간 8mm 출렁·BIG_04 −35mm). 현 group-B 결과 전부 신뢰불가."
+        "board": "생산은 markerless(VFQZ0040 마커 0개)이나 보드는 VFQZ0016~0024 lot 에 존재(20/21뷰·~99 ArUco ids)",
+        "calib": "RESOLVED 2026-06-25 (group_b_calib_resolve): 기존 VFQZ0016~0024 보드로 재솔브, 재촬영0 (marker rms 0.266mm·seam 1.001mm base calib). gross NG 충분, <1mm 정밀엔 z-chain 추가 필요.",
+        "status": "cross-era(group-A calib) 적용 시 garbage (boss_h 캡처간 8mm 출렁·BIG_04 −35mm) = 게이트 발동 근거. ★RESOLVED 2026-06-25: group-B calib 재솔브로 BIG_04 −35.43→−5.22 복원·σ≤0.21mm; 철회분 재측정 batch(gbbatch) 진행 중."
       },
       "other": {
         "2026-06-22 LX3RT": "다른 부품(consumer_c 서브프레임), consumer_b calib 무관"
       },
       "gate_rule": "lot capture_date > 2026-06-16 AND calib=group-A → 측정거부 (CALIB_GEOMETRY_GATE_PATCH_20260624.md)",
-      "fix": "GROUP_B_CALIB_BOARD_RECAPTURE_SPEC_20260624.md (현장 보드 1회 재촬영 → calib 체인 재솔브)"
+      "fix": "GROUP_B_CALIB_BOARD_RECAPTURE_SPEC_20260624.md — ★SUPERSEDED 2026-06-25: 재촬영 불필요(기존 VFQZ0016~0024 보드로 재솔브). evidence c3_groupB_calib_solved_20260625.md"
     }
   }
 }
