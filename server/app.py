@@ -639,7 +639,8 @@ def agm_revise(req: AgmReviseIn):
         elif req.op == 'demote_canonical':
             if not (req.new and req.old_canonical_id):
                 raise HTTPException(422, 'demote_canonical 은 new + old_canonical_id 필수')
-            r = demote_canonical(base, req.old_canonical_id, _belief(req.new))
+            r = demote_canonical(base, req.old_canonical_id, _belief(req.new),
+                                 allow_hard_core=req.allow_hard_core)
         else:
             raise HTTPException(422, f'미지원 op: {req.op} (expansion|contraction|revision|demote_canonical)')
     except HardCoreProtected as e:
