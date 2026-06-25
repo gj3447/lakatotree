@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,19 +20,14 @@ def _enforce_ontology(tree_data: dict, node: NodeIn) -> None:
 
     entity_type = node.algorithm(노드의 방법/종류), attrs = 노드 필드. 위반 시 422 (미선언 엔티티
     drift / 필수 속성 누락 / 값 위반). '선언만 받던' domain-ontology foundation 에 teeth 를 준다."""
-    raw = tree_data.get("ontology")
-    if not raw:
-        return
-    try:
-        spec = json.loads(raw) if isinstance(raw, str) else raw
-    except (ValueError, TypeError):
-        return   # 무효 온톨로지 *선언* 자체의 검증은 별도(여기선 강제만)
-    onto = DomainOntology.from_spec(spec)
+    onto = DomainOntology.from_json(tree_data.get("ontology"))
     if onto is None:
         return
     entity = (node.algorithm or "").strip()
     if not entity:
-        return   # algorithm 없는 구조/루트 노드는 엔티티-온톨로지 면제
+        if onto.require_entity:
+            raise HTTPException(422, "온톨로지 strict(require_entity): 노드가 entity(algorithm) 미선언")
+        return   # algorithm 없는 구조/루트 노드는 면제(require_entity 아닐 때)
     viols = onto.violations(entity, node.model_dump())
     if viols:
         raise HTTPException(422, f"온톨로지 위반(entity={entity}): {viols}")
