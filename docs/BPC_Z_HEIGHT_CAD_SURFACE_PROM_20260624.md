@@ -295,5 +295,10 @@ The "Required BPC Z Guards" contract is implemented as a fail-closed gate:
   `out/dual_z_frame_gate_v1.md` (aruco_v3 NORMAL vs v15_xmirror SHIFTED_22MM); it hermetic-skips when
   that external evidence is absent (clean-clone reproducibility preserved).
 - This PIERCES Longinus binding `BPC.ZHeightCadSurfaceFailureMode`.
-- Still open (separate CANDIDATE binding `BPC.ZLayerNegativeControlsExecuted`): the six negative
-  controls below must be *executed* with expected-fail outcomes, not just declared.
+- Negative controls now *executed* (binding `BPC.ZLayerNegativeControlsExecuted`, PIERCED): all six
+  known-bad scenarios below yield expected-fail through `judge_z_height`
+  (`tests/test_z_layer_negative_controls.py`, 9 tests) — wrong-layer and mirrored-frame anchored to real
+  BPC evidence; full prismv2-pipeline perturbation runs remain a deeper frontier.
+- The irreducible open ceiling (binding `BPC.ExternalTraceableAccuracyOpen`, CANDIDATE): no branch has
+  external traceable accuracy — every "precision" is self-consistency or scan-reconstructed CAD nominal,
+  never a traceable CMM/CT. Stays open until a physical traceable measurement exists.
