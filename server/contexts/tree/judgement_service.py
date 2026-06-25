@@ -202,7 +202,8 @@ class JudgementService:
             if viols:
                 raise HTTPException(422, f"metric 온톨로지 위반: {viols}")
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                  WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
+                  WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted')
+                        AND e.pred_registered_at IS NULL
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                       e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
                       e.pred_scale_type=$scale_type,
