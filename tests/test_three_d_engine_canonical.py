@@ -6,13 +6,21 @@ record 0 = 라이브 판결 대상 아님). 반면 SX3i/LX3 = **진행중 연구
 → 엔진(record_judge)이 정본. 이 테스트가 통합 트리의 SX3i/LX3 측정노드 verdict == record_judge 를
 강제한다(= judged 정본 스왑의 enforcement; 손입력 드리프트가 들어오면 깨진다).
 """
-from examples.three_d_detection import UNIFIED_NODES
+from examples import three_d_detection as TD
 from examples import sx3i_engine_judged as SE
 from examples import lx3_engine_judged as LE
 
 
 def _unified():
-    return {n["tag"]: n["verdict"] for n in UNIFIED_NODES}
+    return {n["tag"]: n["verdict"] for n in TD.UNIFIED_NODES}
+
+
+def test_unified_tree_uses_sx3i_engine_branch_directly():
+    """SX3i 통합 입력 자체가 engine_judged branch 여야 한다. legacy 손입력 branch import 금지."""
+    assert TD.sx3i is SE
+    assert TD.sx3i.BLOOM_NODES == SE.BLOOM_NODES
+    by = {n["tag"]: n for n in TD.UNIFIED_NODES}
+    assert by["sx3i_prob"]["parent"] == "v8_pipeline"
 
 
 def test_sx3i_active_branch_matches_engine():
@@ -42,5 +50,5 @@ def test_bpc_trunk_remains_pinned_history_canonical():
     """BPC = 정착 연구사 핀(정당). v8_pipeline 단독 CANONICAL = 통합 정본."""
     u = _unified()
     assert u["v8_pipeline"] == "CANONICAL"
-    canon = [n["tag"] for n in UNIFIED_NODES if n["verdict"] == "CANONICAL"]
+    canon = [n["tag"] for n in TD.UNIFIED_NODES if n["verdict"] == "CANONICAL"]
     assert canon == ["v8_pipeline"], f"CANONICAL 은 BPC v8 단독이어야: {canon}"

@@ -23,6 +23,14 @@ NODES = [
      f"{EV}/lx3_aruco_register_precision_knownaxis_20260624.json", "measured"),
     ("lx3_cad_bush_nominal", "lx3_aruco_knownaxis_precision",
      f"{EV}/lx3_bush_nominal_lx3local_20260624.json", "measured"),
+    ("lx3_cmm_reference_available", "lx3_cad_bush_nominal",
+     f"{EV}/lx3_cmm_reference_20260624.json", "measured"),
+    ("lx3_lot_cmm_mapping", "lx3_cmm_reference_available",
+     f"{EV}/lx3_lot_cmm_mapping_20260624.json", "measured"),
+    # ★2026-06-25: ABCDE pair-only scan-vs-CMM sweep. This node judges the
+    # estimator path, not the physical LX3 part. Expected engine verdict=rejected.
+    ("lx3_pair_only_cmm_sweep", "lx3_lot_cmm_mapping",
+     f"{EV}/lx3_abcde_scan_cmm_board_20260625.json", "measured"),
     # ★2026-06-24: dict4x4 전용 grounded record 부여(dict정정 usable 마커 8→61) → 엔진판결화(measured).
     ("lx3_aruco_dict4x4", "lx3_aruco_turntable", f"{EV}/lx3_aruco_dict4x4_20260624.json", "measured"),
     # ↓ record 미정비(동시편집자 migration WIP) 또는 narrative — flag.

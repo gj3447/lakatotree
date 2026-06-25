@@ -78,3 +78,28 @@ def test_known_branches_bloom_at_declared_points():
         assert by['sx3i_prob']['parent'] == 'v8_pipeline'
     if 'lx3_prob' in by:
         assert by['lx3_prob']['parent'] == 'aruco_metric'
+
+
+def test_infield_systematic_lever_registered_and_honest():
+    """★2026-06-24 사용자 적대검증: XL250 systematic planarity 1.14mm(에러예산 74%·√N 면역)의 유일
+    보정 레버 infield_correction 이 no-op 인데, 세 정밀 floor(~1mm)가 전부 알고리즘 원인으로만 귀속돼
+    systematic 후보가 미검토였다. 이 레버 frontier 는 (a) 존재해야 하고 (b) 평탄도 before/after 실측
+    없이 조용히 CLOSED 되면 안 된다 — physics-vs-algorithm 분리 갭의 가짜green 재발 방지."""
+    q = next((x for x in F if x['name'] == 'q_zivid_infield_systematic'), None)
+    assert q is not None, 'q_zivid_infield_systematic(systematic 보정 레버) 가 사라짐'
+    if q['status'] == 'CLOSED':
+        assert q.get('closed_by'), 'q_zivid_infield_systematic CLOSED 인데 closer 없음(가짜green)'
+
+
+def test_multiplicity_families_split_by_metric_name():
+    """★gap8 다중비교: family 키 = (metric_name, scope). metric_name 누락(None) 시 거리·개수·무차원
+    이질 metric 이 한 family 로 뭉쳐 BH/FDR 통제가 미정의가 된다(multiplicity.py 자기경고 위반).
+    (a) 스크린에 드는 모든 노드(progressive/partial + metric + baseline)는 metric_name 을 가져야 하고
+    (b) 통합 트리 다중비교 경보에 None 키 family 가 없어야(이질 metric pooling 0)."""
+    screened = [n for n in N if n['verdict'] in ('progressive', 'partial')
+                and n.get('metric_value') is not None and n.get('pred_baseline') is not None]
+    missing = [n['tag'] for n in screened if not n.get('metric_name')]
+    assert not missing, f'다중비교 스크린 노드인데 metric_name 누락(family 붕괴): {missing}'
+    fams = tree_metrics(N, F).get('multiplicity') or {}
+    bad = [k for k in fams if k.startswith('None/')]
+    assert not bad, f'None metric_name family 잔존(이질 metric 한 family): {bad}'

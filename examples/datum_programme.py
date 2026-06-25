@@ -29,7 +29,13 @@ REAL_RECORDS = [
     f'{DATUM_EVID}/gdt_datum_designation_a110_20260624.json',  # 도면 datum A/B/C 전사(3출처 일치)
     f'{DATUM_EVID}/bestfit_vs_datum_real_lx3_20260624.json',   # LX3 실 lot: 부등식 + 은폐폭
     f'{DATUM_EVID}/verdict_flip_hunt_bpc_20260624.json',       # BPC 실 lot: verdict-flip 사냥
-    f'{DATUM_EVID}/d5_real_part_drf_lx3_20260624.json',        # D5: 실 2-캡처 도면-datum repro σ
+    f'{DATUM_EVID}/d5_real_part_drf_lx3_20260624.json',        # D5: 실 2-캡처 도면-datum repro σ(n=2 낙관)
+    f'{DATUM_EVID}/d5_realdata_bush_repeatability_20260624.json',  # D5 실 n=10 raw-zdf bush σ 0.30mm(band FAIL)
+    # bears_on q_real_part_drf 합류(LX3 ArUco): id-collision=wrong-dict/frame artifact 교정(Occam)
+    '/data/kjra/PROJECT/3D/LX3_ICP_SPEC/evidence/lx3_aruco_idcollision_correction_20260624.json',
+    # LX3 Occam 종합(precision/accuracy 갈라): 붕괴=3버그 증상, precision 풀림·accuracy OPEN
+    '/data/kjra/PROJECT/3D/LX3_ICP_SPEC/evidence/lx3_occam_precision_recovered_20260624.json',
+    '/data/kjra/PROJECT/3D/LX3_ICP_SPEC/evidence/lx3_occam_accuracy_open_20260624.json',
 ]
 
 
@@ -87,6 +93,7 @@ BLOOM_NODES = [
 
     # ── D2: 3-2-1 DRF instrument 강체 복원 — synthetic PASS ──
     _n('drf_instrument', 'partial', 'datum_prob', m=0.0, base=1e-6, nr=True, nc=False,
+       mn='datum_drf_recovery_maxdev',  # synthetic 강체복원 max_dev(무차원·거리 아님) — 자체 family
        q=['q_drf_recovers'],
        comment='3-2-1 DRF 구성기(scripts/datum_frame.py: build_drf/transform_between/deviate_in_drf). '
                '사전등록 band: 임의 강체 200회 비-datum max_dev < 1e-6mm. 실측 max_dev=0.0 ✅(순수 기하).',
@@ -109,6 +116,7 @@ BLOOM_NODES = [
 
     # ── D4: datum 면 노이즈 안정성 — synthetic PASS ──
     _n('noise_stability', 'partial', 'drf_instrument', m=0.0214, base=0.05, nr=True, nc=False,
+       mn='datum_frame_sigma_mm',  # datum-frame 위치 σ(mm, band 0.05) — real_part_drf 와 같은 구성 = 한 family
        q=['q_drf_noise'],
        comment='datum 면 다점 LS 적합 평균화 이득(test_datum_frame T4). 사전등록: σ_pt=0.05mm 300회 → '
                '원점 σ_o<0.05mm·tilt p95<0.5°. 실측 σ_o=0.021mm ✅, tilt p95=0.033° ✅.',
@@ -116,15 +124,20 @@ BLOOM_NODES = [
 
     # ── D5: 실부품 DRF 재현성 — 실 2-캡처 PARTIAL (도면 datum, σ 부분측정) ──
     _n('real_part_drf', 'partial', 'drf_instrument', m=0.0485, base=0.05, nr=True, nc=False,
+       mn='datum_frame_sigma_mm',  # datum-frame 재현 σ_p95(mm, band 0.05) — noise_stability 와 동일 구성 family
        q=['q_real_part_drf'],
        comment='실 2-캡처(GROUND_TRUTH trial_1·2) 도면 datum[A][B][C] DRF repro σ '
                '(scripts/d5_real_part_drf.py). datum σ_p95=0.0485mm < band 0.05 → PASS(경계). '
                'best-fit σ_p95=0.037 < datum 0.0485 → datum-target *점* anchoring 이 3 노이즈 점의 '
                'frame 노이즈 전파로 σ 키움 = 일방 datum-*면*(다점 평균)으로 가야 하는 동기. '
-               '합성 linearity self-test 통과(ratio 2.06). evidence/d5_real_part_drf_lx3_20260624.json.',
-       limitation='n=2 캡처=1-DOF 약추정. datum-면 평탄도 rms(raw-zdf datum-면 추출=SX3i 분기B 공유) + '
-                  '더많은 캡처 + 일방 tangent-plane DRF 미포함 → q_real_part_drf OPEN 유지(σ 부분만). '
-                  'trueness CMM 부재 UNVERIFIED.'),
+               '합성 linearity self-test 통과(ratio 2.06). evidence/d5_real_part_drf_lx3_20260624.json. '
+               '⚠️+2026-06-24 실 n=10 갱신(d5_realdata_bush_repeatability, LX3 팀 측정 grounding): raw-zdf '
+               'bush-center repeatability 3D σ=0.30mm >> 0.05 band = FAIL → **n=2 σ 0.0485(PASS)는 낙관**. '
+               '정확도도 abc_refuted(386mm, 턴테이블 단일축 물리한계). σ·accuracy 둘 다 현 데이터 band 미달.',
+       limitation='A110 datum=bush *점*(3-2-1 target)이라 datum_surface_extractor(평면)는 다른 용도(평면-datum 부품). '
+                  'bush 다점평균=circle/cylinder-fit(lx3_bush_touchsky 존재, 재구현無). 실 n=10 σ 0.30 band-fail+accuracy '
+                  'refuted → q_real_part_drf OPEN, **close=물리 재촬영(정면 multi-pose)이지 코드 아님**. DATUM≡LX3 '
+                  'q_lx3_aruco_accuracy(bush 물리문제 합류). trueness CMM 부재 UNVERIFIED. 음의결과 보존(plan §5).'),
 
     # ── 기각: best-fit 을 DRF 로 착각 (이 가지가 정립) ──
     _n('bestfit_as_drf', 'rejected', 'datum_prob',

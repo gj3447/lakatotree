@@ -13,7 +13,7 @@ SX3i 와 LX3 는 그 줄기의 특정 마디에서 피어난(bloom) 가지다.
           └─◆ LX3 가지: 초기 markerless(CAD surface-match) → 2026-06-22 MIP_36H12 ArUco
                  + 턴테이블(LX3RT) 피벗. markerless 자동경로 ceiling 은 음의분기로 보존
       + [degenerating: free_multiview_icp, pv6dof×3] ← 공통 실패교훈(LX3 가 재확인)
-      + [rejected: non_rigid_cpd, dup_id_90lock]      ← 공통 실패교훈(SX3i 가 상속)
+      + [rejected: non_rigid_cpd, free-hand under-constrained graph] ← 공통 실패교훈(SX3i 가 현재 노출)
 
 실행: python -m examples.three_d_detection
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from lakatos.quant.metrics import tree_metrics
 from examples.bpc_icp_programme import NODES as BPC_NODES, FRONTIER as BPC_FRONTIER
-from examples import sx3i_icp_programme as sx3i
+from examples import sx3i_engine_judged as sx3i
 from examples import lx3_icp_programme as lx3
 from examples import datum_programme as datum
 
@@ -49,6 +49,17 @@ TREE_FRONTIER = [
               'CMM/CT 로 측정해 GD&T 피처별 |scan_dim − CMM_dim| 산출, 공차 band 내(예: ≤0.10mm·k=2 불확도 포함)면 '
               'CLOSED. 그 전까지 hard-core #3 은 나무 전체에서 OPEN — 모든 가지 verdict 는 "정밀도까지"로 읽어야 한다. '
               '비고: best-fit 비보수성(D3 21~62% 은폐)은 이 천장을 더 낮춤 → DRF-locked 측정이 전제.'),
+    dict(name='q_zivid_infield_systematic', status='OPEN', closed_by=None,
+         body='★유일 보정 레버 미실행 — XL250 planarity 1.14mm = 거리·N 불변 systematic(에러예산 74%·√N 면역). '
+              '그 유일 레버 infield_correction 이 prismv2 config/zivid.py:478 에서 True 지만 '
+              'zivid_adapter._build_settings(166-300) 에서 미소비=no-op(장식용 플래그). 정황: 세 정밀 floor 가 전부 '
+              '~1.14mm 부근에 멈춤(BPC v8 0.90·LX3 known-axis 0.99·SX3i precision_floor 1.076mm) — 그런데 트리는 이를 '
+              '알고리즘 원인(삼각대 자유이동·self-cal 발산 등)으로만 귀속해 systematic 후보를 미검토. q_sx3i_precision_floor '
+              '의 √N 사전등록 예측은 systematic 앞에서 구조적으로 무력(평균내도 안 줄어듦). 사전등록 닫힘조건(측정 전 고정, '
+              'CMM/GPU/HALCON 불필요·최저비용·최고레버): 공식 Zivid 체커보드 standoff in-field 보정 적용 → 평탄 기준판 '
+              'planarity before/after 실측. <0.45mm 로 붕괴=세 floor 의 algorithm-vs-physics 분리·동시 재측정 트리거 / '
+              '1.14mm 유지=physics 바닥 확증(SX3i sub-0.1mm REJECT 정당화), q_external_trueness 천장과 합류. '
+              '발원 메모리 [[finding-infield-correction-dead-flag]].'),
 ]
 
 # 한 그루의 나무: 줄기(BPC) + 세 개의 개화 가지(SX3i, LX3, DATUM) + 나무 전체 frontier.
@@ -94,7 +105,8 @@ def run():
     lx3_degen = [n['tag'] for n in lx3.BLOOM_NODES if n['verdict'] == 'degenerating']
     _line(f"  BPC  : CANONICAL(v8 sub-1mm) — 줄기 확립. 미해소=interior CMM 미검증(step 6.1).")
     _line(f"  SX3i : 실측 — 진보 {len(sx3i_prog)}, partial {sx3i_partial}, degenerating {sx3i_degen}. "
-          f"C1=PARTIAL, C1b denoise-salvage 반증 → 재촬영/markerless 분기(open frontier {len(sx3i_open)}).")
+          f"C1 검출은 충분(전수 evidence 기준 side_px≈90px·마커보유뷰 170/211)이나, 현재 병목은 duplicate ID 가 아니라 "
+          f"free-hand shared-marker graph/coverage(C2 full assembly rejected)와 XL250 precision floor(open frontier {len(sx3i_open)}).")
     _line(f"  LX3  : 실측 — progressive {lx3_prog} (R&R σ 37µm), "
           f"degenerating {lx3_degen} (auto-path ceiling + collapse 재확인).")
     datum_open = [q for q in datum.BLOOM_FRONTIER if q['status'] == 'OPEN']

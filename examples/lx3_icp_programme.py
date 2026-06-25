@@ -75,6 +75,7 @@ BLOOM_NODES = [
     # ★2026-06-24 결정타 — dict 정정: 마커는 MIP_36H12 아니라 DICT_4X4_250 (lx3_aruco_turntable 의 dict 식별 정정)
     # ★엔진 reconcile(2026-06-24): 손입력 progressive → record_judge **partial**(dict4x4 record 부여 후 자동판결)
     _n('lx3_aruco_dict4x4', 'partial', 'lx3_aruco_turntable', m=61.0, base=8.0, scope='registration',
+       mn='lx3_markers_usable_count',  # 마커 *개수*(higher) — 거리 metric 과 다른 family (이질 metric 분리)
        direction='higher', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
        comment='lx3_aruco_turntable 가 "마커 실재"는 맞췄으나 **dict 를 MIP_36H12 로 오식별**했다. 진짜 dict = '
                '**DICT_4X4_250**. 비트단위 증거(반박불가): v60 실 마커를 정사영 보정→6×6 샘플 시 테두리 전부 검정(4×4 ArUco '
@@ -93,6 +94,7 @@ BLOOM_NODES = [
     # ★2026-06-24 독립검증 + 정밀도 grounded — corner 3D sub-mm 확정 + known-axis 정합 self-consistency 513mm→0.99mm
     # ★엔진 reconcile(2026-06-24): 손입력 progressive → record_judge **partial**(임계초과·novel 초과내용 없음)
     _n('lx3_aruco_knownaxis_precision', 'partial', 'lx3_aruco_dict4x4', m=0.99, base=513.4, scope='registration',
+       mn='lx3_register_selfconsistency_rms_mm',  # 정합 자기일관성 RMS(mm, lower) — 자체 family
        direction='lower', nr=True, nc=True, q=['q_lx3_aruco_accuracy'],
        comment='타워 Zivid SDK 2.17.2(소스빌드 cp39/cp310, OpenCL nvidia.icd OK) 깨끗한 rgba+gamma0.45+DICT_4X4_250 독립 '
                '재현: 121뷰 2088검출·60 distinct id·17.3마커/뷰(≈dict4x4 의 18/뷰, 강한 교차확인). **코너 3D sub-mm 확정**: '
@@ -124,6 +126,51 @@ BLOOM_NODES = [
                'grounded record=evidence/lx3_bush_nominal_lx3local_20260624.json.',
        limitation='정확도 *기준값*(CAD nominal)이지 정확도 *측정* 아님 — q_lx3_aruco_accuracy 닫으려면 '
                   'lx3_aruco_knownaxis_precision 포즈로 정합한 스캔 부시를 이 기준에 대보아야(±1.0mm). 기준은 이제 준비됨(ruler ready).'),
+
+    # ★2026-06-24 사용자 입력 CMM workbook — 외부 기준값 확보. 단 매핑/scan-vs-CMM trueness 는 아직 OPEN.
+    _n('lx3_cmm_reference_available', 'equivalent', 'lx3_cad_bush_nominal', m=5.0, base=5.0,
+       scope='external_reference', mn='cmm_specimen_count', direction='higher',
+       nr=True, nc=True, q=['q_lx3_cmm_mapping', 'q_lx3_external_trueness'],
+       comment='LX3 CMM reference record 확보(input/lx3/260622 LX3 FRT SEMI MODULE 인덱스별.xlsx). workbook 은 '
+               '스프레드시트 셀이 아니라 embedded report image 5장이라 수동 전사로 v1 record 화. provisional mapping: '
+               'image1..5 → CMM id 127..131. CMM sample count 5/5 로 external-trueness 작업의 기준값은 준비됨. '
+               'record_judge verdict=equivalent(기준값 확보 자체는 새 정확도 성취가 아니라 측정 전제 충족). '
+               'CMM 자체 NG 후보: provisional 130 에서 B LH X dev +1.218mm, FRT BODY RH BUSH Z dev -1.067mm '
+               '(inferred ±1.0mm gate 초과). grounded record=evidence/lx3_cmm_reference_20260624.json.',
+       limitation='이 노드는 scan-vs-CMM trueness 를 닫지 않는다. prompt 의 촬영 순서(127 360도/121뷰, 이후 127~131 60뷰)와 '
+                  '실 scan lot/index 를 먼저 reconciliation 해야 한다. 그 뒤 DRF-locked 또는 face-aware per-bush scan 치수를 '
+                  'CMM 값과 feature/axis 별로 비교해야 q_lx3_external_trueness 를 닫을 수 있다.'),
+
+    # ★2026-06-24 lot↔CMM 매핑 확정 — q_lx3_cmm_mapping 닫음 (view-count+시간순 = prompt 촬영계획 정합)
+    # ★엔진 reconcile(2026-06-25): 손입력 progressive → record_judge **equivalent**. lot↔CMM 매핑은
+    #   외부 trueness 측정의 *전제*(어느 scan 이 어느 CMM specimen 인지 확정)이지 새 정확도 성취가 아님
+    #   → lx3_cmm_reference_available 와 같은 equivalent(측정 전제 충족). 자기채점 progressive 제거.
+    _n('lx3_lot_cmm_mapping', 'equivalent', 'lx3_cmm_reference_available', m=5.0, base=0.0,
+       scope='lot_cmm_reconciliation', mn='sessions_matched_to_cmm_id', direction='higher',
+       nr=True, nc=True, q=['q_lx3_external_trueness'],
+       comment='scan capture session 의 .zdf view-count + 디렉터리 시간순이 prompt 촬영계획과 **1:1 정합** → lot↔CMM 확정. '
+               '153439=121뷰(lot 127 360°) · 160114/162343/164447/171253/173509=각 60뷰(lot 127/128/129/130/131) · '
+               '153129=3뷰 setup. "121 + 5×60" 패턴이 prompt 와 정확히 일치. CMM 보고 frame = **3-2-1 datum(LX3_LOCAL)** '
+               '= prompt 의 "321 좌표계"(FRT_LH(-921,-144,140)·RR_RH Y=805). CMM truth: 127·128·129·131 PASS(≤1.0mm), '
+               '**130 NG(B_LH X +1.218·FRT_BODY_RH_BUSH Z -1.067mm)**. grounded record=evidence/lx3_lot_cmm_mapping_20260624.json.',
+       limitation='lot 절대숫자(prompt "27? 인가 127")는 라벨 — scan-vs-CMM 엔 ordinal 1:1(1~5번째 60뷰↔CMM specimen, '
+                  'view-count+시간으로 확정)이면 충분. q_lx3_external_trueness 는 여전히 OPEN: 확정 lot 별 scan bush 치수를 '
+                  '같은 CMM specimen 과 feature/axis 대조해야 닫힘(현재 scan accuracy 21mm = 그 전 단계 part/jig 분할).'),
+
+    # ★2026-06-25 ABCDE pair-only scan-vs-CMM sweep — *물리 LX3 부품*이 아니라 pair-only estimator 경로 판정.
+    # ★엔진 record_judge **rejected**(손입력 0, lx3_engine_judged.py 와 동일 record): 사전등록 |scan−CMM|≤1.0mm·
+    #   kill=>1.0mm 인데 5쌍 중 4 NG·max 2.687mm → 반증. (이전엔 손입력 모듈에 노드 자체가 누락 = 정본 미스왑)
+    _n('lx3_pair_only_cmm_sweep', 'rejected', 'lx3_lot_cmm_mapping', m=2.687, base=1.0,
+       scope='scan_vs_cmm_trueness', mn='max_abs_scan_minus_cmm_pair_distance_mm',
+       direction='lower', nr=True, nc=True, q=['q_lx3_external_trueness'],
+       comment='ABCDE(127→repeat→128 boundary→130 NG challenge→production-gate) pair-only sweep: 단일 정면 station '
+               'FRT_LH–FRT_RH 쌍거리만으로 scan−CMM trueness 시도. 사전등록 예측 |scan−CMM|≤1.0mm·kill=>1.0mm. '
+               '결과 pair residual(mm) 127 −1.513·128 −2.687·129 −0.833·130 −2.011·131 −2.118 → 5쌍 중 **4 NG**, '
+               'max 2.687mm. 반복성은 있으나 CMM-true 아님 → pair-only estimator 경로는 promote 금지(음의 결과 보존). '
+               'grounded record=evidence/lx3_abcde_scan_cmm_board_20260625.json.',
+       limitation='full-XYZ·registration 없는 fixed-ROI pair-only 한계(quality_flags: partial_pair_only/no_full_xyz/'
+                  'no_registration). q_lx3_external_trueness 는 여전히 OPEN — face-aware per-bush DRF-locked 치수를 '
+                  'CMM feature/axis 별로 대조해야 닫힘. 본 노드는 그 전단계 estimator 의 음의 결과다.'),
 
     # 퇴행 가지(보존) — BPC 줄기 hard-core 재확인 + markerless 자동경로 한계
     _n('lx3_identity_basin', 'rejected', 'lx3_prob', m=4.35, base=None,
@@ -181,6 +228,26 @@ BLOOM_FRONTIER = [
               '(59 물리트랙, 음성대조 틀린축=64mm) = ~500× 개선. 코너3D 도 sub-mm 으로 독립확정(변 50.0mm·σ<1mm·3방법수렴=한계 '
               '"②흰면3D약" 반증). id-collision 은 이 lot 에선 부차적(no-decluster 도 1.0mm). 남은 CLOSE 조건=이 포즈로 part '
               '점군 정합→부시(독립피처) vs CAD nominal ±1.0mm accuracy(precision≠accuracy 견지).'),
+    dict(name='q_lx3_cmm_mapping', status='CLOSED', closed_by=['lx3_lot_cmm_mapping'],
+         body='★2026-06-24 CLOSED — lot↔CMM mapping 확정(lx3_lot_cmm_mapping). scan session 의 .zdf view-count + 시간순이 '
+              'prompt 촬영계획과 1:1 정합: 153439=121뷰(127 360°)·160114/162343/164447/171253/173509=각 60뷰(127/128/129/130/131)·'
+              '153129=3뷰 setup. "121 + 5×60" 패턴 일치 → ordinal 1:1 확정(절대 lot 숫자는 prompt 라벨). evidence record 고정='
+              'evidence/lx3_lot_cmm_mapping_20260624.json. 이제 provisional 130 NG(B LH X +1.218·FRT BODY RH BUSH Z -1.067)는 '
+              'session LX3RT_20260622_171253(lot 130)에 귀속 가능. (scan-vs-CMM 실제 대조는 q_lx3_external_trueness 로 — 별개.)'),
+    dict(name='q_lx3_external_trueness', status='OPEN', closed_by=None,
+         body='LX3 scan-vs-CMM external trueness. lx3_cmm_reference_available 로 CMM 기준값은 준비됐지만, 아직 scan 치수를 '
+              'CMM feature/axis 와 대조하지 않았다. CLOSE 조건=확정된 lot mapping + face-aware/DRF-locked scan measurement 로 '
+              'FRT/RR/B bush feature별 X/Y/Z 또는 distance deltas 를 CMM 값과 비교하고, 사전등록 gate(예: ±1.0mm 및 CMM '
+              '불확도 포함)를 통과. 실패 시 accuracy 병목은 ArUco pose, face-aware bush extraction, CMM datum mapping 중 어디인지 '
+              '분해한다.'),
+    dict(name='q_lx3_part_jig_separation_non_circular', status='OPEN', closed_by=None,
+         body='★2026-06-24 merge_part_vs_jig.png 해석 가드. output/images/lx3/merge_part_vs_jig.png 의 빨강/파랑 분리는 '
+              '“rough CAD 정렬 후 nearest CAD surface distance <25mm = part(파랑), 그 외 = jig(빨강)”인 CAD-distance 분리다. '
+              '시각적으로 잘 갈라져 보여도 검사 증거로는 순환논리 위험이 있다: part 를 CAD 에 가까운 점으로 정의하면 정렬오차와 '
+              '실제 부품 변형/불량이 분류 단계에서 흡수될 수 있다. 따라서 이 이미지는 diagnostic visualization 으로만 인정하고 '
+              'q_lx3_external_trueness 또는 q_lx3_aruco_accuracy 를 닫는 증거로 쓰지 않는다. CLOSE 조건=CAD distance 없이 '
+              'per-view geometry 기반 largest connected component/DBSCAN 또는 motion/known-angle coherence 로 part body 를 먼저 '
+              '분리하고, 그 결과를 face-aware bush extraction 및 CMM 대조에 투입해 같은 결론이 재현됨을 보이는 것.'),
     dict(name='q_lx3_full_surface_anchor', status='OPEN', closed_by=None,
          body='proper full-surface scan↔CAD anchor transform 을 자동으로 확보(markerless 자동경로 정본화)'),
     dict(name='q_lx3_jig_runout', status='OPEN', closed_by=None,
@@ -193,6 +260,36 @@ BLOOM_FRONTIER = [
               '판정: 지그오차가 0.99mm 의 큰 몫이면 줄여 마진 확보; 작으면 lift/bush-fit 이 진짜 병목. '
               '(prom "runout>0.1mm→sub-0.1mm 불가"는 LX3 가 sub-0.1mm 가 아니라 직접 적용 안 됨 — ±1mm 마진 진단으로 격하. '
               '정밀 회전지그는 턴테이블보다 축 반복도가 좋아 작을 가능성). 미측정=OPEN, 가짜green 금지.'),
+    dict(name='q_lx3_datum_bush_faces', status='OPEN', closed_by=None,
+         body='★2026-06-24 사용자 도메인 정정(측정 기하의 근본) — LX3 body datum = **6 bush 홀**(gdt_datum_designation 의 '
+              '3-2-1 A/B/C[RR_LH·RR_RH·FRT_LH]는 그 6점 패턴의 *부분집합*). 결정적 기하 = 이 bush 들이 **면-분리(face-split)**: '
+              '[사용자 명시] 상/하 bush 는 **앞면(front)** 에서 측정(보어가 앞으로 열림), 중간 bush 2개는 보어가 **뒷면(back)** 에 '
+              '있어 **뒷면에서 측정**해야 함. ⇒ 한 station/단일 회전축 한 자세로 6 bush 를 동시 측정 불가가 *물리적 사실*. '
+              '이것이 두 기존 실패의 *근본원인*을 통합 설명: (1) d5_realdata_bush_repeatability "턴테이블 단일축 360° whole-merge '
+              '무효(데이터 기하한계)"·σ 0.30mm band FAIL, (2) lx3_aruco_knownaxis_precision accuracy 21mm(co-located 배경 잔여 + '
+              '부시 1:1 매핑 실패) — whole-part 융합이 *면-의존 가시성*을 무시했고, 보어축이 카메라와 ⊥인 각도에선 그 bush 의 '
+              '3D 리턴이 약하다(흰 보어면 noise). CLOSE 전략 = **face-aware per-bush 추출**: bush 마다 그 보어가 카메라-facing 인 '
+              '회전뷰만 선택(front bush=앞면 뷰각, back bush=뒷면 뷰각)→그 뷰에서 보어 중심/축 fit→기지 jig 각으로 공통(un-rotate) '
+              '프레임에 배치→6-bush DRF(build_drf)→cross-capture σ<0.05mm + bush vs CAD nominal ±1.0mm(precision≠accuracy 견지). '
+              '데이터[d5 close_path + 360MERGE 확인]: 기존 121뷰 raw zdf(LX3RT_20260622) 360° jig 회전이 양면 모두 포함 → '
+              '재촬영 없이 face-aware 재추출 가능. ★과거 LX3 문서 교차확인(2026-06-24, 가짜green 아님=데이터 실증): '
+              '6 feature = RR_BODY_LH/RH(rear, x≈371,z-145) · FRT_BODY_LH/RH(front, x≈-550,z-4) · '
+              '**B_LH/RH(중간 x≈-42·y±829·z-225)** [production_inspect_20260518 per_feature 6개 + README "6 bush + 2 B-point", '
+              'docs/10 "18 cyl=LX3 6 bush+LUCID 12"]. front/back 배정 = **데이터 실증**: 앞면 단일캡처 production_inspect 에서 '
+              '**B_LH·B_RH=INVALID(plane_status=error·cylinder=empty·axis None)** = back-bore 라 앞면서 측정 불가 / RR·FRT=측정됨(NG); '
+              '반면 수동 GROUND_TRUTH(면별 올바른 측정)는 6/6 OK → **중간 2(B_LH/RH)=뒷면 측정 필수, 4(RR/FRT)=앞면** 이 '
+              '사용자 진술과 데이터로 수렴(360merge 평판 smear · B INVALID · 도메인 = 3중 grounding). '
+              'q_lx3_aruco_accuracy·q_real_part_drf(DATUM D5)의 진짜 전제 = 이 face-aware 추출. ★계측기 구축+검증'
+              '(2026-06-24, scripts/lx3_face_aware_bush.py): synthetic method-valid = **face-aware 6/6 회복·rmse 0.003mm'
+              '(back B 2/2 포함) vs naive 단일-window 4/6(back 구조적 누락)** → 면-split insight 가 알고리즘 수준에서 정당화. '
+              '실 zdf=**BLOCKED_DETECTION**(per-view bore 검출이 sparse/흰-보어 cloud 에서 막힘=데이터-bound지 method 아님; '
+              '다음 레버=cylinder-wall RANSAC 또는 ArUco-pose 로 CAD nominal 위치 직접 ROI+면게이팅). '
+              'evidence/lx3_face_aware_bush_validation_20260624.json. ★ArUco-pose 실데이터 시도(2026-06-24, "그거까지"): '
+              'per-view 마커 pose **0.68mm median**(74뷰·p95 2.44)=**pose 병목 아님 확정**. 그러나 per-view-pose 머지(smear_solved=False '
+              'ext 2255×1433×1811) + multi-view-consistency(≥20뷰 occupied voxel)도 ext **2048×504×1464mm**(part~1040)로 미분리 — '
+              '회전지그가 part 와 *함께 회전*하니 consistency 로 안 갈림(static 배경은 제거되나 co-rotating jig 잔존). '
+              '⇒ 4 경로(단일축머지·per-view검출·marker-pose머지·MVC) 모두 같은 벽=**part/jig 분할 + sparse/흰-보어 신호**(pose·알고리즘 아님 '
+              '= 21mm 벽의 정밀 국소화). 다음 레버=CAD 앵커 part bbox crop 또는 jig 제거 재촬영. (CMM 부재 trueness UNVERIFIED).'),
     dict(name='q_lx3_gauge_boundary', status='OPEN', closed_by=None,
          body='B_LH tol-경계(0.999→1.067) gauge 위태 — 공차 class 재설계 필요한가'),
 ]

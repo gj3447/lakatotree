@@ -32,3 +32,27 @@ def test_aruco_nodes_engine_judge_partial_not_progressive():
     rows = {r["tag"]: r for r in judged_nodes()}
     for tag in ("lx3_aruco_turntable", "lx3_aruco_knownaxis_precision", "lx3_cad_bush_nominal"):
         assert rows[tag]["verdict"] == "partial", f"{tag}: 엔진 partial 이어야"
+
+
+def test_cmm_reference_available_is_engine_judged_equivalent():
+    """CMM 기준값 확보는 scan-vs-CMM 정확도 성공이 아니라 외부 기준 준비 노드다."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    row = rows["lx3_cmm_reference_available"]
+    assert row["verdict"] == "equivalent"
+    assert row["metric"] == "cmm_specimen_count"
+    assert row["measured"] == 5.0
+
+
+def test_lx3_pair_only_cmm_sweep_is_engine_rejected():
+    """ABCDE pair-only sweep은 LX3 폐기가 아니라 해당 estimator path의 엔진 rejected다."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    mapping = rows["lx3_lot_cmm_mapping"]
+    assert mapping["status"] == "judged"
+    assert mapping["metric"] == "sessions_matched_to_cmm_id"
+    assert mapping["measured"] == 5.0
+
+    sweep = rows["lx3_pair_only_cmm_sweep"]
+    assert sweep["status"] == "judged"
+    assert sweep["verdict"] == "rejected"
+    assert sweep["metric"] == "max_abs_scan_minus_cmm_pair_distance_mm"
+    assert sweep["measured"] == 2.687127

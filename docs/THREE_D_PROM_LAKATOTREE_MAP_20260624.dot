@@ -19,11 +19,15 @@ digraph three_d_prom_lakatotree_map {
 
   lx3 [label="LX3 Migration\nstatus: pending-port", fillcolor="#ffedd5", color="#ea580c"];
   lx3_precision [label="Known-axis ArUco precision\ncorner 3D + turntable self-consistency", fillcolor="#dbeafe", color="#2563eb"];
-  lx3_accuracy [label="Next gate\nbush/CAD independent accuracy", fillcolor="#fef9c3", color="#ca8a04"];
+  lx3_jig_removal [label="Rotary-jig removal\nfrozen receipt -> CAD ICP refinement", fillcolor="#fef9c3", color="#ca8a04"];
+  lx3_feature_table [label="Next action\nfeature residual truth table", fillcolor="#fef9c3", color="#ca8a04"];
+  lx3_accuracy [label="Next gate\nCMM/bush independent accuracy", fillcolor="#fef9c3", color="#ca8a04"];
   lx3_kill [label="Kill criterion\nbush/CAD error over tolerance", fillcolor="#fee2e2", color="#dc2626"];
   hard -> lx3;
   lx3 -> lx3_precision;
-  lx3 -> lx3_accuracy;
+  lx3 -> lx3_jig_removal;
+  lx3_jig_removal -> lx3_feature_table;
+  lx3_feature_table -> lx3_accuracy;
   lx3 -> lx3_kill;
 
   sx3i [label="SX3i Research Branch\nstatus: research-only", fillcolor="#f3e8ff", color="#9333ea"];

@@ -42,8 +42,12 @@ flowchart TB
   hard --> lx3
   lx3_precision["Known-axis ArUco precision<br/>corner 3D + turntable self-consistency"]
   lx3 --> lx3_precision
-  lx3_accuracy["Next gate<br/>bush/CAD independent accuracy"]
-  lx3 --> lx3_accuracy
+  lx3_jig_removal["Rotary-jig removal<br/>frozen receipt -> CAD ICP refinement"]
+  lx3 --> lx3_jig_removal
+  lx3_feature_table["Next action<br/>feature residual truth table"]
+  lx3_jig_removal --> lx3_feature_table
+  lx3_accuracy["Next gate<br/>CMM/bush independent accuracy"]
+  lx3_feature_table --> lx3_accuracy
   lx3_kill["Kill criterion<br/>bush/CAD error over tolerance"]
   lx3 --> lx3_kill
 
@@ -95,7 +99,7 @@ flowchart TB
 | Branch | Status | Best Current Evidence | Next Gate | Do Not Claim Yet |
 |---|---|---|---|---|
 | BPC | adopted | frozen per-view measure-lot path, production tests | uncertainty and decision-rule fields | free GICP is normal production path |
-| LX3 | pending-port | known-axis ArUco precision and CAD nominal ruler | independent bush/CAD accuracy | ArUco repeatability proves part accuracy |
+| LX3 | pending-port | precision recovered to 0.993mm, jig-removed crop improved, CMM references available, mounting-bush CMM result promising | feature residual truth table, crop leakage/loss stats, then CMM/bush accuracy closure | ArUco, CAD ICP RMSE, or a pretty jig-removed cloud alone proves part accuracy |
 | SX3i | research-only | reader fix and C1 marker detection | C2 assembly, then C3 feature coincidence | C1 detection proves sub-0.1mm accuracy |
 | OMD | blocked | none | source/interface/test contract | any measurement claim |
 
@@ -129,6 +133,8 @@ the governing protocol.
 - `docs/THREE_D_PROM_PROTOCOL_20260624.md`
 - `docs/THREE_D_PROM_OPEN_SOURCE_TOOLING_20260624.md`
 - `docs/THREE_D_INSPECTION_BACKGROUND_KNOWLEDGE_20260624.md`
+- `docs/LX3_ROTARY_JIG_REMOVAL_LAKATOTREE_20260624.md`
+- `docs/LX3_NEXT_ACTION_BOARD_20260625.md`
 - `examples/three_d_dashboard.py`
 - `server/graph_view.py`
 - `three_d_detection.html`

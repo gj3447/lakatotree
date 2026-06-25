@@ -47,3 +47,73 @@ def test_c1_engine_judges_partial_not_progressive():
     """★핵심 divergence 문서화: c1 은 엔진 기준 partial(손입력 progressive 는 과대였음)."""
     rows = {r["tag"]: r for r in judged_nodes()}
     assert rows["c1_marker_detect"]["verdict"] == "partial"
+
+
+def test_c2_full_view_assembly_closes_as_rejected():
+    """C2 전체 lot assembly 는 엔진 기준 rejected: 67 posed views < 180 gate."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    assert rows["c2_aruco_assembly"]["verdict"] == "partial"
+    assert rows["c2_full_view_assembly"]["verdict"] == "rejected"
+    assert rows["c2_full_view_assembly"]["measured"] == 67.0
+    assert rows["c2_full_view_assembly"]["baseline"] == 180.0
+
+
+def test_snr_filter_does_not_close_c2():
+    """저SNR view culling 은 C2를 닫지 못한다: best filtered posed views = 113 < 180."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    assert rows["sx3i_snr_filter_assembly"]["verdict"] == "rejected"
+    assert rows["sx3i_snr_filter_assembly"]["metric"] == "snr_filtered_posed_views"
+    assert rows["sx3i_snr_filter_assembly"]["measured"] == 113.0
+    assert rows["sx3i_snr_filter_assembly"]["baseline"] == 180.0
+
+
+def test_marker_view_graph_diagnostic_explains_c2_break():
+    """>=3 shared-marker view graph 는 후반 view bridge 를 닫지 못한다."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    assert rows["sx3i_marker_view_graph_diagnostic"]["verdict"] == "rejected"
+    assert rows["sx3i_marker_view_graph_diagnostic"]["metric"] == "largest_component_views_min_shared3"
+    assert rows["sx3i_marker_view_graph_diagnostic"]["measured"] == 115.0
+    assert rows["sx3i_marker_view_graph_diagnostic"]["baseline"] == 180.0
+
+
+def test_local_marker_cad_anchor_plan_is_partial_feasibility_branch():
+    """후반부는 marker graph 가 아니라 Ypos CAD anchor 로 잇는 branch 로 간다."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    assert rows["sx3i_local_marker_cad_anchor_plan"]["verdict"] == "partial"
+    assert rows["sx3i_local_marker_cad_anchor_plan"]["metric"] == "late_cad_anchor_views"
+    assert rows["sx3i_local_marker_cad_anchor_plan"]["measured"] == 8.0
+    assert rows["sx3i_local_marker_cad_anchor_plan"]["baseline"] == 6.0
+
+
+def test_cad_source_problem_is_visible_in_engine_branch():
+    """CAD anchor identifies the part, but scan-derived IGES does not close precision/trueness."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    assert rows["sx3i_real_cad_symmetry"]["verdict"] == "partial"
+    assert rows["sx3i_real_cad_symmetry"]["metric"] == "y0_mirror_median_mm"
+    assert rows["sx3i_real_cad_symmetry"]["measured"] == 0.3
+    assert rows["sx3i_real_cad_icp_merge"]["verdict"] == "partial"
+    assert rows["sx3i_real_cad_icp_merge"]["metric"] == "real_cad_coverage6_pct"
+    assert rows["sx3i_real_cad_icp_merge"]["measured"] == 84.5
+    assert rows["sx3i_real_cad_perview_acceptance"]["verdict"] == "rejected"
+    assert rows["sx3i_real_cad_perview_acceptance"]["metric"] == "operational_dev_median_delta_mm"
+    assert rows["sx3i_real_cad_perview_acceptance"]["measured"] == -0.216
+    assert rows["sx3i_real_cad_maxcover_rgb_trash"]["verdict"] == "rejected"
+    assert rows["sx3i_real_cad_maxcover_rgb_trash"]["metric"] == "trash_view_count_fit3_lt_0p10"
+    assert rows["sx3i_real_cad_maxcover_rgb_trash"]["measured"] == 12.0
+    assert rows["sx3i_real_cad_quality_filtered_rgb"]["verdict"] == "rejected"
+    assert rows["sx3i_real_cad_quality_filtered_rgb"]["metric"] == "stable_quality_views"
+    assert rows["sx3i_real_cad_quality_filtered_rgb"]["measured"] == 17.0
+    assert rows["c2_register_to_cad"]["verdict"] == "partial"
+    assert rows["c2_register_to_cad"]["metric"] == "panel_over_bracket_fitness_ratio"
+    assert rows["c2_register_to_cad"]["measured"] == 4.73
+    assert rows["c2b_assembly_to_cad"]["verdict"] == "rejected"
+    assert rows["c2b_assembly_to_cad"]["metric"] == "cad_panel_register_fit3"
+    assert rows["c2b_assembly_to_cad"]["measured"] == 0.071
+
+
+def test_planarity_baseline_keeps_infield_frontier_open():
+    """Current SX3i baseline is above the 0.45mm gate; after-correction remeasure remains open."""
+    rows = {r["tag"]: r for r in judged_nodes()}
+    assert rows["sx3i_planarity_baseline"]["verdict"] == "rejected"
+    assert rows["sx3i_planarity_baseline"]["measured"] == 1.0796
+    assert rows["sx3i_planarity_baseline"]["baseline"] == 0.45

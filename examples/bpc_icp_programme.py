@@ -22,9 +22,13 @@ from lakatos.quant.fertility import predictive_fertility
 
 
 def _n(tag, verdict, parent, *, m=None, base=None, scope='registration',
-       direction='lower', nr=False, nc=False, q=None, comment='', limitation='', algo=''):
+       direction='lower', nr=False, nc=False, q=None, comment='', limitation='', algo='', mn=None):
+    # mn = metric_name. gap8 다중비교 family 키 = (metric_name, scope). 같은 물리량끼리만 묶이도록
+    # 노드마다 진짜 측정 구성(seam mm / 마커 count / σ mm / synthetic max_dev …)을 명시한다 —
+    # 누락 시 None 으로 뭉쳐 이질 metric(거리·개수·무차원)이 한 family 가 되어 BH/FDR 통제가 미정의가
+    # 된다(multiplicity.py 스스로 "다른 측정 한 family 로 묶지 말라" 경고를 코드가 위반하던 버그).
     return dict(tag=tag, verdict=verdict, parent=parent,
-                metric_value=m, metric_scope=scope, pred_baseline=base,
+                metric_value=m, metric_scope=scope, metric_name=mn, pred_baseline=base,
                 pred_noise_band=0.05, pred_direction=direction,
                 novel_registered=nr, novel_confirmed=nc,
                 algorithm=algo or 'classical', comment=comment, limitation=limitation,
@@ -36,16 +40,16 @@ NODES = [
     # 정본 경로(progressive → CANONICAL)
     _n('prob_statement', 'canonical_stage', None,
        comment='20 BPC 뷰 metric 정합 → DC375 검사 sub-1mm', algo='problem'),
-    _n('aruco_metric', 'progressive', 'prob_statement', m=1.60, base=12.0,
+    _n('aruco_metric', 'progressive', 'prob_statement', m=1.60, base=12.0, mn='bpc_seam_selfconsistency_mm',
        nr=True, nc=True, q=['q_markerless_reuse', 'q_aruco_rgb_buffer_confound'],
        comment='ArUco shared-marker Kabsch+BA — 21뷰 1 connected component',
        limitation='격자이웃≠마커공유, dup-ID 가짜다리 주의. 검출 RGB원천=prismv2 자작 read_rgb(SDK無 역공학) → '
                   'q_aruco_rgb_buffer_confound **변별완료 CLOSED**(파서버퍼=SNR프레임 오선택, reader fix 로 부활).'),
-    _n('frozen_calib_reuse', 'progressive', 'aruco_metric', m=1.026, base=1.60,
+    _n('frozen_calib_reuse', 'progressive', 'aruco_metric', m=1.026, base=1.60, mn='bpc_seam_selfconsistency_mm',
        nr=True, nc=True, q=['q_crosslot'],
        comment='board calib 동결→markerless lot 직접 T_view_to_world 재사용(0040→0049 1.384→1.026)',
        limitation='seam=self-consistency, accuracy vs CAD 미검증'),
-    _n('v8_pipeline', 'CANONICAL', 'frozen_calib_reuse', m=0.90, base=1.026,
+    _n('v8_pipeline', 'CANONICAL', 'frozen_calib_reuse', m=0.90, base=1.026, mn='bpc_seam_selfconsistency_mm',
        nr=True, nc=True, q=['q_dc375_tol', 'q_outer004', 'q_washer_step', 'q_external_trueness'],
        comment='v8: ZDF stride3 srgb+frozen calib+colfix+v7보정, mesh-exact QC, cross-lot 4.05mm',
        limitation='interior 0.90mm CMM 미검증(precision≠accuracy). ⚠가지→줄기 전파(2026-06-24): v8 QC 는 대칭 '
@@ -53,7 +57,7 @@ NODES = [
                   'bestfit_as_drf rejected)가 그 best-fit 이 진짜 위치오차를 21~62% 흡수·은폐(비보수)하고 무오차 피처로 '
                   '누설함을 실 lot 으로 실증. 즉 0.90mm 는 precision 이고, accuracy 추정엔 best-fit 비보수 bias 가 섞여 '
                   '있다 — trueness 엔 GD&T datum-locked DRF + 외부 traceable(q_external_trueness) 필요.'),
-    _n('prismv2_frozen_wiring', 'progressive', 'v8_pipeline', m=0.90, base=0.90,
+    _n('prismv2_frozen_wiring', 'progressive', 'v8_pipeline', m=0.90, base=0.90, mn='bpc_seam_selfconsistency_mm',
        nr=True, nc=True, q=['q_recipev2_gicp_risk'],
        comment='2026-06-16 prismv2 production 배선 관통(Longinus + hitech-expert). v8 frozen-per-view 접근의 실 '
                'materialization = measure_lot Branch0: bpc_inspector_registration._run_measure_lot:334 → '
@@ -69,7 +73,7 @@ NODES = [
                   'grpc single-shot(acc.views={})은 legacy RunInspection. per-view SYSTEMATIC residual(partial-arc 0.5-1.3mm '
                   'class-dep)은 E_v multi-lot solve로 흡수(sub-mm, collapse 아님). '
                   '회피=register_concat(frozen concat, ICP無) 강제 또는 FinalizeCycle 경로 Branch0 보장'),
-    _n('placement_pose_robust', 'progressive', 'v8_pipeline', m=0.90, base=0.90,
+    _n('placement_pose_robust', 'progressive', 'v8_pipeline', m=0.90, base=0.90, mn='bpc_placement_pose_mm',
        nr=True, nc=True,
        comment='E2E placement/pose 강건성 (29_E2E_PLACEMENT_POSE_ROBUSTNESS.md, run_new_lot v12.2 oracle '
                'bit-identical, 사전등록 채점). ★사용자 질문 답: 부품/디멘션이 "왓다갓다" 해도 washer_h 등 '
@@ -121,6 +125,46 @@ NODES = [
                   '남은 BLOCKED: C3-c 3D-fusion 비퇴행 회귀(96/128 p50 2.2mm)=production 3D fusion 파이프라인+zdf 필요(무거움·fleet 영역). '
                   '★날짜형상 함정(DATE_SHAPE_MAP_20260624.md): PLATE_HOLE Y 06-17 전후 다름 → 교차날짜 trueness/3D-fusion 은 그룹화 필수. '
                   'precision≠accuracy 잔존(2D 라벨 무결성 ≠ 3D 측정정확도).'),
+
+    # ── 2026-06-24: frozen_calib_reuse domain 한계 실증 (cross-era calib mismatch) ──
+    _n('calib_geometry_mismatch', 'degenerating', 'frozen_calib_reuse', m=8.0, base=1.026, scope='registration',
+       nr=True, nc=False, q=['q_calib_geometry_gate'],
+       comment='frozen_calib_reuse domain 한계 실증: VFEZ0040(group-A) calib을 PLATE_HOLE 변경 後 group-B(VFQZ 06-17)에 '
+               '하드코딩 적용(run_new_lot:42, 날짜/형상 게이트 0) → 정합 어긋남, 같은 컵 boss_h 캡처간 8mm 출렁(BIG_04 −35mm), '
+               'peel/탭볼트 verdict 출렁=reproducibility 위반(사용자 catch). VFEZ(matched) σ≤0.15 대비 명백. '
+               'CALIB_GEOMETRY_MISMATCH_PROM_20260624.md.',
+       limitation='검출 알고리즘은 무결(VFEZ 안정)—문제는 calib 입력. ★fix RESOLVED(group_b_calib_resolve, 2026-06-25): '
+                  'group-B 보드 calib을 **기존 데이터(VFQZ0016~0024 board lot)** 로 재솔브 성공(재촬영 0). §7 "VFQZ markerless→재촬영 '
+                  '필요"는 VFQZ0040 단일표본 일반화 오류였음(보드는 0016~0024에 있었음). 임시 게이트(calib_era_binding/'
+                  'CALIB_GEOMETRY_GATE_PATCH)는 systemic fix로 유지. group-B 철회분은 group-B calib 재측정으로 복구 중.'),
+
+    # ── 2026-06-24: group-B 해법 = markerless camera-spec 측정 (사용자 "보드말고 카메라스펙", 검증됨) ──
+    _n('markerless_camera_spec_measure', 'progressive', 'v8_pipeline', m=0.028, base=0.90,
+       scope='measurement', mn='bpc_markerless_camera_spec_z_mm',
+       nr=True, nc=True, q=['q_calib_geometry_gate'],
+       comment='calib-era 우회 해법(사용자 지시 "보드 재촬영 말고 카메라스펙"): measure_washer_markerless.py = Hough 홀검출 '
+               '+ organized cloud pixel→3D per-frame LOCAL 측정(ArUco/calib/CAD-align 0). VFQZ0010(group-B)서 검증: 21뷰 '
+               'washer 229검출 radius med 4.48mm·flush med 0.01mm(=탭볼트 안착 결함신호). calib 없어 era 무관·부품형상 무관 '
+               '→ group-A/B 균일측정. 교시 why_markerless 검증 PLATE z 0.028mm/r 0.004mm·BIG z0.116. '
+               'evidence/markerless_camera_spec_VFQZ0010_20260624.md.',
+       limitation='per-frame LOCAL = global feature-ID 매핑 없음(결함 스크리닝엔 충분, reproducible·era문제0). cup peel은 '
+                  'markerless_register.py(boss-constellation→CAD boss Kabsch)로. global 정밀 metrology 필요시에만 보드 calib. '
+                  '★한계 실측(markerless_ng_label_feasibility): 전 필드 lot이 pose당 1프레임=frame기아 → feature당 <6뷰 '
+                  '→ markerless 정밀집계 UNCONFIRMED + positive control(VFEZ0040 peel) 미검출. NG/normal 정밀라벨은 이 경로 단독 불가 '
+                  '→ group_b_calib_resolve(ArUco)가 실효 경로.'),
+
+    # ── 2026-06-25: group-B ArUco calib을 기존 보드 lot으로 재솔브 (실효 fix, 재촬영 0) ──
+    _n('group_b_calib_resolve', 'progressive', 'calib_geometry_mismatch', m=0.266, base=8.0,
+       scope='registration', mn='group_b_marker_resid_rms_mm',
+       nr=True, nc=False, q=['q_calib_geometry_gate'],
+       comment='calib_geometry_mismatch fix: group-B(06-17 PLATE_HOLE 변경 後) calib을 **기존 데이터**로 재솔브. '
+               '몽타주 시각스캔서 VFQZ0013에 마커 발견→재검: VFQZ0016~0024 = 보드 20/21뷰·~99 distinct ArUco ids(완전 보드). '
+               'hitech_aruco_puzzle_assemble VFQZ0016 → placed 20/20, marker rms 0.266mm·seam 1.001mm (VFEZ0040 0.42mm보다 우수). '
+               'C3 메커니즘 CONFIRMED: 이 calib으로 VFQZ0010 측정 시 wrong-calib의 BIG_04 −35.43mm garbage가 −5.22mm sane peel로 '
+               '복원, boss_h 전부 −7.1~+4.5 정상범위. 재촬영·markerless 둘 다 불필요(사용자 "재촬영 안 함" 옳았음). '
+               'evidence/c3_groupB_calib_solved_20260625.md.',
+       limitation='base calib(seam 1.0mm, zwarp/zconst 미적용) — gross NG(peel −5~−7·결손)엔 충분, <1mm 정밀안착엔 z-chain(215/216/219) '
+                  '추가 필요. σ(재현성)·onset·per-lot NG/normal = 67 VFQZ+5 VFRZ 시간순 batch 진행 중(gbbatch).'),
 ]
 
 FRONTIER = [
@@ -155,6 +199,12 @@ FRONTIER = [
               '단 측정이 seg 미소비라 A/B 차=0 이 구조적 귀결. 전제: 날짜형상 그룹화(DATE_SHAPE_MAP). '
               '(read_rgb 버퍼버그와 별건 — BPC 는 다른 stride 이슈.)',
          closed_by=None),
+    dict(name='q_calib_geometry_gate', status='OPEN', closed_by=None,
+         body='형상 era별 calib 바인딩+게이트로 cross-era silent garbage 차단 + group-B 측정경로 확보. '
+              '2026-06-24: ✅Longinus calib_era_binding·✅게이트패치 스펙. '
+              '★해결: group-B는 **markerless camera-spec 측정(markerless_camera_spec_measure, 검증됨)**으로 calib 없이 측정 가능 '
+              '→ 보드 재촬영 불필요(=사용자 지시). ArUco SOLVER_PKG 경로만 era-lock; markerless 경로는 group-A/B 균일. '
+              '잔여: VFQZ/VFRZ 전 lot markerless 일괄 → NG/normal 라벨 → Longinus 등록(진행 가능).'),
 ]
 
 
