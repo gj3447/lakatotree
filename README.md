@@ -153,12 +153,13 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates) · `provenance_backfill` classifies pre-receipt-regime NULL-source nodes (explicit `pre_receipt` marker vs re-verify) without fabricating provenance
 
 ### `verdict/` — judgment kernel (the scorer; modeled in `formal/Pidna.lean`)
-`judge` `pnr` `spine` `promote` `certify` `argue` `compose` `industrial` `kusari`
+`judge` `pnr` `spine` `promote` `certify` `argue` `compose` `industrial` `kusari` `z_height`
 - `judge` [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
 - `pnr` [Proofs & Refutations] counterexample-response dialectic · `spine` `dialectical_verdict` (reconcile metric + qualitative + PnR)
 - `promote` fail-closed CANONICAL allowlist · `certify` 5-gate AND certificate · `argue` Dung AF grounded-extension justification · `compose` gate outcome composition
 - `industrial` Longinus industrial-dimension gate — fail-closed `judge_dimension`: missing schema field (uncertainty/repeatability/CAD residual/traceability) → BLOCKED, near-limit → indeterminate (separates research-progressive from production-adopted)
 - `kusari` Longinus root-cause critique gate — fail-closed `lint_critique`/`lint_checklist`: a critique must name target_artifact/failure_mode/expected_observable/blocking_verdict and the exact target axis (coordinate_frame/datum/algorithm/feature/threshold), else invalid (blocks vague LabelRot critique)
+- `z_height` Longinus consumer_b Z-height gate — fail-closed `judge_z_height`: requires rigid residual + per-feature z residual + frame/sign audit (≥2 candidate layers) separated, else BLOCKED; flags Z-NOT-CERTIFIED when registration is green but per-feature z exceeds residual+U_k2 (registration green cannot certify a wrong Z layer)
 
 ### `quant/` — quantitative substrate
 `bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate`
