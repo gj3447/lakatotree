@@ -47,16 +47,20 @@
       "sourceId": "BPC.ZHeightCadSurfaceFailureMode",
       "sourcePath": "docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md:1",
       "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
-      "confidence": "AMBIGUOUS",
-      "binding_state": "PRELIMINARY",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
       "drift_type": "PatternDiv",
       "lens_law": "PutPut",
       "claim": "Good CAD registration can still hide wrong feature z if global residual, CAD membership, and measured contact are collapsed.",
       "evidence": [
         "docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md:1",
-        "docs/PROM_MEASUREMENT_AUDIT_20260624.md:1"
+        "docs/PROM_MEASUREMENT_AUDIT_20260624.md:1",
+        "lakatos/verdict/z_height.py:1",
+        "tests/test_z_height_gate.py:1",
+        "/data/kjra/PROJECT/3D/BPC_ICP_SPEC/out/feature_z_offset_per_hole.json",
+        "/data/kjra/PROJECT/3D/BPC_ICP_SPEC/out/dual_z_frame_gate_v1.md"
       ],
-      "acceptance_check": "Provide production result evidence with separate rigid residual, per-feature z residual, and frame/sign audit."
+      "acceptance_check": "python -m pytest tests/test_z_height_gate.py -q"
     },
     {
       "sourceId": "BPC.IndustrialDimensionJudgementGate",
@@ -91,6 +95,20 @@
         "tests/test_root_cause_kusari_gate.py:1"
       ],
       "acceptance_check": "python -m pytest tests/test_root_cause_kusari_gate.py -q"
+    },
+    {
+      "sourceId": "BPC.ZLayerNegativeControlsExecuted",
+      "sourcePath": "docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md:200",
+      "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
+      "confidence": "INFERRED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "claim": "BPC Z-height claims require the six wrong-layer/wrong-axis/free-ICP/panel-only/nearest-triangle/shuffled-ID negative controls to be executed with expected-fail outcomes, not merely declared.",
+      "evidence": [
+        "docs/BPC_Z_HEIGHT_CAD_SURFACE_PROM_20260624.md:200"
+      ],
+      "acceptance_check": "Run and record each of the six required negative controls and assert each produces its expected-fail outcome (wrong Z layer fails selected-layer test; mirrored frame fails chirality; free ICP flagged as alarm; panel-only fails washer/boss height; nearest-triangle fails multilayer; shuffled feature IDs fail feature-nominal comparison)."
     }
   ]
 }

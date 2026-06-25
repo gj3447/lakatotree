@@ -277,3 +277,23 @@ measurands need feature-level extraction and feature-level uncertainty.
 
 The next useful BPC Z work is not another best-fit solver. It is a layer-aware
 result contract and negative controls for wrong-layer selection.
+
+## Implementation (2026-06-25) — guard is now rerunnable
+
+The "Required BPC Z Guards" contract is implemented as a fail-closed gate:
+
+- `lakatos/verdict/z_height.py` → `judge_z_height(result)` returns a `ZHeightVerdict`:
+  - **BLOCKED** unless the result separates *rigid residual* (`registration_residual_mm`),
+    *per-feature z residual* (`z_signed_error_mm`), and *frame/sign audit* (`candidate_layers` with
+    ≥2 competing layers/`z_frame_state`) — i.e. it fails when those three are collapsed.
+  - **Z-NOT-CERTIFIED** (LGN-BPC-Z-003) when registration is green but
+    `|z_signed_error_mm| > registration_residual_mm + U_k2_mm` — registration green cannot certify a
+    wrong Z layer. `Z-INDETERMINATE` near the band; `Z-PASS-CANDIDATE` only when z is within U_k2.
+- Rerunnable acceptance check: `python -m pytest tests/test_z_height_gate.py -q` (18 tests). It validates
+  against the real production evidence `BPC_ICP_SPEC/out/feature_z_offset_per_hole.json`
+  (plate_standard signed-z is multi-mm while registration looked green) and
+  `out/dual_z_frame_gate_v1.md` (aruco_v3 NORMAL vs v15_xmirror SHIFTED_22MM); it hermetic-skips when
+  that external evidence is absent (clean-clone reproducibility preserved).
+- This PIERCES Longinus binding `BPC.ZHeightCadSurfaceFailureMode`.
+- Still open (separate CANDIDATE binding `BPC.ZLayerNegativeControlsExecuted`): the six negative
+  controls below must be *executed* with expected-fail outcomes, not just declared.
