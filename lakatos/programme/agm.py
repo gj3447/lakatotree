@@ -150,12 +150,20 @@ def revision(base: list, new: Belief, contradicts: list = (),
                           added=r.added, programme_shift_candidate=(shift or r.programme_shift_candidate))
 
 
-def demote_canonical(base: list, old_canonical_id: str, new_canonical: Belief) -> RevisionResult:
+def demote_canonical(base: list, old_canonical_id: str, new_canonical: Belief,
+                     allow_hard_core: bool = False) -> RevisionResult:
     """CANONICAL demote = revision 사례 (THEORY §2). 옛 정본은 제거가 아니라 *강등*:
-    kind/내용 유지, credence 만 새 정본 아래로 — former_canonical 의 AGM 해석."""
+    kind/내용 유지, credence 만 새 정본 아래로 — former_canonical 의 AGM 해석.
+
+    ★H4(설계감사 2026-06-25): 옛 정본이 hard_core 면 expansion/contraction 의 가드를 우회해 핵이 조용히
+    강등되던 결함 → allow_hard_core 없이는 HardCoreProtected (보호대가 흡수해야; 명시 동의 시만 강등)."""
     by_id = {b.belief_id: b for b in base}
     if old_canonical_id in by_id:
         old = by_id[old_canonical_id]
+        if old.kind == 'hard_core' and not allow_hard_core:
+            raise HardCoreProtected(
+                f'{old_canonical_id} 는 hard core — demote 로 강등하려면 allow_hard_core=True '
+                '(보호대가 흡수해야 — 핵을 우회 강등 금지)')
         demoted = replace(old, credence=min(old.credence, max(new_canonical.credence - DEMOTE_PENALTY, 0.0)))
         base = [demoted if b.belief_id == old_canonical_id else b for b in base]
-    return expansion(base, new_canonical)
+    return expansion(base, new_canonical, allow_hard_core=allow_hard_core)
