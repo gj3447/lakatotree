@@ -5,13 +5,38 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import HTTPException
 
+from lakatos.ontology import DomainOntology
 from lakatos.verdicts import is_registered_verdict, is_self_report_blocked_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn
+
+
+def _enforce_ontology(tree_data: dict, node: NodeIn) -> None:
+    """트리가 선언한 도메인 온톨로지를 노드에 강제(opt-in, fail-closed). 미선언/무효/algorithm없음 → 면제.
+
+    entity_type = node.algorithm(노드의 방법/종류), attrs = 노드 필드. 위반 시 422 (미선언 엔티티
+    drift / 필수 속성 누락 / 값 위반). '선언만 받던' domain-ontology foundation 에 teeth 를 준다."""
+    raw = tree_data.get("ontology")
+    if not raw:
+        return
+    try:
+        spec = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError):
+        return   # 무효 온톨로지 *선언* 자체의 검증은 별도(여기선 강제만)
+    onto = DomainOntology.from_spec(spec)
+    if onto is None:
+        return
+    entity = (node.algorithm or "").strip()
+    if not entity:
+        return   # algorithm 없는 구조/루트 노드는 엔티티-온톨로지 면제
+    viols = onto.violations(entity, node.model_dump())
+    if viols:
+        raise HTTPException(422, f"온톨로지 위반(entity={entity}): {viols}")
 
 
 CANONICAL_VERDICTS = frozenset({"CANONICAL", "canonical_stage"})
@@ -176,6 +201,7 @@ class LakatosSemanticValidator:
             raise HTTPException(400, f"부모 노드 없음: {missing}")
         decision = self.policy.evaluate_node(node, parent_edges)
         decision.enforce()
+        _enforce_ontology(tree_data, node)   # 선언된 도메인 온톨로지 강제(opt-in, fail-closed)
         return NodeValidationResult(parent_edges=parent_edges, policy_findings=decision.findings)
 
     def validate_tree_meta(self, *, hard_core: str, frontier_rule: str) -> tuple[PolicyFinding, ...]:
