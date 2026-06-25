@@ -34,7 +34,7 @@ def _service():
     """노드 쓰기를 기록(writes)하는 mutation service — 거부 시 writes 가 비어 있어야 한다."""
     writes: list = []
     svc = TreeMutationService(
-        writer=TreeKgWriter(lambda ops: writes.append(ops) or [[]]),
+        writer=TreeKgWriter(lambda ops: writes.append(ops) or [[{"t": 1}]]),   # 1행=나무 존재(fail-loud 가드 통과)
         validator=LakatosSemanticValidator(),
         hist=lambda *a, **k: None,
     )
@@ -109,7 +109,7 @@ def test_writer_upsert_nodes_byconstruction_rejects_scored(verdict):
 def test_writer_passes_structural_verdict_through():
     """구조/행정 어휘(canonical_stage 등)는 통과 — 단 CANONICAL/former_canonical 은 진보어휘라 차단(아래)."""
     txs: list = []
-    writer = TreeKgWriter(lambda ops: txs.append(ops) or [[]])
+    writer = TreeKgWriter(lambda ops: txs.append(ops) or [[{"t": 1}]])   # 1행=나무 존재(fail-loud 가드 통과)
     writer.add_node("T", NodeIn(tag="x", verdict="canonical_stage"), [])
     assert txs
 

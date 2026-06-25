@@ -24,8 +24,9 @@ from lakatos.verdict.judge import NovelTarget, Prediction, judge
 
 _ROOT = "<WORKSPACE>/PROJECT/PI/lakatotree"
 _RECEIPT_TESTS = (
-    "tests/test_create_tree_surface.py "          # REST(service)+MCP+CLI 노출
-    "tests/test_add_node_missing_tree_404.py"     # novel 축: missing-tree add_node = 404
+    "tests/test_create_tree_surface.py "           # REST(service)+MCP+CLI 노출
+    "tests/test_add_node_missing_tree_404.py "     # novel 축: missing-tree add_node = 404(service)
+    "tests/test_writer_add_node_missing_tree.py"   # writer 레벨 fail-loud(TreeNotFound) — defense-in-depth 가지 guard
 )
 
 
@@ -83,12 +84,12 @@ SELFDEV_NODES: tuple[SelfDevNode, ...] = (
                                  direction="higher", threshold=1.0),
         guard_test="test_add_node_to_missing_tree_is_404_not_silent",
     ),
-    # ── 열린 가지(OPEN) — guard_test 미존재 → receipt 없음 → 정직하게 pending ──────────────────
+    # ── 닫힌 가지(DONE) — guard 착륙 후 엔진이 자동 채점 ────────────────────────────────────────
     SelfDevNode(
         tag="writer_silent_match_hardening", parent="create_tree_surface",
-        story="[OPEN] defense-in-depth 잔여: writer.add_node 의 raw MATCH 는 직접 호출 시(service/load_tree_data "
-              "우회) 여전히 침묵 no-op 가능. RETURN t 로 0행 감지→TreeNotFound 하드닝은 kg_tx 테스트 스텁 대거 "
-              "갱신을 요해 별도 작업으로 남김. guard 착륙 시 재실행이 자동 채점.",
+        story="defense-in-depth: writer.add_node 의 raw MATCH 가 직접 호출 시(service/load_tree_data 우회) "
+              "침묵 no-op 였음. RETURN t 로 0행 감지→TreeNotFound(mutations 404 번역) + kg_tx 스텁 갱신. "
+              "guard(test_writer_add_node_missing_tree_raises) 착륙 → 엔진 자동 채점(pending→progressive).",
         threat_needles=("writer_add_node_missing_tree_raises",),
         prediction=Prediction(metric_name="writer_silent_match_noop_open", direction="lower",
                               baseline_value=1.0, noise_band=0.0,
@@ -145,9 +146,9 @@ def _kg_node(n: SelfDevNode) -> dict:
 NODES = [_kg_node(n) for n in SELFDEV_NODES]
 
 FRONTIER = [
-    dict(name="q-writer-silent-match", status="OPEN", closed_by=None,
+    dict(name="q-writer-silent-match", status="CLOSED", closed_by="writer_silent_match_hardening",
          body="writer.add_node 의 raw MATCH no-op 을 writer 레벨에서도 fail-loud 로(RETURN t→TreeNotFound). "
-              "kg_tx 테스트 스텁 대거 갱신 필요 → 별도 작업(defense-in-depth)."),
+              "CLOSED: kg_tx 스텁 3곳 갱신 + guard 착륙으로 엔진 progressive 채점."),
 ]
 
 
@@ -164,4 +165,4 @@ if __name__ == "__main__":
             tail = f"failures={r['failures']}/{r['surface']}  novel={r.get('novel')}  improved={r.get('improved')}"
         print(f"  {r['tag']:30} → {r['verdict']:20} {tail}")
     print("\nKG 거울: LakatosTree_LakatoTree_SelfDev_20260612 "
-          "(닫힘 1: create_tree_surface · 열림 1: writer_silent_match_hardening). verdict 전부 judge() 생성.")
+          "(닫힘 2: create_tree_surface + writer_silent_match_hardening). verdict 전부 judge() 생성.")
