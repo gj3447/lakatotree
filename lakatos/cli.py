@@ -24,6 +24,7 @@
   question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
   agm <spec.json>                AGM 신념개정 — hard core revision/contraction(P1)
   cycle <spec.json>              하네스 한 사이클 — 상계read→하계build/judge→critique→standing
+  tree-create <name> [--title T --hard-core H --frontier-rule F]  새 나무 생성/메타 upsert (add_node 전 필수)
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
@@ -120,6 +121,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--actor', default=''); sp.add_argument('--action', required=True)
     sp.add_argument('--evidence', action='append', default=[])
     sp.add_argument('--payload', action='append', default=[], help='key=value (반복)')
+    sp = sub.add_parser('tree-create'); sp.add_argument('name')
+    sp.add_argument('--title', default=''); sp.add_argument('--hard-core', default='')
+    sp.add_argument('--frontier-rule', default=''); sp.add_argument('--doc', default='')
+    sp.add_argument('--coverage-statement', default='')
+    sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
@@ -290,6 +296,11 @@ def main(argv=None):
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/event',
                    dict(event_id=a.event_id, realm=a.realm, actor=a.actor,
                         action=a.action, evidence_refs=a.evidence, payload=payload))
+    elif a.cmd == 'tree-create':
+        out = call('POST', f'/api/tree/{a.name}',
+                   dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
+                        doc=a.doc, coverage_statement=a.coverage_statement,
+                        coverage_backlog=a.coverage_backlog))
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:
