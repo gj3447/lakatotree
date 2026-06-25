@@ -21,6 +21,11 @@ _GREEN = {
     "test_mcp_delete_tree_tool": True,
     "test_cli_tree_delete": True,
     "test_delete_nonempty_without_cascade_is_409_and_no_write": True,
+    # 온톨로지 강제(엔진 teeth)
+    "test_undeclared_entity_is_422_closed_world": True,
+    "test_missing_required_attr_is_422": True,
+    "test_bad_value_min_is_422": True,
+    "test_no_ontology_no_enforcement_backward_compat": True,
 }
 
 
@@ -41,6 +46,13 @@ def test_delete_branch_scores_progressive_from_receipt():
     d = _by_tag(_GREEN)["delete_tree_surface"]
     assert d["verdict"] == "progressive", d
     assert d["novel"] is True
+
+
+def test_ontology_enforcement_scores_progressive_from_receipt():
+    """엔진이 온톨로지를 강제하게 만든 작업도 judge 가 progressive 생성(novel=opt-in backward-compat)."""
+    o = _by_tag(_GREEN)["ontology_enforcement"]
+    assert o["verdict"] == "progressive", o
+    assert o["novel"] is True
 
 
 def test_root_is_canonical_stage_not_scored():
