@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter
 
-from server.contexts.tree.schemas import NodeIn, QuestionIn
+from server.contexts.tree.schemas import CreateTreeIn, NodeIn, QuestionIn
 from server.contexts.tree.service import TreeService
 
 
@@ -24,6 +24,11 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
     @router.get("/api/tree/{name}")
     def tree(name: str):
         return service_factory().tree_data(name)
+
+    @router.post("/api/tree/{name}")
+    def create_tree(name: str, spec: CreateTreeIn):
+        """나무 생성/메타 upsert. GET 와 같은 경로지만 메서드(POST)로 분기 — 멱등·last-write-wins."""
+        return service_factory().create_tree(name, spec)
 
     @router.get("/api/tree/{name}/metrics")
     def metrics(name: str, snapshot: bool = False):

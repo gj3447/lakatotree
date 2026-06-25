@@ -59,6 +59,18 @@ class QuestionIn(BaseModel):
     cost: float = Field(1.0, gt=0)
 
 
+class CreateTreeIn(BaseModel):
+    model_config = _SERVER_SET_ONLY   # client 가 server 전용 필드 못 실음(422). name 은 URL path 가 소유.
+    # 메타 전용 create/upsert. 멱등이되 last-write-wins: 같은 name 재호출은 보낸 값으로 덮어씀
+    # (생략 필드 = 빈값). 노드/질문은 각자 /node /question 라우트로.
+    title: str = ""
+    hard_core: str = ""
+    frontier_rule: str = ""
+    doc: str = ""
+    coverage_statement: str = ""
+    coverage_backlog: list[str] = Field(default_factory=list)
+
+
 class PredictionIn(BaseModel):
     """Preregistered prediction. Judgement must happen after this contract exists."""
 
