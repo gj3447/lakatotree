@@ -30,6 +30,11 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
         """나무 생성/메타 upsert. GET 와 같은 경로지만 메서드(POST)로 분기 — 멱등·last-write-wins."""
         return service_factory().create_tree(name, spec)
 
+    @router.delete("/api/tree/{name}")
+    def delete_tree(name: str, cascade: bool = False):
+        """나무 삭제(파괴적). 미존재=404 · 노드 있으면 cascade=true 필요(아니면 409). create_tree 의 짝."""
+        return service_factory().delete_tree(name, cascade=cascade)
+
     @router.get("/api/tree/{name}/metrics")
     def metrics(name: str, snapshot: bool = False):
         return service_factory().metrics(name, snapshot=snapshot)

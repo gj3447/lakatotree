@@ -110,6 +110,24 @@ class TreeKgWriter:
             raise TreeNotFound(tree)
         return WriteSummary(tx_count=1, op_count=len(ops), rows=1)
 
+    def delete_tree(self, tree: str) -> WriteSummary:
+        """나무 + 노드 + frontier 를 cascade DETACH DELETE(파괴적·복구불가). 미존재면 TreeNotFound(0행).
+
+        op1(RETURN t)로 존재 확인 → op2 가 같은 tx 에서 삭제. 미존재 시 op2 는 no-op(삭제 0)이고 raise."""
+        results = self.kg_tx([
+            ("MATCH (t:LakatosTree {name:$tree}) RETURN t AS t", dict(tree=tree)),
+            (
+                """MATCH (t:LakatosTree {name:$tree})
+                   OPTIONAL MATCH (t)-[:HAS_NODE]->(e)
+                   OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q)
+                   DETACH DELETE e, q, t""",
+                dict(tree=tree),
+            ),
+        ])
+        if not results or not results[0]:   # op1 0행 = 나무 미존재 (op2 삭제는 no-op)
+            raise TreeNotFound(tree)
+        return WriteSummary(tx_count=1, op_count=2, rows=1)
+
     def upsert_tree_meta(
         self,
         *,

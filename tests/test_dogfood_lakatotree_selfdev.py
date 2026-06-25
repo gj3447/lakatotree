@@ -16,6 +16,11 @@ _GREEN = {
     "test_cli_tree_create_posts": True,
     "test_add_node_to_missing_tree_is_404_not_silent": True,
     "test_writer_add_node_missing_tree_raises": True,
+    # delete_tree 표면(create 의 짝)
+    "test_writer_delete_tree_missing_raises": True,
+    "test_mcp_delete_tree_tool": True,
+    "test_cli_tree_delete": True,
+    "test_delete_nonempty_without_cascade_is_409_and_no_write": True,
 }
 
 
@@ -29,6 +34,13 @@ def test_surface_branch_scores_progressive_from_receipt():
     assert s["verdict"] == "progressive", s
     assert s["improved"] is True
     assert s["novel"] is True          # add_node_missing_tree_fails_loud_404 (독립 축)
+
+
+def test_delete_branch_scores_progressive_from_receipt():
+    """delete_tree_surface(create 의 짝) 도 judge 가 receipt 에서 progressive 생성(novel=파괴적 가드)."""
+    d = _by_tag(_GREEN)["delete_tree_surface"]
+    assert d["verdict"] == "progressive", d
+    assert d["novel"] is True
 
 
 def test_root_is_canonical_stage_not_scored():

@@ -29,6 +29,13 @@ def _post(path, body):
     return r.json()
 
 
+def _delete(path):
+    r = httpx.delete(BASE + path, headers=_headers(), timeout=30)
+    if r.status_code >= 400:
+        return {'error': r.status_code, 'detail': r.text[:200]}
+    return r.json()
+
+
 @mcp.tool()
 def list_trees() -> str:
     """모든 라카토스 나무 목록."""
@@ -211,6 +218,14 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
              doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog)), ensure_ascii=False)
+
+
+@mcp.tool()
+def delete_tree(name: str, cascade: bool = False) -> str:
+    """나무 삭제(★파괴적·복구불가) — create_tree 의 짝. 미존재=404. 노드가 있으면 cascade=True 일 때만
+    전체 삭제(아니면 409, typo 로 진짜 연구트리 날리기 방지). 빈 나무는 cascade 없이 삭제 가능."""
+    return json.dumps(_delete(f'/api/tree/{name}?cascade={"true" if cascade else "false"}'),
+                      ensure_ascii=False)
 
 
 @mcp.tool()

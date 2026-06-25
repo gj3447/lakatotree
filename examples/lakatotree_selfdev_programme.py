@@ -26,7 +26,8 @@ _ROOT = "<WORKSPACE>/PROJECT/PI/lakatotree"
 _RECEIPT_TESTS = (
     "tests/test_create_tree_surface.py "           # REST(service)+MCP+CLI 노출
     "tests/test_add_node_missing_tree_404.py "     # novel 축: missing-tree add_node = 404(service)
-    "tests/test_writer_add_node_missing_tree.py"   # writer 레벨 fail-loud(TreeNotFound) — defense-in-depth 가지 guard
+    "tests/test_writer_add_node_missing_tree.py "  # writer 레벨 fail-loud(TreeNotFound) — defense-in-depth 가지 guard
+    "tests/test_delete_tree_surface.py"            # delete_tree 표면(create 의 짝) + empty-guard
 )
 
 
@@ -83,6 +84,20 @@ SELFDEV_NODES: tuple[SelfDevNode, ...] = (
         novel_target=NovelTarget(metric_name="add_node_missing_tree_fails_loud_404",
                                  direction="higher", threshold=1.0),
         guard_test="test_add_node_to_missing_tree_is_404_not_silent",
+    ),
+    SelfDevNode(
+        tag="delete_tree_surface", parent="hard_core",
+        story="delete_tree 를 REST(DELETE)/MCP/CLI 3표면에 노출 — create_tree 의 짝(create/delete 비대칭 해소). "
+              "안전: missing=404, empty-guard(노드 있으면 cascade=true 일 때만 전체삭제, 아니면 409) → typo 로 "
+              "진짜 연구트리 날리기 방지. 개선=노출 안 된 삭제 표면 0. novel=파괴적 op 가드(409, 다른 축).",
+        threat_needles=("delete_tree", "tree_delete"),
+        prediction=Prediction(metric_name="unexposed_tree_deletion_surfaces", direction="lower",
+                              baseline_value=3.0, noise_band=0.0,
+                              novel_prediction="delete_tree REST+MCP+CLI 노출",
+                              closes_question="q-delete-tree-surface"),
+        novel_target=NovelTarget(metric_name="delete_guard_blocks_destructive",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_delete_nonempty_without_cascade_is_409_and_no_write",
     ),
     # ── 닫힌 가지(DONE) — guard 착륙 후 엔진이 자동 채점 ────────────────────────────────────────
     SelfDevNode(
@@ -165,4 +180,4 @@ if __name__ == "__main__":
             tail = f"failures={r['failures']}/{r['surface']}  novel={r.get('novel')}  improved={r.get('improved')}"
         print(f"  {r['tag']:30} → {r['verdict']:20} {tail}")
     print("\nKG 거울: LakatosTree_LakatoTree_SelfDev_20260612 "
-          "(닫힘 2: create_tree_surface + writer_silent_match_hardening). verdict 전부 judge() 생성.")
+          "(닫힘 3: create_tree_surface + delete_tree_surface + writer_silent_match_hardening). verdict 전부 judge() 생성.")

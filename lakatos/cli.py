@@ -25,6 +25,7 @@
   agm <spec.json>                AGM 신념개정 — hard core revision/contraction(P1)
   cycle <spec.json>              하네스 한 사이클 — 상계read→하계build/judge→critique→standing
   tree-create <name> [--title T --hard-core H --frontier-rule F]  새 나무 생성/메타 upsert (add_node 전 필수)
+  tree-delete <name> [--cascade]  나무 삭제(파괴적; 노드 있으면 --cascade 필수)
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
@@ -126,6 +127,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--frontier-rule', default=''); sp.add_argument('--doc', default='')
     sp.add_argument('--coverage-statement', default='')
     sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
+    sp = sub.add_parser('tree-delete'); sp.add_argument('name')
+    sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
@@ -301,6 +304,8 @@ def main(argv=None):
                    dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
                         doc=a.doc, coverage_statement=a.coverage_statement,
                         coverage_backlog=a.coverage_backlog))
+    elif a.cmd == 'tree-delete':
+        out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:

@@ -62,6 +62,13 @@ class TreeMutationService:
             out["policy_warnings"] = _finding_codes(result.policy_findings)
         return out
 
+    def delete_tree(self, name: str) -> None:
+        try:
+            self.writer.delete_tree(name)
+        except TreeNotFound:
+            raise HTTPException(404, f"나무 없음: {name}")
+        self.hist(name, "tree_delete", None, {})
+
     def upsert_tree(self, spec: TreeSpec) -> dict:
         bulk = self._validate_bulk_nodes(spec)
         meta_findings = self.validator.validate_tree_meta(
