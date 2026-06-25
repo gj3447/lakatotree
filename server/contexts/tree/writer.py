@@ -105,6 +105,19 @@ class TreeKgWriter:
                     ),
                 )
             )
+        if (node.open_question or "").strip():
+            # M4(설계감사 2026-06-25): 노드가 여는 질문을 (e)-[:RAISES_QUESTION]->(q) 로 *실체화*한다.
+            # 전엔 e.open_question 스칼라만 SET 하고 엣지를 안 써서 opened/n_opened 가 항상 0(problem_balance 붕괴).
+            ops.append(
+                (
+                    """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                       MERGE (q:OpenQuestion {name:$qname})
+                         ON CREATE SET q.status='OPEN', q.created_at=$ts
+                       MERGE (e)-[:RAISES_QUESTION]->(q)
+                       MERGE (t)-[:HAS_FRONTIER]->(q)""",
+                    dict(tree=tree, tag=node.tag, qname=node.open_question.strip(), ts=_utc_now()),
+                )
+            )
         results = self.kg_tx(ops)
         if not results or not results[0]:   # MATCH 0행 = 나무 미존재 → 침묵 no-op 금지(fail-loud)
             raise TreeNotFound(tree)
