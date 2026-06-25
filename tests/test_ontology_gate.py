@@ -55,3 +55,46 @@ def test_open_world_unknown_entity_allowed():
 def test_constraint_only_binds_when_present():
     o = DomainOntology.from_spec({"entities": {"x": {"constraints": {"k": {"type": "number"}}}}})
     assert o.violations("x", {}) == []   # k 없음 → 제약 미적용(required 아님)
+
+
+# ── 확장 A: metric(측정) 어휘 강제 — prediction 시점 ──────────────────────────
+_MSPEC = {"metrics": {"seam_mm": {"direction": "lower"}}, "closed_world_metrics": True}
+
+
+def test_metrics_only_ontology_is_valid():
+    assert DomainOntology.from_spec({"metrics": {"m": {}}}) is not None
+
+
+def test_metric_drift_closed_world():
+    o = DomainOntology.from_spec(_MSPEC)
+    assert any("drift" in x for x in o.metric_violations("fabricated_metric", "lower"))
+
+
+def test_metric_direction_mismatch():
+    o = DomainOntology.from_spec(_MSPEC)
+    assert any("direction" in x for x in o.metric_violations("seam_mm", "higher"))
+    assert o.metric_violations("seam_mm", "lower") == []
+
+
+def test_metric_open_world_allows_undeclared():
+    o = DomainOntology.from_spec({"metrics": {"x": {}}})   # closed_world_metrics=false
+    assert o.metric_violations("anything_metric", "lower") == []
+
+
+def test_empty_metric_name_no_violation():
+    assert DomainOntology.from_spec(_MSPEC).metric_violations("", None) == []
+
+
+# ── 확장 B: require_entity strict — 미선언 entity 는 open-world 라도 drift ─────
+def test_require_entity_rejects_undeclared_even_open_world():
+    o = DomainOntology.from_spec({"entities": {"icp": {}}, "require_entity": True})  # closed_world=false
+    assert any("drift" in x for x in o.violations("undeclared", {}))
+
+
+# ── from_json 파서(opt-in) ────────────────────────────────────────────────────
+def test_from_json_string_dict_none():
+    assert DomainOntology.from_json("") is None
+    assert DomainOntology.from_json("not json{") is None
+    assert DomainOntology.from_json(None) is None
+    o = DomainOntology.from_json('{"metrics":{"seam_mm":{"direction":"lower"}}}')
+    assert o is not None and o.metric_violations("seam_mm", "lower") == []

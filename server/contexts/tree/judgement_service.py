@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from lakatos.verdict.argue import grounded_extension
 from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
+from lakatos.ontology import DomainOntology
 from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, judge
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
 from lakatos.io.prov import prov_triples, replay_command
@@ -193,6 +194,13 @@ class JudgementService:
                     note='measurement-grade: felt=novel 등록, true=확증+substantial BF+순문제폐쇄. standing 은 별도 층')
 
     def register_prediction(self, name: str, tag: str, p: PredictionIn) -> dict:
+        meta = self.kg("MATCH (t:LakatosTree {name:$n}) RETURN t.ontology AS ontology", n=name)
+        onto = DomainOntology.from_json(meta[0].get("ontology")) if meta else None
+        if onto is not None:   # 선언된 metric 어휘 강제(opt-in) — 개선 metric + novel metric 둘 다
+            viols = (onto.metric_violations(p.metric_name, p.direction)
+                     + onto.metric_violations(p.novel_metric, p.novel_direction))
+            if viols:
+                raise HTTPException(422, f"metric 온톨로지 위반: {viols}")
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,

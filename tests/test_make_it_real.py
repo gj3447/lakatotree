@@ -37,7 +37,7 @@ def test_register_prediction_writes_pred_credence(monkeypatch):
     calls = _capture_kg(monkeypatch, app)
     app.register_prediction('T', 'v', app.PredictionIn(
         metric_name='p95', baseline_value=0.5, credence=0.8))
-    q, kw = calls[0]
+    q, kw = next(c for c in calls if 'e.pred_metric=' in c[0])   # ontology read 가 calls[0] 라 내용으로 찾음
     assert 'e.pred_credence=$credence' in q
     assert kw['credence'] == 0.8
 
@@ -46,7 +46,8 @@ def test_register_prediction_credence_optional(monkeypatch):
     app = load_app()
     calls = _capture_kg(monkeypatch, app)
     app.register_prediction('T', 'v', app.PredictionIn(metric_name='p95', baseline_value=0.5))
-    assert calls[0][1]['credence'] is None        # 안 줘도 OK
+    pred = next(c for c in calls if 'e.pred_metric=' in c[0])   # ontology read 가 calls[0] 라 내용으로 찾음
+    assert pred[1]['credence'] is None        # 안 줘도 OK
 
 
 def test_calibration_has_data_once_pred_credence_present(monkeypatch):

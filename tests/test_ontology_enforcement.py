@@ -9,7 +9,8 @@ import json
 import pytest
 from fastapi import HTTPException
 
-from server.contexts.tree.schemas import NodeIn
+from server.contexts.tree.judgement_service import JudgementService
+from server.contexts.tree.schemas import NodeIn, PredictionIn
 from server.contexts.tree.service import TreeService
 
 _ONTO = json.dumps({
@@ -76,3 +77,50 @@ def test_no_ontology_no_enforcement_backward_compat():
     out = _svc(ontology="", captured=cap).add_node(
         "T", NodeIn(tag="n", algorithm="anything_goes", metric_name="x"))
     assert out["ok"] is True   # 미선언 트리 = 강제 없음(기존 트리 무영향)
+
+
+# ── 확장 B: require_entity strict — 구조노드도 entity 필수 ─────────────────────
+def test_require_entity_rejects_structural_node():
+    onto = json.dumps({"entities": {"icp": {}}, "require_entity": True})
+    with pytest.raises(HTTPException) as e:
+        _svc(ontology=onto, captured=[]).add_node("T", NodeIn(tag="root", algorithm=""))
+    assert e.value.status_code == 422 and "require_entity" in str(e.value.detail)
+
+
+# ── 확장 A: prediction(metric) 어휘 강제 — register_prediction 시점 ────────────
+_MONTO = json.dumps({"metrics": {"seam_mm": {"direction": "lower"}}, "closed_world_metrics": True})
+
+
+def _judge(ontology: str):
+    def kg(query, **k):
+        if "RETURN t.ontology AS ontology" in query:
+            return [{"ontology": ontology}]
+        if "SET e.pred_metric" in query:
+            return [{"tag": "n"}]
+        return []
+    return JudgementService(kg=kg, kg_tx=lambda ops: [[{"ok": 1}] for _ in ops],
+                            hist=lambda *a: None,
+                            foundation=lambda *a, **k: None,
+                            reproducible_for_node=lambda *a, **k: None)
+
+
+def test_prediction_undeclared_metric_is_422():
+    with pytest.raises(HTTPException) as e:
+        _judge(_MONTO).register_prediction("T", "n", PredictionIn(metric_name="fabricated_metric", baseline_value=1.0))
+    assert e.value.status_code == 422 and "metric 온톨로지" in str(e.value.detail)
+
+
+def test_prediction_wrong_direction_is_422():
+    with pytest.raises(HTTPException) as e:
+        _judge(_MONTO).register_prediction("T", "n", PredictionIn(metric_name="seam_mm", direction="higher", baseline_value=1.0))
+    assert e.value.status_code == 422
+
+
+def test_prediction_conforming_metric_passes():
+    out = _judge(_MONTO).register_prediction("T", "n", PredictionIn(metric_name="seam_mm", direction="lower", baseline_value=1.0))
+    assert out["ok"] is True
+
+
+def test_prediction_no_ontology_no_enforcement():
+    out = _judge("").register_prediction("T", "n", PredictionIn(metric_name="anything", baseline_value=1.0))
+    assert out["ok"] is True   # 미선언 트리 = 강제 없음
