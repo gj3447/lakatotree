@@ -57,6 +57,11 @@ def _reject_scored(nodes: Sequence[NodeIn]) -> None:
         raise ValueError(f"prom-honesty/1: 노드-쓰기로 스코어링/진보 판결 발행 불가(self-report 차단): {bad}")
 
 
+class TreeNotFound(Exception):
+    """add_node 대상 나무가 KG 에 없음(MATCH 0행). 침묵 no-op 대신 fail-loud — mutations 가 404 로 번역.
+    (service 경로는 load_tree_data 가 먼저 404; 이건 writer 직접호출까지 막는 defense-in-depth.)"""
+
+
 class TreeKgWriter:
     """Owns Cypher write shape for the tree context."""
 
@@ -78,7 +83,8 @@ class TreeKgWriter:
                    e.open_question=$open_question, e.metric_name=$metric_name,
                    e.metric_value=$metric_value, e.metric_scope=$metric_scope,
                    e.recorded_at=$ts
-               MERGE (t)-[:HAS_NODE]->(e)""",
+               MERGE (t)-[:HAS_NODE]->(e)
+               RETURN t AS t""",
                 dict(tree=tree, ts=_utc_now(), **node.model_dump()),
             )
         ]
@@ -99,7 +105,9 @@ class TreeKgWriter:
                     ),
                 )
             )
-        self.kg_tx(ops)
+        results = self.kg_tx(ops)
+        if not results or not results[0]:   # MATCH 0행 = 나무 미존재 → 침묵 no-op 금지(fail-loud)
+            raise TreeNotFound(tree)
         return WriteSummary(tx_count=1, op_count=len(ops), rows=1)
 
     def upsert_tree_meta(

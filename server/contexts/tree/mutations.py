@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from server.contexts.tree.materialization import TreeMaterializationPlanner
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.validation import LakatosSemanticValidator, PolicyFinding
-from server.contexts.tree.writer import TreeKgWriter, WriteSummary
+from server.contexts.tree.writer import TreeKgWriter, TreeNotFound, WriteSummary
 from server.ports import HistoryAppend
 
 
@@ -49,7 +49,10 @@ class TreeMutationService:
 
     def add_node(self, name: str, node: NodeIn, tree_data: dict) -> dict:
         result = self.validator.validate_node_create_result(name, tree_data, node)
-        self.writer.add_node(name, node, result.parent_edges)
+        try:
+            self.writer.add_node(name, node, result.parent_edges)
+        except TreeNotFound:
+            raise HTTPException(404, f"나무 없음: {name}")
         self.hist(name, "node_create", node.tag, {
             **node.model_dump(),
             "policy_warnings": _finding_codes(result.policy_findings),

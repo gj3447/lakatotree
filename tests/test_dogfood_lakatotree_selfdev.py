@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from examples.lakatotree_selfdev_programme import SELFDEV_NODES, run
 
-# 실 표면 테스트가 전부 green 인 상태를 반영한 합성 receipt.
+# 실 표면 테스트가 전부 green 인 상태를 반영한 합성 receipt(두 가지 guard 다 착륙).
 _GREEN = {
     "test_service_create_tree_merges_tree_and_returns_ok": True,
     "test_mcp_create_tree_tool_posts_to_tree_route": True,
     "test_cli_tree_create_posts": True,
     "test_add_node_to_missing_tree_is_404_not_silent": True,
+    "test_writer_add_node_missing_tree_raises": True,
 }
 
 
@@ -35,9 +36,17 @@ def test_root_is_canonical_stage_not_scored():
     assert h["verdict"] == "canonical_stage" and h["status"] == "ROOT"
 
 
-def test_open_writer_hardening_is_pending_no_receipt():
-    """guard_test 미착륙(writer 하드닝 미실행) → 정직한 pending(no-receipt)."""
+def test_writer_hardening_scores_progressive_when_guard_present():
+    """writer 하드닝 guard 착륙 → 엔진이 writer_silent_match_hardening 을 progressive 로 채점."""
     w = _by_tag(_GREEN)["writer_silent_match_hardening"]
+    assert w["verdict"] == "progressive"
+    assert w["novel"] is True
+
+
+def test_writer_hardening_pending_when_guard_absent():
+    """guard 영수증 빠지면 정직한 pending(no-receipt) — '영수증 없는 green 은 거짓말' 규율."""
+    rc = {k: v for k, v in _GREEN.items() if k != "test_writer_add_node_missing_tree_raises"}
+    w = _by_tag(rc)["writer_silent_match_hardening"]
     assert w["verdict"] == "pending(no-receipt)"
     assert w["status"] == "OPEN"
 
