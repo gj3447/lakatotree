@@ -317,3 +317,22 @@ industrial-production-adopted.
 
 For the root-cause critique behind these gates, see
 `docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md`.
+
+## Implementation (2026-06-25) — gate is now rerunnable
+
+The "Required Promotion Gate Patch" above is implemented as an executable, fail-closed judge:
+
+- `lakatos/verdict/industrial.py` → `judge_dimension(result)` returns a `DimensionVerdict`:
+  - **BLOCKED** if any required field (measurand / cad_nominal / measured / deviation / tolerance /
+    uncertainty / decision_rule / conformity_state / gauge / independent_truth / negative_controls) is
+    absent or incomplete — i.e. it fails when a dimension lacks uncertainty, repeatability (gauge R&R),
+    CAD residual (deviation), or traceability (independent_truth).
+  - **conformity recomputed** by the gate (self-reported `conformity_state` is not trusted): near-limit
+    (`|tolerance − |deviation|| < U_k2`) → `indeterminate` → CONDITIONAL; out-of-tolerance beyond
+    uncertainty → NO-GO; in-tolerance with `gauge.status != acceptable` → CONDITIONAL (not
+    PASS-PRODUCTION-CANDIDATE).
+- Rerunnable acceptance check: `python -m pytest tests/test_industrial_dimension_gate.py -q` (13 tests).
+- This PIERCES Longinus binding `BPC.IndustrialDimensionJudgementGate`
+  (`docs/longinus_prom_review_bindings_20260624.json`).
+- Frontier (deferred): wiring this gate into `promote.promotion_gate` so a branch cannot reach
+  `adopted` without a passing dimension result — a public-API change left as follow-up.

@@ -62,16 +62,18 @@
       "sourceId": "BPC.IndustrialDimensionJudgementGate",
       "sourcePath": "docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md:1",
       "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
-      "confidence": "INFERRED",
-      "binding_state": "CANDIDATE",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
       "drift_type": "SigMismatch",
       "lens_law": "PutGet",
       "claim": "Industrial dimensional judgement must separate accuracy, precision, uncertainty, repeatability, and CAD residual before accepting a measurement.",
       "evidence": [
         "docs/LONGINUS_INDUSTRIAL_DIMENSION_JUDGEMENT_20260624.md:1",
-        "docs/LONGINUS_SELF_VERIFICATION_HELP_20260624.md:1"
+        "docs/LONGINUS_SELF_VERIFICATION_HELP_20260624.md:1",
+        "lakatos/verdict/industrial.py:1",
+        "tests/test_industrial_dimension_gate.py:1"
       ],
-      "acceptance_check": "Add a rerunnable judge that fails when any dimension lacks uncertainty, repeatability, CAD residual, and traceability fields."
+      "acceptance_check": "python -m pytest tests/test_industrial_dimension_gate.py -q"
     },
     {
       "sourceId": "BPC.RootCauseKusariChecklist",
