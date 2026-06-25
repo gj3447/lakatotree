@@ -57,11 +57,17 @@ def test_degenerating_withdrawn_count_as_nonprogressive():
     assert bi['consecutive_nonprogressive'] == 2   # 전엔 0 (둘 다 progress 로 오인)
 
 
-def test_progressive_conditional_counts_as_prediction_hit():
+def test_only_confirmed_progressive_counts_as_prediction_hit():
+    # 설계감사 M3 정정(2026-06-25): 이 테스트는 본래 미확증 progressive_conditional 까지 prediction_hit
+    # 으로 셌다(== 2). 그러나 그건 결함이었다 — 미확증 conditional 을 적중으로 세면 라우든 폐기규칙②
+    # (예산 소진 ∧ 적중 0)가 면제돼 degenerating 가지가 무기한 살고 bandit reward 가 오염된다
+    # (verdicts.py 의 PROGRESS_VERDICTS 는 진보 *축*(consec 리셋용)이라 conditional 을 포함하나, *적중*은
+    # fertility.py novel_confirmed 정신대로 confirmed 'progressive' 만 — CONFIRMED_NOVEL_PROGRESS).
+    # progressive_conditional 은 여전히 PROGRESS_VERDICTS 의 진보축·promote/series 등 다른 용처에 남는다.
     nodes = [_node('root', 'progressive'),
              _node('a', 'progressive_conditional', parent='root')]
     bi = branch_inputs(nodes, [], leaf='a')
-    assert bi['prediction_hits'] == 2   # progressive + progressive_conditional 둘 다
+    assert bi['prediction_hits'] == 1   # confirmed 'progressive' 만 적중; 미확증 conditional 은 제외
 
 
 # ── THR-1: bayes 가 degenerating 을 음의 증거로 (neutral 오인 금지) ──

@@ -18,7 +18,8 @@ from lakatos.quant.fertility import predictive_fertility, nobel_grade
 from lakatos.eureka import eureka_over_tree
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
-from lakatos.verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row
+from lakatos.verdicts import (PROGRESS_VERDICTS, CONFIRMED_NOVEL_PROGRESS,
+                              NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row)
 
 
 def _primary_parent(row: dict) -> str | None:
@@ -68,7 +69,9 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
         path=[{'tag': r['tag'], 'verdict': r['verdict']} for r in reversed(chain)],
         consecutive_nonprogressive=consec, nodes_spent=len(chain),
-        prediction_hits=sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS),
+        # M3: 폐기규칙②·bandit reward 가 묻는 *적중*은 confirmed-novel 진보만(미확증 conditional/
+        #     former_canonical 제외) — 넓은 PROGRESS_VERDICTS 로 세면 미확증이 폐기를 면제·reward 오염.
+        prediction_hits=sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
                                                                  window=window),
         novel_registered_recent=sum(1 for r in recent if r.get('novel_registered')),
@@ -220,7 +223,9 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
                 consec += 1
             else:
                 break
-        hits = sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS)
+        # M3: confirmed-novel 진보만 적중 — 미확증 progressive_conditional 을 적중으로 세면 규칙②
+        #     (예산 소진 ∧ 적중 0)가 면제돼 degenerating 가지가 무기한 산다(폐기 지연).
+        hits = sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
         # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
         pb_windowed = branch_problem_balance_windowed(chain, tv.frontier)
         ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
