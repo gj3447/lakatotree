@@ -27,7 +27,9 @@ _RECEIPT_TESTS = (
     "tests/test_create_tree_surface.py "           # REST(service)+MCP+CLI 노출
     "tests/test_add_node_missing_tree_404.py "     # novel 축: missing-tree add_node = 404(service)
     "tests/test_writer_add_node_missing_tree.py "  # writer 레벨 fail-loud(TreeNotFound) — defense-in-depth 가지 guard
-    "tests/test_delete_tree_surface.py"            # delete_tree 표면(create 의 짝) + empty-guard
+    "tests/test_delete_tree_surface.py "           # delete_tree 표면(create 의 짝) + empty-guard
+    "tests/test_ontology_gate.py "                 # native 온톨로지 게이트 순수 로직
+    "tests/test_ontology_enforcement.py"           # 엔진이 노드 등록 시 온톨로지 강제(opt-in)
 )
 
 
@@ -98,6 +100,20 @@ SELFDEV_NODES: tuple[SelfDevNode, ...] = (
         novel_target=NovelTarget(metric_name="delete_guard_blocks_destructive",
                                  direction="higher", threshold=1.0),
         guard_test="test_delete_nonempty_without_cascade_is_409_and_no_write",
+    ),
+    SelfDevNode(
+        tag="ontology_enforcement", parent="hard_core",
+        story="엔진이 *선언된* 도메인 온톨로지를 노드 등록 시 강제(fail-closed 422) — '선언만' 받던 "
+              "domain-ontology foundation 에 teeth. 세 환각(미선언 entity drift / 필수 속성 누락 / 값 위반)을 "
+              "RED 로. 개선=강제 안 되던 선언 0. novel=opt-in backward-compat(미선언 트리 무영향, 다른 축).",
+        threat_needles=("ontology", "_422", "violation", "drift", "conform"),
+        prediction=Prediction(metric_name="unenforced_ontology_declarations", direction="lower",
+                              baseline_value=3.0, noise_band=0.0,
+                              novel_prediction="엔진이 선언 온톨로지를 노드에 강제(drift/required/value)",
+                              closes_question="q-ontology-enforcement"),
+        novel_target=NovelTarget(metric_name="enforcement_is_optin_backward_compat",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_no_ontology_no_enforcement_backward_compat",
     ),
     # ── 닫힌 가지(DONE) — guard 착륙 후 엔진이 자동 채점 ────────────────────────────────────────
     SelfDevNode(
@@ -180,4 +196,4 @@ if __name__ == "__main__":
             tail = f"failures={r['failures']}/{r['surface']}  novel={r.get('novel')}  improved={r.get('improved')}"
         print(f"  {r['tag']:30} → {r['verdict']:20} {tail}")
     print("\nKG 거울: LakatosTree_LakatoTree_SelfDev_20260612 "
-          "(닫힘 3: create_tree_surface + delete_tree_surface + writer_silent_match_hardening). verdict 전부 judge() 생성.")
+          "(닫힘 4: create_tree_surface + delete_tree_surface + ontology_enforcement + writer_silent_match_hardening). verdict 전부 judge() 생성.")
