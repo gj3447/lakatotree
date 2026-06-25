@@ -82,6 +82,15 @@ class TreeService:
             coverage_backlog=tuple(spec.coverage_backlog),
         ))
 
+    def delete_tree(self, name: str, cascade: bool = False) -> dict:
+        """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
+        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지."""
+        n = len(self.tree_data(name).get("nodes", []))   # 404 if missing
+        if n and not cascade:
+            raise HTTPException(409, f"나무에 노드 {n}개 — cascade=true 로만 전체 삭제(파괴적·복구불가)")
+        self._mutations().delete_tree(name)
+        return {"ok": True, "tree": name, "deleted_nodes": n, "cascade": cascade}
+
     def open_question(self, name: str, question: QuestionIn) -> dict:
         self.kg(
             """MATCH (t:LakatosTree {name:$tree})
