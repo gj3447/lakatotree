@@ -35,9 +35,10 @@ def test_service_create_tree_merges_tree_and_returns_ok():
 def test_mcp_create_tree_tool_posts_to_tree_route(monkeypatch):
     seen: list = []
     monkeypatch.setattr(mcp, "_post", lambda p, b: (seen.append((p, b)), {"ok": True})[1])
-    mcp.create_tree("T", hard_core="HC", frontier_rule="FR")
+    mcp.create_tree("T", hard_core="HC", frontier_rule="FR", coverage_backlog_csv="a, b")
     assert seen[0][0] == "/api/tree/T"
     assert seen[0][1]["hard_core"] == "HC" and seen[0][1]["frontier_rule"] == "FR"
+    assert seen[0][1]["coverage_backlog"] == ["a", "b"]   # REST/CLI 와 표면 패리티
 
 
 def test_cli_tree_create_posts(monkeypatch):
