@@ -371,6 +371,36 @@
     "registered_at": "2026-06-24",
     "master_note": "Master/golden-reference sequences are LOCAL ONLY (not in gdrive 'zdf log', which is field VF?Z). 06-04=BPC_MASTER golden, 06-22=치수측정 LX3RT master seq.",
     "total_zdf": 3152,
-    "hitech_provenance": "하이테크 consumer_b 현장PC(tester-pc, D:\\consumer_a_zdf)가 원천. ZT링크 0.2MiB/s라 직접전송 불가→하이테크 rclone(D:\\rclone)이 자기 인터넷으로 gdrive 'zdf log'에 업로드→타워가 gdrive서 수신. 최근2주 = 06-08~06-22 (테스트 dir CAPTEST/CLAUDE_TEST/DEV_LOT/LIVE_TEST_ZIVID 제외)."
+    "hitech_provenance": "하이테크 consumer_b 현장PC(tester-pc, D:\\consumer_a_zdf)가 원천. ZT링크 0.2MiB/s라 직접전송 불가→하이테크 rclone(D:\\rclone)이 자기 인터넷으로 gdrive 'zdf log'에 업로드→타워가 gdrive서 수신. 최근2주 = 06-08~06-22 (테스트 dir CAPTEST/CLAUDE_TEST/DEV_LOT/LIVE_TEST_ZIVID 제외).",
+    "calib_era_binding": {
+      "note": "lot↔calib-era 바인딩 (CALIB_GEOMETRY_MISMATCH_PROM_20260624). 이 바인딩 부재가 group-B를 group-A calib로 silent garbage 측정한 systemic 원인.",
+      "group_A": {
+        "geometry": "PLATE_HOLE 변경 前",
+        "dates": [
+          "2026-06-04 VFDZ",
+          "2026-06-05 VFEZ",
+          "2026-06-08 VFHZ",
+          "2026-06-10..16 MASTER"
+        ],
+        "board": "VFEZ0025-0048 ArUco DICT_4X4_250 (positive control: VFEZ0040 뷰당 4~7마커)",
+        "calib": "VFEZ0040_puzzle_calibration_v4_zwarp_zconst.json",
+        "status": "valid (boss_h σ≤0.15mm 안정)"
+      },
+      "group_B": {
+        "geometry": "PLATE_HOLE Y 변경 後 (2026-06-17~)",
+        "dates": [
+          "2026-06-17 VFQZ",
+          "2026-06-18 VFRZ"
+        ],
+        "board": "없음 (markerless 생산; VFQZ0040 마커 0개 실측)",
+        "calib": "MISSING — 보드 재촬영 필요",
+        "status": "측정불가: group-A calib 적용 시 garbage (VFQZ 컵 boss_h 캡처간 8mm 출렁·BIG_04 −35mm). 현 group-B 결과 전부 신뢰불가."
+      },
+      "other": {
+        "2026-06-22 LX3RT": "다른 부품(consumer_c 서브프레임), consumer_b calib 무관"
+      },
+      "gate_rule": "lot capture_date > 2026-06-16 AND calib=group-A → 측정거부 (CALIB_GEOMETRY_GATE_PATCH_20260624.md)",
+      "fix": "GROUP_B_CALIB_BOARD_RECAPTURE_SPEC_20260624.md (현장 보드 1회 재촬영 → calib 체인 재솔브)"
+    }
   }
 }
