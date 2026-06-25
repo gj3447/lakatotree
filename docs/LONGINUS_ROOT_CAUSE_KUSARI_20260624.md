@@ -242,3 +242,22 @@ Hard advice:
 
 For review-ready claim-level comments, see
 `docs/LONGINUS_KUSARI_COMMENTARY_20260624.md`.
+
+## Implementation (2026-06-25) — checklist is now rerunnable
+
+The root-cause checklist is implemented as an executable, fail-closed linter:
+
+- `lakatos/verdict/kusari.py` → `lint_critique(item)` / `lint_checklist(items)` return a `KusariVerdict`:
+  - **invalid** unless every critique item carries `target_artifact`, `failure_mode`,
+    `expected_observable`, and `blocking_verdict`;
+  - `blocking_verdict` must be a **blocking-class** verdict (a passing verdict cannot stand as a
+    critique);
+  - the critique must name the exact target under attack — at least one of `coordinate_frame`,
+    `datum`, `algorithm`, `feature`, `threshold` (else `target_specificity` fails = vague LabelRot
+    critique blocked);
+  - `lint_checklist` is fail-closed on an empty list ("zero items is not verification").
+- Rerunnable acceptance check: `python -m pytest tests/test_root_cause_kusari_gate.py -q` (22 tests).
+- This PIERCES Longinus binding `BPC.RootCauseKusariChecklist`
+  (`docs/longinus_prom_review_bindings_20260624.json`).
+- Frontier (deferred): wiring the gate into the critique-producing surface (mcp critique tool / review
+  pipeline) so vague critiques cannot be emitted at all.

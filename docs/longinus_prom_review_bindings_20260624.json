@@ -79,16 +79,18 @@
       "sourceId": "BPC.RootCauseKusariChecklist",
       "sourcePath": "docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md:1",
       "kg_anchor": "CT_LakatoTree_3D_PROM_LonginusReview_20260624",
-      "confidence": "INFERRED",
-      "binding_state": "CANDIDATE",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
       "drift_type": "LabelRot",
       "lens_law": "PutPut",
       "claim": "Root-cause critique must name the exact coordinate frame, datum, algorithm, feature, and threshold under attack.",
       "evidence": [
         "docs/LONGINUS_ROOT_CAUSE_KUSARI_20260624.md:1",
-        "docs/LONGINUS_KUSARI_COMMENTARY_20260624.md:1"
+        "docs/LONGINUS_KUSARI_COMMENTARY_20260624.md:1",
+        "lakatos/verdict/kusari.py:1",
+        "tests/test_root_cause_kusari_gate.py:1"
       ],
-      "acceptance_check": "Every critique item must include target artifact, failure mode, expected observable, and blocking verdict."
+      "acceptance_check": "python -m pytest tests/test_root_cause_kusari_gate.py -q"
     }
   ]
 }
