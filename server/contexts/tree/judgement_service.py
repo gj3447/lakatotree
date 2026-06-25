@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import HTTPException
 
+from lakatos import longinus
 from lakatos.verdict.argue import grounded_extension
 from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
@@ -25,6 +28,21 @@ from server.ports import HistoryAppend, KgQuery, KgTx
 
 FoundationProvider = Callable[[str], FoundationMap | None]
 ReproducibleProvider = Callable[[str, str], bool | None]
+
+# #H2 (human-attestation): floor 의 human 영수증으로 인정하는 KG Argument 의 kind 토큰.
+#   evidence_claim_service.event_from_argument 와 *동일* 집합(kind∈{evaluation,verdict}→human_verdict action) —
+#   인간 attestation 의 단일 어휘 정본. doubt/comment/rebuttal 등은 human 평가가 아니라 제외.
+_HUMAN_ATTESTATION_KINDS = frozenset({'evaluation', 'verdict'})
+
+
+def _is_human_attestation_arg(arg: dict) -> bool:
+    """KG Argument 가 *실제 human attestation* 인가 — kind∈human 집합 AND by(사람 actor) 존재.
+    client 의 1비트가 아니라 *영속된* Argument 존재로 판정(H2 우회 봉쇄). by 가 비면(익명) human 으로 안 침."""
+    if not arg or not arg.get('id'):
+        return False
+    if (arg.get('kind') or '').strip().lower() not in _HUMAN_ATTESTATION_KINDS:
+        return False
+    return bool((arg.get('by') or '').strip())
 
 
 class JudgementService:
@@ -108,6 +126,50 @@ class JudgementService:
             return 1.0
         return float(eigen) if backed else 0.0
 
+    def _recompute_script_sha(self, script: str) -> tuple[str | None, dict]:
+        """#H3 (prom-honesty/receipt-integrity): judge_script_sha 를 *서버가 파일 내용에서 재유도*.
+
+        '어느 스크립트가 채점했나' 영수증은 client 문자열 신뢰면 동어반복(client psha vs client script_sha).
+        r.script 가 읽을 수 있는 소스면 서버가 그 본문으로 sha256 을 재계산해 영수증을 현실에 묶는다.
+          - 'file::symbol' 형태 → longinus.symbol_body_sha (CPG 본문해시; 부재/모호=None).
+          - 평이한 경로 → 파일 내용 hashlib.sha256.
+        안전 경로: 상대경로는 프로젝트 루트(longinus.ROOT) 기준 join 하되 루트를 벗어나면(traversal) 거부.
+        절대경로는 *존재하는 정규파일* 일 때만 직접 읽음. 재계산 불가(inline/미존재/traversal/심볼 모호)면
+        (None, …) 반환 → 호출부가 정직 fallback(client 값 유지 + server_verified=False).
+        """
+        s = (script or '').strip()
+        if not s:
+            return None, {'reason': 'empty_script'}
+        if '::' in s:   # file::symbol — Longinus CPG 본문해시(심볼 실존검증)
+            file_part, _, symbol = s.partition('::')
+            try:
+                sha, info = longinus.symbol_body_sha(file_part, symbol)
+            except OSError:
+                return None, {'reason': 'symbol_io_error', 'script': s}
+            if sha is None:
+                return None, {'reason': 'symbol_unresolved', **info}
+            return sha, {'reason': 'symbol_body_sha', **info}
+        root = Path(longinus.ROOT).resolve()
+        p = Path(s)
+        if p.is_absolute():
+            try:
+                resolved = p.resolve()
+            except OSError:
+                return None, {'reason': 'unresolvable', 'script': s}
+            if not (resolved.is_file()):   # 미존재/비정규 = 재계산 불가
+                return None, {'reason': 'not_a_file', 'script': s}
+        else:
+            resolved = (root / p).resolve()
+            if root not in resolved.parents and resolved != root:   # ../ 탈출 = traversal 거부
+                return None, {'reason': 'path_traversal', 'script': s}
+            if not resolved.is_file():
+                return None, {'reason': 'not_a_file', 'script': s}
+        try:
+            content = resolved.read_bytes()
+        except OSError:
+            return None, {'reason': 'read_error', 'script': s}
+        return hashlib.sha256(content).hexdigest(), {'reason': 'file_content_sha', 'path': str(resolved)}
+
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
         # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
         #   회귀가드: tests/test_prom_honesty_node_gating.py::test_set_verdict_403_on_scripted_verdict.
@@ -122,7 +184,9 @@ class JudgementService:
                                cur.verdict_source AS verdict_source,
                                cur.source_trust AS source_trust,
                                cur.novel_confirmed AS novel_confirmed,
-                               collect({id:a.id, attacks:a.attacks}) AS args''', tree=name, tag=tag)
+                               cur.qualitative_self_report AS qualitative_self_report,
+                               collect({id:a.id, attacks:a.attacks, by:a.by, kind:a.kind}) AS args''',
+                          tree=name, tag=tag)
             if not pre:
                 raise HTTPException(404, f'노드 없음: {tag}')
             cand = pre[0]
@@ -136,9 +200,16 @@ class JudgementService:
                 arguments.add(short)
                 attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
             stands = varg in grounded_extension(arguments, attacks)
+            # #H2 (human-attestation): floor 의 has_human 은 client 1비트(v.human_verdict)가 *단독* 으로 못 연다.
+            #   v.human_verdict 는 'KG 에서 그 human Argument 를 찾아라'는 *요청* 으로만 쓰고, 실제 영수증은
+            #   *영속된* human attestation Argument 존재(kind∈{evaluation,verdict} AND by 사람 actor)로 판정.
+            #   영수증 0 인 노드에 client True 만으론 CANONICAL floor 가 안 열린다(no_receipt_for_canonical).
+            #   (Sybil 한계: by 가 노드 작성자와 다른지는 노드 author 가 KG 에 미식별이라 미강제 — 후속.)
+            has_human = bool(v.human_verdict) and any(
+                _is_human_attestation_arg(a) for a in (cand.get('args') or []))
             credibility = self._eigentrust_credibility(
                 name, tag, novel_confirmed=bool(cand.get('novel_confirmed')),
-                has_human_verdict=bool(v.human_verdict))
+                has_human_verdict=has_human)
             decision = synthesize_promotion(
                 scripted_verdict=cand.get('verdict') or 'proof',
                 verdict_source=cand.get('verdict_source'),   # SSOT floor: 레거시 NULL-source 는 영수증 아님
@@ -146,6 +217,7 @@ class JudgementService:
                 foundation=self.foundation(name),
                 credibility=credibility,
                 reproducible=self.reproducible_for_node(name, tag),
+                qualitative_self_report=bool(cand.get('qualitative_self_report')),   # #H1: 질적 self-report 표식 → 메트릭 단독 floor 차단
             )
             if not decision['ok']:
                 raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
@@ -237,8 +309,24 @@ class JudgementService:
         pr = rows[0]
         if pr['vsrc'] == 'scripted':
             raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). 새 노드로 분기할 것')
-        if pr['psha'] and r.script_sha and pr['psha'] != r.script_sha:
-            raise HTTPException(409, f"채점 스크립트 sha256 불일치 — 사전등록 {pr['psha'][:12]} ≠ 제출 {r.script_sha[:12]}")
+        # #H3 (receipt-integrity): server_sha 를 r.script 파일 *내용*에서 재유도해 영수증을 현실에 묶는다.
+        #   불일치 비교 대상을 client-vs-client(psha vs script_sha, 동어반복) → server-vs-client/registered 로 교체.
+        server_sha, sha_info = self._recompute_script_sha(r.script)
+        sha_verified = server_sha is not None
+        if sha_verified:
+            if r.script_sha and server_sha != r.script_sha:   # 제출 sha 가 파일 내용과 불일치 → 날조 봉쇄
+                raise HTTPException(422, f"judge_script_sha 서버재계산 불일치 — 파일 {server_sha[:12]} ≠ 제출 "
+                                         f"{(r.script_sha or '')[:12]} ({sha_info.get('reason')})")
+            if pr['psha'] and server_sha != pr['psha']:   # 사전등록 psha 가 채점 스크립트 내용과 불일치
+                raise HTTPException(409, f"채점 스크립트 sha256 불일치 — 사전등록 {pr['psha'][:12]} ≠ 서버재계산 "
+                                         f"{server_sha[:12]} (서버가 r.script 내용에서 재유도)")
+        else:
+            # 재계산 불가(inline/미존재 파일/심볼 모호) — 정직 fallback: 레거시 client-vs-client 비교 유지.
+            #   sha 영수증은 server-미검증이므로 응답에 script_sha_server_verified=False 로 노출(동어반복 위험 숨김 금지).
+            if pr['psha'] and r.script_sha and pr['psha'] != r.script_sha:
+                raise HTTPException(409, f"채점 스크립트 sha256 불일치 — 사전등록 {pr['psha'][:12]} ≠ 제출 {r.script_sha[:12]}")
+        # 저장·prov 는 server_sha(파일 재유도) 우선; 재계산 불가면 client 값 보존(server-미검증 플래그와 함께).
+        stored_sha = server_sha if sha_verified else (r.script_sha or '')
         nt = None
         if pr['nmet'] and pr['ndir'] and pr['nthr'] is not None:
             nt = NovelTarget(metric_name=pr['nmet'], direction=pr['ndir'], threshold=pr['nthr'])
@@ -295,6 +383,13 @@ class JudgementService:
         decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
         verdict = decided['verdict']
         lakatos_status = decided['lakatos']
+        # #H1 (설계감사): 질적 verdict 가 영수증 없는 self-report bool 로 progressive 를 떠받쳤는가.
+        #   메트릭 개선은 실 영수증이나 '하드코어 보존·초과경험내용'(lakatos_*/ce_*)은 자기보고다. 독립
+        #   영수증(독립 novel 측정 sha + ce_novel_corroborated) 없이 질적 bool 이 progressive(_conditional)를
+        #   유지하면 표식 → CANONICAL floor 가 메트릭 단독으론 안 연다(set_verdict 가 이 표식을 floor 에 넘김).
+        qual_backed = bool(r.novel_sha and r.ce_novel_corroborated)   # 독립 novel 측정 영수증
+        qual_self_report = bool(have_qual and verdict in ('progressive', 'progressive_conditional')
+                                and not qual_backed)
         # A1: measurement-grade eureka at the judgement seam — felt(novel registered) vs
         # true(confirmed + substantial BF + net problem closure). Built from the just-scored fields
         # (require_promotion=False: standing lives in the standing layer, not on a node) and persisted
@@ -310,20 +405,27 @@ class JudgementService:
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)
         ts = datetime.now(timezone.utc).isoformat()
+        # #M5 (atomic-rescore): 판결 SET 의 *첫 절* 을 원자 CAS claim 으로 — register_prediction 의 원자
+        #   write-WHERE 패턴 답습. WHERE (vsrc IS NULL OR vsrc<>'scripted') 가드로 단일 managed-write tx
+        #   안에서 동시 submit 중 한쪽만 SET 매칭 → 이중채점(TOCTOU) 봉쇄. judge() 검증을 다 통과한 *뒤*
+        #   이 SET 이 실행되므로 거부 시 노드가 빈 scripted 로 잠기지 않는다. RETURN e.tag(claimed)=0행이면
+        #   이미 scripted → 아래에서 409. (상단 238행 read-check 는 빠른 거절, 이 가드가 원자 권위.)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                   WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
                        e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
                        e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
                        e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
-                       e.eureka_bf=$eu_bf""",
+                       e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr
+                   RETURN e.tag AS claimed""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-                     script=r.script, sha=r.script_sha, rp=r.result_path, ts=ts, novel=v.novel,
-                     st=est, lstat=lakatos_status,
+                     script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=v.novel,
+                     st=est, lstat=lakatos_status, qsr=qual_self_report,
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
-        for tr in prov_triples(name, tag, r.script, r.result_path, verdict, r.script_sha or '', ts):
+        for tr in prov_triples(name, tag, r.script, r.result_path, verdict, stored_sha, ts):
             if tr.get('kind'):
                 ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                       MERGE (p:ProvNode {id:$id}) SET p.kind=$kind, p.type=$type, p.sha256=$sha
@@ -334,13 +436,21 @@ class JudgementService:
                 ops.append(("""MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
                       MERGE (a)-[rel:PROV_REL {kind:$rk}]->(b)""",
                             dict(f=tr['from'], to=tr['to'], rk=tr['rel'])))
-        self.kg_tx(ops)
+        tx_result = self.kg_tx(ops)
+        # #M5: 원자 CAS claim 결과 판정 — 첫 op(가드된 판결 SET)이 0행이면 동시 submit 이 이미 점유 → 409.
+        #   per-op 결과 shape(len==ops, 각 op 의 .data() 리스트)일 때만 검사(실제 KG 트랜잭션). 그 외(미모델
+        #   테스트 더블/None)는 상단 read-check 가 권위 — 하위호환 보존(좁은 검사로 거짓 409 회피).
+        if (isinstance(tx_result, list) and len(tx_result) == len(ops)
+                and isinstance(tx_result[0], list) and not tx_result[0]):
+            raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
         self.hist(name, 'test_result', tag, dict(value=r.metric_value, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
-                                                 novel=v.novel, script_sha=r.script_sha))
+                                                 novel=v.novel, script_sha=stored_sha))
         return {'ok': True, 'verdict': verdict, 'delta': round(v.delta, 4), 'novel': v.novel,
                 'lakatos': lakatos_status, 'metric_verdict': v.verdict,
                 'requires_human': bool(decided.get('requires_human')),
+                # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).
+                'script_sha_server_verified': sha_verified, 'judge_script_sha': stored_sha,
                 'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
                            'reasons': list(eu.reasons), 'bf': round(eu.bf, 3)},
                 'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}

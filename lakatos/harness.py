@@ -19,6 +19,15 @@ class BuildFailed(Exception):
     """하계 ground-truth 게이트 — 빌드/TDD 실패 시 채점·판결 중단."""
 
 
+class ScoringRefused(Exception):
+    """채점 게이트 — 서버가 채점을 거부(error/4xx)하거나 verdict 가 안 났으면 사이클 중단.
+
+    BuildFailed 의 형제(M2 적대감사 2026-06-25): fail-loud 의 default 를 역전한다 —
+    raise 가 default, 삼킴은 명시 정책. judge 거부(admissibility 위반 등)를 조용히 삼켜
+    verdict=None 인데 exit 0(green) + stands=True 로 끝나는 가짜 green 을 차단.
+    """
+
+
 @dataclass
 class CycleSpec:
     tree: str
@@ -81,7 +90,17 @@ class LakatoHarness:
         prov['metric'] = metric
 
         res = self._submit_and_judge(s, metric, sha, trust)
-        prov['verdict'] = res.get('verdict')
+        # 채점 게이트(M2) — fail-loud default: 서버가 채점을 거부(error/4xx)했거나 verdict 가 안 났으면
+        #   조용히 삼키지 말고 즉시 raise. 거부 코드/상세는 prov 에 기록(증거 보존, BuildFailed 와 대칭).
+        if isinstance(res, dict) and res.get('error') is not None:
+            prov['scoring_refused'] = {'error': res.get('error'), 'detail': res.get('detail')}
+            raise ScoringRefused(f'서버 채점거부(error {res.get("error")}) — verdict 미생성. '
+                                 f'{str(res.get("detail"))[:120]}')
+        verdict = res.get('verdict') if isinstance(res, dict) else None
+        if verdict is None:
+            prov['scoring_refused'] = {'error': None, 'detail': 'verdict 미생성(채점 미성립)'}
+            raise ScoringRefused(f'채점 미성립 — verdict=None. 응답: {str(res)[:120]}')
+        prov['verdict'] = verdict
         prov['novel'] = res.get('novel')
         prov['delta'] = res.get('delta')
 

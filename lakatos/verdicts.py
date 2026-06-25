@@ -78,6 +78,17 @@ NONPROGRESSIVE_VERDICTS = frozenset({
     "different_programme",   # 현 프로그램의 진보 아님(다른 프로그램으로 분기) — withdrawn 과 동류(off-axis)
 })
 
+# 설계감사 M3: *예측 적중(prediction_hit)* 으로 셀 수 있는 *확증된* novel 진보만.
+# PROGRESS_VERDICTS 는 consec/stall 카운터(비진보 리셋)·노드-쓰기 게이트용 *넓은* 진보축이라
+# 미확증 progressive_conditional(engine.py:676-685 구현미완/replay미증명)·former_canonical(강등)까지
+# 포함한다. 그러나 라우든 폐기규칙②(예산 소진 ∧ 적중 0)와 bandit realized_reward 는 *적중*을
+# 묻는다 — 미확증을 적중으로 세면 degenerating 가지가 무기한 살고(폐기 면제) reward 가 오염된다.
+# ∴ fertility.py:22 의 novel_confirmed 게이트 정신을 그대로 — confirmed 'progressive' 만 적중.
+# (progressive_conditional/former_canonical 은 PROGRESS_VERDICTS 의 다른 용처에 그대로 남는다.)
+CONFIRMED_NOVEL_PROGRESS = frozenset({
+    "progressive",
+})
+
 
 def is_progress_verdict(verdict: str) -> bool:
     return verdict in PROGRESS_VERDICTS

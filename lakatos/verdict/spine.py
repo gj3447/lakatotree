@@ -144,7 +144,8 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
 
 
 def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
-                         foundation=None, credibility: dict | None = None, verdict_source=_UNSET) -> dict:
+                         foundation=None, credibility: dict | None = None, verdict_source=_UNSET,
+                         qualitative_self_report: bool = False) -> dict:
     """완전 합성 승격 게이트 — 헌법(promotion_gate) + FoundationGate(준비도) +
     CredibilityPromotionGate(인터넷 등급). 입력 있는 게이트만 실행, 단일 결정 + per-gate 리포트.
 
@@ -175,6 +176,12 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
     #   verdict 어휘로 폴백(PROM-A 가 새 scripted verdict 의 노드 self-report 를 봉쇄하므로 안전).
     judge_receipt = (is_scripted_verdict(scripted_verdict) if verdict_source is _UNSET
                      else force_of(scripted_verdict, verdict_source) == 'COUNTS')
+    # #H1 (설계감사 2026-06-25): 질적 self-report(영수증 없는 lakatos_*/ce_* bool)가 progressive 를
+    #   떠받친 노드는 메트릭 scripted COUNTS *단독* 으론 floor 못 연다 — 메트릭 개선은 실 영수증이나
+    #   '하드코어 보존·초과경험내용'은 자기보고라, 독립 영수증(reproducible 실 replay / human attestation)을
+    #   추가로 요구한다. (set_verdict 가 노드의 qualitative_self_report 표식을 넘긴다.)
+    if qualitative_self_report:
+        judge_receipt = False
     if judge_receipt or reproducible is True or has_human:
         gates['floor'] = {'passed': True, 'reasons': []}
     else:
