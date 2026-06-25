@@ -25,6 +25,7 @@ class TreeSpec:
     doc: str = ""
     coverage_backlog: tuple[str, ...] = ()
     coverage_statement: str = ""
+    ontology: str = ""   # 도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
 
@@ -85,6 +86,7 @@ class TreeMutationService:
                 doc=spec.doc,
                 coverage_backlog=spec.coverage_backlog,
                 coverage_statement=spec.coverage_statement,
+                ontology=spec.ontology,
             )
         )
         summary = summary.plus(self.writer.upsert_nodes(spec.name, spec.nodes))

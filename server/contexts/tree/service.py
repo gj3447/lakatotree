@@ -80,6 +80,7 @@ class TreeService:
             doc=spec.doc,
             coverage_statement=spec.coverage_statement,
             coverage_backlog=tuple(spec.coverage_backlog),
+            ontology=spec.ontology,
         ))
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:

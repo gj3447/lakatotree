@@ -209,7 +209,8 @@ def close_question(name: str, qname: str, closed_by: str = '') -> str:
 
 @mcp.tool()
 def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: str = '',
-                doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '') -> str:
+                doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
+                ontology: str = '') -> str:
     """새 라카토스 나무 생성/메타 upsert — MERGE (t:LakatosTree {name}). add_node 전에 먼저 호출(없는 나무에
     add_node 는 404 '나무 없음'). 멱등이되 last-write-wins: 같은 name 재호출은 보낸 title/hard_core/
     frontier_rule 로 덮어씀(생략 필드 = 빈값으로 초기화). hard_core/frontier_rule 비우면 policy_warnings
@@ -217,7 +218,8 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
-             doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog)), ensure_ascii=False)
+             doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog,
+             ontology=ontology)), ensure_ascii=False)
 
 
 @mcp.tool()
