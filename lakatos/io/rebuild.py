@@ -21,6 +21,8 @@ class RebuildResult:
     recorded_metric: float
     within_tolerance: bool
     trace: list = field(default_factory=list)
+    measurer_separated: bool = False   # #M10: metric 출처가 producer 와 *다른 명령* 의 measurer 인가
+                                       #   (kind 라벨 존재만이 아니라 명령 구별로 판정 — CLI 단일-template 붕괴 탐지)
 
 
 def _parse_metric(s):
@@ -61,10 +63,13 @@ class RebuildExecutor:
         #    measurer 의 stdout 만 metric 으로 신뢰한다 — producer self-report 는 신뢰하지 않는다(감사 M1).
         last_producer_out = None     # 호환: measurement step 이 없을 때만 fallback (정직히 표시)
         measure_out = None           # 별개 measurer code path 의 출력 (산출물에서 측정한 참값)
+        measure_cmd = None           # measurement step 의 실제 명령 (producer 명령과 구별돼야 분리)
+        producer_cmds = set()        # producer step 들이 실행한 명령 집합
         trace = []
         for step in manifest.recipe:
             is_measure = step.get('kind') == 'measurement'
-            out, code = self._bash(cmd_for(step))
+            cmd = cmd_for(step)
+            out, code = self._bash(cmd)
             self._ev('step_exec', output=step['output'], producer=step['producer'],
                      exit_code=code, kind=step.get('kind', 'intermediate'))
             if code != 0:
@@ -72,12 +77,16 @@ class RebuildExecutor:
                 return RebuildResult('step_failed', None, recorded_metric, False, trace)
             if is_measure:
                 measure_out = out    # measurer(producer 와 다른 code path)가 완성본서 측정
+                measure_cmd = cmd
             else:
                 last_producer_out = out
+                producer_cmds.add(cmd)
         # ③ metric 출처를 정직히 선택: measurement step 이 있으면 *그 measurer* 의 출력만 쓴다.
-        #    measurement step 이 없으면 측정자가 분리되지 않은 레거시 manifest — producer self-report
-        #    fallback 을 쓰되 measurer_separated=False 로 영수증에 명시(동어반복 위험을 숨기지 않는다).
-        measurer_separated = measure_out is not None
+        #    #M10 (설계감사 2026-06-26): 분리 판정을 kind 라벨 *존재* 가 아니라 *명령 구별* 로 — measurement
+        #    step 의 명령이 producer 명령과 동일하면(CLI 단일 --cmd-template 가 모든 step 에 같은 cmd 를
+        #    먹이던 붕괴) 측정자=생산자라 독립 measurer 가 아니다 → measurer_separated=False(붕괴를 영수증에
+        #    숨기지 않는다). 분리 안 됐으면 producer self-report fallback 을 쓰되 플래그로 명시.
+        measurer_separated = measure_out is not None and measure_cmd not in producer_cmds
         source_out = measure_out if measurer_separated else last_producer_out
         regen = _parse_metric(source_out or '')
         within = regen is not None and abs(regen - recorded_metric) <= tol
@@ -85,4 +94,4 @@ class RebuildExecutor:
                  tolerance=tol, within=within, measurer_separated=measurer_separated)
         verdict = 'rebuildable' if within else 'metric_mismatch'
         self._ev('rebuild_verdict', verdict=verdict, cid=self._cid)
-        return RebuildResult(verdict, regen, recorded_metric, within, trace)
+        return RebuildResult(verdict, regen, recorded_metric, within, trace, measurer_separated)
