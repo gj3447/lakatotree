@@ -22,13 +22,14 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))   # lakatos / server import 가능하게
+import lakatos.io  # noqa: F401,E402 — _vendor 를 sys.path 에 올리는 부트스트랩(import ooptdd / ooptdd_loop 해석)
 
-try:
+try:   # ooptdd_loop = _vendor/ooptdd_loop (loop runner subset) — private repo·시크릿 불요(self-contained)
     from ooptdd_loop.spec import load_spec
     from ooptdd_loop.runner import run_loop
     from ooptdd_loop.tools import _run_payload
-except ModuleNotFoundError as e:   # ooptdd_loop 미설치 env
-    sys.exit(f"ooptdd_loop 미설치 — ooptdd-loop env 로 실행하세요 ({e}).")
+except ModuleNotFoundError as e:
+    sys.exit(f"ooptdd_loop 미해석 — _vendor/ooptdd_loop 벤더 누락? ({e}).")
 
 FINDINGS = ["H1", "H2", "H3", "H4", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"]
 
