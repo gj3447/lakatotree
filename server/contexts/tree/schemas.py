@@ -110,6 +110,11 @@ class TestResultIn(BaseModel):
     lakatos_consequence: bool | None = None
     lakatos_excess: bool | None = None
     lakatos_hardcore: bool | None = None
+    # #H1-hardcore (설계감사 frontier): 이 노드 변경이 refute/건드린 가정들. 서버가 negative_heuristic 로
+    #   tree.hard_core 와 교집합을 판정해 hard_core_preserved 를 *구조적으로 파생*(self-report bool 대신) —
+    #   touched ∩ hard_core ≠ ∅ 이면 different_programme 로 강등(bool 로 못 숨김). 잔여: touched-set 은 아직
+    #   제출자 선언 — git-diff ∩ Longinus 파생은 후속 frontier.
+    touched_assumptions: list[str] = Field(default_factory=list)
     implementation_complete: bool = True
     data_branch: bool = False
     data_replay_passed: bool = True
