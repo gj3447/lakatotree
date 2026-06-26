@@ -250,6 +250,38 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
                                  direction="higher", threshold=1.0),
         guard_test="test_external_readback_positive_roundtrip_ci",
     ),
+
+    # ════════════════ 완성-후 적대감사 2026-06-26 (13/13 완성 후 깨기 시도가 찾은 잔여) ════════════════
+    #   13건 런타임 revert-proof + vacuous 0 확정 직후, "완벽하냐?"에 적대 감사로 답하다 발견.
+    #   같은 결함 클래스(TOCTOU·client 자기보고)가 *형제 코드경로*에 남아 있었다.
+    AuditNode(
+        tag="H5_set_verdict_canonical_toctou", severity="HIGH", parent="M5_rescore_toctou",
+        evidence="judgement_service.py:181(read self.kg)→:213(floor)→:225(write, WHERE old.tag<>$tag 만)",
+        story="set_verdict CANONICAL 승격이 비원자 TOCTOU — floor 를 read-snapshot 으로 판정한 뒤 별개 세션 write 가 "
+              "스냅샷 재검증 없이 CANONICAL 을 박는다. M5 는 submit 만 닫고 set_verdict 는 열어둠(감사문서 자인-연기). "
+              "동시 submit/반박 critique 가 끼면 stale floor-pass 로 승격. [PROM] M5 의 단일-statement WHERE 원자가드 미러.",
+        prediction=Prediction(metric_name="set_verdict_canonical_nonatomic_toctou", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="CANONICAL write 가 스냅샷(verdict/source/qsr/논증집합) 원자 CAS — 변하면 0행 409",
+                              closes_question="q-h5-set-verdict-atomic"),
+        novel_target=NovelTarget(metric_name="set_verdict_canonical_atomic_cas",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_set_verdict_canonical_409_on_concurrent_change",
+    ),
+    AuditNode(
+        tag="M12_former_canonical_source", severity="MEDIUM", parent="H5_set_verdict_canonical_toctou",
+        evidence="judgement_service.py:229(SET old.verdict='former_canonical', source 누락) vs app.py:603/certify.py",
+        story="set_verdict 의 former_canonical 강등이 verdict_source='engine' 누락 → old 가 'admin' source 유지. "
+              "다른 모든 강등경로는 engine 명시. force_of('former_canonical','admin')는 여전히 SELF_REPORT 라 집계 "
+              "결과 불변(minor)이나 '엔진 강등 vs 인간 admin' provenance 귀속이 이 경로만 틀림. [PROM] 강등경로 정합.",
+        prediction=Prediction(metric_name="former_canonical_demotion_source_divergent", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="강등 SET 이 old.verdict_source='engine' 귀속(타 강등경로와 정합)",
+                              closes_question="q-m12-demotion-provenance"),
+        novel_target=NovelTarget(metric_name="former_canonical_attributed_to_engine",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_former_canonical_demotion_attributes_engine_source",
+    ),
 )
 
 
@@ -337,6 +369,7 @@ if __name__ == "__main__":
         else:
             tail = f"novel={r.get('novel')} improved={r.get('improved')} — {r.get('reason')}"
         print(f"  [{r['severity']:6}] {r['tag']:34} → {r['verdict']:20} {tail}")
-    print(f"\n총 13 결함: OPEN(pending) {n_open} · CLOSED(progressive) {n_closed}. "
+    n_findings = sum(1 for n in AUDIT_NODES if n.prediction is not None)
+    print(f"\n총 {n_findings} 결함: OPEN(pending) {n_open} · CLOSED(progressive) {n_closed}. "
           f"verdict 전부 judge() 생성(손입력 0). 고치고 guard 착륙시키면 자동 채점.")
     print("KG 거울: LakatosTree_LakatoTree_DesignAudit_20260625")
