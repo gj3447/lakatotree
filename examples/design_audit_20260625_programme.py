@@ -39,8 +39,9 @@ def receipt() -> dict[str, bool]:
     matches = glob.glob(os.path.join(_ROOT, _RECEIPT_GLOB))
     if not matches:
         return {}
+    # -p no:randomly: dogfood 채점은 *결정론* — pytest-randomly 설치 여부와 무관히 같은 receipt(재현가능).
     cmd = (f"cd {_ROOT} && . .venv/bin/activate 2>/dev/null; "
-           f"python -m pytest {_RECEIPT_GLOB} -v --no-header -p no:cacheprovider 2>&1")
+           f"python -m pytest {_RECEIPT_GLOB} -v --no-header -p no:cacheprovider -p no:randomly 2>&1")
     out = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True).stdout
     res: dict[str, bool] = {}
     for line in out.splitlines():
