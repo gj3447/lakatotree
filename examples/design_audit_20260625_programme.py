@@ -299,6 +299,21 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_collapsed_measurer_command_is_not_separated",
     ),
     AuditNode(
+        tag="M11_marquez_readback_off", severity="MEDIUM", parent="M9_external_readback_off",
+        evidence="marquez_sink.py:19(ship=POST status 만) + adapters.py:332(send_openlineage…POST) / oo_verify 만 왕복",
+        story="M9 수정(oo_verify.assert_positive_roundtrip)은 oo 백엔드에만 write→독립read→compare 왕복을 뒀고, "
+              "M9 발견이 *직접 인용한* Marquez(marquez_sink)는 여전히 POST fire-and-forget — 독립 GET readback "
+              "없이 '예외없음/200=배송됨'(M9 가 닫으려던 그 실패모드). 한 백엔드는 닫고 다른 백엔드는 연 비대칭. "
+              "[PROM] oo_verify 의 OoRoundtripStore/assert_positive_roundtrip 를 Marquez HTTP 경로로 동형 차용.",
+        prediction=Prediction(metric_name="marquez_fire_and_forget_no_readback", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="Marquez 경로도 ship→독립 readback GET→compare 왕복 + drop 이빨(항상 ON)",
+                              closes_question="q-m11-marquez-readback"),
+        novel_target=NovelTarget(metric_name="marquez_independent_readback_confirms_run",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_marquez_positive_roundtrip_independent_readback",
+    ),
+    AuditNode(
         tag="M12_former_canonical_source", severity="MEDIUM", parent="H5_set_verdict_canonical_toctou",
         evidence="judgement_service.py:229(SET old.verdict='former_canonical', source 누락) vs app.py:603/certify.py",
         story="set_verdict 의 former_canonical 강등이 verdict_source='engine' 누락 → old 가 'admin' source 유지. "

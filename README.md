@@ -176,10 +176,10 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `tradition` [Laudan] research tradition (revisable ontology/methodology/exemplars) — same_tradition_revision / tradition_drift / different_programme_candidate, `diagnostic_only` (hard-core identity still routes through `LakatosGate`)
 
 ### `io/` — evidence, provenance, persistence, observability
-`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`
+`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`
 - `lineage` manifest + env fingerprint + root-replay DAG · `replay` lineage-replay gates (`LineageReplayGate`/`ReproducibilityContract`, split out of `engine`)
 - `rebuild` "receipts not claims" rebuild-from-raw · `reconcile` KG↔PG transactional-outbox + idempotent reconcile (B1: hist 실패를 KG OutboxEntry 로 보존, 멱등 재적용) · `prov` W3C PROV-O triples + replay command · `envfp` environment fingerprint
-- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export (OpenLineage / DVC / PROV)
+- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export (OpenLineage / DVC / PROV) · `marquez_verify` Marquez write→독립read→compare 왕복(M11, fire-and-forget 봉쇄)
 
 ```
 formal/    ★Lean 4 formal kernel — machine-checked verdict theory (lake build, sorry=0)
