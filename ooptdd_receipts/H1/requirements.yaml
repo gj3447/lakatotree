@@ -1,0 +1,30 @@
+# LakatoTree 설계감사 H1(질적 self-report floor) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=h1_receipt.verify 가 실제
+# lakatos.verdict.spine.synthesize_promotion 을 구동하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-h1-qual-floor
+target:
+  mode: in_process
+  callable: h1_receipt:verify              # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: H1-1
+    description: 질적 self-report(영수증 없는 lakatos_*/ce_* bool)가 progressive 를 떠받친 노드는 메트릭 scripted COUNTS 단독으로 CANONICAL floor 를 못 연다(차단). 결함이 살아있었다면 ok=True 로 틀릴 음성 오라클.
+    gate:
+      - {event: qual_self_report_floor_blocked, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:H1:qual_self_report_floor_blocked
+      source: h1_receipt.py
+      symbol: verify
+      must_emit: qual_self_report_floor_blocked
+
+  - id: H1-2
+    description: 회귀가드 — 질적 self-report 가 아닌 보통 scripted progressive 는 메트릭 영수증으로 여전히 floor 를 통과한다(과잉차단 아님).
+    gate:
+      - {event: non_qual_floor_passes, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:H1:non_qual_floor_passes
+      source: h1_receipt.py
+      symbol: verify
+      must_emit: non_qual_floor_passes

@@ -348,14 +348,18 @@ def _prov_attr_key(key: str) -> str:
     return "prov:type" if key == "type" else f"lakatotree:{key}"
 
 
-def _prov_attrs(attrs: dict) -> dict:
-    return {_prov_attr_key(k): v for k, v in attrs.items() if v is not None}
-
-
 def _prov_package_value(value):
+    # PROV-JSON attribute value = scalar(str/num/bool) | typed-literal 만 유효. 비스칼라(dict/list/tuple)는
+    # JSON 문자열로 직렬화한다 (#10: 의존성 없는 기본 경로 _prov_attrs 와 prov-package 경로가 같은 규칙).
     if isinstance(value, (dict, list, tuple)):
         return json.dumps(value, ensure_ascii=False, sort_keys=True)
     return value
+
+
+def _prov_attrs(attrs: dict) -> dict:
+    # 기본(의존성 없는) PROV-JSON 경로 — 비스칼라 attr 을 그대로 통과시키면 중첩 객체가 attr value 로 박혀
+    # 스펙 무효. prov-package 경로와 동일한 스칼라화(_prov_package_value)를 적용한다(#10).
+    return {_prov_attr_key(k): _prov_package_value(v) for k, v in attrs.items() if v is not None}
 
 
 def _prov_package_attr_key(key: str) -> str:

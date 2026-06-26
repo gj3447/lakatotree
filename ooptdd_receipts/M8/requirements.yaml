@@ -1,0 +1,30 @@
+# LakatoTree 설계감사 M8(claim doubt-resolution actor 독립성) — ooptdd 정식 영수증(R02 trace + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=m8_receipt.verify 가 실제
+# lakatos.claim.evaluate_claim_standing 을 구동하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-m8-claim-actor-independence
+target:
+  mode: in_process
+  callable: m8_receipt:verify            # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M8-1
+    description: 동일 actor 의 self-resolve 는 doubt 해소로 인정되지 않아 claim 이 서지 않는다(약속 #2 자기채점 금지)
+    gate:
+      - {event: self_resolution_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M8:self_resolution_rejected
+      source: m8_receipt.py
+      symbol: verify
+      must_emit: self_resolution_rejected
+
+  - id: M8-2
+    description: 다른(독립) actor 의 정당한 해소는 정상 작동해 claim 이 선다(과잉차단 회귀가드, 양성 대조)
+    gate:
+      - {event: independent_resolution_ok, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M8:independent_resolution_ok
+      source: m8_receipt.py
+      symbol: verify
+      must_emit: independent_resolution_ok

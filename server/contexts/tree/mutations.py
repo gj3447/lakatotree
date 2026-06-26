@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from server.contexts.tree.materialization import TreeMaterializationPlanner
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.validation import LakatosSemanticValidator, PolicyFinding
-from server.contexts.tree.writer import TreeKgWriter, WriteSummary
+from server.contexts.tree.writer import TreeKgWriter, TreeNotFound, WriteSummary
 from server.ports import HistoryAppend
 
 
@@ -25,6 +25,7 @@ class TreeSpec:
     doc: str = ""
     coverage_backlog: tuple[str, ...] = ()
     coverage_statement: str = ""
+    ontology: str = ""   # 도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
 
@@ -49,7 +50,10 @@ class TreeMutationService:
 
     def add_node(self, name: str, node: NodeIn, tree_data: dict) -> dict:
         result = self.validator.validate_node_create_result(name, tree_data, node)
-        self.writer.add_node(name, node, result.parent_edges)
+        try:
+            self.writer.add_node(name, node, result.parent_edges)
+        except TreeNotFound:
+            raise HTTPException(404, f"나무 없음: {name}")
         self.hist(name, "node_create", node.tag, {
             **node.model_dump(),
             "policy_warnings": _finding_codes(result.policy_findings),
@@ -58,6 +62,13 @@ class TreeMutationService:
         if result.policy_findings:
             out["policy_warnings"] = _finding_codes(result.policy_findings)
         return out
+
+    def delete_tree(self, name: str) -> None:
+        try:
+            self.writer.delete_tree(name)
+        except TreeNotFound:
+            raise HTTPException(404, f"나무 없음: {name}")
+        self.hist(name, "tree_delete", None, {})
 
     def upsert_tree(self, spec: TreeSpec) -> dict:
         bulk = self._validate_bulk_nodes(spec)
@@ -75,6 +86,7 @@ class TreeMutationService:
                 doc=spec.doc,
                 coverage_backlog=spec.coverage_backlog,
                 coverage_statement=spec.coverage_statement,
+                ontology=spec.ontology,
             )
         )
         summary = summary.plus(self.writer.upsert_nodes(spec.name, spec.nodes))

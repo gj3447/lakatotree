@@ -1,0 +1,30 @@
+# LakatoTree 설계감사 M2(채점거부 fail-loud) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=m2_receipt.verify 가 실제
+# lakatos.harness.LakatoHarness.run_cycle 을 mock 포트로 구동하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-m2-scoring-refused
+target:
+  mode: in_process
+  callable: m2_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M2-1
+    description: 서버 채점거부(error 키)·verdict 부재·verdict=None 이면 run_cycle 이 ScoringRefused 를 raise(가짜 green 차단, 음성 오라클)
+    gate:
+      - {event: scoring_refused_on_reject, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M2:scoring_refused_on_reject
+      source: m2_receipt.py
+      symbol: verify
+      must_emit: scoring_refused_on_reject
+
+  - id: M2-2
+    description: 정상 verdict 응답이면 run_cycle 이 거부 없이 verdict 를 담은 prov 를 반환한다(양성 대조 — fail-loud 의 비대칭 확인)
+    gate:
+      - {event: green_cycle_ok, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M2:green_cycle_ok
+      source: m2_receipt.py
+      symbol: verify
+      must_emit: green_cycle_ok

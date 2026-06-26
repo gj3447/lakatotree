@@ -112,7 +112,10 @@ def test_observation_endpoint_wires_theory_rival_and_longinus(monkeypatch):
         calls.append((query, kw))
         return [{"id": kw.get("id", "ok")}]
 
+    tx_ops = []
     monkeypatch.setattr(app, "kg", fake_kg)
+    # B1-step1: bind_embedded_observation 의 longinus/rival write 는 이제 단일 kg_tx 경유(원자적).
+    monkeypatch.setattr(app, "kg_tx", lambda ops: tx_ops.append(ops) or [[]])
     monkeypatch.setattr(app, "hist", lambda *a, **k: None)
 
     out = app.add_observation(
@@ -146,8 +149,10 @@ def test_observation_endpoint_wires_theory_rival_and_longinus(monkeypatch):
 
     assert out["embedding"]["rival_links"][0]["programme"] == "citation-pile"
     assert out["embedding"]["longinus_refs"][0]["sourceId"] == "world_gates.web_gate"
-    assert any("RIVAL_EVIDENCE" in q for q, _ in calls)
-    assert any("ReferenceSite:Longinus" in q for q, _ in calls)
+    # bind 는 단일 kg_tx 안에서 — longinus/rival cypher 가 tx ops 에 들어있어야(원자적 bind)
+    tx_cyphers = [c for ops in tx_ops for c, _ in ops]
+    assert any("RIVAL_EVIDENCE" in c for c in tx_cyphers)
+    assert any("ReferenceSite:Longinus" in c for c in tx_cyphers)
 
 
 def test_rival_observation_endpoint_requires_longinus(monkeypatch):

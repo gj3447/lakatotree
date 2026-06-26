@@ -25,6 +25,7 @@ exception-barring 은 *조각적 배제*(방어적=퇴행)와 *전략적 후퇴*
   - ad_hoc_class / PositiveHeuristic.in_spirit·next_problemshift : public *라이브러리* 표면 — 호출자(연구 프로그램
     계획·문제생성기)가 직접 쓸 수 있는 Lakatos 도구. 최소 appraise 경로엔 없으나 고아 아님(공개 API, 테스트됨).
 # KG: span_lakatotree_pnr / q-lkt-lakatos-dialectic-heart
+라이선스(THEORY §8): hempel1945 glymour1980
 # 출처: grounding.SOURCES[lakatos1976/lakatos1978/zahar1973/lakatos_zahar1976]
 """
 from dataclasses import dataclass, replace

@@ -76,9 +76,12 @@ from lakatos.programme.lifecycle import LifecycleState, lifecycle_state, regret_
 from lakatos.programme.leaderboard import Competitor, dominates, leaderboard, score_competitor
 from lakatos.programme.kuhn import ParadigmAssessment, assess_paradigm, sustained_dominance
 from lakatos.programme.series import ProgrammeSeriesAppraisal, ProgrammeSeriesRecord, programme_series_appraisal
+from lakatos.programme.tradition import (ResearchTradition, TraditionAppraisal, TraditionCommitment,
+                                         TraditionRevision, appraise_tradition_revision)
 from lakatos.verdict.certify import Certificate, GateCheck, certify_claim, gate_check, next_actions
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate, LAKATOS_LOCATIONS
 from lakatos.semantic_surface import SemanticSurfaceReport, SemanticUnit, load_surface, validate_surface
+from lakatos.eureka import EurekaVerdict, classify, eureka_over_tree, eureka_rate
 
 __all__ = [
     "scan_prompt_injection",
@@ -171,6 +174,11 @@ __all__ = [
     "ProgrammeSeriesAppraisal",
     "ProgrammeSeriesRecord",
     "programme_series_appraisal",
+    "ResearchTradition",
+    "TraditionAppraisal",
+    "TraditionCommitment",
+    "TraditionRevision",
+    "appraise_tradition_revision",
     "Certificate",
     "GateCheck",
     "certify_claim",
@@ -180,4 +188,8 @@ __all__ = [
     "SemanticUnit",
     "load_surface",
     "validate_surface",
+    "EurekaVerdict",
+    "classify",
+    "eureka_over_tree",
+    "eureka_rate",
 ]

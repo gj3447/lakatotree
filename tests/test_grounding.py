@@ -224,6 +224,37 @@ def test_wilson_k_positive_n_zero_now_raises():
         G.wilson_lower_bound(5, 0)
 
 
+# ── B2: 수치 가드 상수도 grounding 정본 (하드코딩 1e-6/1e-9 금지, drift/G5 우회 차단) ──
+def test_numeric_guards_registered_in_grounding():
+    # effect_size 분모-0 가드 / log_score log(0) 클램프 — 두 수치 가드가 GROUNDED 정본에 등록
+    assert G.GROUNDED['effect_size_floor']['value'] == 1e-6
+    assert G.GROUNDED['log_score_eps']['value'] == 1e-9
+    assert G.GROUNDED['effect_size_floor']['tier'] in ('policy', 'policy_in_scale')
+    assert G.GROUNDED['log_score_eps']['tier'] in ('policy', 'policy_in_scale')
+    # 고아 인용 금지(source 가 SOURCES 에 등록)는 test_no_orphan_citations 가 전수 검증
+
+
+def test_numeric_guard_defaults_bind_to_grounding():
+    # ece_bins/UCB_C 처럼 함수 기본값이 grounding 정본을 실제로 소비 (test_grounding_single_source… 패턴)
+    import inspect
+    from lakatos.quant import bayes, calibrate
+    assert inspect.signature(bayes.effect_size).parameters['floor'].default \
+        == G.GROUNDED['effect_size_floor']['value']
+    assert inspect.signature(calibrate.log_score).parameters['eps'].default \
+        == G.GROUNDED['log_score_eps']['value']
+
+
+def test_no_inline_numeric_guards_left_in_quant():
+    # quant/ 소스에 인라인 1e-6/1e-9 가 남아있지 않아야 한다(grounding 만 보유) — 야매 회귀 차단
+    import pathlib
+    import lakatos.quant as q
+    qdir = pathlib.Path(q.__file__).parent
+    offenders = [f.name for f in qdir.glob('*.py')
+                 if ('1e-6' in f.read_text(encoding='utf-8')
+                     or '1e-9' in f.read_text(encoding='utf-8'))]
+    assert not offenders, f'quant/ 인라인 수치가드 잔존: {offenders}'
+
+
 def test_p6_3_credibility_and_claim_thresholds_grounded():
     # P6-3: spine/engine 가 0.70/0.35 를 각자 하드코딩하던 것 → GROUNDED 단일 정본. claim 도.
     from lakatos.verdict import spine
@@ -234,6 +265,36 @@ def test_p6_3_credibility_and_claim_thresholds_grounded():
     p = ClaimStandingPolicy()
     assert p.min_confidence == G.GROUNDED['claim_min_confidence']['value']
     assert p.strong_confidence == G.GROUNDED['claim_strong_confidence']['value']
-    # 경계가 grounded 값을 실제로 씀(spine·engine 공유)
-    assert spine.credibility_from_trust(0.70)['current'] == CredibilityTier.EXTRACTED
-    assert spine.credibility_from_trust(0.34)['current'] == CredibilityTier.AMBIGUOUS
+    # 경계가 grounded 값을 실제로 씀(spine·engine 공유). prom-honesty/credibility: 경계 매핑은
+    # *eigentrust-backed* 일 때만 등급화(trust_backed=True); unbacked self-report 는 AMBIGUOUS(inconclusive).
+    assert spine.credibility_from_trust(0.70, trust_backed=True)['current'] == CredibilityTier.EXTRACTED
+    assert spine.credibility_from_trust(0.34, trust_backed=True)['current'] == CredibilityTier.AMBIGUOUS
+    assert spine.credibility_from_trust(0.70)['current'] == CredibilityTier.AMBIGUOUS   # unbacked=inconclusive
+
+
+# ── 정직성: 고아 라이선스 0 (코드의 '라이선스(THEORY §8): <id>' 앵커가 모두 SOURCES 에 등록) ──────────
+def test_license_anchors_resolve_to_sources():
+    """test_no_orphan_citations 의 *메커니즘 라이선스* 판 — 숫자(상수)뿐 아니라 간판 메커니즘의 철학적
+    라이선스도 grounding.SOURCES 에 못 박혀야(THEORY §8 dogfooding: "라이선스 없는 메커니즘 금지").
+    코드의 '라이선스(THEORY §8): a b c' 앵커가 가리키는 모든 sourceId 가 SOURCES 에 실재하는지 전수 검증."""
+    import re
+    from pathlib import Path
+    import lakatos.grounding as G
+    pkg = Path(G.__file__).parent
+    orphans = []
+    for f in pkg.rglob('*.py'):
+        for ids in re.findall(r'라이선스\(THEORY §8\):\s*([a-z0-9_ ]+)', f.read_text(encoding='utf-8')):
+            for sid in ids.split():
+                if sid not in G.SOURCES:
+                    orphans.append(f'{f.name}:{sid}')
+    assert not orphans, f'고아 라이선스 앵커(grounding.SOURCES 미등록): {orphans}'
+
+
+def test_license_anchors_present_on_key_modules():
+    """앵커가 실제로 박혔는지(빈 가드 방지) — 핵심 모듈에 라이선스 앵커가 존재."""
+    from pathlib import Path
+    import lakatos.grounding as G
+    pkg = Path(G.__file__).parent
+    anchored = {f.name for f in pkg.rglob('*.py')
+                if '라이선스(THEORY §8):' in f.read_text(encoding='utf-8')}
+    assert {'judge.py', 'agm.py', 'bayes.py', 'argue.py', 'leaderboard.py'} <= anchored

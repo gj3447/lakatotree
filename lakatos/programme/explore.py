@@ -5,12 +5,15 @@ arm = OpenQuestion/가지, reward = progressive 적중. 탐색(미탐색 질문)
 착취(고신뢰 질문)의 트레이드오프를 점수로 정렬 → directions 엔드포인트 승격.
 한계(gap6): reward=progressive 적중이 novel 채점(corroboration)에 의존 — 채점 신뢰성 선결.
 # KG: span_lakatotree_explore
+라이선스(THEORY §8): auer2002 howard1966 kuhn1962
 """
 import math
 
 from lakatos.grounding import GROUNDED
 
 UCB_C = GROUNDED['ucb_c']['value']   # 탐색계수 √2 (UCB1, Auer 2002) — grounding 정본(전엔 1.414 하드코딩)
+# Kuhn 위기(가설공간 확장 신호) 시 UCB 탐색항 c 배율 — crisis→explore 배선(라이선스 kuhn1962, grounding 정책).
+CRISIS_EXPLORATION_SCALE = GROUNDED['crisis_exploration_scale']['value']
 
 
 def ucb_score(credence: float, n_visits: int, total_visits: int, c: float = UCB_C) -> float:
@@ -29,12 +32,18 @@ def voi(expected_gain: float, cost: float, floor: float = 1e-6) -> float:
     return max(expected_gain, 0.0) / max(cost, floor)
 
 
-def rank_questions(questions: list, total_visits: int) -> list:
-    """frontier 질문을 VoI×UCB 합성점수로 정렬. 각 항목에 voi/ucb/priority 부여."""
+def rank_questions(questions: list, total_visits: int, crisis: bool = False) -> list:
+    """frontier 질문을 VoI×UCB 합성점수로 정렬. 각 항목에 voi/ucb/priority 부여.
+
+    crisis=True (Kuhn 위기 = incumbent 퇴행, 가설공간 확장 신호)면 UCB 탐색항 계수 c 를
+    ×CRISIS_EXPLORATION_SCALE 로 넓혀 덜 본 frontier 질문 정찰을 강화한다 — kuhn.py 의 위기 라벨을
+    실제 탐색 행동으로 배선(라이선스 kuhn1962).
+    """
+    c = UCB_C * (CRISIS_EXPLORATION_SCALE if crisis else 1.0)
     out = []
     for q in questions:
         v = voi(q.get('expected_gain', 0.0), q.get('cost', 1.0))
-        u = ucb_score(q.get('credence', 0.5), q.get('n_visits', 1), total_visits)
+        u = ucb_score(q.get('credence', 0.5), q.get('n_visits', 1), total_visits, c=c)
         out.append({**q, 'voi': round(v, 4), 'ucb': round(u, 4),
                     'priority': round(v * u, 4)})
     return sorted(out, key=lambda x: -x['priority'])

@@ -37,7 +37,7 @@ def test_register_prediction_writes_pred_credence(monkeypatch):
     calls = _capture_kg(monkeypatch, app)
     app.register_prediction('T', 'v', app.PredictionIn(
         metric_name='p95', baseline_value=0.5, credence=0.8))
-    q, kw = calls[0]
+    q, kw = next(c for c in calls if 'e.pred_metric=' in c[0])   # ontology read 가 calls[0] 라 내용으로 찾음
     assert 'e.pred_credence=$credence' in q
     assert kw['credence'] == 0.8
 
@@ -46,7 +46,8 @@ def test_register_prediction_credence_optional(monkeypatch):
     app = load_app()
     calls = _capture_kg(monkeypatch, app)
     app.register_prediction('T', 'v', app.PredictionIn(metric_name='p95', baseline_value=0.5))
-    assert calls[0][1]['credence'] is None        # 안 줘도 OK
+    pred = next(c for c in calls if 'e.pred_metric=' in c[0])   # ontology read 가 calls[0] 라 내용으로 찾음
+    assert pred[1]['credence'] is None        # 안 줘도 OK
 
 
 def test_calibration_has_data_once_pred_credence_present(monkeypatch):
@@ -90,7 +91,18 @@ def test_directions_ranks_by_real_voi_and_survives_none(monkeypatch):
 def test_cli_mcp_endpoints_are_registered_routes():
     app = load_app()
     registered = set()
-    for r in app.app.routes:
+
+    def _leaves(router):
+        # FastAPI >=0.137 wraps included routers as _IncludedRouter (sub-routes
+        # under original_router.routes) instead of flattening inline — walk both.
+        for r in router.routes:
+            sub = getattr(r, 'original_router', None)
+            if sub is not None and hasattr(sub, 'routes'):
+                yield from _leaves(sub)
+            else:
+                yield r
+
+    for r in _leaves(app.app):
         for m in (getattr(r, 'methods', None) or []):
             registered.add((m, r.path))
     required = {
@@ -243,3 +255,23 @@ def test_artifact_prov_format_prov_json(monkeypatch):
     pj = app.artifact_prov('out', format='prov-json')
     assert 'prov' in plain                          # format 없으면 내부 dict
     assert 'prefix' in pj and 'entity' in pj and 'activity' in pj   # 표준 W3C PROV-JSON 키
+
+
+def test_rebuild_verify_static_surface_uses_distinct_token(monkeypatch):
+    """#7 정직: /rebuild-verify 는 *정적* DAG 체크(재실행 아님)다 → executor 재실행 영수증과 같은
+    'rebuildable' 을 뱉으면 영수증급 과장. 정적 surface 는 rebuildable_static + verified='static' 을 뱉어야."""
+    from server.contexts.lineage import service as svc
+    s = svc.LineageService(kg=None, pg=None, path_sha=lambda p: None,
+                           load_lineage=lambda: [], safe_rebuild_plan=lambda a, bo: [])
+    monkeypatch.setattr(s, '_lineage_for', lambda a: ([], {}))
+    monkeypatch.setattr(s, '_current_input_shas', lambda ds: {})
+    monkeypatch.setattr(s, '_safe_rebuild_plan', lambda a, bo: [])
+    monkeypatch.setattr(svc, 'reproducibility_gaps', lambda *a, **k: set())
+
+    class _M:
+        final = 'out.json'; roots = []; env_sha = '0' * 64; recipe = []
+    monkeypatch.setattr(svc, 'build_manifest', lambda *a, **k: _M)
+
+    out = s.rebuild_verify('out.json')
+    assert out['verdict'] == 'rebuildable_static'   # 'rebuildable'(executor 영수증) 아님
+    assert out['verified'] == 'static'

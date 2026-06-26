@@ -94,7 +94,8 @@ class TreeKgRepository:
         t = self.kg(
             "MATCH (t:LakatosTree {name:$n}) RETURN t.title AS title, t.hard_core AS hard_core, "
             "t.frontier_rule AS frontier_rule, t.doc AS doc, "
-            "t.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement",
+            "t.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement, "
+            "t.ontology AS ontology",
             n=name,
         )
         if not t:

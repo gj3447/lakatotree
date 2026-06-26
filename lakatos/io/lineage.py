@@ -24,7 +24,9 @@ class Derivation:
     producer_sha: str
     inputs: list                 # [(path, sha)]
     params: dict = field(default_factory=dict)
-    kind: str = 'intermediate'   # source | intermediate | final
+    kind: str = 'intermediate'   # source | intermediate | final | measurement
+    # 'measurement': 산출물을 *생산*하지 않고, 완성된 산출물에서 metric 을 *측정*만 하는 step.
+    # measurer code path ≠ producer code path 라야 producer self-report 위조를 잡는다(감사 M1).
     ts: str = ''
     env: str = ''                # 환경 지문 sha (envfp) — 재현성 마지막 조각
 
@@ -420,6 +422,7 @@ def build_manifest(final: str, bo: dict, root_schemas: dict | None = None,
                            schema=root_schemas.get(r, '')))
     recipe = [{'producer': d.producer, 'producer_sha': d.producer_sha,
                'inputs': [p for p, _ in d.inputs], 'output': d.output,
-               'params': d.params, 'env': d.env} for d in rebuild_plan(final, bo)]
+               'params': d.params, 'env': d.env, 'kind': d.kind}
+              for d in rebuild_plan(final, bo)]
     return RebuildManifest(final=final, roots=rts, env_sha=env_sha,
                            recipe=recipe, tolerance=tolerance)

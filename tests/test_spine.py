@@ -87,17 +87,24 @@ def test_synthesize_per_gate_report():
     d = synthesize_promotion(scripted_verdict='progressive', stands=True)
     assert 'constitution' in d['gates']
 
-# credibility_from_trust 매핑 — source_trust → CredibilityPromotionGate 입력 (set_verdict 배선)
-def test_credibility_high_trust_is_extracted_passes():
-    # bash 지반·고신뢰(>=0.70) → EXTRACTED, target<=current → 게이트 자명 통과
-    c = credibility_from_trust(1.0)
+# credibility_from_trust 매핑 — eigentrust-backed trust → CredibilityPromotionGate (prom-honesty/credibility)
+def test_credibility_unbacked_high_trust_is_inconclusive_blocks():
+    # ★self-report 고신뢰(eigentrust 미뒷받침, 기본)는 inconclusive → 직접출처 없음·AMBIGUOUS → EXTRACTED 차단
+    c = credibility_from_trust(1.0)   # trust_backed=False (default)
+    assert c['current'] == CredibilityTier.AMBIGUOUS and c['has_direct_source'] is False
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
+    assert not d['ok'] and d['gates']['credibility']['passed'] is False
+
+def test_credibility_eigentrust_backed_high_trust_passes():
+    # eigentrust 로 뒷받침된 고신뢰만 직접출처 EXTRACTED → 통과(게이트 의도='고신뢰 grounded 통과' 보존)
+    c = credibility_from_trust(1.0, trust_backed=True)
     assert c['current'] == CredibilityTier.EXTRACTED and c['has_direct_source'] is True
     d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
     assert d['ok'] and d['gates']['credibility']['passed'] is True
 
-def test_credibility_low_trust_internet_blocks_canonical():
-    # source_trust 0.5 = 인터넷 영향 중간신뢰, 직접출처·인간판정 없음 → CANONICAL 차단
-    c = credibility_from_trust(0.5)
+def test_credibility_backed_mid_trust_blocks_canonical():
+    # eigentrust-backed 라도 중신뢰(0.5)는 INFERRED, 직접출처 없음 → CANONICAL 차단
+    c = credibility_from_trust(0.5, trust_backed=True)
     assert c['current'] == CredibilityTier.INFERRED and c['has_direct_source'] is False
     d = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c)
     assert not d['ok'] and d['gates']['credibility']['passed'] is False
@@ -111,6 +118,41 @@ def test_credibility_ambiguous_needs_human():
     c2 = credibility_from_trust(0.2, has_human_verdict=True)
     passed = synthesize_promotion(scripted_verdict='progressive', stands=True, credibility=c2)
     assert passed['ok']  # 인간이 vouch 하면 통과
+
+
+# === prom-honesty/provenance (정본 prom 2026-06-21): CANONICAL floor — *위조불가 영수증* ≥1 요구 ===
+def test_floor_blocks_canonical_with_no_receipt():
+    """R3 발견 봉쇄: 내부 proof 노드(미채점·무critique·무영수증)는 constitution-only 로 CANONICAL 못 됨.
+    하드코어(영수증 없는 green=거짓말)·3치(무영수증=inconclusive≠pass)·Lakatos(CANONICAL=최강주장)."""
+    d = synthesize_promotion(scripted_verdict='proof', stands=True)
+    assert not d['ok'] and d['gates']['floor']['passed'] is False
+    assert 'no_receipt_for_canonical' in d['gates']['floor']['reasons']
+
+def test_floor_satisfied_by_judge_scored_verdict():
+    """judge-scored 판결(scripted; PROM-A 가 노드 self-report 봉쇄)은 위조불가 영수증 → floor 통과."""
+    d = synthesize_promotion(scripted_verdict='progressive', stands=True)
+    assert d['ok'] and d['gates']['floor']['passed'] is True
+
+def test_floor_satisfied_by_real_reproducibility():
+    """reproducible=True(실 lineage replay)는 위조불가 영수증 → proof 노드라도 floor 통과."""
+    d = synthesize_promotion(scripted_verdict='proof', stands=True, reproducible=True)
+    assert d['ok'] and d['gates']['floor']['passed'] is True
+
+def test_floor_judge_receipt_via_verdict_source_excludes_legacy_null_source():
+    """set_verdict 경로(verdict_source 전달)는 force_of(SSOT)로 판정 — 레거시 NULL-source progressive 는
+    영수증 아님(force_of==INCONCLUSIVE). scripted source 만 judge 영수증으로 floor 통과."""
+    ok = synthesize_promotion(scripted_verdict='progressive', stands=True, verdict_source='scripted')
+    assert ok['ok'] and ok['gates']['floor']['passed'] is True
+    legacy = synthesize_promotion(scripted_verdict='progressive', stands=True, verdict_source=None)
+    assert not legacy['ok'] and legacy['gates']['floor']['passed'] is False
+
+
+def test_floor_satisfied_by_human_verdict():
+    """human verdict(명시적 attest)는 위조불가 영수증 → proof 노드라도 floor 통과."""
+    d = synthesize_promotion(scripted_verdict='proof', stands=True,
+                             credibility=credibility_from_trust(0.2, has_human_verdict=True))
+    assert d['ok'] and d['gates']['floor']['passed'] is True
+
 
 def test_credibility_human_verdict_unblocks():
     c = credibility_from_trust(0.5, has_human_verdict=True)

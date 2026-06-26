@@ -10,6 +10,7 @@
   ② Borda count: 기준별 순위 합산 (Borda 1781) — Pareto 비교불능쌍의 *참고용* 전순서.
      Borda 는 정책 집계임을 정직 표기 (기준 가중이 동일하다는 선택).
 # KG: span_lakatotree_leaderboard / P2
+라이선스(THEORY §8): kuhn1977
 """
 from dataclasses import dataclass
 

@@ -228,7 +228,10 @@ def test_claim_standing_resolves_human_doubt_append_only():
         ResearchEvent(
             name="evt-resolve",
             realm=Realm.HUMAN,
-            actor="human:reviewer",
+            # M8(design-audit): resolver 는 doubt 제기자(human:reviewer)와 *독립* 한 actor 여야
+            #   해소로 인정된다(self-resolution 차단). 이 테스트의 의도는 resolve_doubt 의
+            #   append-only 해소이지 self-resolution 이 아니므로 독립 actor 로 명시.
+            actor="human:second-reviewer",
             action="resolve_doubt",
             target="claim-1",
             evidence_refs=("comment:ok",),

@@ -14,6 +14,7 @@
 한계 정직(사용자 정리 #10): ①사전확률 주관 → prior 명시 인자(감사 가능) ②새 가설 탄생은
   베이즈 범위 밖 → frontier/directions(가설공간 확장)가 담당, 베이즈는 within-tree 신뢰도만.
 # KG: span_lakatotree_bayes
+라이선스(THEORY §8): royall1997 ramsey1926 definetti1937 cox1946
 """
 import math
 from lakatos.trust import evidence_weight
@@ -49,7 +50,8 @@ def interpret(bf: float) -> dict:
     return interpret_bayes_factor(bf)
 
 
-def effect_size(delta: float, noise_band: float, floor: float = 1e-6) -> float:
+def effect_size(delta: float, noise_band: float,
+                floor: float = GROUNDED['effect_size_floor']['value']) -> float:
     """증거 강도 = |delta| / max(noise_band, floor). 큰 개선 = 강한 증거."""
     return abs(delta) / max(noise_band, floor)
 
@@ -84,8 +86,11 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
 
     target 키가 없으면(현 호출자 대부분) None → 항상 novel 취급(할인 없음) = 기존 동작 비트동일.
     source_trust_map (P6): {source: global_trust} 주면 판결의 `source` 를 eigentrust 글로벌 신뢰로 가중.
-    단조: novel target 추가/더 강한 확증은 비감소. 반환 [0,1) — 단, 독립 강확증이 매우 많으면
-    (실 트리 경로 깊이로는 미도달) float odds 가 포화해 1.0 으로 반올림될 수 있다(불변식 ε 약화, 동작 무해).
+    단조: novel target 추가/더 강한 확증은 비감소. 반환 (0,1] — 약 21개+ distinct *최대강도*(BF=6 포화)
+    확증이면 float odds 가 포화해 정확히 1.0 에 도달한다(n=15 미포화, n≥~22 포화; n=20 은 1 ulp 차라
+    platform-fragile 이라 단언 안 함). 실 트리 정본경로 깊이(보통 ≤15, 그나마 전부 최대강도도 아님)로는
+    미도달 — '깊이로는 미도달'을 test_doc_honesty 가 robust 마진(15 미포화 / 40 포화)으로 고정(hedge→tested).
+    prom-honesty/5: 옛 '[0,1)'은 이 포화를 부정하는 과장이라 (0,1] 로 정정.
     dedup 은 같은 타깃 반복을 max 1회로 접어 이 포화를 *완화*한다.
     """
     odds = prior / (1 - prior)
@@ -104,15 +109,19 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
             odds *= bf   # 음의/무정보/target 미지정 = 매번(반례 독립부담·기존 동작 보존)
     for lb in best_log_bf.values():
         odds *= math.exp(lb)
+    # prom-honesty/5 (적대감사 2026-06-20, 정정): distinct 강확증 다수에서 float odds 가 포화해 정확히
+    #   1.0 을 반환할 수 있다 → docstring 을 [0,1) 에서 (0,1] 로 정정(상한 1.0 포함). 과장 제거.
     return odds / (1 + odds)
 
 
 def should_abandon_bayes(verdicts: list, prior: float = DEFAULT_PRIOR,
-                         threshold: float = ABANDON_CREDENCE):
+                         threshold: float = ABANDON_CREDENCE,
+                         source_trust_map: dict | None = None):
     """신뢰도 기반 폐기 — 강한 가지는 반례 하나로 안 죽고, 약한 가지는 누적되면 죽는다.
 
     laudan.should_abandon(이산 3규칙)의 연속·증거가중 버전. 둘 다 쓰면:
     laudan = 해석 가능한 휴리스틱, bayes = 자산 가중 연속 신뢰도.
+    source_trust_map (A2): 정본경로와 동일하게 가지 폐기판정도 eigentrust 글로벌 신뢰로 가중.
     """
-    c = branch_credence(verdicts, prior)
+    c = branch_credence(verdicts, prior, source_trust_map=source_trust_map)
     return c < threshold, c

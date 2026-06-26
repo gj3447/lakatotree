@@ -1,0 +1,31 @@
+# LakatoTree 설계감사 M3(라우든 폐기규칙② confirmed-only 적중) — ooptdd 정식 영수증.
+# R02(구조화 이벤트 trace 도착) + R10(Longinus 바인딩). hermetic: in_process + memory backend.
+# emit-adapter=m3_receipt.verify 가 실제 lakatos.verdicts / lakatos.quant.metrics(tree_metrics,
+# 수정된 prediction_hits=CONFIRMED_NOVEL_PROGRESS 경로)를 구동하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-m3-confirmed-only-progress
+target:
+  mode: in_process
+  callable: m3_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M3-1
+    description: prediction_hit 은 confirmed-novel 진보(CONFIRMED_NOVEL_PROGRESS=={'progressive'})만 센다 — 미확증 progressive_conditional/former_canonical 은 적중에서 제외(넓은 PROGRESS_VERDICTS 엔 잔류)
+    gate:
+      - {event: confirmed_only_progress, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M3:confirmed_only_progress
+      source: m3_receipt.py
+      symbol: verify
+      must_emit: confirmed_only_progress
+
+  - id: M3-2
+    description: 미확증 conditional chain(예산 소진 ∧ confirmed 적중 0)은 라우든 규칙②로 폐기 후보가 된다 — tree_metrics.laudan.abandon_candidates 가 leaf 를 잡고, hits=1 반사실은 부당 생존(음성 오라클)
+    gate:
+      - {event: unconfirmed_chain_abandons, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M3:unconfirmed_chain_abandons
+      source: m3_receipt.py
+      symbol: verify
+      must_emit: unconfirmed_chain_abandons

@@ -1,0 +1,11 @@
+# 개발/CI 전용 — hermetic 런타임(requirements.txt)·통합(requirements-integration.txt)과 분리.
+# D seed(test-infra): 커버리지 ratchet + 커널 mutation.
+#   scripts/coverage_kernel.sh   — verdict+quant 커널 커버리지(--cov-fail-under=95)
+#   scripts/mutation_kernel.sh   — verdict 커널 mutmut(느림, CI job)
+pytest-cov>=5.0
+coverage>=7.0
+mutmut>=2.4
+# 순서독립성 가드(완성-후 적대감사 2026-06-26): 테스트 수집순서 무작위화로 hidden order-dependence 를
+#   드러낸다. 검증: 전 스위트가 distinct seed 3회 랜덤순서에서 동일 통과(1260 passed/0 fail). 결정론 재현은
+#   `pytest -p no:randomly` 또는 `--randomly-seed=<N>`. (이전엔 미설치라 -p no:randomly 가 no-op 였다.)
+pytest-randomly>=4.0

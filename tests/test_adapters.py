@@ -235,6 +235,22 @@ def test_prov_document_to_prov_json_preserves_core_relations():
     } >= {"derive:perview_v22.json@t2"}
 
 
+def test_prov_json_default_path_stringifies_nonscalar_attrs():
+    """#10: 의존성 없는 기본 PROV-JSON 경로도 비스칼라 attr(dict/list)를 *유효* PROV-JSON 값(JSON 문자열)으로
+    직렬화 — 전엔 중첩 객체를 그대로 통과시켜 스펙 무효 PROV-JSON 을 뱉었다."""
+    import json as _j
+    doc = {
+        "entity": {"e1": {"type": "Derived", "params": {"k": [1, 2, 3]}, "tags": ["a", "b"]}},
+        "activity": {},
+        "agent": {},
+        "relations": [],
+    }
+    attrs = prov_document_to_prov_json(doc)["entity"]["e1"]
+    assert attrs["prov:type"] == "Derived"                       # 스칼라는 그대로
+    assert attrs["lakatotree:params"] == _j.dumps({"k": [1, 2, 3]}, ensure_ascii=False, sort_keys=True)
+    assert isinstance(attrs["lakatotree:tags"], str)            # 비스칼라는 전부 str(유효 PROV-JSON)
+
+
 def test_serialize_prov_document_supports_json_and_optional_provn():
     doc = derivations_to_prov_document([ZDF, RIM, FINAL])
 

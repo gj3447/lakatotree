@@ -27,7 +27,7 @@ from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
 from lakatos.io.lineage import by_output, roots as lin_roots
 from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import TypeAdapter
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 import psycopg2.pool
@@ -67,6 +67,7 @@ from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
+from server.graph_view import tree_dot, tree_dot_view, tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
 from server.container import AppContainer
 from server.settings import ServerSettings
@@ -87,9 +88,24 @@ def _close_resources() -> list:
     return _container.close()
 
 
+def _startup_reconcile():
+    """startup best-effort outbox 복구(#③ outbox 경화) — PG-down 중 쌓인 OutboxEntry 를 *자동* 재적용해
+    KG↔PG 발산을 부팅 시 좁힌다(진짜 2PC 아님 — outbox 정답패턴의 자동복구 절반). 실패해도 startup 안 막음
+    (멱등이라 재호출 안전; 수동 트리거 POST /api/ops/reconcile-outbox 도 남아있음)."""
+    try:
+        r = _container.reconcile_outbox()
+        if r.get('replayed_count'):
+            logger.info('startup outbox reconcile: %s 재적용, %s pending', r['replayed_count'], r['still_pending'])
+        return r
+    except Exception as e:   # noqa: BLE001 — 부팅 복구 실패가 서버 기동을 막지 않음
+        logger.warning('startup outbox reconcile 실패(무시 — 수동 트리거 가능): %s', type(e).__name__)
+        return None
+
+
 @asynccontextmanager
 async def _lifespan(app):
-    yield                                    # startup: 지연연결(드라이버 lazy) — 별도 작업 없음
+    _startup_reconcile()                     # startup: outbox 자동복구(best-effort, #③)
+    yield
     for e in _close_resources():             # shutdown: 커넥션 누수 차단
         logger.warning('shutdown 리소스 close 실패: %s', e)
 
@@ -161,6 +177,23 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
+@app.post('/api/ops/reconcile-outbox')
+def reconcile_outbox_op():
+    """B1 복구 운영 트리거(#4) — pending OutboxEntry(KG 정본)를 PG history 에 *멱등* 재적용.
+    PG-down 동안 쌓인 outbox 가 영영 미적용(KG↔PG 발산)되지 않도록 운영자가 명시 호출한다 —
+    in-process 메서드(container.reconcile_outbox)는 전엔 테스트 외 호출자가 없는 고아였다.
+    멱등(ON CONFLICT event_id DO NOTHING)이라 재호출 안전. mutating → LAKATOS_API_TOKEN 설정 시
+    Bearer 강제(_bearer_auth). 반환 {pending, replayed, replayed_count, still_pending, pg_down}."""
+    return _container.reconcile_outbox()
+
+
+@app.get('/api/ops/outbox-status')
+def outbox_status_op():
+    """관측(#③ outbox 경화): 미적용 OutboxEntry depth = KG↔PG 발산 깊이. GET=비변이(무인증).
+    pending>0 = reconcile 필요(startup 자동 + POST /api/ops/reconcile-outbox 수동). -1=KG 미상."""
+    return {'pending': _container.outbox_pending_count()}
+
+
 # 자원 접근 모듈 API — AppContainer 위임(구현은 server.container, server.app 은 얇은 facade).
 # 모듈 전역 `global _PG_POOL` 변이 제거: 풀 lazy 상태가 컨테이너 인스턴스에 캡슐화됨.
 def pg():
@@ -189,6 +222,7 @@ def _tree_service():
 def _evidence_claim_service(*, store_research_event=None):
     return EvidenceClaimService(
         kg=kg,
+        kg_tx=kg_tx,   # B1-step1: bind_embedded_observation 의 다중 KG write 를 단일 트랜잭션으로
         hist=hist,
         foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
         load_lineage=_load_lineage,
@@ -347,13 +381,18 @@ def _foundation_from_rows(rows) -> FoundationMap | None:
 
 
 def _reproducible_for_node(name: str, tag: str) -> bool | None:
-    """F-CON-1: 노드 result_path 가 계보에 기록된 완성본이면 raw-root 재현가능 여부.
+    """F-CON-1 + R-AUDIT-1(적대 재검증 2026-06-21): 노드 result_path 가 raw-root 서 재현가능한지 —
+    *현실이 끊는 영수증*으로만 True.
 
-    엄격 재현성 = 완성본의 *모든 궁극 root 가 선언된 source(kind='source')* 일 때만 True.
-    reproducibility_gaps 단독은 "derivation 기록은 됐지만 inputs 빈 비-source(dangling leaf)"
-    를 못 잡아 가짜 reproducible=True 를 냈다(나생문 CON-1/F-CON-1-A/B/LINEAGE-1 수렴 확인).
-    roots() 는 그런 leaf 도 root 로 반환하므로 ⊆declared 검사가 갭+dangling 둘 다 포섭한다.
-    result_path 없음 or 계보 미기록 → None(증명 노드 등 — 재현성 게이트 비적용, 차단 안 함).
+    엄격 재현성 = 완성본의 모든 궁극 root 가 선언된 source(kind='source')이고, ★그 source 들의 sha 를
+    서버가 *디스크에서 재계산*해 기록값과 일치할 때만 True. client 가 lineage ledger 에 kind='source'/sha 를
+    자기선언하는 것만으론 절대 True 가 아니다 — 그게 R-AUDIT-1 forge 였다(노드 자기 출력을 kind='source' 로
+    POST → roots ⊆ declared 통과 → floor 가 위조 영수증으로 CANONICAL 승격). 영수증은 우리가 쓰는 게 아니라
+    현실이 끊어 준다.
+      • 계보 SHAPE 끊김(dangling/비-source root) → False(차단; 기존 F-CON-1 동작 보존, 나생문 CON-1/F-CON-1-A/B).
+      • SHAPE 는 맞으나 source sha 검증 불가(파일 부재/불일치) → None(증명 못 함 → floor 영수증 못 줌, 차단은 안 함).
+      • result_path 없음/계보 미기록 → None(증명 노드 등 — 게이트 비적용).
+    ★완전 무위조(실제 producer replay 실행)는 G-Web Part A 후속(미구현). 현재는 root source 산출물의 sha 현실대조까지.
     이게 set_verdict 에서 synthesize_promotion(reproducible=) 으로 흘러 RebuildFromRaw 게이트 발동.
     """
     rows = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -367,11 +406,16 @@ def _reproducible_for_node(name: str, tag: str) -> bool | None:
     bo = by_output(ds)
     if rp not in bo:
         return None
-    declared = {d.output for d in ds if d.kind == 'source'}
-    if rp in declared:
-        return True
     rts = lin_roots(rp, bo)   # 궁극 root 집합 (derivation 없거나 inputs 빈 leaf 포함)
-    return bool(rts) and rts.issubset(declared)   # 빈 closure(사이클/고립)=재현불가
+    declared = {d.output for d in ds if d.kind == 'source'}
+    if not rts or not rts.issubset(declared):
+        return False   # 빈 closure(사이클/고립)·dangling·비-source root = 재현불가(차단)
+    recorded = {d.output: d.output_sha for d in ds}
+    for src in rts:   # ★현실 대조: 선언 source 의 sha 를 서버가 디스크서 재계산해 일치 확인
+        server_sha = _path_sha(src)
+        if not server_sha or server_sha != recorded.get(src):
+            return None   # 파일 부재/sha 불일치 → client 자기선언만으론 영수증 못 줌(증명 불가)
+    return True
 
 
 def _foundation_rows(name: str):
@@ -422,6 +466,9 @@ def stack_view(name: str, leaf: str | None = None):
 def lifecycle_view(name: str, leaf: str | None = None):
     return _programme_service().lifecycle_view(name, leaf=leaf)
 
+def series_view(name: str, leaf: str | None = None):
+    return _programme_service().series_view(name, leaf=leaf)   # #5 프로그램-시계열 진단(diagnostic_only)
+
 def _competitor_for_tree(n: str) -> Competitor:
     td = tree_data(n)
     m = compute_metrics(td)
@@ -434,6 +481,29 @@ def _competitor_for_tree(n: str) -> Competitor:
     return Competitor(name=n, verdicts=verdicts, nodes=td['nodes'],
                       metric_improvement_pct=imp,
                       closed=m['frontier']['closed'], opened=m['frontier']['open'])
+
+@app.get('/api/graph/{name}')
+def tree_graph_view(name: str):
+    """E Phase 1 — 시각 트리 GUI 데이터 척추: node(색/klass/패널) + edge + frontier + 안건.
+    프론트엔드(Phase 2)가 렌더(브랜치 줌, 노드 클릭 패널, 본류·퇴행·생존 색). /api/tree 아님(app-owned)."""
+    td = tree_data(name)
+    return tree_graph(td, compute_metrics(td))
+
+
+@app.get('/api/graph/{name}/dot', response_class=PlainTextResponse)
+def tree_graph_dot(name: str):
+    """E Phase 2 — 트리를 Graphviz DOT(표준 시각 포맷)로. `dot -Tsvg` 로 렌더."""
+    td = tree_data(name)
+    return tree_dot(tree_graph(td, compute_metrics(td)))
+
+
+@app.get('/api/graph/{name}/view', response_class=HTMLResponse)
+def tree_graph_html(name: str):
+    """E Phase 2 — 브라우저 뷰어(빌드 0): DOT 임베드 + viz.js CDN 렌더. 본류/퇴행/생존 색."""
+    td = tree_data(name)
+    g = tree_graph(td, compute_metrics(td))
+    return tree_dot_view(name, tree_dot(g))
+
 
 @app.get('/api/leaderboard')
 def leaderboard_view(trees: str, snapshot: bool = False):
@@ -488,11 +558,70 @@ def _belief(b: BeliefIn) -> Belief:
                   connectivity=b.connectivity, depends_on=tuple(b.depends_on))
 
 
+def _load_belief_base(tree: str) -> list:
+    """A4: 트리의 영속 belief base 를 KG 에서 로드 (HAS_BELIEF). 없으면 빈 base."""
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(b:Belief)
+                 RETURN b.belief_id AS belief_id, b.statement AS statement, b.kind AS kind,
+                        b.credence AS credence, b.problem_balance AS problem_balance,
+                        b.connectivity AS connectivity, b.depends_on AS depends_on
+                 ORDER BY belief_id""", tree=tree)
+    return [Belief(belief_id=r['belief_id'], statement=r.get('statement') or r['belief_id'],
+                   kind=r.get('kind') or 'protective_belt',
+                   credence=r['credence'] if r.get('credence') is not None else 0.5,
+                   problem_balance=int(r.get('problem_balance') or 0),
+                   connectivity=int(r.get('connectivity') or 0),
+                   depends_on=tuple(r.get('depends_on') or ())) for r in (rows or [])]
+
+
+def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
+    """A4: 결과 belief base 영속 + removed/demoted belief 와 같은 tag 의 CANONICAL 노드 auto-rejudge
+    (→former_canonical, verdict_source='engine') — 전부 단일 kg_tx(원자적, MERGE 멱등). 반환 demote 후보."""
+    ts = datetime.now(timezone.utc).isoformat()
+    beliefs = [dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind, credence=b.credence,
+                    problem_balance=b.problem_balance, connectivity=b.connectivity,
+                    depends_on=list(b.depends_on)) for b in r.base]
+    ops = [("""MATCH (t:LakatosTree {name:$tree})
+               UNWIND $beliefs AS b
+               MERGE (bel:Belief {belief_id: b.belief_id})
+               SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
+                   bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
+                   bel.depends_on=b.depends_on, bel.updated_at=$ts
+               MERGE (t)-[:HAS_BELIEF]->(bel)""", dict(tree=tree, beliefs=beliefs, ts=ts))]
+    demote = list(r.removed) + ([old_canonical_id] if op == 'demote_canonical' and old_canonical_id else [])
+    if r.removed:
+        ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(bel:Belief)
+                       WHERE bel.belief_id IN $removed DETACH DELETE bel""",
+                    dict(tree=tree, removed=list(r.removed))))
+    if demote:
+        # auto-rejudge: belief 가 사라진/강등된 같은 tag 의 CANONICAL 노드를 엔진이 강등(수동 재채점 0).
+        # A4-richer: spine.reconcile_standing 정책 적용 — CANONICAL ∧ valid_until_rebutted=True 만
+        # 자동 강등. 인간이 '반박-자동무효'를 끈 노드(valid_until_rebutted=False=human_locked)는 belief
+        # contraction 으로도 자동 강등 금지(인간경계 존중). 전엔 blanket SET 이 이 lock 을 무시했음(버그).
+        ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                       WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                             AND coalesce(e.valid_until_rebutted, true) = true
+                       SET e.verdict='former_canonical', e.verdict_source='engine',
+                           e.current_best_pointer=false, e.demoted_at=$ts""",
+                    dict(tree=tree, demote=demote, ts=ts)))
+    kg_tx(ops)
+    hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
+                                  'programme_shift_candidate': r.programme_shift_candidate,
+                                  'auto_demote_candidates': demote,
+                                  'demote_policy': 'reconcile_standing: CANONICAL∧valid_until_rebutted'})
+    return demote
+
+
 @app.post('/api/agm/revise')
 def agm_revise(req: AgmReviseIn):
     """AGM 신념개정(P1) — expansion/contraction/revision/demote_canonical.
-    hard core 는 PROTECTED: allow_hard_core 없이 깎으면 409, 깎이면 programme_shift_candidate=True."""
-    base = [_belief(b) for b in req.base]
+    hard core 는 PROTECTED: allow_hard_core 없이 깎으면 409, 깎이면 programme_shift_candidate=True.
+
+    A4 (stateful): req.tree 주면 영속 belief base 를 로드(body base 없을 때)해 그 위에서 연산하고,
+    결과를 한 kg_tx 로 영속하며, removed/demoted belief 와 같은 tag 의 CANONICAL 노드를 엔진이
+    former_canonical 로 auto-rejudge(verdict_source='engine') — belief 변경이 verdict 변경을 수동
+    재채점 없이 만든다. body-override 보존: tree 없으면 KG 미접촉(기존 stateless 계약 불변)."""
+    loaded = bool(req.tree) and not req.base
+    base = _load_belief_base(req.tree) if loaded else [_belief(b) for b in req.base]
     try:
         if req.op == 'expansion':
             if not req.new:
@@ -510,12 +639,13 @@ def agm_revise(req: AgmReviseIn):
         elif req.op == 'demote_canonical':
             if not (req.new and req.old_canonical_id):
                 raise HTTPException(422, 'demote_canonical 은 new + old_canonical_id 필수')
-            r = demote_canonical(base, req.old_canonical_id, _belief(req.new))
+            r = demote_canonical(base, req.old_canonical_id, _belief(req.new),
+                                 allow_hard_core=req.allow_hard_core)
         else:
             raise HTTPException(422, f'미지원 op: {req.op} (expansion|contraction|revision|demote_canonical)')
     except HardCoreProtected as e:
         raise HTTPException(409, str(e))
-    return dict(
+    out = dict(
         op=req.op,
         base=[dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind,
                    credence=b.credence, problem_balance=b.problem_balance,
@@ -523,6 +653,11 @@ def agm_revise(req: AgmReviseIn):
         removed=list(r.removed), added=list(r.added),
         programme_shift_candidate=r.programme_shift_candidate,
         entrenchment_policy=r.entrenchment_policy)
+    if req.tree:
+        out['auto_demote_candidates'] = _persist_revision(req.tree, req.op, r, req.old_canonical_id)
+        out['persisted'] = True
+        out['loaded_base'] = loaded
+    return out
 
 
 # ── 하네스 사이클 (P5-C) — 서버 in-process 오케스트레이션, bash 미실행(no RCE) ──

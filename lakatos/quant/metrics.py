@@ -18,7 +18,8 @@ from lakatos.quant.fertility import predictive_fertility, nobel_grade
 from lakatos.eureka import eureka_over_tree
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
-from lakatos.verdicts import PROGRESS_VERDICTS, NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE
+from lakatos.verdicts import (PROGRESS_VERDICTS, CONFIRMED_NOVEL_PROGRESS,
+                              NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row)
 
 
 def _primary_parent(row: dict) -> str | None:
@@ -65,8 +66,12 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
     recent = chain[:window]
     return dict(
         leaf=leaf, window=window, verdicts=seq,
+        # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
+        path=[{'tag': r['tag'], 'verdict': r['verdict']} for r in reversed(chain)],
         consecutive_nonprogressive=consec, nodes_spent=len(chain),
-        prediction_hits=sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS),
+        # M3: 폐기규칙②·bandit reward 가 묻는 *적중*은 confirmed-novel 진보만(미확증 conditional/
+        #     former_canonical 제외) — 넓은 PROGRESS_VERDICTS 로 세면 미확증이 폐기를 면제·reward 오염.
+        prediction_hits=sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
                                                                  window=window),
         novel_registered_recent=sum(1 for r in recent if r.get('novel_registered')),
@@ -136,6 +141,12 @@ def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
             d['noise_band'] = r.get('pred_noise_band') or 0.0
         if r.get('pred_closes'):
             d['target'] = r['pred_closes']
+        # A2: 출처신뢰를 credence 로 전달 — 전엔 떨궈서 branch_credence 가 항상 1.0(죽은 경로).
+        #   source_trust = 노드별 기록 신뢰(float), source = eigentrust 글로벌 맵 바인딩 키(string).
+        if r.get('source_trust') is not None:
+            d['source_trust'] = r['source_trust']
+        if r.get('source') is not None:
+            d['source'] = r['source']
         out.append(d)
     return out
 
@@ -212,7 +223,9 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
                 consec += 1
             else:
                 break
-        hits = sum(1 for r in chain if r['verdict'] in PROGRESS_VERDICTS)
+        # M3: confirmed-novel 진보만 적중 — 미확증 progressive_conditional 을 적중으로 세면 규칙②
+        #     (예산 소진 ∧ 적중 0)가 면제돼 degenerating 가지가 무기한 산다(폐기 지연).
+        hits = sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
         # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
         pb_windowed = branch_problem_balance_windowed(chain, tv.frontier)
         ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
@@ -226,20 +239,35 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
 
 
 def _bayes_layer(tv: '_TreeView | list', by: dict | None = None,
-                 leaves: list | None = None) -> dict:
-    """베이즈 연속층 — 정본경로 신뢰도(판결 시퀀스 사후확률) + 신뢰도<0.1 저신뢰 가지."""
+                 leaves: list | None = None, source_trust_map: dict | None = None,
+                 trust_coverage_mode: str | None = None) -> dict:
+    """베이즈 연속층 — 정본경로 신뢰도(판결 시퀀스 사후확률) + 신뢰도<0.1 저신뢰 가지.
+
+    A2: source_trust_map(eigentrust 글로벌 신뢰) 주면 판결의 source 를 그 신뢰로 가중 —
+    노드별 source_trust(float)는 _verdict_seq 가 항상 전달, 맵은 그 위 글로벌 override.
+    정직성: 맵을 줬는데 경로 판결의 source 가 맵에 없으면 *조용히 1.0 스냅*이 되므로 trust_coverage
+    로 매칭 수를 노출(coverage.mode 가 graph_propagated/seed_dominated/uniform_unlearned 를 그대로 운반)."""
     if not isinstance(tv, _TreeView):
         tv = _tv(by=by, path=tv, leaves=leaves)
-    can_cred = round(branch_credence(_verdict_seq(tv, tv.path)), 3) if tv.path else None
+    can_seq = _verdict_seq(tv, tv.path) if tv.path else []
+    can_cred = round(branch_credence(can_seq, source_trust_map=source_trust_map), 3) if tv.path else None
     low_branches = []
     for leaf in tv.leaves:
         if leaf in tv.path:
             continue
         chain = _branch_chain(tv, leaf)           # leaf→분기점
-        ab, c = should_abandon_bayes(_verdict_seq(tv, [r['tag'] for r in chain][::-1]))
+        ab, c = should_abandon_bayes(_verdict_seq(tv, [r['tag'] for r in chain][::-1]),
+                                     source_trust_map=source_trust_map)
         if ab:
             low_branches.append(dict(leaf=leaf, credence=round(c, 3)))
+    path_sources = sum(1 for d in can_seq if 'source' in d)
+    matched = sum(1 for d in can_seq if source_trust_map and d.get('source') in source_trust_map)
+    trust_coverage = dict(
+        map_supplied=bool(source_trust_map),
+        mode=trust_coverage_mode or ('graph_supplied' if source_trust_map else 'none'),
+        path_sources=path_sources, path_sources_matched=matched)
     return dict(canonical_credence=can_cred, low_credence_branches=low_branches,
+                trust_coverage=trust_coverage,
                 note='강한 가지는 반례 하나로 안 죽는다 — 신뢰도<0.1 가지만 폐기')
 
 
@@ -313,6 +341,18 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     """트리 지표 오케스트레이터 — 공유 구조 1회 계산 후 각 지표 개념을 자기 함수에 위임.
     (개념별 분해는 위 `_*_layer`/`_*_metric`/`_*_screen` 참조 — 한 개념 = 한 함수.)"""
     cfg = cfg or {}
+    # prom-honesty (R2→정본 결정 2026-06-21): 진보어휘(PROGRESS_VERDICTS) verdict 인데 verdict_source 가
+    #   *명시적으로* 비어있는(None/'') 노드 = 노드 self-report 로 들어온 미채점 진보 = *재독 불가 영수증*.
+    #   ooptdd 하드코어의 3치 논리(LTL3 present/absent/INCONCLUSIVE)에 따라 이는 inconclusive — pass(진보)도
+    #   fail(기각)도 아니다. ∴ DEFAULT 로 positive 진보 집계(canonical anchor/진보율/fertility)에서 *제외*하고
+    #   provenance 로 surface(영수증 없는 green=거짓말; 울프람 '추측 말고 돌려라'→재검증으로 inconclusive 해소).
+    #   비파괴(노드 보존)·가역: cfg.provenance_lenient=True 면 옛 동작(집계 포함)으로 opt-out(append-only 존중).
+    #   ★key 부재=레거시/테스트 픽스처는 신뢰(집계 — 실 KG 읽기만 verdict_source 키를 싣는다, read_models RETURN).
+    inconclusive = [r['tag'] for r in nodes if force_of_row(r) == 'INCONCLUSIVE']   # SSOT: verdicts.force_of
+    lenient = bool(cfg.get('provenance_lenient'))
+    if inconclusive and not lenient:
+        _inc = set(inconclusive)
+        nodes = [r if r['tag'] not in _inc else {**r, 'verdict': '_inconclusive_unscored'} for r in nodes]
     by = {r['tag']: r for r in nodes}
     n = len(nodes)
     path = _canonical_path(nodes, by)
@@ -331,7 +371,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     prog = _progress_metric(tv)
     stalled = _degeneration_depth(tv)
     laudan = _laudan_layer(tv)
-    bayes = _bayes_layer(tv)
+    # A2: eigentrust 글로벌 신뢰 맵을 cfg 로 받아 credence 가중에 전달(기본 None=레거시 비트동일).
+    #   서버 seam(read_models.compute_tree_metrics)이 global_source_trust 로 맵+mode 를 구성해 주입.
+    bayes = _bayes_layer(tv, source_trust_map=cfg.get('source_trust_map'),
+                         trust_coverage_mode=cfg.get('trust_coverage_mode'))
     fert = _fertility_layer(tv)
     eureka = _eureka_layer(tv)
     multiplicity = _multiplicity_screen(nodes)
@@ -339,6 +382,11 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
                               coverage_backlog=coverage['backlog'],
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
+    if inconclusive:
+        alerts = [*alerts, (
+            f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개가 verdict_source 없이 self-report = inconclusive "
+            + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
+               else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
 
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
@@ -347,4 +395,6 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
-                eureka=eureka, multiplicity=multiplicity, alerts=alerts)
+                eureka=eureka, multiplicity=multiplicity, alerts=alerts,
+                provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
+                                mode=('lenient-counted' if lenient else 'inconclusive-excluded')))

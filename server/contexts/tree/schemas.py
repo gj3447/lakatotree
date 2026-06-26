@@ -6,7 +6,12 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# ★server-set-only 경계(적대 재검증 2026-06-21): verdict_source 등 server 전용 필드는 client 가 절대 못 쓴다.
+#   pydantic 기본 extra='ignore' 는 client 가 보낸 verdict_source 를 *조용히 drop* 할 뿐 — 미래에 누군가
+#   필드를 추가하거나 SET e += row 로 바꾸면 'no receipt=green' 이 재개방된다. extra='forbid' 로 *명시 거부*(422).
+_SERVER_SET_ONLY = ConfigDict(extra="forbid")
 
 from lakatos.engine import FoundationRequirement, KnowledgeKind, Realm, ResearchEvent
 
@@ -19,6 +24,7 @@ class ParentEdgeIn(BaseModel):
 
 
 class NodeIn(BaseModel):
+    model_config = _SERVER_SET_ONLY   # client 가 verdict_source 등 server 전용 필드 못 실음(422)
     tag: str = Field(min_length=1)
     parent: str | None = None
     parents: list[str] = Field(default_factory=list)
@@ -36,6 +42,7 @@ class NodeIn(BaseModel):
 
 
 class VerdictIn(BaseModel):
+    model_config = _SERVER_SET_ONLY   # verdict_source 는 server 가 set — client 입력이면 422
     verdict: str
     note: str = ""
     scope: str = ""
@@ -52,13 +59,30 @@ class QuestionIn(BaseModel):
     cost: float = Field(1.0, gt=0)
 
 
+class CreateTreeIn(BaseModel):
+    model_config = _SERVER_SET_ONLY   # client 가 server 전용 필드 못 실음(422). name 은 URL path 가 소유.
+    # 메타 전용 create/upsert. 멱등이되 last-write-wins: 같은 name 재호출은 보낸 값으로 덮어씀
+    # (생략 필드 = 빈값). 노드/질문은 각자 /node /question 라우트로.
+    title: str = ""
+    hard_core: str = ""
+    frontier_rule: str = ""
+    doc: str = ""
+    coverage_statement: str = ""
+    coverage_backlog: list[str] = Field(default_factory=list)
+    # 도메인 온톨로지(JSON): {"entities":{name:{required:[...],constraints:{attr:{enum|type|min|max}}}},
+    # "closed_world":bool}. 선언하면 엔진이 노드 등록 시 강제(opt-in). 빈 문자열=강제 없음.
+    ontology: str = ""
+
+
 class PredictionIn(BaseModel):
     """Preregistered prediction. Judgement must happen after this contract exists."""
 
+    model_config = _SERVER_SET_ONLY
     metric_name: str
     direction: str = "lower"
     baseline_value: float
     noise_band: float = Field(0.0, ge=0)
+    scale_type: str = "ratio"   # Stevens 측정척도 — judge.Prediction 가 검증(ordinal=순서만, nominal=거부)
     novel_prediction: str = ""
     novel_metric: str | None = None
     novel_direction: str | None = None
@@ -71,10 +95,14 @@ class PredictionIn(BaseModel):
 class TestResultIn(BaseModel):
     """Judge-script result. The server derives the verdict from this payload."""
 
+    model_config = _SERVER_SET_ONLY
     metric_value: float
     script: str = Field(min_length=1)
     script_sha: str | None = None
     novel_measured: float | None = None
+    novel_sha: str | None = None   # prom-honesty/sha: novel 측정의 출처(예측 측정 sha 와 다르면 독립 인정)
+    novel_script: str | None = None   # #H6: novel 측정의 *소스*(서버 재계산 대상). 있으면 서버가 이 본문에서
+                                      #   novel sha 를 재유도해 독립성을 client 문자열(novel_sha)이 아닌 현실에 묶는다.
     source_trust: float = 1.0
     result_path: str = ""
     log: str = ""
@@ -82,6 +110,11 @@ class TestResultIn(BaseModel):
     lakatos_consequence: bool | None = None
     lakatos_excess: bool | None = None
     lakatos_hardcore: bool | None = None
+    # #H1-hardcore (설계감사 frontier): 이 노드 변경이 refute/건드린 가정들. 서버가 negative_heuristic 로
+    #   tree.hard_core 와 교집합을 판정해 hard_core_preserved 를 *구조적으로 파생*(self-report bool 대신) —
+    #   touched ∩ hard_core ≠ ∅ 이면 different_programme 로 강등(bool 로 못 숨김). 잔여: touched-set 은 아직
+    #   제출자 선언 — git-diff ∩ Longinus 파생은 후속 frontier.
+    touched_assumptions: list[str] = Field(default_factory=list)
     implementation_complete: bool = True
     data_branch: bool = False
     data_replay_passed: bool = True
@@ -269,3 +302,36 @@ class FoundationRequirementIn(BaseModel):
             owner=self.owner,
             risk_if_missing=self.risk_if_missing,
         )
+
+
+# ── #① Laudan 연구전통 authoring (diagnostic-only) — programme/tradition.py 도메인 객체로 검증 ──
+class TraditionCommitmentIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    commitment_id: str
+    kind: str                       # ontology|methodology|exemplar|problem_type|background_theory
+    statement: str
+    revisability: str = "routine"   # routine|costly|identity_boundary
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class TraditionIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    tradition_id: str
+    name: str
+    commitments: list[TraditionCommitmentIn] = Field(default_factory=list)
+    ontology_commitments: list[str] = Field(default_factory=list)
+    methodology_rules: list[str] = Field(default_factory=list)
+    exemplars: list[str] = Field(default_factory=list)
+    accepted_problem_types: list[str] = Field(default_factory=list)
+    background_theories: list[str] = Field(default_factory=list)
+    revision_policy: str = ""
+    compatibility_notes: str = ""
+
+
+class TraditionAppraiseIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    commitment_id: str
+    operation: str                  # add|modify|retire|reclassify
+    reason: str = ""
+    receipt_refs: list[str] = Field(default_factory=list)
+    compatibility_claim: str = ""

@@ -65,6 +65,52 @@ def test_auth_blocks_post_without_token(monkeypatch):
     assert r.status_code == 401
 
 
+# ── #4: B1 outbox 복구 운영 트리거(고아 메서드 → 운영 surface) ──
+
+def test_reconcile_outbox_ops_endpoint(monkeypatch):
+    app = load_app()
+    fake = {'pending': 2, 'replayed': ['o1', 'o2'], 'replayed_count': 2,
+            'still_pending': 0, 'pg_down': False}
+    monkeypatch.setattr(app._container, 'reconcile_outbox', lambda: fake)
+    r = TestClient(app.app).post('/api/ops/reconcile-outbox')
+    assert r.status_code == 200 and r.json() == fake
+
+
+def test_reconcile_outbox_ops_endpoint_is_auth_gated(monkeypatch):
+    app = load_app()
+    monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')   # mutating POST → Bearer 강제
+    r = TestClient(app.app).post('/api/ops/reconcile-outbox')
+    assert r.status_code == 401
+
+
+# ── #③ outbox 운영 경화: startup 자동복구 + pending depth 관측 (2PC 대신 outbox 강화) ──
+
+def test_startup_reconcile_runs_outbox_recovery(monkeypatch):
+    app = load_app()
+    calls = []
+    def fake():
+        calls.append(1)
+        return {'replayed_count': 2, 'still_pending': 0}
+    monkeypatch.setattr(app._container, 'reconcile_outbox', fake)
+    r = app._startup_reconcile()
+    assert calls and r['replayed_count'] == 2   # 부팅 시 자동 복구 호출
+
+
+def test_startup_reconcile_swallows_errors(monkeypatch):
+    app = load_app()
+    def boom():
+        raise RuntimeError('kg down at boot')
+    monkeypatch.setattr(app._container, 'reconcile_outbox', boom)
+    assert app._startup_reconcile() is None   # 부팅 복구 실패가 서버 기동을 막지 않음
+
+
+def test_outbox_status_endpoint_reports_pending_depth(monkeypatch):
+    app = load_app()
+    monkeypatch.setattr(app._container, 'outbox_pending_count', lambda: 3)
+    r = TestClient(app.app).get('/api/ops/outbox-status')
+    assert r.status_code == 200 and r.json() == {'pending': 3}
+
+
 def test_auth_allows_get_and_correct_token(monkeypatch):
     app = load_app()
     monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')

@@ -1,0 +1,200 @@
+{
+  "schema": "lakatotree.workspace-longinus.v1",
+  "name": "workspace_longinus_manifest_20260624",
+  "created_at": "2026-06-24",
+  "purpose": "Bind the local 3D work environment to bhgman_tool Longinus semantics: sourceId, sourcePath, confidence, binding_state, drift type, and rerunnable checks.",
+  "roots": {
+    "bhgman_tool": "/data/kjra/PROJECT/PI/bhgman_tool",
+    "lakatotree": "/data/kjra/PROJECT/PI/lakatotree",
+    "prismv2": "/data/kjra/PROJECT/3D/prismv2",
+    "jg_bpc": "/data/kjra/PROJECT/3D/3d_vision_jg_bpc"
+  },
+  "allowed_confidence": [
+    "EXTRACTED",
+    "INFERRED",
+    "AMBIGUOUS"
+  ],
+  "allowed_binding_state": [
+    "PIERCED",
+    "CANDIDATE",
+    "PRELIMINARY",
+    "NO_SOURCE"
+  ],
+  "allowed_drift_type": [
+    "Missing",
+    "Orphan",
+    "SigMismatch",
+    "PatternDiv",
+    "LabelRot"
+  ],
+  "kg_refs": [
+    "CT_LakatoTree_3D_Workspace_LonginusPiercing_20260624",
+    "lesson-3d-workspace-longinus-piercing-20260624"
+  ],
+  "bindings": [
+    {
+      "sourceId": "bhgman_tool.LonginusSkill",
+      "repo": "bhgman_tool",
+      "sourcePath": "symposium-skills/longinus/SKILL.md:1",
+      "kg_anchor": "ATOM_Skill_longinus",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "layer": "L0_method",
+      "claim": "Canonical Longinus method source for this workspace."
+    },
+    {
+      "sourceId": "lakatotree.longinus.audit",
+      "repo": "lakatotree",
+      "sourcePath": "lakatos/longinus.py:1",
+      "kg_anchor": "rs-longinus-cli-audit",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "SigMismatch",
+      "lens_law": "PutGet",
+      "layer": "L1_audit_engine",
+      "claim": "Local symbol/sha Longinus audit engine is present and rerunnable.",
+      "acceptance_check": "python -m lakatos.longinus"
+    },
+    {
+      "sourceId": "lakatotree.longinus.bindings",
+      "repo": "lakatotree",
+      "sourcePath": "docs/longinus_bindings.json:1",
+      "kg_anchor": "span_lakatotree_world_gates",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "Orphan",
+      "lens_law": "GetPut",
+      "layer": "L1_binding_registry",
+      "claim": "In-repo ReferenceSite mirror and kg_anchors reverse-orphan registry exist."
+    },
+    {
+      "sourceId": "Workspace3D.LonginusPiercing",
+      "repo": "lakatotree",
+      "sourcePath": "docs/WORKSPACE_LONGINUS_PIERCING_20260624.md:1",
+      "kg_anchor": "CT_LakatoTree_3D_Workspace_LonginusPiercing_20260624",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "layer": "L1_workspace_map",
+      "claim": "This workspace map declares which 3D claims are pierced, candidate, preliminary, or absent.",
+      "acceptance_check": "python -m pytest tests/test_workspace_longinus_manifest.py -q"
+    },
+    {
+      "sourceId": "prismv2.bpc.AlignmentConfig",
+      "repo": "prismv2",
+      "sourcePath": "services/inspection/src/adapters/bpc/pipeline_runner.py:80",
+      "kg_anchor": "CT_PrismV2_To_BpcIcpSpec_AIPipeline",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "PatternDiv",
+      "lens_law": "PutPut",
+      "layer": "L2_alignment_config",
+      "claim": "Alignment configuration exists, but global CAD alignment RMSE must not be treated as feature-dimensional truth."
+    },
+    {
+      "sourceId": "prismv2.bpc.PipelineRunner._run_measure_z",
+      "repo": "prismv2",
+      "sourcePath": "services/inspection/src/adapters/bpc/pipeline_runner.py:313",
+      "kg_anchor": "CT_PrismV2_To_BpcIcpSpec_AIPipeline",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "SigMismatch",
+      "lens_law": "PutGet",
+      "layer": "L2_measurement_boundary",
+      "claim": "Z measurement has a fallback chain; acceptance must distinguish measured z from CAD/default fallback."
+    },
+    {
+      "sourceId": "prismv2.bpc.PipelineRunner._extract_kind_fields",
+      "repo": "prismv2",
+      "sourcePath": "services/inspection/src/adapters/bpc/pipeline_runner.py:383",
+      "kg_anchor": "CT_PrismV2_To_BpcIcpSpec_AIPipeline",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "LabelRot",
+      "lens_law": "PutPut",
+      "layer": "L2_result_schema",
+      "claim": "Feature-kind result fields exist; judge must verify displayed/output z fields retain base/panel/top/hole semantics."
+    },
+    {
+      "sourceId": "prismv2.bpc.measure_z_washer_expected_step",
+      "repo": "prismv2",
+      "sourcePath": "services/inspection/src/adapters/bpc/_spec_port_registry.py:68",
+      "kg_anchor": "bpc-icp-spec-integration-20260603",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "SigMismatch",
+      "lens_law": "PutGet",
+      "layer": "L2_z_layer_port",
+      "claim": "Washer expected-step z exists; production acceptance must prove it chooses the washer layer, not panel or shaft."
+    },
+    {
+      "sourceId": "prismv2.bpc.ALIGN_PATHS",
+      "repo": "prismv2",
+      "sourcePath": "services/inspection/src/adapters/bpc/_bpc_detect.py:53",
+      "kg_anchor": "lesson-prismv2-bpc-vendored-npz-cache-20260520",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "PatternDiv",
+      "lens_law": "PutPut",
+      "layer": "L2_alignment_pool",
+      "claim": "Multiple alignment artifacts are selectable; current-production path must be singled out before dimensional judgement."
+    },
+    {
+      "sourceId": "prismv2.lx3.LX3_SUBFRAME_FEATURES",
+      "repo": "prismv2",
+      "sourcePath": "prism_core/domain/lx3_subframe.py:34",
+      "kg_anchor": "CT_AS_L2_lx3_subframe_spec_v2",
+      "confidence": "EXTRACTED",
+      "binding_state": "PRELIMINARY",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "layer": "L2_lx3_spec",
+      "claim": "LX3 base spec exists, but 12-bolt placeholder region keeps the migration preliminary for production dimensions."
+    },
+    {
+      "sourceId": "prismv2.lx3.lx3_full_spec_with_bolts",
+      "repo": "prismv2",
+      "sourcePath": "prism_core/domain/lx3_bolts_yaml.py:104",
+      "kg_anchor": "CT_AS_L2_lx3_subframe_spec_v2",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "layer": "L2_lx3_bolt_materialization",
+      "claim": "LX3 can materialize real bolt coordinates from yaml; production must fail if placeholders remain."
+    },
+    {
+      "sourceId": "jg_bpc.dt_cycle_wire",
+      "repo": "jg_bpc",
+      "sourcePath": "bpc/ui/digitaltwin/dt_cycle_wire.py:1",
+      "kg_anchor": "CT_LakatoTree_3D_Workspace_LonginusPiercing_20260624",
+      "confidence": "EXTRACTED",
+      "binding_state": "CANDIDATE",
+      "drift_type": "LabelRot",
+      "lens_law": "PutPut",
+      "layer": "L3_runtime_display",
+      "claim": "Digital-twin display surface exists; it must be checked against PrismV2 result-field semantics."
+    },
+    {
+      "sourceId": "Workspace3D.OMD",
+      "repo": "prismv2",
+      "sourcePath": "",
+      "kg_anchor": "CT_LakatoTree_3D_Workspace_LonginusPiercing_20260624",
+      "confidence": "AMBIGUOUS",
+      "binding_state": "NO_SOURCE",
+      "drift_type": "Missing",
+      "lens_law": "PutGet",
+      "layer": "L2_undefined_programme",
+      "claim": "OMD has no local source contract or implementation path; it must not be promoted until materialized."
+    }
+  ],
+  "hard_blocks": [
+    "Do not equate global CAD alignment residual with feature z correctness.",
+    "Do not accept z measurement when result falls back to CAD/default z without explicit measured_z provenance.",
+    "Do not promote LX3 placeholder bolt coordinates as production dimensional truth.",
+    "Do not promote OMD while binding_state is NO_SOURCE."
+  ]
+}
