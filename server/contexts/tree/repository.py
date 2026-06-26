@@ -10,6 +10,8 @@ import json
 
 from fastapi import HTTPException
 
+from lakatos.node_state import derive_state_value
+
 
 KgQuery = Callable[..., list[dict]]
 
@@ -52,6 +54,7 @@ def normalize_node_row(row: dict) -> dict:
     out["parent"] = normalize_text(out.get("parent")) or None
     out["parents"] = normalize_text_list(out.get("parents"))
     out["questions"] = normalize_text_list(out.get("questions"))
+    out["node_state"] = normalize_text(out.get("node_state")) or derive_state_value(out)
     out["parent_edges"] = [
         {
             "tag": normalize_text(edge.get("tag")) if isinstance(edge, dict) else normalize_text(edge),
@@ -143,9 +146,11 @@ class TreeKgRepository:
                e.metric_name AS metric_name, e.metric_value AS metric_value,
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
                e.novel_confirmed AS novel_confirmed, e.source_trust AS source_trust,
-               e.verdict_source AS verdict_source,
+               e.verdict_source AS verdict_source, e.node_state AS node_state,
                e.pred_baseline AS pred_baseline, e.pred_noise_band AS pred_noise_band,
                e.pred_direction AS pred_direction, e.pred_closes AS pred_closes,
+               e.pred_metric AS pred_metric, e.pred_registered_at AS pred_registered_at,
+               e.judged_at AS judged_at,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
                [pe IN parent_edges | pe.tag] AS parents, parent_edges AS parent_edges,
                questions AS questions

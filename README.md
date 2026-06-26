@@ -146,9 +146,9 @@ drift-guarded contract**: `tests/test_readme_longinus.py` checks every module re
 layer (and that the set of layers matches `.importlinter`) — this map cannot silently lie.
 
 ### Foundation — `lakatos/` (root; shared, importable by any layer)
-`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology`
+`engine` `verdicts` `node_state` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology`
 - `engine` sparse research frame — enums / `GateResult` / gates / possibilities / event log / credence promotion / `SourceCredibilityScore`
-- `verdicts` verdict-vocabulary single source of truth · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
+- `verdicts` verdict-vocabulary single source of truth · `node_state` explicit KG node lifecycle FSM · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
 - `trust` TrustRank/EigenTrust source-scoring primitive (shared by `engine` + `quant.bayes`) · `claim` ClaimStanding (upper/lower-realm confidence + blockers)
 - `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates) · `provenance_backfill` classifies pre-receipt-regime NULL-source nodes (explicit `pre_receipt` marker vs re-verify) without fabricating provenance · `ontology` opt-in domain-ontology gate — a tree declares entity types (required attrs + enum/type/min/max constraints + closed-world), and the engine fail-closed-rejects (422) non-conforming node registrations (JSON-Schema-2020-12 subset, mirrors ooptdd, gives the `domain-ontology` foundation requirement teeth)
 
@@ -224,6 +224,12 @@ CONSUMER_LOGS_E2E=1 OO_PASS=*** python -m pytest tests/ -q   # ship traces (gate
 - `BRANCHED_FROM` supports a multi-parent DAG; edges record `inferred/relation_kind/evidence_ref`.
 - Closing a question is an append-only `QuestionClosure` event, not a `closed_by` overwrite.
 - Verdict vocabulary has a single source of truth: `lakatos.verdicts`.
+- Node lifecycle state has a single source of truth: `lakatos.node_state`.
+  KG writes persist `LakatosNode.node_state`, and legacy rows derive the same value from
+  `verdict` / `verdict_source` / `pred_registered_at` / `judged_at` / `novel_confirmed`.
+  Closed states: `DRAFT → PREDICTED → MEASURED → JUDGED_SCRIPTED | INCONCLUSIVE |
+  CANONICAL_CANDIDATE | REJECTED | DIFFERENT_PROGRAMME → CANONICAL → FORMER_CANONICAL`.
+  `ADMINISTRATIVE` is reserved for manual non-scoring labels such as `proof`/`superseded`.
 - `CANONICAL` is not an absolute truth but a temporary current-best with a `current_best_pointer` and a scope/assumption/evidence window.
 - `metrics` force-exposes `coverage_backlog` to prevent overstating completeness.
 - `ClaimStanding` separates upper-realm (internet/human/kg) from lower-realm (bash/data/git/agent) evidence and reports confidence + blocking reasons; `ResearchEvent` is append-only evidence that never changes a verdict.

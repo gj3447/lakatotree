@@ -2232,6 +2232,7 @@
   "span_lakatotree_marquez_sink",
   "span_lakatotree_mcp",
   "span_lakatotree_multiplicity",
+  "span_lakatotree_node_state_fsm",
   "span_lakatotree_oo_conftest",
   "span_lakatotree_oo_sink",
   "span_lakatotree_pnr",
