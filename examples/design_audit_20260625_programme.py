@@ -269,6 +269,22 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_set_verdict_canonical_409_on_concurrent_change",
     ),
     AuditNode(
+        tag="H9_verdict_cas_class_lock", severity="HIGH", parent="H5_set_verdict_canonical_toctou",
+        evidence="tests/test_design_audit_h9.py (AST: 모든 verdict-전이/scripted SET 은 첫-SET-이전 가드 동반)",
+        story="클래스 봉인(인스턴스 아님): H5/H7/M5/M12 가 verdict-mutating write 를 하나씩 원자 CAS 화했으나 *미래* "
+              "무가드 전이가 TOCTOU/self-report 를 부활시킨다. AST 클래스-커버 테스트 — server/·lakatos/ 의 모든 Cypher "
+              "에서 verdict 를 CANONICAL/former_canonical 로 전이하거나 verdict_source='scripted' 채점하는 SET 은 *같은 "
+              "쿼리의 첫 SET 이전* 에 스냅샷 재검증 가드를 동반. 무가드 전이=RED. + verdict_source server-set-only 단언. "
+              "'완벽=클래스 by-construction 불가능+재발 자동 RED' 의 verdict-write 판.",
+        prediction=Prediction(metric_name="unguarded_verdict_transition_reintroducible", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="스냅샷 재검증 없는 verdict-전이 write 는 클래스 테스트가 RED 로 차단(4사이트 보장)",
+                              closes_question="q-h9-verdict-cas-class-lock"),
+        novel_target=NovelTarget(metric_name="verdict_transition_cas_enforced_by_class_test",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_every_verdict_transition_write_has_cas_guard",
+    ),
+    AuditNode(
         tag="H7_add_critique_demote_toctou", severity="HIGH", parent="H5_set_verdict_canonical_toctou",
         evidence="evidence_claim_service.py:127(read)→:142(무가드 SET former_canonical) / H5 는 승격만 CAS",
         story="add_critique 자동강등이 비원자 TOCTOU — H5 의 거울쌍. 비판 등재 후 스냅샷 읽어 reconcile_standing "
