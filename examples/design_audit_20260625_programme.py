@@ -299,6 +299,21 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_client_novel_sha_string_does_not_buy_independence",
     ),
     AuditNode(
+        tag="H8_self_vouch_af", severity="HIGH", parent="M8_doubt_resolution_actor",
+        evidence="evidence_claim_service.py:_assemble_af(by collect 후 폐기) + judgement_service 인라인 AF(by 무시) / argue.py",
+        story="standing 을 좌우하는 Dung AF 조립이 Argument 의 by(actor)를 버려, 작성자가 자기 doubt 를 자기 "
+              "rebuttal 로 막아 verdict standing 을 유지(self-vouch)할 수 있었다. M8 은 claim_standing 경로만 "
+              "닫았고 set_verdict floor·add_critique 강등의 AF 조립은 by 무시. [PROM] argue.assemble_af 정본으로 "
+              "수렴 — 방어 엣지의 두 actor 가 같으면 AF 진입 차단(3 호출부 통일). 작성자vs방어자 독립=Sybil 천장.",
+        prediction=Prediction(metric_name="af_assembly_ignores_actor_self_vouch", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="self-defense 엣지(attacker by==target by)는 AF 진입 못 함(자기 doubt 자기 rebuttal 무효)",
+                              closes_question="q-h8-actor-independent-af"),
+        novel_target=NovelTarget(metric_name="self_defense_edge_dropped_from_af",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_self_rebuttal_does_not_defend_verdict",
+    ),
+    AuditNode(
         tag="M10_rebuild_cli_collapse", severity="MEDIUM", parent="M1_rebuild_self_report_measure",
         evidence="cli.py:376(cmd_for=lambda st: a.cmd_template, st 무시) + rebuild.py(measurer_separated=measure_out is not None)",
         story="M1 엔진수정은 kind='measurement' 출력만 신뢰하지만, *실제 재실행 유일 surface* CLI rebuild-run 이 "

@@ -37,6 +37,41 @@ def verdict_stands(verdict_arg, arguments: set, attacks: list) -> bool:
     return verdict_arg in grounded_extension(arguments, attacks)
 
 
+def assemble_af(tag: str, arg_rows: list) -> tuple[set, list]:
+    """노드 verdict + 등재 Argument 들 → Dung AF (arguments, attacks) 의 *정본* 조립.
+
+    standing / set_verdict CANONICAL floor / add_critique 자동강등이 *모두* 이걸 쓴다 — 인라인 조립
+    금지(회귀는 클래스-커버 테스트가 잡는다). arg_rows 원소: {id, attacks, by?}. attacks==tag 면 verdict
+    직접공격(doubt), 아니면 다른 argument 공격(=verdict 방어).
+
+    #H8 (설계감사 2026-06-26) actor 독립성: 방어 엣지(attacker→non-verdict target)는 두 argument 의
+    by(제기자 actor)가 같으면 AF 에 진입 못 한다 — 자기 doubt 를 자기 rebuttal 로 무력화하는 self-vouch
+    차단. verdict 직접공격(doubt)은 누구나 가능하므로 actor 무관(제외 안 함). by 누락(레거시)은 same-actor
+    판정 불가라 엣지 보존(보수적 하위호환). 작성자 vs 방어자 독립(노드 author 미식별)은 Sybil 천장 —
+    by-construction 밖이라 actor 신원 서명바인딩(actor==DID/PeerId) 전엔 닫히지 않는다(irreducible).
+    """
+    verdict_arg = f'verdict:{tag}'
+    arguments = {verdict_arg}
+    by_of: dict = {}
+    norm: list = []   # (short, target, by)
+    for a in arg_rows:
+        if not a.get('id'):
+            continue
+        short = a['id'].split('/')[-1]
+        by = (a.get('by') or '').strip()
+        arguments.add(short)
+        by_of[short] = by
+        by_of[a['id']] = by
+        tgt = verdict_arg if a.get('attacks') == tag else a.get('attacks')
+        norm.append((short, tgt, by))
+    attacks: list = []
+    for short, tgt, by in norm:
+        if tgt != verdict_arg and by and by_of.get(tgt) == by:
+            continue   # #H8 self-defense 엣지 제거 (attacker by == target by)
+        attacks.append((short, tgt))
+    return arguments, attacks
+
+
 # ── OSS 적용(#5 정비): 외부 ICCMA AF solver 교차검증 + PyArg 식 수용-설명 ──────────────────
 #  THEORY §7 경계: 외부 solver(mu-toksia/pyglaf/ASPARTIX 등)는 *evidence/oracle* 일 뿐 judge 아님.
 #  argue.grounded_extension/verdict_stands 가 권위를 유지하고, 외부 solver 는 그것을 *교차검증*만 한다.

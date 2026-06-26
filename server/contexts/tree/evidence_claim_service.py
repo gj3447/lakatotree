@@ -12,24 +12,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from lakatos.verdict.argue import grounded_extension
+from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.verdict.spine import reconcile_standing
-
-
-def _assemble_af(tag: str, arg_rows: list) -> tuple[set, list]:
-    """노드 verdict + 등재된 Argument 들 → Dung AF (arguments, attacks). standing 과 add_critique 공유.
-    critique.attacks==tag 이면 verdict 직접 공격, 아니면 다른 argument 공격(verdict 방어)."""
-    verdict_arg = f'verdict:{tag}'
-    arguments = {verdict_arg}
-    attacks: list = []
-    for a in arg_rows:
-        if not a.get('id'):
-            continue
-        short = a['id'].split('/')[-1]
-        arguments.add(short)
-        tgt = verdict_arg if a.get('attacks') == tag else a.get('attacks')
-        attacks.append((short, tgt))
-    return arguments, attacks
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
@@ -128,11 +112,11 @@ class EvidenceClaimService:
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                      RETURN e.verdict AS verdict,
                             coalesce(e.valid_until_rebutted, true) AS vur,
-                            collect({id:a.id, attacks:a.attacks}) AS args""",
+                            collect({id:a.id, attacks:a.attacks, by:a.by}) AS args""",
                        tree=name, tag=tag)
         if rows:
             verdict_arg = f'verdict:{tag}'
-            arguments, attacks = _assemble_af(tag, rows[0]['args'])
+            arguments, attacks = assemble_af(tag, rows[0]['args'])
             stands = verdict_arg in grounded_extension(arguments, attacks)
             decision = reconcile_standing(rows[0]['verdict'], stands=stands,
                                           valid_until_rebutted=bool(rows[0]['vur']))
@@ -433,7 +417,7 @@ class EvidenceClaimService:
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         verdict_arg = f'verdict:{tag}'
-        arguments, attacks = _assemble_af(tag, rows[0]['args'])
+        arguments, attacks = assemble_af(tag, rows[0]['args'])
         ext = grounded_extension(arguments, attacks)
         stands = verdict_arg in ext
         return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,
