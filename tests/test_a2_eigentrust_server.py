@@ -1,13 +1,20 @@
-"""A2 server-feed: read_models 가 eigentrust 글로벌 신뢰 맵을 *관측에서 구성*해 credence 로 주입.
+"""A2 server-feed: 프로덕션 read-model 이 eigentrust 글로벌 신뢰 맵을 *관측에서 구성*해 credence 로 주입.
 
-per-node source_trust float 은 prom A 에서 live. 이건 그 위 글로벌 그래프 신뢰: load_tree_data 가 노드의
-internet 관측 source(url|source_type)를 노드에 부착 + 관측 리스트 방출 → compute_tree_metrics 가
-trust.global_source_trust 로 맵 구성 → tree_metrics cfg → branch_credence 가 노드 source 를 글로벌 신뢰로
-가중(노드 source 부재면 trust_coverage 로 정직 노출, 조용히 1.0 스냅 금지). 실DB 영수증은 통합티어 참조.
+per-node source_trust float 은 prom A 에서 live. 이건 그 위 글로벌 그래프 신뢰: TreeKgRepository.load_tree_data
+(프로덕션 경로·유일 정본, D1 감사 2026-06-26)가 노드의 internet 관측 source(url|source_type)를 노드에 부착 +
+관측 리스트 방출 → compute_tree_metrics 가 trust.global_source_trust 로 맵 구성 → tree_metrics cfg →
+branch_credence 가 노드 source 를 글로벌 신뢰로 가중(노드 source 부재면 trust_coverage 로 정직 노출, 조용히
+1.0 스냅 금지). 실DB 영수증은 통합티어 참조.
 """
 import json
 
-from server.read_models import compute_tree_metrics, load_tree_data
+from server.contexts.tree.repository import TreeKgRepository
+from server.read_models import compute_tree_metrics
+
+
+def load_tree_data(name, *, kg):
+    """프로덕션 경로 그대로: 서비스가 쓰는 TreeKgRepository 를 통해 읽는다(죽은 read_models 사본 제거 후)."""
+    return TreeKgRepository(kg).load_tree_data(name)
 
 
 def _kg(nodes_rows, obs_rows):
