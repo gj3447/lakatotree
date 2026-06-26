@@ -221,6 +221,7 @@ class JudgementService:
                                cur.source_trust AS source_trust,
                                cur.novel_confirmed AS novel_confirmed,
                                cur.qualitative_self_report AS qualitative_self_report,
+                               cur.author AS author,
                                collect({id:a.id, attacks:a.attacks, by:a.by, kind:a.kind}) AS args''',
                           tree=name, tag=tag)
             if not pre:
@@ -241,8 +242,14 @@ class JudgementService:
             #   *영속된* human attestation Argument 존재(kind∈{evaluation,verdict} AND by 사람 actor)로 판정.
             #   영수증 0 인 노드에 client True 만으론 CANONICAL floor 가 안 열린다(no_receipt_for_canonical).
             #   (Sybil 한계: by 가 노드 작성자와 다른지는 노드 author 가 KG 에 미식별이라 미강제 — 후속.)
+            # FF3 (설계감사 2026-06-26): human attestation 의 actor(by)가 *노드 작성자(author)와 다를 때만* 인정 —
+            #   작성자가 자기 노드에 자기 인장을 찍어 floor 를 여는 self-vouch 봉쇄(H2 의 'Sybil 한계: author 미식별'
+            #   후속). author 미설정(legacy/익명)이면 by≠'' 로 기존 동작 보존(비파괴); 설정 시에만 by≠author 강제.
+            #   ★Sybil 천장: author/by 둘 다 client 선언 — 한 actor 가 두 정체성을 쓰면 우회 가능(실 auth 전 한계).
+            _author = (cand.get('author') or '').strip()
             has_human = bool(v.human_verdict) and any(
-                _is_human_attestation_arg(a) for a in (cand.get('args') or []))
+                _is_human_attestation_arg(a) and (a.get('by') or '').strip() != _author
+                for a in (cand.get('args') or []))
             credibility = self._eigentrust_credibility(
                 name, tag, novel_confirmed=bool(cand.get('novel_confirmed')),
                 has_human_verdict=has_human)

@@ -83,7 +83,7 @@ class TreeKgWriter:
                    e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
                    e.open_question=$open_question, e.metric_name=$metric_name,
                    e.metric_value=$metric_value, e.metric_scope=$metric_scope,
-                   e.recorded_at=$ts, e.node_state=$node_state
+                   e.recorded_at=$ts, e.node_state=$node_state, e.author=$author
                MERGE (t)-[:HAS_NODE]->(e)
                RETURN t AS t""",
                 dict(tree=tree, ts=_utc_now(), node_state=NodeState.DRAFT.value, **node.model_dump()),

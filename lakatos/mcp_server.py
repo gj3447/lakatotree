@@ -232,13 +232,14 @@ def delete_tree(name: str, cascade: bool = False) -> str:
 
 @mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
-             comment: str = '', algorithm: str = '') -> str:
-    """나무에 노드 추가(나무가 먼저 있어야 — 없으면 404, create_tree 로 생성). parent/parents_csv 로 DAG 다중 부모."""
+             comment: str = '', algorithm: str = '', author: str = '') -> str:
+    """나무에 노드 추가(나무가 먼저 있어야 — 없으면 404, create_tree 로 생성). parent/parents_csv 로 DAG 다중 부모.
+    author = 노드 작성자 actor(FF3: CANONICAL floor 의 human attestation 이 actor≠author 일 때만 인정 — self-vouch 봉쇄)."""
     parents = [p.strip() for p in parents_csv.split(',') if p.strip()]
     if parent:
         parents.insert(0, parent)
     return json.dumps(_post(f'/api/tree/{name}/node',
-        dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm)), ensure_ascii=False)
+        dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm, author=author)), ensure_ascii=False)
 
 
 @mcp.tool()

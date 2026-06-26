@@ -29,6 +29,7 @@ class NodeIn(BaseModel):
     parent: str | None = None
     parents: list[str] = Field(default_factory=list)
     parent_edges: list[ParentEdgeIn] = Field(default_factory=list)
+    author: str = ""   # FF3: 노드 작성자 actor — CANONICAL floor 의 human attestation actor≠author 강제용(self-vouch 봉쇄)
     verdict: str = "proof"
     script: str = ""
     result_path: str = ""
