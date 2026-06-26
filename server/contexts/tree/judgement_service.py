@@ -326,7 +326,8 @@ class JudgementService:
                             e.pred_novel_metric AS nmet, e.pred_novel_direction AS ndir,
                             e.pred_novel_threshold AS nthr, e.pred_script_sha AS psha,
                             e.pred_closes AS closes,
-                            size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened""", tree=name, tag=tag)
+                            size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
+                            t.hard_core AS hard_core""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
@@ -375,6 +376,19 @@ class JudgementService:
             raise HTTPException(409, str(e))
         except ValueError as e:
             raise HTTPException(422, str(e))
+        # #H1-hardcore (설계감사 frontier 닫기): hard_core 보존을 client self-report bool 이 아니라
+        #   negative_heuristic(touched_assumptions ∩ tree.hard_core)로 *구조적으로 파생*. 제출이 touched
+        #   가정을 선언하고 그게 tree 의 hard core 를 건드리면(protected≠∅) 아래에서 different_programme 로
+        #   강등 — self-report bool(lakatos_hardcore=True)로 위반을 못 숨긴다. touched 미제공 시 레거시 폴백.
+        #   잔여 frontier: touched-set 은 아직 제출자 선언 — git-diff ∩ Longinus 로 파생은 후속.
+        _raw_core = (pr.get('hard_core') or '').replace(';', ',').replace('\n', ',')
+        _core_tokens = {tok.strip().lower() for tok in _raw_core.split(',') if tok.strip()}
+        _touched = [tok.strip().lower() for tok in (r.touched_assumptions or []) if tok and tok.strip()]
+        hc_derived = None
+        if _touched and _core_tokens:
+            from lakatos.programme.heuristic import negative_heuristic
+            hc_derived = not negative_heuristic(hard_core=_core_tokens,
+                                                refuted_assumptions=_touched)['protected']
         lak_result = None
         have_qual = None not in (r.lakatos_anomaly, r.lakatos_consequence, r.lakatos_excess, r.lakatos_hardcore)
         if have_qual or r.human_verdict_required:
@@ -382,7 +396,7 @@ class JudgementService:
                 theory_laden_anomaly=bool(r.lakatos_anomaly),
                 independent_testable_consequence=bool(r.lakatos_consequence),
                 excess_empirical_content=bool(r.lakatos_excess),
-                hard_core_preserved=bool(r.lakatos_hardcore),
+                hard_core_preserved=(hc_derived if hc_derived is not None else bool(r.lakatos_hardcore)),
                 implementation_complete=r.implementation_complete,
                 data_branch=r.data_branch,
                 data_replay_passed=r.data_replay_passed,
@@ -410,11 +424,16 @@ class JudgementService:
             pnr_appraisal = appraise_response(
                 resp, excess_content=r.ce_excess_content, novel_corroborated=r.ce_novel_corroborated,
                 in_heuristic_spirit=r.ce_in_heuristic_spirit,
-                hard_core_preserved=(r.lakatos_hardcore if r.lakatos_hardcore is not None else True),
+                hard_core_preserved=(hc_derived if hc_derived is not None
+                                     else (r.lakatos_hardcore if r.lakatos_hardcore is not None else True)),
                 counterexample_type=ce_type, proof_generated_concept=pgc)
         decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
         verdict = decided['verdict']
         lakatos_status = decided['lakatos']
+        # #H1-hardcore: 구조적 hard_core 위반(touched ∩ core ≠ ∅)이면 메트릭/질적 주장과 무관하게
+        #   different_programme 로 강등 — '음의 휴리스틱을 떠남 = 다른 프로그램'(AXIS-CORR). bool 로 못 숨김.
+        if hc_derived is False and verdict in ('progressive', 'progressive_conditional'):
+            verdict, lakatos_status = 'different_programme', 'hard_core_violated_structural'
         # #H1 (설계감사): 질적 verdict 가 영수증 없는 self-report bool 로 progressive 를 떠받쳤는가.
         #   메트릭 개선은 실 영수증이나 '하드코어 보존·초과경험내용'(lakatos_*/ce_*)은 자기보고다. 독립
         #   영수증(독립 novel 측정 sha + ce_novel_corroborated) 없이 질적 bool 이 progressive(_conditional)를
