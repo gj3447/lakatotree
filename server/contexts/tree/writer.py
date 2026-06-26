@@ -153,13 +153,15 @@ class TreeKgWriter:
         coverage_backlog: Sequence[str] = (),
         coverage_statement: str = "",
         ontology: str = "",
+        require_novel_anchor: bool = False,
     ) -> WriteSummary:
         self.kg_tx([
             (
                 """MERGE (t:LakatosTree {name:$tree})
                    SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
                        t.doc=$doc, t.coverage_backlog=$coverage_backlog,
-                       t.coverage_statement=$coverage_statement, t.ontology=$ontology, t.updated_at=$ts""",
+                       t.coverage_statement=$coverage_statement, t.ontology=$ontology,
+                       t.require_novel_anchor=$require_novel_anchor, t.updated_at=$ts""",
                 dict(
                     tree=name,
                     title=title,
@@ -169,6 +171,7 @@ class TreeKgWriter:
                     coverage_backlog=list(coverage_backlog),
                     coverage_statement=coverage_statement,
                     ontology=ontology,
+                    require_novel_anchor=require_novel_anchor,
                     ts=_utc_now(),
                 ),
             )

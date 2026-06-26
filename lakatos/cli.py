@@ -144,6 +144,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('result'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
+    sp.add_argument('--novel-script', default='',
+                    help='서버앵커 novel 측정 스크립트(file 또는 file::symbol) — cross-metric novel 독립성 영수증(FF1)')
     sp.add_argument('--data-branch', action='store_true', help='데이터 재생성 의존 분기(ENG-DU-2)')
     sp.add_argument('--no-data-replay', action='store_true', help='데이터 재현 미통과 → progressive_conditional')
     sp.add_argument('--human-verdict', action='store_true', help='인간 판정 보류 → ambiguous')
@@ -328,6 +330,7 @@ def main(argv=None):
     elif a.cmd == 'result':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result',
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured,
+                        novel_script=a.novel_script,
                         data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
                         human_verdict_required=a.human_verdict))
     elif a.cmd == 'provenance':
