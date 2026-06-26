@@ -74,6 +74,34 @@ def normalize_frontier_row(row: dict) -> dict:
     return out
 
 
+def internet_observations(rows: list[dict]) -> tuple[list[dict], dict]:
+    """A2: ResearchEvent(internet) payload 행 → (eigentrust 입력 관측 리스트, {node_tag: source}).
+
+    source = url|source_type (trust_view 와 동형). 노드당 *첫* 관측의 source 를 노드 source 로 바인딩
+    (결정성: obs 쿼리가 created_at 오름차순). 노드가 source 를 들면 branch_credence 가 그 source 의
+    글로벌 eigentrust 신뢰로 가중(per-node float override) — 없으면 per-node source_trust(prom A)로 폴백.
+
+    프로덕션 read-model 의 *유일 정본*(D1 감사 2026-06-26): 전엔 read_models.load_tree_data(테스트만 호출)
+    에 살아있고 프로덕션 경로(TreeKgRepository)에는 없어 A2 eigentrust 가 모든 HTTP 경로에서 inert 였다.
+    """
+    observations: list[dict] = []
+    node_source: dict = {}
+    for r in rows or []:
+        try:
+            p = json.loads(r.get("payload") or "{}")
+        except (ValueError, TypeError):
+            p = {}
+        src = (p.get("url") or p.get("source_type") or "").strip()
+        if not src:
+            continue
+        node = r.get("node") or ""
+        observations.append(dict(
+            source=src, source_type=p.get("source_type") or "", node=node,
+            corroboration_score=float(p.get("corroboration_score") or 0.0)))
+        node_source.setdefault(node, src)   # 노드당 첫 관측 source (결정적)
+    return observations, node_source
+
+
 class TreeKgRepository:
     """Tree-specific KG read boundary.
 
@@ -114,7 +142,8 @@ class TreeKgRepository:
                e.limitation AS limitation, e.open_question AS open_question,
                e.metric_name AS metric_name, e.metric_value AS metric_value,
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
-               e.novel_confirmed AS novel_confirmed,
+               e.novel_confirmed AS novel_confirmed, e.source_trust AS source_trust,
+               e.verdict_source AS verdict_source,
                e.pred_baseline AS pred_baseline, e.pred_noise_band AS pred_noise_band,
                e.pred_direction AS pred_direction, e.pred_closes AS pred_closes,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
@@ -130,9 +159,24 @@ class TreeKgRepository:
             "q.cost AS cost, q.n_visits AS n_visits",
             n=name,
         )
+        # A2 (D1 감사 2026-06-26): 노드의 internet 관측 → eigentrust 입력 관측 + 노드별 source 바인딩.
+        # compute_tree_metrics 가 이 observations 로 글로벌 출처신뢰(eigentrust)를 주입한다 — 프로덕션
+        # 경로(이 repository)가 유일 정본이므로 여기서 방출해야 A2/D1 이 prod 에서 실제로 발동한다.
+        obs_rows = self.kg(
+            "MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(e)-[:HAS_RESEARCH_EVENT]->"
+            "(ev:ResearchEvent {realm:'internet'}) "
+            "RETURN e.tag AS node, ev.payload AS payload ORDER BY e.tag, ev.created_at",
+            n=name,
+        )
+        observations, node_source = internet_observations(obs_rows)
+        normalized_nodes = [normalize_node_row(row) for row in nodes]
+        for r in normalized_nodes:
+            if r["tag"] in node_source:
+                r["source"] = node_source[r["tag"]]
         return {
             "name": name,
             **normalize_tree_row(t[0]),
-            "nodes": [normalize_node_row(row) for row in nodes],
+            "nodes": normalized_nodes,
             "frontier": [normalize_frontier_row(row) for row in frontier],
+            "observations": observations,
         }

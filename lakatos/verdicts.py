@@ -136,6 +136,21 @@ _SOURCE_ALIASES = {
 _CANONICAL_HEADS = FORCEFUL_SOURCES | INCONCLUSIVE_SOURCES | STRUCTURAL_SOURCES
 VALID_VERDICT_SOURCES = _CANONICAL_HEADS   # 통제 어휘(레지스트리) — 새 토큰은 여기서만
 
+# ── 쓰기측 어휘 SSOT-of-record (아키텍처 감사 2026-06-26, finding D3) ──────────────────────────
+#   force_of(읽기)는 verdict_source 어휘를 한 곳에서 해석하는데, *쓰기*(서버 CAS: 승격/강등)의 'engine'/
+#   'admin'/'former_canonical' 은 VALID_VERDICT_SOURCES 와 대조 검증된 적이 없었다(SSOT 단방향, D3).
+#   ★주의: 쓰기 사이트의 그 문자열들은 *일부러 리터럴로 남긴다* — H9(test_design_audit_h9) 정적 스캐너가
+#   `SET ... verdict='former_canonical'` / `verdict_source='scripted'` 리터럴을 grep 해 "모든 verdict-전이
+#   write 에 CAS 가드"를 by-construction 강제하기 때문이다. 상수로 파라미터화하면 그 안전망이 눈머는다.
+#   대신 이 상수는 어휘의 *명명 정본*이고, assert 는 읽기 어휘(force_of 의 frozenset)와의 동기화를 import
+#   시점에 못 박으며, test_verdict_write_vocabulary 가 쓰기 사이트 리터럴을 레지스트리와 대조한다(양쪽 닫음).
+SOURCE_ENGINE = 'engine'   # 엔진 결정(채점/게이트/자동강등)이 SET — force_of 에서 FORCEFUL(영수증)
+SOURCE_ADMIN = 'admin'     # 구조/행정 SET(승격 표식 등) — force_of 에서 STRUCTURAL(force 없음)
+VERDICT_FORMER_CANONICAL = 'former_canonical'   # CANONICAL 강등 표적(ADMIN∩PROGRESS 어휘)
+assert SOURCE_ENGINE in FORCEFUL_SOURCES, 'SOURCE_ENGINE 가 통제 어휘(FORCEFUL_SOURCES)와 어긋남'
+assert SOURCE_ADMIN in STRUCTURAL_SOURCES, 'SOURCE_ADMIN 가 통제 어휘(STRUCTURAL_SOURCES)와 어긋남'
+assert VERDICT_FORMER_CANONICAL in ADMIN_VERDICTS, 'VERDICT_FORMER_CANONICAL 가 레지스트리와 어긋남'
+
 _SOURCE_ABSENT = object()   # verdict_source 키 자체가 없음(레거시/픽스처) — None(영수증 미도래)과 구분
 
 
