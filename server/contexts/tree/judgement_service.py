@@ -353,15 +353,24 @@ class JudgementService:
         nt = None
         if pr['nmet'] and pr['ndir'] and pr['nthr'] is not None:
             nt = NovelTarget(metric_name=pr['nmet'], direction=pr['ndir'], threshold=pr['nthr'])
+        # #H6 (설계감사 2026-06-26): novel 독립성(measured_sha≠novel_sha)을 client 문자열이 아니라 *양측
+        #   서버재계산* 에 묶는다. 예측측=H3 stored_sha(sha_verified 일 때 파일 재유도값), novel측=r.novel_script
+        #   본문 재유도(novel_server_sha). 둘 다 서버앵커일 때만 독립 후보 — 어느 한쪽이라도 client-only
+        #   (novel_script 미제공/재계산불가, 또는 예측 script inline=sha 미검증)이면 ''로 넘겨 같은-metric novel
+        #   을 비독립 demote. 독립은 *두 개의 서로 다른 실재 산출물* 로 증명(client novel_sha 한 줄로 못 산다).
+        #   다른 metric novel 은 그 자체로 독립 사실이라 judge 의 same-metric 게이트 밖(영향 없음).
+        novel_server_sha, _ = (self._recompute_script_sha(r.novel_script)
+                               if r.novel_script else (None, {'reason': 'no_novel_script'}))
+        both_anchored = sha_verified and novel_server_sha is not None
+        judge_measured_sha = stored_sha if both_anchored else ''
+        judge_novel_sha = novel_server_sha if both_anchored else ''
         try:
             v = judge(None if pr['m'] is None else Prediction(
                 metric_name=pr['m'], direction=pr['d'], baseline_value=pr['b'],
                 noise_band=pr['nb'] or 0.0, novel_prediction=pr['novel'] or '',
                 scale_type=pr.get('scale') or 'ratio'),   # Stevens 가드 reachable (옛 노드 null→ratio)
                 r.metric_value, novel_target=nt, novel_measured=r.novel_measured,
-                # prom-honesty/sha: 예측 측정 출처 = 채점 스크립트 sha, novel 측정 출처 = r.novel_sha.
-                #   둘 다 있고 다르면 같은 metric 이어도 독립(epsilon 우회 봉쇄); 같으면 비독립 → demote.
-                measured_sha=r.script_sha or '', novel_sha=r.novel_sha or '')
+                measured_sha=judge_measured_sha, novel_sha=judge_novel_sha)
         except PredictionMissing as e:
             raise HTTPException(409, str(e))
         except ValueError as e:
