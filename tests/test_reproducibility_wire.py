@@ -19,9 +19,14 @@ def load_app():
     return importlib.import_module("server.app")
 
 
-def _patch(monkeypatch, app, *, result_path, derivations):
+def _patch(monkeypatch, app, *, result_path, derivations, verify=True):
     monkeypatch.setattr(app, "kg", lambda q, **p: [{"rp": result_path}])
     monkeypatch.setattr(app, "_load_lineage", lambda: derivations)
+    # ★R-AUDIT-1: source sha 의 *서버 디스크 재계산*을 시뮬레이션. verify=True 면 현실이 기록과 일치(파일 존재·
+    #   sha 일치), verify=False 면 검증 불가(파일 부재) = client 자기선언만 — forge.
+    recorded = {d.output: d.output_sha for d in derivations}
+    monkeypatch.setattr(app, "_path_sha",
+                        (lambda path: recorded.get(path)) if verify else (lambda path: None))
 
 
 REPRODUCIBLE = [
@@ -90,6 +95,31 @@ def test_result_path_is_declared_source_reproducible(monkeypatch):
     app = load_app()
     _patch(monkeypatch, app, result_path="raw.zdf", derivations=REPRODUCIBLE)
     assert app._reproducible_for_node("tree", "n1") is True
+
+
+def test_forged_source_unverifiable_sha_is_not_reproducible(monkeypatch):
+    # ★R-AUDIT-1 봉쇄: 계보 SHAPE 는 맞아도(client 가 kind='source' 자기선언) 서버가 source 파일을 해시 못 하면
+    #   (파일 부재) reproducible 영수증 못 줌 → None. client 자기선언만으론 floor 영수증 절대 못 만든다.
+    app = load_app()
+    _patch(monkeypatch, app, result_path="final.json", derivations=REPRODUCIBLE, verify=False)
+    assert app._reproducible_for_node("tree", "n1") is None
+
+
+def test_mismatched_source_sha_is_not_reproducible(monkeypatch):
+    # source 파일은 있으나 서버 재계산 sha 가 기록값과 다름(content 위조/변조) → 영수증 못 줌
+    app = load_app()
+    monkeypatch.setattr(app, "kg", lambda q, **p: [{"rp": "final.json"}])
+    monkeypatch.setattr(app, "_load_lineage", lambda: REPRODUCIBLE)
+    monkeypatch.setattr(app, "_path_sha", lambda path: "DIFFERENT")   # 현실 ≠ 기록
+    assert app._reproducible_for_node("tree", "n1") is None
+
+
+def test_self_declared_source_forge_requires_real_file(monkeypatch):
+    # ★최단 forge(감사 지적): 노드 자기 result_path 를 kind='source' 로 선언 → 전엔 즉시 True.
+    #   이제 서버 디스크 검증 통과해야만 True; 파일 없으면 None(자기선언 무력화).
+    app = load_app()
+    _patch(monkeypatch, app, result_path="raw.zdf", derivations=REPRODUCIBLE, verify=False)
+    assert app._reproducible_for_node("tree", "n1") is None
 
 
 def test_gate_blocks_canonical_when_not_reproducible(monkeypatch):

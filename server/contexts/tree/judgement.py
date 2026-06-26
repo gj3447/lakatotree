@@ -33,4 +33,8 @@ def create_judgement_router(service_factory: Callable[[], JudgementService]) -> 
     def submit_test_result(name: str, tag: str, r: TestResultIn):
         return service_factory().submit_test_result(name, tag, r)
 
+    @router.get("/api/tree/{name}/node/{tag}/eureka")
+    def node_eureka(name: str, tag: str):
+        return service_factory().node_eureka(name, tag)
+
     return router

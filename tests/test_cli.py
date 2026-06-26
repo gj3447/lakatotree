@@ -139,6 +139,33 @@ def test_question_close_cli_routes(monkeypatch, capsys):
     assert calls[0][1] == '/api/tree/T/question/q1/close?closed_by=mid'
 
 
+def test_reconcile_outbox_cli_posts(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['reconcile-outbox'])   # B1 복구(#4) — POST /api/ops/reconcile-outbox
+    assert ('POST', '/api/ops/reconcile-outbox', None) in calls
+
+
+def test_series_cli_routes(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['series', 'T'])                       # #5 프로그램-시계열 진단
+    cli.main(['series', 'T', '--leaf', 'best'])
+    assert calls[0] == ('GET', '/api/tree/T/series', None)
+    assert calls[1] == ('GET', '/api/tree/T/series?leaf=best', None)
+
+
+def test_tradition_cli_routes(monkeypatch, tmp_path, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['tradition', 'T'])                    # ① GET
+    spec = tmp_path / 'trad.json'
+    spec.write_text(json.dumps({'tradition_id': 't1', 'name': 'CAD', 'commitments': []}), encoding='utf-8')
+    cli.main(['tradition-set', 'T', str(spec)])     # ① POST(file)
+    cli.main(['tradition-appraise', 'T', 'm1', '--operation', 'retire', '--compat', 'ok'])  # ① POST(args)
+    assert ('GET', '/api/tree/T/tradition', None) in calls
+    assert any(m == 'POST' and p == '/api/tree/T/tradition' and b['tradition_id'] == 't1' for m, p, b in calls)
+    ap = [b for m, p, b in calls if p == '/api/tree/T/tradition/appraise'][0]
+    assert ap['commitment_id'] == 'm1' and ap['operation'] == 'retire' and ap['compatibility_claim'] == 'ok'
+
+
 def test_calibration_cli_routes(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['calibration', 'T'])
@@ -223,3 +250,34 @@ def test_build_parser_isolated_requires_subcommand():
     import pytest
     with pytest.raises(SystemExit):
         cli._build_parser().parse_args([])
+
+
+def test_rebuild_run_cli_surfaces_step_failed_on_nonzero_exit(monkeypatch, capsys):
+    """LTDD/정직: 크래시한 재빌드 단계는 step_failed 로 보고돼야 한다 — metric_mismatch 로
+    조용히 강등되면 '영수증이지 주장이 아니다'가 거짓이 된다.
+    회귀가드: cli rebuild-run 의 run_bash 가 subprocess.returncode 를 실제로 전달하는지
+    (전엔 exit code 가 리터럴 0 으로 박혀 rebuild.step_failed 분기가 프로덕션 도달 불가)."""
+    import subprocess
+
+    from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
+    env_now = fingerprint_sha(environment_fingerprint())[:12]   # env_drift 단락 회피(일치)
+    manifest = {
+        'final': 'perview.json',
+        'roots': [],
+        'env_sha': env_now,
+        'recipe': [{'producer': '319.py', 'producer_sha': 's1', 'inputs': [],
+                    'output': '_buf.npz', 'params': {}, 'env': env_now}],
+    }
+    monkeypatch.setattr(cli, 'call', lambda method, path, body=None: {'manifest': manifest})
+
+    class _Crashed:
+        stdout = 'Traceback (most recent call last): boom'
+        returncode = 1
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: _Crashed())
+
+    cli.main(['rebuild-run', 'perview.json', '--recorded', '0.279'])
+    out = json.loads(capsys.readouterr().out)
+    assert out['verdict'] == 'step_failed', out
+    assert out['regenerated'] is None                       # 실행 중단 — metric 재생성 안 함
+    assert 'metric_compare' not in out['trace_events']      # 단계서 정직히 abort(대조까지 안 감)
+    assert 'rebuild_verdict' in out['trace_events']

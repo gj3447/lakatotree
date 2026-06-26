@@ -8,12 +8,15 @@
 # KG: span_lakatotree_promote / q-lkt-writepath-enforce
 """
 
-from lakatos.verdicts import SCRIPTED_VERDICTS, ADMIN_VERDICTS
+from lakatos.verdicts import SCRIPTED_VERDICTS, ADMIN_VERDICTS, PROGRESS_VERDICTS
 
-# ENG-CORR-1: deny-by-default allowlist (안전게이트는 fail-closed). 단일 'rejected' denylist 는
-# dialectical 'degenerating'/'withdrawn'/'ambiguous' + rebuild 실패 판결을 통과시켜 퇴행 노드가
-# CANONICAL 로 승격됐다. verdicts.py 정본서 derive → 미래 판결도 자동 차단(누락=차단).
-PROMOTABLE = (SCRIPTED_VERDICTS - {'rejected'}) | ADMIN_VERDICTS | {'progressive_conditional'}
+# ENG-CORR-1: deny-by-default allowlist (안전게이트는 fail-closed). verdicts.py 정본서 derive → 미래 판결도
+# 자동 차단(누락=차단).
+# 적대감사 후속(2026-06-23): 전엔 SCRIPTED-{rejected} 라 'rejected' 만 막혀 partial(보호대 패치)·equivalent
+# (무진전)이 CANONICAL 로 승격됐다 — 둘 다 verdicts.NONPROGRESSIVE 인데도. 라카토스 코어("진보=사전등록 novel
+# 적중")와 모순. 이제 진보 SSOT(PROGRESS_VERDICTS)와 교집합 → scripted 판결 중 *진보*만 승격 가능. 교집합(∩)이
+# 차집합(−)보다 fail-closed: 새 scripted 어휘는 *명시적으로 진보 분류*돼야 승격된다.
+PROMOTABLE = (SCRIPTED_VERDICTS & PROGRESS_VERDICTS) | ADMIN_VERDICTS | {'progressive_conditional'}
 
 
 def promotion_gate(*, scripted_verdict: str, stands: bool,

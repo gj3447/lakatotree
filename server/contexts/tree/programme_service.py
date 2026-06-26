@@ -18,7 +18,11 @@ from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _
                                expected_progress_gain, realized_reward)
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.quant.metrics import branch_inputs
+from lakatos.programme.series import series_from_path
+from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
+from lakatos.programme.tradition import (ResearchTradition, TraditionCommitment, TraditionRevision,
+                                         appraise_tradition_revision)
 from server.contexts.tree.diagnostics import diagnose_required_constraints
 from server.contexts.tree.schemas import (
     ArtifactIn,
@@ -30,6 +34,8 @@ from server.contexts.tree.schemas import (
     NodeIn,
     PredictionIn,
     TestResultIn,
+    TraditionAppraiseIn,
+    TraditionIn,
 )
 from server.ports import HistoryAppend, KgQuery, PgFactory
 
@@ -95,6 +101,9 @@ class ProgrammeService:
         can = next((r for r in td['nodes'] if r['verdict'] == 'CANONICAL'), None)
         metrics = self.compute_metrics(td)
         cred = (metrics.get('bayes') or {}).get('canonical_credence') or 0.5
+        # crisis→explore(#9): 퇴행깊이(가지 연속 비진보 최대) ≥ k = Kuhn 위기(가설공간 확장 신호) → 탐색 폭 확대.
+        #   정본 leaf 는 진보판결이라 그 경로 consec 은 무용 → 트리 전역 max_degeneration_depth 를 쓴다.
+        crisis = incumbent_degenerating([], int(metrics.get('max_degeneration_depth', 0)))
         opens = [q for q in td['frontier'] if q['status'] == 'OPEN']
 
         def _num(q, k, d):
@@ -132,12 +141,13 @@ class ProgrammeService:
                               on_canonical_frontier=q['name'] in front_qnames,
                               gain_source='explicit' if q.get('expected_gain') is not None else 'derived'))
         total_visits = max(sum(q['n_visits'] for q in qmeta), len(qmeta), 1)
-        ranked = self.rank_questions(qmeta, total_visits=total_visits)
+        ranked = self.rank_questions(qmeta, total_visits=total_visits, crisis=crisis)
         for q in ranked:
             q['branch_from'] = (can or {}).get('tag')
             q['suggested_tag'] = q['name'].replace('q-', 'exp-') + '-try1'
         return dict(canonical=(can or {}).get('tag'), canonical_credence=cred,
-                    branch_pressure=round(pressure, 4), ranked_directions=ranked,
+                    branch_pressure=round(pressure, 4), crisis_exploration=crisis,
+                    ranked_directions=ranked,
                     protocol=['① prediction 사전등록(구조적 novel_metric/threshold + script_sha 권장)',
                               '② 변경 하나 실행', '③ test_result 스크립트 채점', '④ 자동 판결+질문 close'])
 
@@ -190,6 +200,128 @@ class ProgrammeService:
                              bi['problem_balance_windowed'], bi['canonical_improved_recent'])
         return dict(leaf=bi['leaf'], state=ls.state, reason=ls.reason, regret=ls.regret,
                     window=ls.window, stack=self.stack_dict(sv))
+
+    def series_view(self, name: str, leaf: str | None = None) -> dict:
+        """프로그램-시계열 진단(#5) — 정본경로 verdict 시퀀스를 series_from_path 로 평가.
+        authority=diagnostic_only(promotion_authority=False) — verdict 권위 절대 부여 안 함.
+        개념(internal/external)·비교 anomaly(rival) 입력은 아직 KG 미배선이라 coverage 로 *명시*한다
+        (overclaim 금지). bridge 가 laudan.conceptual_problem_score 를 노드마다 실호출(현재 0 입력)하므로
+        고아였던 laudan 진단 함수가 런타임 caller 를 얻는다. 풍부한 입력 배선은 후속 prom."""
+        _, bi, _ = self.branch_stack(name, leaf)
+        ap = series_from_path(bi['path'])
+        # #① step 5 bridge: 기록된 전통 수정(appraise_tradition)의 개념압력 합을 diagnostic 으로 surface.
+        #   tradition authoring+appraise 가 있어야 비-0 → 고아였던 tradition→series 경로가 살아난다(diagnostic_only).
+        tcp = self._tradition_conceptual_pressure(name)
+        return dict(
+            leaf=bi['leaf'], trend=ap.trend, authority=ap.authority,
+            promotion_authority=ap.promotion_authority, steps=ap.steps,
+            progressive_count=ap.progressive_count, nonprogressive_count=ap.nonprogressive_count,
+            off_axis_count=ap.off_axis_count, problem_balance_total=ap.problem_balance_total,
+            rival_anomaly_count=ap.rival_anomaly_count,
+            conceptual_problem_score=ap.conceptual_problem_score, reasons=list(ap.reasons),
+            problem_balance_windowed=bi['problem_balance_windowed'],
+            tradition_conceptual_pressure=round(tcp, 4),   # #① Laudan 연구전통 개념압력(diagnostic_only)
+            coverage={
+                'verdict_sequence': 'wired',
+                'conceptual_problem': ('tradition_wired' if tcp > 0 else 'not_projected_from_kg'),
+                'rival_anomaly': 'not_projected_from_kg',        # RivalProblemRecord 미수집(후속)
+                'note': 'diagnostic_only — series=정본경로 verdict + tradition 개념압력(있으면). verdict 권위 없음.',
+            },
+        )
+
+    # ── #① Laudan 연구전통 authoring + series bridge (diagnostic-only) ──────────────────────
+    def _tradition_conceptual_pressure(self, name: str) -> float:
+        """기록된 전통 수정의 개념압력 합(series bridge 입력). 전통/수정 없으면 0.0.
+        best-effort — 진단 add-on 이라 kg 실패가 series 를 죽이지 않는다(directions 패턴 일관)."""
+        try:
+            rows = self.kg(
+                "MATCH (t:LakatosTree {name:$tree})-[:HAS_TRADITION]->(:ResearchTradition)"
+                "-[:HAS_TRADITION_REVISION]->(rv:TraditionRevision) "
+                "RETURN coalesce(sum(rv.conceptual_pressure), 0.0) AS cp", tree=name)
+            return float(rows[0]['cp']) if rows and rows[0].get('cp') is not None else 0.0
+        except Exception:   # noqa: BLE001 — 진단 add-on; kg 미가용 시 0.0(중립)
+            return 0.0
+
+    def set_tradition(self, name: str, t: TraditionIn) -> dict:
+        """연구전통 + commitments 영속(KG). tradition.py 도메인 불변식으로 검증(enum 위반 422)."""
+        import json
+        try:
+            ResearchTradition(tradition_id=t.tradition_id, name=t.name)
+            for c in t.commitments:
+                TraditionCommitment(commitment_id=c.commitment_id, kind=c.kind, statement=c.statement,
+                                    revisability=c.revisability, source_refs=tuple(c.source_refs))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})
+                  MERGE (rt:ResearchTradition {tradition_id:$tid})
+                  SET rt.name=$tname, rt.commitments=$commitments,
+                      rt.ontology_commitments=$onto, rt.methodology_rules=$meth, rt.exemplars=$exemplars,
+                      rt.accepted_problem_types=$probs, rt.background_theories=$bg,
+                      rt.revision_policy=$rpol, rt.compatibility_notes=$cnotes, rt.updated_at=$ts
+                  MERGE (t)-[:HAS_TRADITION]->(rt)
+                  RETURN rt.tradition_id AS id""",
+                       tree=name, tid=t.tradition_id, tname=t.name,
+                       commitments=json.dumps([c.model_dump() for c in t.commitments], ensure_ascii=False),
+                       onto=list(t.ontology_commitments), meth=list(t.methodology_rules),
+                       exemplars=list(t.exemplars), probs=list(t.accepted_problem_types),
+                       bg=list(t.background_theories), rpol=t.revision_policy, cnotes=t.compatibility_notes,
+                       ts=datetime.now(timezone.utc).isoformat())
+        if not rows:
+            raise HTTPException(404, f'트리 없음: {name}')
+        self.hist(name, 'tradition_set', t.tradition_id, {'commitments': len(t.commitments)})
+        return {'ok': True, 'tradition_id': t.tradition_id, 'commitments': len(t.commitments),
+                'authority': 'diagnostic_only'}
+
+    def get_tradition(self, name: str) -> dict:
+        import json
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_TRADITION]->(rt:ResearchTradition)
+                  RETURN rt.tradition_id AS tid, rt.name AS tname, rt.commitments AS commitments,
+                         rt.ontology_commitments AS onto, rt.methodology_rules AS meth,
+                         rt.exemplars AS exemplars, rt.accepted_problem_types AS probs,
+                         rt.background_theories AS bg, rt.revision_policy AS rpol,
+                         rt.compatibility_notes AS cnotes""", tree=name)
+        if not rows:
+            raise HTTPException(404, f'전통 없음: {name}')
+        r = rows[0]
+        return dict(tradition_id=r['tid'], name=r['tname'],
+                    commitments=json.loads(r['commitments'] or '[]'),
+                    ontology_commitments=r['onto'] or [], methodology_rules=r['meth'] or [],
+                    exemplars=r['exemplars'] or [], accepted_problem_types=r['probs'] or [],
+                    background_theories=r['bg'] or [], revision_policy=r['rpol'] or '',
+                    compatibility_notes=r['cnotes'] or '', authority='diagnostic_only')
+
+    def appraise_tradition(self, name: str, a: TraditionAppraiseIn) -> dict:
+        """전통 commitment 수정 진단(append-only 기록 → series bridge 누적). authority=diagnostic_only."""
+        import json
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_TRADITION]->(rt:ResearchTradition)
+                  RETURN rt.commitments AS commitments""", tree=name)
+        if not rows:
+            raise HTTPException(404, f'전통 없음: {name}')
+        by_id = {c['commitment_id']: c for c in json.loads(rows[0]['commitments'] or '[]')}
+        cdata = by_id.get(a.commitment_id)
+        if not cdata:
+            raise HTTPException(404, f'commitment 없음: {a.commitment_id}')
+        try:
+            commitment = TraditionCommitment(
+                commitment_id=cdata['commitment_id'], kind=cdata['kind'],
+                statement=cdata.get('statement', ''), revisability=cdata.get('revisability', 'routine'),
+                source_refs=tuple(cdata.get('source_refs') or ()))
+            ap = appraise_tradition_revision(commitment, TraditionRevision(
+                target_commitment_id=a.commitment_id, operation=a.operation, reason=a.reason,
+                receipt_refs=tuple(a.receipt_refs), compatibility_claim=a.compatibility_claim))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_TRADITION]->(rt:ResearchTradition)
+              CREATE (rt)-[:HAS_TRADITION_REVISION]->(:TraditionRevision {
+                  target:$target, operation:$op, outcome:$outcome, conceptual_pressure:$cp,
+                  methodology_pressure:$mp, ontology_pressure:$onp, created_at:$ts})""",
+                tree=name, target=a.commitment_id, op=a.operation, outcome=ap.outcome,
+                cp=ap.conceptual_pressure, mp=ap.methodology_pressure, onp=ap.ontology_pressure,
+                ts=datetime.now(timezone.utc).isoformat())
+        self.hist(name, 'tradition_appraise', a.commitment_id, {'outcome': ap.outcome})
+        return dict(outcome=ap.outcome, conceptual_pressure=ap.conceptual_pressure,
+                    methodology_pressure=ap.methodology_pressure, ontology_pressure=ap.ontology_pressure,
+                    reasons=list(ap.reasons), authority=ap.authority)
 
     def run_cycle(self, name: str, c: CycleIn) -> dict:
         self.add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),

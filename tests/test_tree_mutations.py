@@ -78,7 +78,9 @@ def test_mutation_service_upsert_tree_writes_tree_nodes_edges_and_questions():
             NodeIn(
                 tag="child",
                 parent="root",
-                verdict="progressive",
+                # prom-honesty/1: 노드 업서트는 행정/구조 어휘만 — 스크립트 판결(progressive)은 judge 전용.
+                #   (스크립트 판결 거부는 test_prom_honesty_node_gating.py 가 별도로 고정.)
+                verdict="canonical_stage",
                 result_path="runs/child.json",
                 metric_name="p95",
                 metric_value=0.4,

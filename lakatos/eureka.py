@@ -149,6 +149,11 @@ def eureka_rate(nodes: list) -> dict:
     The headline reliability metric: of all felt ahas, how many survived external red?
     This is the engine's measured analogue of the ~37% human false-insight rate — and the
     whole point of the 🔴 strand is to drive ``hallucination_rate`` toward zero.
+
+    ※정직 한계(적대 재검증 R2 2026-06-21): classify(n) 를 *호출자 dict 그대로* 채점하므로 self-report 한
+    delta/noise_band/closed/opened 를 신뢰한다(BF·문제수지 red 게이트를 그 값으로 통과). 신뢰 불가 입력엔
+    eureka_over_tree(metric_value/pred_baseline 에서 *재유도*하는 measurement-grade 경로)를 쓸 것 — 현재
+    eureka_rate 는 untrusted entrypoint 에 미연결(잠재 비대칭; 헤드라인 집계는 over_tree 가 받침).
     """
     verdicts = [classify(n) for n in nodes]
     felt = sum(1 for v in verdicts if v.felt)

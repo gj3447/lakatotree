@@ -38,7 +38,7 @@ def test_add_node_uses_single_atomic_tx(monkeypatch):
     app = load_app()
     monkeypatch.setattr(app, 'tree_data', lambda n: {'nodes': [{'tag': 'root'}]})
     txs = []
-    monkeypatch.setattr(app, 'kg_tx', lambda ops: txs.append(ops) or [[]])
+    monkeypatch.setattr(app, 'kg_tx', lambda ops: txs.append(ops) or [[{"t": 1}]])   # 1행=나무 존재(fail-loud 가드)
     monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
     app.add_node('T', app.NodeIn(tag='e1', parent='root'))
     assert len(txs) == 1                                 # 노드+엣지가 단일 tx (부분쓰기 분기 차단)
@@ -89,7 +89,7 @@ def test_directions_total_visits_is_sum_of_visits(monkeypatch):
     app = load_app()
     captured = {}
 
-    def fake_rank(qmeta, total_visits):
+    def fake_rank(qmeta, total_visits, crisis=False):   # crisis: #9 crisis→explore 시그니처
         captured['tv'] = total_visits
         return qmeta
 

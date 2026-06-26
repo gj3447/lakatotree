@@ -11,6 +11,12 @@
 > **Three views of the same system.** Engineering spec = this file. Conceptual model =
 > [`docs/PIDNA.md`](docs/PIDNA.md). Vision/rationale (prose) = [`TOUCH_THE_SKY.md`](TOUCH_THE_SKY.md).
 > Machine-checked theory = [`formal/Pidna.lean`](formal/Pidna.lean) (`lake build`, sorry=0).
+>
+> **Scope (read this first).** The Lean theorems certify the design *model* (`formal/Pidna.lean`),
+> **not** the runtime Python: Lean rules out design errors (e.g. "progressive without novelty",
+> non-commutative credence); `tests/` rule out implementation bugs in `judge.py`/`bayes.py`.
+> "Machine-checked *theory*", not "verified engine" — full account in
+> [Formal foundation → Scope, honestly](#formal-foundation).
 
 ---
 
@@ -44,7 +50,7 @@ cd formal && lake build      # 12 theorems, sorry=0
 
 | theorem | guarantee | code it pins |
 |---|---|---|
-| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the whole "receipt, not self-report" rule |
+| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the **kernel** verdict rule (caveat, prom-honesty/D: the *persisted* verdict is `dialectical_verdict(judge…)`, which can wrap/override the kernel output, and `novel`'s provenance is enforced at the Python boundary, not Lean-proven — `Rung.derived` pins the kernel, not the whole runtime) |
 | `progressive_requires_novel` | progressive ⟹ a corroborated **novel** prediction | `judge.py` (F-CON-3: text alone ≠ novel) |
 | `progressive_requires_improved` | progressive ⟹ real improvement past the noise band | `judge.py` |
 | `no_novel_no_progressive` | improvement *without* novelty caps at `partial` (Lakatos's ad-hoc patch) | `judge.py` |
@@ -140,17 +146,20 @@ drift-guarded contract**: `tests/test_readme_longinus.py` checks every module re
 layer (and that the set of layers matches `.importlinter`) — this map cannot silently lie.
 
 ### Foundation — `lakatos/` (root; shared, importable by any layer)
-`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import`
+`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology`
 - `engine` sparse research frame — enums / `GateResult` / gates / possibilities / event log / credence promotion / `SourceCredibilityScore`
 - `verdicts` verdict-vocabulary single source of truth · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
 - `trust` TrustRank/EigenTrust source-scoring primitive (shared by `engine` + `quant.bayes`) · `claim` ClaimStanding (upper/lower-realm confidence + blockers)
-- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates)
+- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates) · `provenance_backfill` classifies pre-receipt-regime NULL-source nodes (explicit `pre_receipt` marker vs re-verify) without fabricating provenance · `ontology` opt-in domain-ontology gate — a tree declares entity types (required attrs + enum/type/min/max constraints + closed-world), and the engine fail-closed-rejects (422) non-conforming node registrations (JSON-Schema-2020-12 subset, mirrors ooptdd, gives the `domain-ontology` foundation requirement teeth)
 
 ### `verdict/` — judgment kernel (the scorer; modeled in `formal/Pidna.lean`)
-`judge` `pnr` `spine` `promote` `certify` `argue` `compose`
+`judge` `pnr` `spine` `promote` `certify` `argue` `compose` `industrial` `kusari` `z_height`
 - `judge` [Popper] 4 verdicts + pre-registration gate + structural corroboration (NovelTarget vs measurement)
 - `pnr` [Proofs & Refutations] counterexample-response dialectic · `spine` `dialectical_verdict` (reconcile metric + qualitative + PnR)
 - `promote` fail-closed CANONICAL allowlist · `certify` 5-gate AND certificate · `argue` Dung AF grounded-extension justification · `compose` gate outcome composition
+- `industrial` Longinus industrial-dimension gate — fail-closed `judge_dimension`: missing schema field (uncertainty/repeatability/CAD residual/traceability) → BLOCKED, near-limit → indeterminate (separates research-progressive from production-adopted)
+- `kusari` Longinus root-cause critique gate — fail-closed `lint_critique`/`lint_checklist`: a critique must name target_artifact/failure_mode/expected_observable/blocking_verdict and the exact target axis (coordinate_frame/datum/algorithm/feature/threshold), else invalid (blocks vague LabelRot critique)
+- `z_height` Longinus consumer_b Z-height gate — fail-closed `judge_z_height`: requires rigid residual + per-feature z residual + frame/sign audit (≥2 candidate layers) separated, else BLOCKED; flags Z-NOT-CERTIFIED when registration is green but per-feature z exceeds residual+U_k2 (registration green cannot certify a wrong Z layer)
 
 ### `quant/` — quantitative substrate
 `bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate`
@@ -159,16 +168,18 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
 ### `programme/` — programme-level / comparative / meta-policy
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition`
 - `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
+- `flip` per-layer verdict-flip metric — counterfactual pivotality: how often each rigor layer (Popper/Bayes/Laudan) actually *changed* the `stack` decision (composes `quant.metrics.branch_inputs` + `stack`; surfaced in server `read_models` as `m["layer_flips"]` → dashboard)
 - `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
 - `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
+- `tradition` [Laudan] research tradition (revisable ontology/methodology/exemplars) — same_tradition_revision / tradition_drift / different_programme_candidate, `diagnostic_only` (hard-core identity still routes through `LakatosGate`)
 
 ### `io/` — evidence, provenance, persistence, observability
-`lineage` `replay` `rebuild` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink`
+`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`
 - `lineage` manifest + env fingerprint + root-replay DAG · `replay` lineage-replay gates (`LineageReplayGate`/`ReproducibilityContract`, split out of `engine`)
-- `rebuild` "receipts not claims" rebuild-from-raw · `prov` W3C PROV-O triples + replay command · `envfp` environment fingerprint
-- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export (OpenLineage / DVC / PROV)
+- `rebuild` "receipts not claims" rebuild-from-raw · `reconcile` KG↔PG transactional-outbox + idempotent reconcile (B1: hist 실패를 KG OutboxEntry 로 보존, 멱등 재적용) · `prov` W3C PROV-O triples + replay command · `envfp` environment fingerprint
+- `oo_sink`/`oo_verify` observability LTDD · `adapters`/`marquez_sink` external lineage export (OpenLineage / DVC / PROV) · `marquez_verify` Marquez write→독립read→compare 왕복(M11, fire-and-forget 봉쇄)
 
 ```
 formal/    ★Lean 4 formal kernel — machine-checked verdict theory (lake build, sorry=0)

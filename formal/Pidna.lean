@@ -11,6 +11,15 @@
 
   Ground truth gate: `lake build` with error=0, sorry=0.
 -/
+
+-- M7 (design audit): *enforce* the sorry=0 gate, don't merely document it. In Lean
+-- `sorry` is a warning and `lake build` exits 0 on warnings, so the `Rung.derived`
+-- self-report invariant below could be forged by one `sorry` line with the build still
+-- green. File-scoped `warningAsError` promotes every warning (incl. "declaration uses
+-- 'sorry'") to an error → non-zero exit. Safe here: this file builds with zero warnings,
+-- so the option only bites when a `sorry`/linter regression is introduced.
+set_option warningAsError true
+
 namespace Pidna
 
 /-! ## 1. Verdict kernel (Popper layer — `lakatos/judge.py`) -/

@@ -50,6 +50,16 @@ def install_fake_ports(monkeypatch, app, existing_nodes=("p1", "p2")):
                 }
                 for tag in existing_nodes
             ]
+        if "novel_confirmed AS novel_confirmed" in query:
+            # set_verdict CANONICAL pre-query. #H2(설계감사): floor 의 human 영수증은 client 1비트가
+            #   아니라 *영속된* human attestation Argument(kind∈{evaluation,verdict} + by actor)다.
+            #   이 fake 가 그 영수증을 KG 에 둔다 — 그래야 human_verdict=True 가 정당히 floor 를 연다.
+            return [{
+                "verdict": "proof", "verdict_source": None, "source_trust": None,
+                "novel_confirmed": False,
+                "args": [{"id": "T/human-eval", "attacks": None,
+                          "by": "human:reviewer", "kind": "evaluation"}],
+            }]
         if "QuestionClosure" in query:
             return [{"name": params.get("qn")}]
         if "RETURN q.name AS name" in query:
@@ -125,6 +135,9 @@ def test_canonical_verdict_records_temporary_best_metadata(monkeypatch):
             scope="heldout:lotoff",
             assumptions=["only under current root artifacts"],
             evidence_window="node-001..node-010",
+            human_verdict=True,   # prom-honesty floor: proof 노드 승격엔 *위조불가 영수증* 필요 —
+                                  #   #H2(설계감사): 그 영수증은 client 1비트가 아니라 KG 에 *영속된* human
+                                  #   attestation Argument(install_fake_ports 가 둠). bool 단독으론 floor 안 열림.
         ),
     )
 

@@ -160,10 +160,12 @@ class LineageService:
                        for d in plan if env_drift(d, current_env)}
         manifest = build_manifest(artifact, bo, env_sha=current_env)
         ok = (not gaps) and (not stale) and (not env_changed)
-        verdict = "rebuildable" if ok else "progressive_conditional"
+        # #7 정직: 이건 *정적* DAG 체크다(재실행 안 함) → executor 재실행 영수증의 'rebuildable' 과 다른 토큰.
+        verdict = "rebuildable_static" if ok else "progressive_conditional"
         return dict(
             artifact=artifact,
             verdict=verdict,
+            verified="static",   # 정적 분석(재실행 아님) — executor 영수증은 verified='re-executed' 격
             reproducible=(not gaps),
             gaps=sorted(gaps),
             stale=list(stale),
@@ -174,7 +176,7 @@ class LineageService:
                 env_sha=manifest.env_sha[:12],
                 recipe=[{k: v for k, v in step.items() if k != "params"} for step in manifest.recipe],
             ),
-            note="rebuildable=raw root+현재환경서 재생성 가능. progressive_conditional=env/데이터 바뀜 → 재실행 필요(consumer_b ZDF Rule #5)",
+            note="rebuildable_static=정적 분석상 raw root+현재환경서 재생성 가능(레시피 완전·미stale·env 일치) — 재실행은 안 함(executor rebuild-run 이 실제 영수증). progressive_conditional=env/데이터 바뀜 → 재실행 필요(consumer_b ZDF Rule #5)",
         )
 
     def get_script_history(self, producer: str) -> dict:

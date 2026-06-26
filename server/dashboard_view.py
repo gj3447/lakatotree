@@ -108,6 +108,14 @@ def render_dashboard(
                 )
                 + "</div>"
             )
+        lf = m.get("layer_flips")
+        if lf:
+            out.append(
+                "<div class='lay'>🔁 <b>층 flip</b>(판결 뒤집은 가지수 / "
+                f"{lf['branches_evaluated']}가지 평가, 반사실적 피벗): "
+                f"popper {lf['popper']['flips']} · bayes {lf['bayes']['flips']} · "
+                f"laudan {lf['laudan']['flips']}</div>"
+            )
         for a in m["alerts"]:
             out.append(f"<p style='color:#cf222e'>⚠ {a}</p>")
         kids = {}

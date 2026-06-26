@@ -19,3 +19,10 @@ def test_rank_orders_by_priority():
     ranked = rank_questions(qs, total_visits=20)
     assert ranked[0]['name'] == 'cheap_high'
     assert 'voi' in ranked[0] and 'ucb' in ranked[0] and 'priority' in ranked[0]
+
+def test_crisis_widens_exploration():
+    # Kuhn 위기(incumbent 퇴행) = 가설공간 확장 신호 → UCB 탐색항을 넓혀 덜 본 질문 정찰 강화(라이선스 kuhn1962)
+    qs = [dict(name='q', expected_gain=0.2, cost=1.0, credence=0.5, n_visits=1)]
+    normal = rank_questions(qs, total_visits=50, crisis=False)[0]['ucb']
+    crisis = rank_questions(qs, total_visits=50, crisis=True)[0]['ucb']
+    assert crisis > normal   # 위기 시 탐색항 확대(가설공간 확장)

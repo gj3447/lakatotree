@@ -7,6 +7,7 @@
 발전성 = 적중한 novel 예측 / 등록한 novel 예측 (사전등록이므로 사후 HARKing 불가).
 노벨급 = 충분한 예측 수 AND 높은 적중률 (운 좋은 1방 배제).
 # KG: span_lakatotree_fertility
+라이선스(THEORY §8): mayo1996
 """
 
 from lakatos.grounding import GROUNDED, wilson_lower_bound as _wilson_lower

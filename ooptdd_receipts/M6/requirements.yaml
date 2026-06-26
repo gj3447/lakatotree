@@ -1,0 +1,31 @@
+# LakatoTree 설계감사 M6(사후예측 잠금) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=m6_receipt.verify 가 실제
+# server.contexts.tree.judgement_service.JudgementService.register_prediction 를 구동(재구현 금지)하고
+# 구조화 이벤트를 ship. fastapi 는 ooptdd-loop env 에 설치돼 in-process import OK.
+name: lakatotree-design-audit-m6-post-hoc-prediction-lock
+target:
+  mode: in_process
+  callable: m6_receipt:verify            # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M6-1
+    description: 측정 후 같은 노드 재등록(re-tune)은 잠금절(pred_registered_at IS NULL)로 0행 → 409 차단되며, 잠금절이 실제 SET 쿼리에 존재(non-vacuous)
+    gate:
+      - {event: post_hoc_registration_blocked, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M6:post_hoc_registration_blocked
+      source: m6_receipt.py
+      symbol: verify
+      must_emit: post_hoc_registration_blocked
+
+  - id: M6-2
+    description: 과잉차단 회귀가드 — 미등록 새 노드의 첫 등록은 잠금이 막지 않는다(음성 오라클)
+    gate:
+      - {event: fresh_registration_allowed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M6:fresh_registration_allowed
+      source: m6_receipt.py
+      symbol: verify
+      must_emit: fresh_registration_allowed

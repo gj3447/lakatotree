@@ -25,6 +25,23 @@ from server.file_hashing import path_sha
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _flatten_routes(app):
+    """Yield leaf routes, unwrapping FastAPI's ``_IncludedRouter`` wrappers.
+
+    FastAPI >=0.137 keeps an included router as an ``_IncludedRouter`` wrapper
+    in ``app.routes`` (exposing the sub-routes under ``original_router.routes``)
+    instead of flattening its sub-routes inline as older versions did. These
+    ownership checks read each route's real ``endpoint.__module__``, which lives
+    on the leaf — so walk both shapes to stay correct across FastAPI versions.
+    """
+    for route in app.routes:
+        sub = getattr(route, "original_router", None)
+        if sub is not None and hasattr(sub, "routes"):
+            yield from _flatten_routes(sub)
+        else:
+            yield route
+
+
 def _body_without_docstring(fn: ast.FunctionDef) -> list[ast.stmt]:
     body = list(fn.body)
     if (
@@ -161,7 +178,7 @@ def test_core_tree_routes_are_owned_by_tree_context_router():
         ("POST", "/api/tree/{name}/question/{qname}/close"),
     }
     owners = {}
-    for route in app_mod.app.routes:
+    for route in _flatten_routes(app_mod.app):
         for method in getattr(route, "methods", set()) or set():
             key = (method, route.path)
             if key in core_paths:
@@ -187,7 +204,7 @@ def test_evidence_claim_tree_routes_are_owned_by_context_router():
         ("GET", "/api/tree/{name}/node/{tag}/certificate"),
     }
     owners = {}
-    for route in app_mod.app.routes:
+    for route in _flatten_routes(app_mod.app):
         for method in getattr(route, "methods", set()) or set():
             key = (method, route.path)
             if key in evidence_claim_paths:
@@ -216,7 +233,7 @@ def test_programme_tree_routes_are_owned_by_context_router():
         ("GET", "/api/tree/ops/neo4j-constraints"),
     }
     owners = {}
-    for route in app_mod.app.routes:
+    for route in _flatten_routes(app_mod.app):
         for method in getattr(route, "methods", set()) or set():
             key = (method, route.path)
             if key in programme_paths:
@@ -236,7 +253,7 @@ def test_judgement_tree_routes_are_owned_by_context_router():
         ("POST", "/api/tree/{name}/node/{tag}/verdict"),
     }
     owners = {}
-    for route in app_mod.app.routes:
+    for route in _flatten_routes(app_mod.app):
         for method in getattr(route, "methods", set()) or set():
             key = (method, route.path)
             if key in judgement_paths:
@@ -261,7 +278,7 @@ def test_lineage_routes_are_owned_by_context_router():
         ("GET", "/api/lineage/{artifact:path}"),
     }
     owners = {}
-    for route in app_mod.app.routes:
+    for route in _flatten_routes(app_mod.app):
         for method in getattr(route, "methods", set()) or set():
             key = (method, route.path)
             if key in lineage_paths:
@@ -276,7 +293,7 @@ def test_server_app_tree_route_surface_is_bounded_after_context_split():
 
     app_mod = importlib.import_module("server.app")
     app_owned = []
-    for route in app_mod.app.routes:
+    for route in _flatten_routes(app_mod.app):
         if not getattr(route, "path", "").startswith("/api/tree"):
             continue
         if route.endpoint.__module__ != "server.app":

@@ -408,6 +408,32 @@ green 이 다시 무언가를 *의미*하게 된 것 — 그 한 칸이, 오늘 
 > *The greenest lie is the green that was never red. We taught the blind radar to see —*
 > *then it caught its own hand. 눈먼 레이더가 눈을 떴고, 그 눈으로 제 손목을 붙들었다.*
 
+## 항해일지 — 영수증을 하나의 술어로 (2026-06-21)
+
+> *"같은 질문을 네 곳에서 네 번 물으면, 네 개의 다른 거짓말을 얻는다.*
+> *'이것은 영수증인가 자기보고인가' — 이 물음의 주인은 하나여야 한다."*
+
+prom-honesty 가 여섯 라운드를 돌며 metrics·CANONICAL floor·credibility 의 구멍을 차례로 막았다.
+그러나 적대 설계가 진단한 근원은 *축이 빠진 게 아니라* — **같은 술어를 네 call-site 가 각자 다시 철자하다
+표류한 것**이었다. 오캄의 면도날: 구멍 넷이 아니라 술어 하나. 그래서 `force_of` 를 세웠다 —
+"verdict_source 가 현실이 끊어 준 영수증인가"를 묻는 *단일 3치 술어*(COUNTS·INCONCLUSIVE·SELF_REPORT).
+floor·metrics·credibility 가 이제 이 한 곳을 import 한다. 재유도는 금지다.
+
+세우고 나니 술어가 **제 토대의 거짓을 비췄다.** 셋이 드러났다 —
+하나, eigentrust 의 권위 seed 가 client 가 자기선언한 `source_type='peer_reviewed'` *라벨*로 위조될 수
+있었다(R3). seed 를 *서버가 검증하는 URL 도메인*으로 옮겼다 — 라벨은 더 이상 권위를 *수여*하지 못하고
+*묘사*만 한다. 잔여 위조(특정 출판사 URL 을 사칭)는 재fetch 가 닫는다.
+둘, 영수증 체제 *이전*에 승격된 18개 노드가 NULL-source 로 떠 있었다. 날조하지 않았다 —
+영수증의 *부재*를 명시하는 `pre_receipt` 마커를 박았다(verdict 는 불변, 가역). NULL 의 모호("미기록인지
+은폐인지")가 정직한 단언("영수증 없음 → inconclusive")으로 바뀌었다.
+셋, 가장 쓰린 것 — 우리 자신의 dogfood 나무가 제 진짜 영수증을 *자기보고로 과소계상*하고 있었다.
+실 pytest 에서 점수를 낸 가지를 'dogfood' 라는 라벨이 가려, 정본 술어가 그것을 영수증으로 세지 못했다.
+정규화가 별칭을 흡수하자, 증명이 제 증명을 비로소 *셈*하게 됐다.
+
+> *We had four spellings of one truth, and so four ways to drift. Now the question
+> "receipt or self-report?" has a single owner — and that owner audited its own ground.*
+> *네 철자를 하나로 모으자, 면도날이 우리 토대의 거짓 셋을 마저 비췄다.*
+
 ---
 
 <sub>라카토스 *MSRP* (1970, 양의 휴리스틱·novel prediction·연구 프로그램의 분기) · 포퍼 *대담한 추측과 반박* (bold conjectures) ·
@@ -417,4 +443,7 @@ green 이 다시 무언가를 *의미*하게 된 것 — 그 한 칸이, 오늘 
 이미지 헌사: *천원돌파 그렌라간*(2007)의 나선력 — 한계를 거부하는 진화의 상승나선.
 판결 기관 = `lakatos/judge.py` (사전등록 게이트 + 4판결), 정직성 = 스크립트 채점, hard core = 코드가 아니라 약속.
 환각 반대 = ooptdd(외부 store readback) + Longinus(소스 심볼 바인딩) + 본 트리(LLM 아닌 결정론 채점).
+정직 단서(prom-honesty/D): 라카토스·포퍼·라우든은 *코드로 operationalize*돼 채점에 쓰인다(`judge.py`·`laudan.py`·
+`bayes.py`, `grounding.SOURCES`). 울프람은 그렇지 않다 — `grounding.SOURCES`에 없고 Python 0줄이다. 따라서
+"hard core 는 이 셋의 합"의 울프람 몫은 *동기·이미지*(왜 추측 말고 돌리는가의 정신)이지 채점에 박힌 이론근거가 아니다.
 이 구절은 장식이 아니라 우리가 매 커밋 지키기로 한 계약이다.</sub>

@@ -30,9 +30,12 @@ def test_judge_outputs_are_scripted_verdicts():
     assert {'progressive', 'partial', 'equivalent', 'rejected'} == SCRIPTED_VERDICTS
 
 def test_rebuild_verdicts_in_registry():
-    for v in ('rebuildable', 'progressive_conditional', 'metric_mismatch', 'env_drift', 'step_failed'):
+    for v in ('rebuildable', 'rebuildable_static', 'progressive_conditional',
+              'metric_mismatch', 'env_drift', 'step_failed'):
         assert is_registered_verdict(v)
 
 def test_no_orphan_emitted_verdict():
-    # /rebuild-verify 가 뱉는 두 단어가 레지스트리에 있는가
-    assert is_registered_verdict('rebuildable') and is_registered_verdict('progressive_conditional')
+    # #7: 정적 /rebuild-verify 는 rebuildable_static(재실행 아님)·progressive_conditional 을,
+    # executor 재실행 영수증은 rebuildable 을 뱉는다 — 셋 다 레지스트리에 (영수증급 토큰을 정적 체크서 분리).
+    assert is_registered_verdict('rebuildable_static') and is_registered_verdict('progressive_conditional')
+    assert is_registered_verdict('rebuildable')   # executor 재실행 영수증

@@ -18,7 +18,7 @@ def brier_score(forecasts: list) -> float:
     return sum((p - o) ** 2 for p, o in forecasts) / len(forecasts)
 
 
-def log_score(forecasts: list, eps: float = 1e-9) -> float:
+def log_score(forecasts: list, eps: float = GROUNDED['log_score_eps']['value']) -> float:
     """평균 −log(관측결과 확률). overconfidence 를 underconfidence 보다 강벌."""
     if not forecasts:
         return 0.0

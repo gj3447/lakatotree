@@ -19,6 +19,15 @@ class BuildFailed(Exception):
     """하계 ground-truth 게이트 — 빌드/TDD 실패 시 채점·판결 중단."""
 
 
+class ScoringRefused(Exception):
+    """채점 게이트 — 서버가 채점을 거부(error/4xx)하거나 verdict 가 안 났으면 사이클 중단.
+
+    BuildFailed 의 형제(M2 적대감사 2026-06-25): fail-loud 의 default 를 역전한다 —
+    raise 가 default, 삼킴은 명시 정책. judge 거부(admissibility 위반 등)를 조용히 삼켜
+    verdict=None 인데 exit 0(green) + stands=True 로 끝나는 가짜 green 을 차단.
+    """
+
+
 @dataclass
 class CycleSpec:
     tree: str
@@ -31,6 +40,9 @@ class CycleSpec:
     novel_metric: str | None = None
     novel_direction: str | None = None
     novel_threshold: float | None = None
+    novel_measured: float | None = None  # prom-honesty/2: novel target 의 *독립* 측정값 — 없으면 novel 미주장
+                                         #   (metric 재활용 금지). novel_metric 등록 시 judge 가 독립 측정 강제.
+    novel_sha: str | None = None         # prom-honesty/sha: novel 측정의 출처(채점 sha 와 다르면 같은 metric 도 독립)
     build_cmd: str | None = None         # 하계: 빌드/TDD/실행 (ground truth 게이트)
     judge_cmd: str | None = None         # 하계: metric=<수> 출력하는 채점 스크립트
     judge_script: str | None = None      # 채점 스크립트 경로 (sha256 무결성)
@@ -78,7 +90,17 @@ class LakatoHarness:
         prov['metric'] = metric
 
         res = self._submit_and_judge(s, metric, sha, trust)
-        prov['verdict'] = res.get('verdict')
+        # 채점 게이트(M2) — fail-loud default: 서버가 채점을 거부(error/4xx)했거나 verdict 가 안 났으면
+        #   조용히 삼키지 말고 즉시 raise. 거부 코드/상세는 prov 에 기록(증거 보존, BuildFailed 와 대칭).
+        if isinstance(res, dict) and res.get('error') is not None:
+            prov['scoring_refused'] = {'error': res.get('error'), 'detail': res.get('detail')}
+            raise ScoringRefused(f'서버 채점거부(error {res.get("error")}) — verdict 미생성. '
+                                 f'{str(res.get("detail"))[:120]}')
+        verdict = res.get('verdict') if isinstance(res, dict) else None
+        if verdict is None:
+            prov['scoring_refused'] = {'error': None, 'detail': 'verdict 미생성(채점 미성립)'}
+            raise ScoringRefused(f'채점 미성립 — verdict=None. 응답: {str(res)[:120]}')
+        prov['verdict'] = verdict
         prov['novel'] = res.get('novel')
         prov['delta'] = res.get('delta')
 
@@ -136,9 +158,13 @@ class LakatoHarness:
 
     def _submit_and_judge(self, s: CycleSpec, metric, sha, trust) -> dict:
         """하계(write) — test_result 제출 → 판결(judge + 인터넷 신뢰 결합)."""
+        # prom-honesty/2 (적대감사 2026-06-20): metric 재활용 금지 — novel_measured 는 *독립* 측정(s.novel_measured)
+        #   만 보낸다. novel_metric 을 등록했으면 독립 측정값을 줘야 하고(없으면 judge 가 P2 로 거부), 줄 게
+        #   없으면 애초에 novel 을 주장하지 않는다(개선만이면 honest 하게 partial). 개선 측정 1개로 progressive 공짜 금지.
         return self._http('POST', f'/api/tree/{s.tree}/node/{s.tag}/test_result', {
             'metric_value': metric, 'script': s.judge_script or s.judge_cmd or 'inline',
-            'script_sha': sha, 'novel_measured': metric, 'source_trust': trust})
+            'script_sha': sha, 'novel_measured': s.novel_measured, 'novel_sha': s.novel_sha,
+            'source_trust': trust})
 
     def _critiques_and_standing(self, s: CycleSpec) -> dict:
         """인간+agent(critique) — 의문/반박 등재 → 정당성(Dung grounded extension) standing."""

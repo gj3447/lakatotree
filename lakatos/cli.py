@@ -9,6 +9,10 @@
   trust <name>                   eigentrust 글로벌 출처신뢰(실 관측 그래프, coverage 정직표기, P6)
   stack <name> [--leaf L]        포퍼/베이즈/라우든 3층 명시투표+정족수 메타규칙(gap3)
   lifecycle <name> [--leaf L]    프로그램 종료판정 — 수확/발산/소멸/활성(P1)
+  series <name> [--leaf L]       프로그램-시계열 진단 — 정본경로 verdict 진보/퇴행 경향(diagnostic_only, #5)
+  tradition <name>               Laudan 연구전통 조회(ontology/methodology/exemplars, diagnostic_only, ①)
+  tradition-set <name> <spec>    연구전통 선언/갱신 — TraditionIn JSON 파일
+  tradition-appraise <name> <cid> [--operation modify] [--receipt R] [--compat C]   commitment 수정 진단
   leaderboard <a,b,..> [--snapshot]  경쟁 트리 Pareto+Borda 리더보드(P2)
   paradigm <incumbent> <a,b>     정상과학/위기/shift_candidate(gap7, shift=인간 안건)
   certificate <name> <tag>       5게이트 AND 인증서(P2)
@@ -20,6 +24,8 @@
   question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
   agm <spec.json>                AGM 신념개정 — hard core revision/contraction(P1)
   cycle <spec.json>              하네스 한 사이클 — 상계read→하계build/judge→critique→standing
+  tree-create <name> [--title T --hard-core H --frontier-rule F]  새 나무 생성/메타 upsert (add_node 전 필수)
+  tree-delete <name> [--cascade]  나무 삭제(파괴적; 노드 있으면 --cascade 필수)
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
@@ -70,6 +76,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sp = sub.add_parser('lifecycle'); sp.add_argument('name')
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
+    sp = sub.add_parser('series'); sp.add_argument('name')   # #5 프로그램-시계열 진단(diagnostic_only)
+    sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
+    sp = sub.add_parser('tradition'); sp.add_argument('name')   # ① Laudan 연구전통 조회(diagnostic_only)
+    sp = sub.add_parser('tradition-set'); sp.add_argument('name'); sp.add_argument('spec', help='TraditionIn JSON 파일')
+    sp = sub.add_parser('tradition-appraise'); sp.add_argument('name'); sp.add_argument('commitment_id')
+    sp.add_argument('--operation', default='modify', choices=['add', 'modify', 'retire', 'reclassify'])
+    sp.add_argument('--reason', default=''); sp.add_argument('--receipt', action='append', default=[])
+    sp.add_argument('--compat', default='', help='compatibility_claim(양립 정당화 — costly 표류 막음)')
     sp = sub.add_parser('heuristic'); sp.add_argument('name')
     sp.add_argument('--leaf', default='', help='가지 leaf tag (생략=정본 leaf)')
     sub.add_parser('trust').add_argument('name')
@@ -96,6 +110,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--by', default=''); sp.add_argument('--body', default='')
     sp.add_argument('--kind', default='doubt', choices=['doubt', 'comment', 'rebuttal', 'evaluation'])
     sp = sub.add_parser('standing'); sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('eureka', help='노드별 measurement-grade eureka (felt/true/hallucinated)')
+    sp.add_argument('name'); sp.add_argument('tag')
+    sp = sub.add_parser('graph', help='시각 트리 GUI 데이터 척추 (node 색/klass/패널 + edge + frontier + 안건, E Phase 1)')
+    sp.add_argument('name')
     sp = sub.add_parser('claim-standing'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--no-replay', action='store_true')
     sp = sub.add_parser('events'); sp.add_argument('name'); sp.add_argument('tag')
@@ -104,6 +122,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--actor', default=''); sp.add_argument('--action', required=True)
     sp.add_argument('--evidence', action='append', default=[])
     sp.add_argument('--payload', action='append', default=[], help='key=value (반복)')
+    sp = sub.add_parser('tree-create'); sp.add_argument('name')
+    sp.add_argument('--title', default=''); sp.add_argument('--hard-core', default='')
+    sp.add_argument('--frontier-rule', default=''); sp.add_argument('--doc', default='')
+    sp.add_argument('--coverage-statement', default='')
+    sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
+    sp.add_argument('--ontology', default='', help='도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)')
+    sp = sub.add_parser('tree-delete'); sp.add_argument('name')
+    sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
@@ -137,9 +163,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--risk-if-missing', default='')
     sp = sub.add_parser('lineage'); sp.add_argument('artifact'); sp.add_argument('--stale', action='store_true')
     sp = sub.add_parser('script-history'); sp.add_argument('producer')
+    sp = sub.add_parser('reconcile-outbox')   # B1 복구 운영 트리거(#4) — pending OutboxEntry 멱등 재적용
     sp = sub.add_parser('rebuild-verify'); sp.add_argument('artifact')
     sp = sub.add_parser('rebuild-run'); sp.add_argument('artifact'); sp.add_argument('--recorded', type=float, required=True)
     sp.add_argument('--cmd-template', default='echo metric=0')
+    sp.add_argument('--measure-cmd', default='',   # #M10: kind='measurement' step 전용(producer 와 분리).
+                    help="measurement step 전용 명령 — 미지정 시 모든 step 이 단일 cmd-template 로 붕괴(measurer=producer)")
     sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
     sp.add_argument('--producer', default=''); sp.add_argument('--producer-sha', default='')
     sp.add_argument('--input', action='append', default=[], help='path:sha (반복)')
@@ -149,6 +178,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--no-require-environment', action='store_true')   # manifest-verify 전용 (merge 사고 복구)
     sp = sub.add_parser('longinus', help='코드↔KG ReferenceSite 바인딩 drift 감사 (로컬, 서버 불필요)')
     sp.add_argument('--json', action='store_true', help='JSON 출력')
+    sp.add_argument('--dashboard', action='store_true', help='오프라인 HTML 대시보드 생성(examples.longinus_dashboard)')
     # prom32 G-Web / G-WorldAction enforced gates
     sp = sub.add_parser('observation'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--url', default=''); sp.add_argument('--source-type', default='')
@@ -174,6 +204,11 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     if a.cmd == 'longinus':   # 로컬 감사 — 서버 호출 안 함 (코드↔KG 바인딩 정합성)
+        if getattr(a, 'dashboard', False):
+            from examples.longinus_dashboard import run as _dash
+            out = _dash(write=True)
+            print(f"대시보드: {out['html_path']}  (audit {out['audit']['passed']}/{out['audit']['total']})")
+            sys.exit(0 if out['audit']['ok'] else 1)
         from lakatos.longinus import audit, report
         res = audit()
         print(json.dumps(res, ensure_ascii=False, indent=2) if a.json else report(res))
@@ -197,6 +232,18 @@ def main(argv=None):
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
         out = call('GET', f'/api/tree/{a.name}/lifecycle{q}')
+    elif a.cmd == 'series':
+        import urllib.parse as up
+        q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
+        out = call('GET', f'/api/tree/{a.name}/series{q}')   # #5 프로그램-시계열 진단
+    elif a.cmd == 'tradition':
+        out = call('GET', f'/api/tree/{a.name}/tradition')   # ① 연구전통 조회
+    elif a.cmd == 'tradition-set':
+        out = call('POST', f'/api/tree/{a.name}/tradition', json.loads(open(a.spec).read()))
+    elif a.cmd == 'tradition-appraise':
+        out = call('POST', f'/api/tree/{a.name}/tradition/appraise',
+                   dict(commitment_id=a.commitment_id, operation=a.operation, reason=a.reason,
+                        receipt_refs=a.receipt, compatibility_claim=a.compat))
     elif a.cmd == 'heuristic':
         import urllib.parse as up
         q = ('?' + up.urlencode({'leaf': a.leaf})) if a.leaf else ''
@@ -230,6 +277,10 @@ def main(argv=None):
                    dict(arg_id=a.arg_id, attacks=a.attacks, by=a.by, kind=a.kind, body=a.body))
     elif a.cmd == 'standing':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/standing')
+    elif a.cmd == 'eureka':
+        out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/eureka')
+    elif a.cmd == 'graph':
+        out = call('GET', f'/api/graph/{a.name}')
     elif a.cmd == 'agm':
         out = call('POST', '/api/agm/revise', json.loads(open(a.spec).read()))
     elif a.cmd == 'cycle':
@@ -251,6 +302,13 @@ def main(argv=None):
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/event',
                    dict(event_id=a.event_id, realm=a.realm, actor=a.actor,
                         action=a.action, evidence_refs=a.evidence, payload=payload))
+    elif a.cmd == 'tree-create':
+        out = call('POST', f'/api/tree/{a.name}',
+                   dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
+                        doc=a.doc, coverage_statement=a.coverage_statement,
+                        coverage_backlog=a.coverage_backlog, ontology=a.ontology))
+    elif a.cmd == 'tree-delete':
+        out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:
@@ -296,6 +354,8 @@ def main(argv=None):
     elif a.cmd == 'rebuild-verify':
         import urllib.parse as up
         out = call('GET', f'/api/rebuild-verify/{up.quote(a.artifact)}')
+    elif a.cmd == 'reconcile-outbox':
+        out = call('POST', '/api/ops/reconcile-outbox')   # B1 복구(#4) — 멱등 재적용
     elif a.cmd == 'rebuild-run':
         import urllib.parse as up, subprocess, uuid
         from lakatos.io.rebuild import RebuildExecutor
@@ -310,11 +370,21 @@ def main(argv=None):
         recs = []
         def emit(rec):
             recs.append(rec); oo_sink.ship([rec])   # oo 적재(게이트 OFF면 no-op)
-        ex = RebuildExecutor(run_bash=lambda c: (subprocess.run(c, shell=True, capture_output=True, text=True).stdout, 0),
+        def run_bash(c):   # 실제 exit code 전달 — 0 박제 금지(크래시 단계가 step_failed 로 정직히 보고)
+            r = subprocess.run(c, shell=True, capture_output=True, text=True)
+            return (r.stdout, r.returncode)
+        ex = RebuildExecutor(run_bash=run_bash,
                              emit=emit, env_now=fingerprint_sha(environment_fingerprint())[:12], cid=cid)
-        res = ex.run(mani, recorded_metric=a.recorded, cmd_for=lambda st: a.cmd_template)
+        # #M10: kind='measurement' step 은 --measure-cmd 로 라우팅(producer 와 분리). 미지정이면 단일
+        #   cmd-template 로 떨어져 measurer=producer 붕괴 → 엔진이 measurer_separated=False 로 정직 노출.
+        def cmd_for(st):
+            if st.get('kind') == 'measurement' and a.measure_cmd:
+                return a.measure_cmd
+            return a.cmd_template
+        res = ex.run(mani, recorded_metric=a.recorded, cmd_for=cmd_for)
         out = dict(cid=cid, verdict=res.verdict, regenerated=res.regenerated_metric,
                    recorded=res.recorded_metric, within_tolerance=res.within_tolerance,
+                   measurer_separated=res.measurer_separated,   # 측정자≠생산자 영수증(붕괴 숨김 금지)
                    trace_events=[r['event'] for r in recs], oo_shipped=oo_sink.enabled())
     elif a.cmd == 'lineage-record':
         inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]

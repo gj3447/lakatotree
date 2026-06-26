@@ -32,6 +32,8 @@ REQUIRED_CONSTRAINTS = (
     ConstraintSpec("lkt_node_name_unique", "LakatosNode", "name"),
     ConstraintSpec("lkt_open_question_name_unique", "OpenQuestion", "name"),
     ConstraintSpec("lkt_research_event_id_unique", "ResearchEvent", "id"),
+    # ① real-KG: 연구전통 tradition_id uniqueness — set_tradition 의 MERGE 키 중복(같은 id 두 전통) 방지.
+    ConstraintSpec("lkt_research_tradition_id_unique", "ResearchTradition", "tradition_id"),
 )
 
 

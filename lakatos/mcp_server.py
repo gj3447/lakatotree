@@ -29,6 +29,13 @@ def _post(path, body):
     return r.json()
 
 
+def _delete(path):
+    r = httpx.delete(BASE + path, headers=_headers(), timeout=30)
+    if r.status_code >= 400:
+        return {'error': r.status_code, 'detail': r.text[:200]}
+    return r.json()
+
+
 @mcp.tool()
 def list_trees() -> str:
     """모든 라카토스 나무 목록."""
@@ -63,6 +70,41 @@ def lifecycle(name: str, leaf: str = '') -> str:
     import urllib.parse as up
     q = ('?' + up.urlencode({'leaf': leaf})) if leaf else ''
     return json.dumps(_get(f'/api/tree/{name}/lifecycle{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def series(name: str, leaf: str = '') -> str:
+    """프로그램-시계열 진단(#5) — 정본경로 verdict 시퀀스의 진보/퇴행 경향(diagnostic_only, verdict 권위 없음)."""
+    import urllib.parse as up
+    q = ('?' + up.urlencode({'leaf': leaf})) if leaf else ''
+    return json.dumps(_get(f'/api/tree/{name}/series{q}'), ensure_ascii=False)
+
+
+@mcp.tool()
+def tradition(name: str) -> str:
+    """Laudan 연구전통 조회(①) — ontology/methodology/exemplars + commitments (diagnostic_only)."""
+    return json.dumps(_get(f'/api/tree/{name}/tradition'), ensure_ascii=False)
+
+
+@mcp.tool()
+def tradition_set(name: str, spec_json: str) -> str:
+    """연구전통 선언/갱신(①) — spec_json={tradition_id,name,commitments[{commitment_id,kind,statement,
+    revisability}],ontology_commitments[],methodology_rules[],exemplars[],...}. diagnostic_only(hard core 불침범)."""
+    try:
+        spec = json.loads(spec_json or '{}')
+    except json.JSONDecodeError as e:
+        return json.dumps({'error': 'invalid_spec_json', 'detail': str(e)}, ensure_ascii=False)
+    return json.dumps(_post(f'/api/tree/{name}/tradition', spec), ensure_ascii=False)
+
+
+@mcp.tool()
+def tradition_appraise(name: str, commitment_id: str, operation: str = 'modify',
+                       reason: str = '', compatibility_claim: str = '') -> str:
+    """전통 commitment 수정 진단(①) — same_tradition_revision / tradition_drift / different_programme_candidate
+    (diagnostic_only; identity_boundary 도 *후보*일 뿐 hard-core 는 LakatosGate/AGM 경유 확정)."""
+    return json.dumps(_post(f'/api/tree/{name}/tradition/appraise',
+                            dict(commitment_id=commitment_id, operation=operation, reason=reason,
+                                 compatibility_claim=compatibility_claim)), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -101,6 +143,20 @@ def paradigm(incumbent: str, rivals_csv: str) -> str:
 def certificate(name: str, tag: str) -> str:
     """5게이트 AND 인증서(P2) — 사전등록/재현/standing/보정/grounding, 증거 ref 동봉."""
     return json.dumps(_get(f'/api/tree/{name}/node/{tag}/certificate'), ensure_ascii=False)
+
+
+@mcp.tool()
+def eureka(name: str, tag: str) -> str:
+    """노드별 measurement-grade eureka — felt(novel 등록) vs true(확증+substantial BF+순문제폐쇄) vs
+    hallucinated(felt∧¬true, the false aha). 판결 seam 산출, standing(promotion)은 별도 층."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/eureka'), ensure_ascii=False)
+
+
+@mcp.tool()
+def graph(name: str) -> str:
+    """시각 트리 GUI 데이터 척추(E Phase 1) — node(색/klass 본류·퇴행·생존/클릭 패널) + edge(BRANCHED_FROM)
+    + frontier + agenda(human-in-the-loop 안건). 프론트엔드(Phase 2)가 이걸 렌더."""
+    return json.dumps(_get(f'/api/graph/{name}'), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -152,9 +208,32 @@ def close_question(name: str, qname: str, closed_by: str = '') -> str:
 
 
 @mcp.tool()
+def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: str = '',
+                doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
+                ontology: str = '') -> str:
+    """새 라카토스 나무 생성/메타 upsert — MERGE (t:LakatosTree {name}). add_node 전에 먼저 호출(없는 나무에
+    add_node 는 404 '나무 없음'). 멱등이되 last-write-wins: 같은 name 재호출은 보낸 title/hard_core/
+    frontier_rule 로 덮어씀(생략 필드 = 빈값으로 초기화). hard_core/frontier_rule 비우면 policy_warnings
+    (hard_core_required 등) 경고만 — 차단 아님. coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티)."""
+    backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
+    return json.dumps(_post(f'/api/tree/{name}',
+        dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
+             doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog,
+             ontology=ontology)), ensure_ascii=False)
+
+
+@mcp.tool()
+def delete_tree(name: str, cascade: bool = False) -> str:
+    """나무 삭제(★파괴적·복구불가) — create_tree 의 짝. 미존재=404. 노드가 있으면 cascade=True 일 때만
+    전체 삭제(아니면 409, typo 로 진짜 연구트리 날리기 방지). 빈 나무는 cascade 없이 삭제 가능."""
+    return json.dumps(_delete(f'/api/tree/{name}?cascade={"true" if cascade else "false"}'),
+                      ensure_ascii=False)
+
+
+@mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
              comment: str = '', algorithm: str = '') -> str:
-    """나무에 노드 추가. parent/parents_csv 로 DAG 다중 부모를 기록."""
+    """나무에 노드 추가(나무가 먼저 있어야 — 없으면 404, create_tree 로 생성). parent/parents_csv 로 DAG 다중 부모."""
     parents = [p.strip() for p in parents_csv.split(',') if p.strip()]
     if parent:
         parents.insert(0, parent)

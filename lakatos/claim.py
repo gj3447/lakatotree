@@ -131,6 +131,15 @@ def _is_doubt(event: ResearchEvent) -> bool:
 
 
 def _resolved_doubt_ids(events: tuple[ResearchEvent, ...]) -> set[str]:
+    # M8(design-audit): actor 독립성 게이트 — resolve/close 이벤트의 actor 가 그 doubt 를
+    #   *제기한 actor* 와 같으면 해소로 인정하지 않는다(self_resolved → unresolved 유지).
+    #   약속 #2("어떤 서브시스템도 자기 출력을 채점 안 함")를 read-model standing 층에서 강제.
+    #   먼저 doubt_id → raiser actor 맵을 만들고, resolve 이벤트의 resolver 와 대조한다.
+    #   ── 알려진 한계(Sybil): 단발 actor 비교는 가짜 actor(자기 자신의 두 번째 신원)로
+    #   우회 가능하다. 향후 신원 서명키 바인딩(actor==DID/PeerId)으로 닫는다. ──
+    raiser_of: dict[str, str] = {
+        event.name: event.actor for event in events if _is_doubt(event)
+    }
     resolved = set()
     for event in events:
         if event.realm is not Realm.HUMAN:
@@ -139,8 +148,12 @@ def _resolved_doubt_ids(events: tuple[ResearchEvent, ...]) -> set[str]:
         payload = _payload(event)
         if action in {"resolve_doubt", "close_doubt", "rebuttal", "human_verdict"}:
             for key in ("resolves", "resolves_doubt", "closes", "closes_doubt"):
-                if payload.get(key):
-                    resolved.add(payload[key])
+                doubt_id = payload.get(key)
+                if not doubt_id:
+                    continue
+                if raiser_of.get(doubt_id) == event.actor:
+                    continue   # self-resolved — raiser==resolver, 해소 불인정
+                resolved.add(doubt_id)
     return resolved
 
 

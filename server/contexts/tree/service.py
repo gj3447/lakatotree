@@ -11,8 +11,8 @@ import json
 
 from fastapi import HTTPException
 
-from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
-from server.contexts.tree.mutations import TreeMutationService
+from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
+from server.contexts.tree.mutations import TreeMutationService, TreeSpec
 from server.contexts.tree.repository import TreeKgRepository
 from server.contexts.tree.validation import LakatosSemanticValidator
 from server.contexts.tree.writer import TreeKgWriter
@@ -68,6 +68,29 @@ class TreeService:
     def add_node(self, name: str, node: NodeIn, tree_data: dict | None = None) -> dict:
         td = tree_data if tree_data is not None else self.tree_data(name)
         return self._mutations().add_node(name, node, td)
+
+    def create_tree(self, name: str, spec: CreateTreeIn) -> dict:
+        """나무 생성/메타 upsert(MERGE LakatosTree). 멱등·last-write-wins. hard_core/frontier_rule
+        비우면 policy_warnings 경고만(차단 아님). 노드/질문은 별도 라우트."""
+        return self._mutations().upsert_tree(TreeSpec(
+            name=name,
+            title=spec.title,
+            hard_core=spec.hard_core,
+            frontier_rule=spec.frontier_rule,
+            doc=spec.doc,
+            coverage_statement=spec.coverage_statement,
+            coverage_backlog=tuple(spec.coverage_backlog),
+            ontology=spec.ontology,
+        ))
+
+    def delete_tree(self, name: str, cascade: bool = False) -> dict:
+        """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
+        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지."""
+        n = len(self.tree_data(name).get("nodes", []))   # 404 if missing
+        if n and not cascade:
+            raise HTTPException(409, f"나무에 노드 {n}개 — cascade=true 로만 전체 삭제(파괴적·복구불가)")
+        self._mutations().delete_tree(name)
+        return {"ok": True, "tree": name, "deleted_nodes": n, "cascade": cascade}
 
     def open_question(self, name: str, question: QuestionIn) -> dict:
         self.kg(

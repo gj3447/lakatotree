@@ -16,6 +16,8 @@ from server.contexts.tree.schemas import (
     ElementIn,
     ElementUseIn,
     FoundationRequirementIn,
+    TraditionAppraiseIn,
+    TraditionIn,
 )
 
 
@@ -42,6 +44,22 @@ def create_programme_router(service_factory: Callable[[], ProgrammeService]) -> 
     @router.get("/api/tree/{name}/lifecycle")
     def lifecycle_view(name: str, leaf: str | None = None):
         return service_factory().lifecycle_view(name, leaf=leaf)
+
+    @router.get("/api/tree/{name}/series")
+    def series_view(name: str, leaf: str | None = None):
+        return service_factory().series_view(name, leaf=leaf)
+
+    @router.post("/api/tree/{name}/tradition")
+    def set_tradition(name: str, t: TraditionIn):
+        return service_factory().set_tradition(name, t)
+
+    @router.get("/api/tree/{name}/tradition")
+    def get_tradition(name: str):
+        return service_factory().get_tradition(name)
+
+    @router.post("/api/tree/{name}/tradition/appraise")
+    def appraise_tradition(name: str, a: TraditionAppraiseIn):
+        return service_factory().appraise_tradition(name, a)
 
     @router.get("/api/tree/{name}/heuristic")
     def heuristic_view(name: str, leaf: str | None = None):

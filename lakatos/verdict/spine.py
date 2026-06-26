@@ -6,9 +6,13 @@
   reconcile_verdict  = judge(메트릭) + LakatosGate(질적) → 둘 다 진보여야 진보
   promotion_decision = promotion_gate + FoundationGate(준비도) + 재현성 + CredibilityPromotionGate
 # KG: span_lakatotree_spine / q-lkt-engine-unify
+라이선스(THEORY §8): hanson1958
 """
 from lakatos.verdict.compose import GateOutcome, compose_gates
 from lakatos.verdict.promote import promotion_gate
+from lakatos.verdicts import is_scripted_verdict, force_of
+
+_UNSET = object()   # verdict_source 미전달(레거시 호출) — None(실 NULL-source 노드)과 구분
 from lakatos.engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
 from lakatos.verdict.pnr import PnRAppraisal
 from lakatos.grounding import GROUNDED   # P6-3: credibility tier 문턱 단일 정본(engine 과 공유)
@@ -18,7 +22,7 @@ _CRED_INF = GROUNDED['credibility_inferred_trust']['value']    # 0.35
 
 
 def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False,
-                           has_human_verdict: bool = False) -> dict:
+                           has_human_verdict: bool = False, trust_backed: bool = False) -> dict:
     """노드의 source_trust(상계 인터넷 증거 신뢰) → CredibilityPromotionGate 입력.
 
     CANONICAL 승격 = EXTRACTED 등급 승격으로 본다. 현재 등급은 trust 로 도출:
@@ -27,16 +31,23 @@ def credibility_from_trust(source_trust: float, *, novel_confirmed: bool = False
     즉 게이트는 source_trust<0.70 인 진짜 저신뢰 인터넷 영향 노드만 직접출처/인간판정 없이 차단.
     엔진 SourceCredibilityScore.tier 의 trust 임계와 동형 (provenance 미상이라 trust-only 보수 매핑).
     """
-    if source_trust >= _CRED_EXT:
+    # prom-honesty/credibility (정본 prom 2026-06-21): trust 는 *eigentrust 로 뒷받침될 때만*(trust_backed=True)
+    #   credibility 영수증으로 인정한다. raw client source_trust(TestResultIn 기본 1.0=self-report)는 inconclusive
+    #   → 직접출처 없음·현재등급 AMBIGUOUS 로 강등해 EXTRACTED(CANONICAL)는 has_human_verdict 를 요구한다.
+    #   게이트 *의도*(고신뢰 grounded 통과)는 보존하되 '고신뢰'를 self-report 가 아니라 네트워크 eigentrust 로
+    #   판정한다 — set_verdict 가 노드의 인터넷 관측 그래프 eigentrust 로 backed/value 를 결정해 넘긴다.
+    #   (3치 논리: 뒷받침 없는 trust = inconclusive ≠ pass.) internal 노드는 set_verdict 가 credibility=None 으로
+    #   아예 생략(constitution+reproducible 가 영수증) — fake source-trust 로 통과시키지 않는다.
+    if trust_backed and source_trust >= _CRED_EXT:
         current = CredibilityTier.EXTRACTED
-    elif source_trust >= _CRED_INF:
+    elif trust_backed and source_trust >= _CRED_INF:
         current = CredibilityTier.INFERRED
     else:
-        current = CredibilityTier.AMBIGUOUS
+        current = CredibilityTier.AMBIGUOUS   # unbacked(self-report) 또는 저신뢰 → inconclusive
     return {
         'current': current,
         'target': CredibilityTier.EXTRACTED,   # CANONICAL = 최강 주장
-        'has_direct_source': source_trust >= _CRED_EXT,
+        'has_direct_source': bool(trust_backed and source_trust >= _CRED_EXT),   # eigentrust-backed 만 직접출처
         'has_independent_corroboration': bool(novel_confirmed),
         'has_human_verdict': bool(has_human_verdict),
     }
@@ -133,7 +144,8 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
 
 
 def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
-                         foundation=None, credibility: dict | None = None) -> dict:
+                         foundation=None, credibility: dict | None = None, verdict_source=_UNSET,
+                         qualitative_self_report: bool = False) -> dict:
     """완전 합성 승격 게이트 — 헌법(promotion_gate) + FoundationGate(준비도) +
     CredibilityPromotionGate(인터넷 등급). 입력 있는 게이트만 실행, 단일 결정 + per-gate 리포트.
 
@@ -152,5 +164,28 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
         cr = CredibilityPromotionGate.evaluate(**credibility)
         gates['credibility'] = {'passed': cr.passed, 'reasons': list(cr.reasons)}
         outcomes.append(GateOutcome('credibility', () if cr.passed else tuple(cr.reasons)))
+    # prom-honesty/provenance (정본 prom 2026-06-21): CANONICAL FLOOR — *위조불가 영수증* ≥1 요구.
+    #   R3 발견: skip-on-omission 으로 게이트가 constitution-only("기각아님+무critique")로 붕괴하면 내부 proof
+    #   노드가 영수증 0으로 CANONICAL 이 된다. 하드코어("영수증은 현실이 끊어준다")·3치(무영수증=inconclusive≠
+    #   pass)·Lakatos(CANONICAL=최강주장→최강영수증). 위조불가 영수증 = judge-scored 판결(scripted; PROM-A 가
+    #   노드 self-report 봉쇄) | reproducible=True(실 lineage replay) | human verdict. credibility/foundation 은
+    #   아직 self-report 우회(source_type/evidence)가 남아 floor 영수증으로 *안* 센다(보수적; 그 가닥은 후속 prom).
+    has_human = bool(credibility and credibility.get('has_human_verdict'))
+    # judge/engine 영수증 가닥을 force_of(SSOT)로 — set_verdict 가 verdict_source 를 넘기면 그걸로 판정
+    #   (레거시 NULL-source progressive 는 force_of==INCONCLUSIVE → 영수증 아님). 미전달(레거시 호출)은
+    #   verdict 어휘로 폴백(PROM-A 가 새 scripted verdict 의 노드 self-report 를 봉쇄하므로 안전).
+    judge_receipt = (is_scripted_verdict(scripted_verdict) if verdict_source is _UNSET
+                     else force_of(scripted_verdict, verdict_source) == 'COUNTS')
+    # #H1 (설계감사 2026-06-25): 질적 self-report(영수증 없는 lakatos_*/ce_* bool)가 progressive 를
+    #   떠받친 노드는 메트릭 scripted COUNTS *단독* 으론 floor 못 연다 — 메트릭 개선은 실 영수증이나
+    #   '하드코어 보존·초과경험내용'은 자기보고라, 독립 영수증(reproducible 실 replay / human attestation)을
+    #   추가로 요구한다. (set_verdict 가 노드의 qualitative_self_report 표식을 넘긴다.)
+    if qualitative_self_report:
+        judge_receipt = False
+    if judge_receipt or reproducible is True or has_human:
+        gates['floor'] = {'passed': True, 'reasons': []}
+    else:
+        gates['floor'] = {'passed': False, 'reasons': ['no_receipt_for_canonical']}
+        outcomes.append(GateOutcome('floor', ('no_receipt_for_canonical',)))
     out = compose_gates(*outcomes)
     return {'ok': out.passed, 'reasons': out.reasons, 'gates': gates}

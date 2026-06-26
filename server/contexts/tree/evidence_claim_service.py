@@ -54,7 +54,7 @@ from lakatos.io.lineage import by_output
 from lakatos.io.prov import replay_command
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate
 from server.contexts.tree.schemas import CritiqueIn, ObservationIn, ResearchEventIn, WorldActionIn
-from server.ports import HistoryAppend, KgQuery
+from server.ports import HistoryAppend, KgQuery, KgTx
 
 
 FoundationProvider = Callable[[str], FoundationMap | None]
@@ -80,6 +80,7 @@ class EvidenceClaimService:
         foundation: FoundationProvider,
         load_lineage: LineageProvider,
         reproducible_for_node: ReproducibleProvider,
+        kg_tx: KgTx | None = None,
         standing: StandingProvider | None = None,
         calibration: CalibrationProvider | None = None,
         store_research_event: StoreResearchEvent | None = None,
@@ -87,6 +88,7 @@ class EvidenceClaimService:
         fingerprint_sha: FingerprintProvider = default_fingerprint_sha,
     ):
         self.kg = kg
+        self.kg_tx = kg_tx
         self.hist = hist
         self.foundation = foundation
         self.load_lineage = load_lineage
@@ -136,13 +138,29 @@ class EvidenceClaimService:
                                           valid_until_rebutted=bool(rows[0]['vur']))
             out['standing'] = {'stands': stands, **decision}
             if decision['demoted']:
-                # 현재최선 철회: CANONICAL→former_canonical. 인간 admin(verdict_source='admin')과 구분.
-                self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                # #H7 (설계감사 2026-06-26): 강등도 H5 와 동형 낙관적 CAS — read→write 사이 동시 재승격/
+                #   새 critique 로 스냅샷(verdict + 논증집합 지문)이 변하면 0행 → stale 강등 *미적용*(skip).
+                #   강등은 사용자 요청이 아니라 critique 의 side-effect 라 409 가 아니라 skip(다음 standing read
+                #   가 최신상태로 재평가). H5(승격 방향)의 강등 방향 미러 — verdict-mutating write 의 원자성 통일.
+                snap_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
+                                 for a in (rows[0]['args'] or []) if a.get('id'))
+                demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
+                      WITH t, e
+                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                      WITH t, e, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
+                      WHERE size(arg_fp) = $exp_argn AND all(x IN arg_fp WHERE x IN $exp_arg_fp)
                       SET e.verdict='former_canonical', e.verdict_source='engine',
-                          e.current_best_pointer=false, e.standing_retracted_at=$ts""",
-                        tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat())
-                self.hist(name, 'standing_retraction', tag,
-                          {'from': 'CANONICAL', 'to': 'former_canonical', 'reason': decision['reason']})
+                          e.current_best_pointer=false, e.standing_retracted_at=$ts
+                      RETURN e.tag AS tag""",
+                        tree=name, tag=tag, exp_verdict=rows[0]['verdict'],
+                        exp_argn=len(snap_fp), exp_arg_fp=snap_fp,
+                        ts=datetime.now(timezone.utc).isoformat())
+                if not demoted_rows:   # 원자 CAS 0행 = 스냅샷 변경(동시 재승격/critique) → stale 강등 미적용
+                    out['standing']['demote_skipped'] = 'concurrent_change'
+                else:
+                    self.hist(name, 'standing_retraction', tag,
+                              {'from': 'CANONICAL', 'to': 'former_canonical', 'reason': decision['reason']})
         return out
 
     def add_research_event(self, name: str, tag: str, ev: ResearchEventIn) -> dict:
@@ -322,6 +340,17 @@ class EvidenceClaimService:
                 msg = f'Longinus binding required for rival evidence: {msg}'
             raise HTTPException(422, msg) from exc
 
+    def _run_tx(self, ops: list) -> None:
+        """B1-step1: 여러 KG write 를 한 단위로. kg_tx 주입됐으면 단일 트랜잭션(원자적),
+        없으면 self.kg 순차 실행으로 하위호환(기존 직접 생성 경로 보존)."""
+        if not ops:
+            return
+        if self.kg_tx is not None:
+            self.kg_tx(ops)
+        else:
+            for cypher, params in ops:
+                self.kg(cypher, **params)
+
     def bind_embedded_observation(
         self,
         name: str,
@@ -329,21 +358,24 @@ class EvidenceClaimService:
         event_id: str,
         embedded: EmbeddedInternetEvidence,
     ) -> None:
+        """B1-step1: 한 관측의 bind write(LOCATED_IN / longinus / rival)를 단일 kg_tx 로 — 부분 bind
+        (위치는 됐는데 longinus/rival 미바인딩)가 갈라지지 않게 한 단위로 커밋. (cross-service run_cycle
+        의 의도된 비원자성 결정과는 별개의 좁은 within-method 개선; store↔bind 간은 MERGE 멱등+재실행이 덮음.)"""
         projection = embedded.kg_projection()
         emb = projection['embedding']
         ts = datetime.now(timezone.utc).isoformat()
-        self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
               MATCH (ev:ResearchEvent {id:$event_id})
               SET ev.lakatos_location=$lakatos_location,
                   ev.theoretical_basis=$theoretical_basis,
                   ev.foundation_refs=$foundation_refs
               MERGE (ev)-[:LOCATED_IN]->(e)""",
-                tree=name, tag=tag, event_id=event_id,
-                lakatos_location=emb['lakatos_location'],
-                theoretical_basis=emb['theoretical_basis'],
-                foundation_refs=emb['foundation_refs'])
+                dict(tree=name, tag=tag, event_id=event_id,
+                     lakatos_location=emb['lakatos_location'],
+                     theoretical_basis=emb['theoretical_basis'],
+                     foundation_refs=emb['foundation_refs']))]
         if projection['longinus_refs']:
-            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   MATCH (ev:ResearchEvent {id:$event_id})
                   UNWIND $refs AS ref
                   MERGE (rs:ReferenceSite:Longinus {sourceId: ref.sourceId})
@@ -352,10 +384,10 @@ class EvidenceClaimService:
                       rs.layer=ref.layer, rs.note=ref.note, rs.updated_at=$ts
                   MERGE (ev)-[:BOUND_BY]->(rs)
                   MERGE (e)-[:BOUND_BY]->(rs)""",
-                    tree=name, tag=tag, event_id=event_id,
-                    refs=projection['longinus_refs'], ts=ts)
+                        dict(tree=name, tag=tag, event_id=event_id,
+                             refs=projection['longinus_refs'], ts=ts)))
         if projection['rival_links']:
-            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   MATCH (ev:ResearchEvent {id:$event_id})
                   UNWIND $links AS link
                   MERGE (r:LakatosRivalProgramme {name: link.programme})
@@ -370,8 +402,9 @@ class EvidenceClaimService:
                   SET rr.relation=link.relation, rr.rival_node=link.rival_node,
                       rr.comparison_axes=link.comparison_axes, rr.evidence_refs=link.evidence_refs,
                       rr.observation_event_id=$event_id, rr.updated_at=$ts""",
-                    tree=name, tag=tag, event_id=event_id,
-                    links=projection['rival_links'], ts=ts)
+                        dict(tree=name, tag=tag, event_id=event_id,
+                             links=projection['rival_links'], ts=ts)))
+        self._run_tx(ops)
 
     def add_world_action(self, name: str, tag: str, a: WorldActionIn) -> dict:
         act = dict(command=a.command, cwd=a.cwd, exit_code=a.exit_code,
@@ -405,6 +438,9 @@ class EvidenceClaimService:
         stands = verdict_arg in ext
         return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,
                     grounded_extension=sorted(ext),
+                    # A3: 어느 논증이 *패퇴*했는지(공격받고 grounded extension 밖) 명시 — 사람이 왜
+                    # 판결이 서는지/안 서는지 본다. Dung 경로는 이미 e2e 배선됨, 이건 가시성 echo.
+                    defeated=sorted(set(arguments) - set(ext)),
                     note='stands=False → 막지 못한 의문 존재, 판결 재검토 필요 (코드빌딩=순수agent)')
 
     def research_events(self, name: str, tag: str) -> dict:
