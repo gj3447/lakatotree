@@ -25,3 +25,4 @@ rdflib==7.6.0           # same registry load pulls provrdf → needs rdflib (was
 # --- test / architecture gates ---
 pytest==9.1.0
 import-linter==2.11    # `lint-imports` — enforced layering (programme > verdict > quant > io); README "Build & verify"
+PyYAML==6.0.3          # _vendor/ooptdd_loop.spec(requirements.yaml 로더) — ooptdd-receipts 영수증 게이트용
