@@ -1428,7 +1428,7 @@
    "symbol": "eureka_rate",
    "kind": "def",
    "line_hint": 88,
-   "sha256": "ace4251421f846f3",
+   "sha256": "0eac0981e70ec8de",
    "layer": "eureka",
    "frege_sinn": "true/felt = 1−환각률 (=fertility보다 엄격)"
   },
