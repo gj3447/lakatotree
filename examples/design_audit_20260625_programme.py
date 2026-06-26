@@ -269,6 +269,21 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_set_verdict_canonical_409_on_concurrent_change",
     ),
     AuditNode(
+        tag="H7_add_critique_demote_toctou", severity="HIGH", parent="H5_set_verdict_canonical_toctou",
+        evidence="evidence_claim_service.py:127(read)→:142(무가드 SET former_canonical) / H5 는 승격만 CAS",
+        story="add_critique 자동강등이 비원자 TOCTOU — H5 의 거울쌍. 비판 등재 후 스냅샷 읽어 reconcile_standing "
+              "으로 강등 결정한 뒤 별개 세션 write 가 스냅샷 재검증 없이 former_canonical SET. H5 는 set_verdict "
+              "*승격* 만 잠갔고 이 *강등* 방향은 미러 안 됨. 동시 재승격/새 critique 가 read→write 에 끼면 stale 강등. "
+              "[PROM] H5 의 스냅샷 CAS 를 강등 경로로 미러(verdict-mutating write 원자성 통일 — verdict_cas 초크포인트 예고).",
+        prediction=Prediction(metric_name="add_critique_demote_nonatomic_toctou", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="강등 write 가 스냅샷(verdict+논증지문) 원자 CAS — 변하면 0행, stale 강등 skip",
+                              closes_question="q-h7-demote-atomic"),
+        novel_target=NovelTarget(metric_name="add_critique_demote_atomic_cas",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_add_critique_demote_skipped_on_concurrent_change",
+    ),
+    AuditNode(
         tag="H6_novel_sha_client_independence", severity="HIGH", parent="H3_judge_script_sha_client",
         evidence="judgement_service.py:364(measured_sha=r.script_sha, novel_sha=r.novel_sha 둘 다 client) / judge.py:134",
         story="novel 독립성(measured_sha≠novel_sha)을 client 값으로 판정 — novel 측은 서버가 한 번도 재계산 안 함. "
