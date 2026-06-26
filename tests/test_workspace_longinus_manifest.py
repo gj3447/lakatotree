@@ -24,8 +24,15 @@ def _repo_root(data: dict, repo: str) -> Path:
 
 
 def test_workspace_manifest_schema_and_paths() -> None:
+    import pytest
     data = _load()
     assert data["schema"] == "lakatotree.workspace-longinus.v1"
+
+    # clean-clone 가드: roots 는 형제 PI repo 절대경로(/data/kjra/PROJECT/PI/<repo>)다 — CI clean clone 엔
+    #   lakatotree 만 체크아웃돼 형제 repo 가 없다. 부재하면 *파일존재 단언*만 skip(스키마는 위에서 검증,
+    #   manifest 내용/불변식은 같은 파일 나머지 4 테스트가 커버; dev box 는 전수 실행). 외부경로 의존 표준 패턴.
+    if not all(Path(p).exists() for p in data["roots"].values()):
+        pytest.skip("workspace 형제 repo 부재(clean-clone CI) — 경로존재 단언 skip")
 
     for name, path in data["roots"].items():
         assert Path(path).exists(), (name, path)
