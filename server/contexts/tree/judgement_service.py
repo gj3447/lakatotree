@@ -69,7 +69,8 @@ class JudgementService:
         """노드의 인터넷 관측 그래프 eigentrust → (src, eigen, backed). src=None: internal 노드
         (인터넷 주장 없음 / 식별 source 없음). seed 자격은 *서버검증 URL 도메인*(#1 R3 forge 봉쇄) —
         client 의 source_type 라벨이 아니다. credibility 게이트(#1)와 eureka source_trust(#4)가
-        *동일* 산출을 공유한다(no whack-a-mole). (read_models._internet_observations 와 동형.)"""
+        *동일* 산출을 공유한다(no whack-a-mole). (repository.internet_observations 와 동형 — D9 백로그:
+        단일 헬퍼로 통합 후보.)"""
         import json
         rows = self.kg(
             "MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:HAS_RESEARCH_EVENT]->"
@@ -433,7 +434,11 @@ class JudgementService:
         #   메트릭 개선은 실 영수증이나 '하드코어 보존·초과경험내용'(lakatos_*/ce_*)은 자기보고다. 독립
         #   영수증(독립 novel 측정 sha + ce_novel_corroborated) 없이 질적 bool 이 progressive(_conditional)를
         #   유지하면 표식 → CANONICAL floor 가 메트릭 단독으론 안 연다(set_verdict 가 이 표식을 floor 에 넘김).
-        qual_backed = bool(r.novel_sha and r.ce_novel_corroborated)   # 독립 novel 측정 영수증
+        # #H10 (설계감사 2026-06-26): 질적-backing 의 '독립 novel 영수증'을 raw client r.novel_sha 가 아니라
+        #   H6 의 *서버앵커* novel_server_sha 로 판정 — client 문자열 한 줄로 질적 claim 을 backed 처리해
+        #   self-report 표식을 회피하던 H1↔H6 잔여 봉합. (ce_novel_corroborated 자체=이 측정이 초과내용을
+        #   corroborate 하는가=construct-validity 라 client 판단으로 남음 — 천장.)
+        qual_backed = bool(novel_server_sha and r.ce_novel_corroborated)   # 서버앵커 독립 novel 측정 영수증
         qual_self_report = bool(have_qual and verdict in ('progressive', 'progressive_conditional')
                                 and not qual_backed)
         # A1: measurement-grade eureka at the judgement seam — felt(novel registered) vs

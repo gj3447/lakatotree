@@ -82,11 +82,14 @@ def test_submit_marks_unbacked_qualitative_self_report():
     assert _qsr_param(cap) is True
 
 
-def test_submit_independent_corroboration_is_not_self_report():
-    """질적 excess 가 PnR ce_novel_corroborated(+독립 novel_sha) 외부측정으로 backed → self-report 아님(False)."""
+def test_submit_independent_corroboration_is_not_self_report(tmp_path):
+    """질적 excess 가 *서버앵커* novel 영수증(novel_script 재계산)+ce_novel_corroborated 으로 backed →
+    self-report 아님(False). #H10: backing 의 근거는 client novel_sha 문자열이 아니라 서버 재계산 영수증."""
+    measure = tmp_path / "novel_measure.py"; measure.write_bytes(b"print('independent excess: 1.0')\n")
     cap: list = []
     _svc(cap).submit_test_result('T', 'n', Result(
         metric_value=1.0, script='inline', **_NOVEL,
+        novel_script=str(measure),                          # #H10: 서버앵커 novel 영수증(위조 문자열 아님)
         lakatos_anomaly=True, lakatos_consequence=True,
         lakatos_excess=True, lakatos_hardcore=True,
         ce_novel_corroborated=True))                        # 독립 corroboration 영수증
