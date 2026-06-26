@@ -6,13 +6,22 @@ made executable). Red is an asymmetric downstream filter — it can veto, never 
 """
 from __future__ import annotations
 
+from functools import partial
+
 from lakatos.eureka import (
     BF_SUBSTANTIAL,
     _node_to_eureka_input,
-    classify,
     eureka_over_tree,
-    eureka_rate,
 )
+from lakatos.eureka import classify as _classify
+from lakatos.eureka import eureka_rate as _eureka_rate
+from lakatos.verdict.promote import promotion_gate   # DI: eureka 측정 코어에 promotion 게이트 주입(D3/eureka)
+
+# eureka 는 verdict.promote 를 import 하지 않는 *측정 코어*(D3/eureka). promotion 게이트가 필요한
+# (require_promotion=True) 경로는 게이트를 주입한다 — 이 테스트는 게이트 바인딩 변형을 쓴다.
+# require_promotion=False 호출엔 바인딩 게이트가 무시되므로 전 호출부에 안전하다.
+classify = partial(_classify, promotion_gate=promotion_gate)
+eureka_rate = partial(_eureka_rate, promotion_gate=promotion_gate)
 
 # a real lakatotree tree node (server repository/read_models shape) that is a
 # measurement-grade true eureka: a confirmed novel prediction, strong effect, net closure.
@@ -113,7 +122,17 @@ def test_require_promotion_false_drops_the_standing_gate():
     # the same input that is true without promotion is hallucinated WITH it (no stands).
     inp = _node_to_eureka_input(_TREE_NODE)
     assert classify(inp, require_promotion=False).true is True
-    assert classify(inp, require_promotion=True).true is False  # promotion vetoes (no stands)
+    # promotion vetoes (no stands) — classify 는 게이트가 주입된 변형(위 partial), eureka 코어는 verdict 미import
+    assert classify(inp, require_promotion=True).true is False
+
+
+def test_require_promotion_without_injected_gate_raises():
+    """DI 계약(D3/eureka): eureka 는 verdict.promote 를 import 하지 않는 측정 코어 → promotion 게이트가
+    필요하면(require_promotion=True) 호출자가 주입해야 한다. 미주입+felt 노드는 *명시적* raise(조용한
+    게이트 누락 = 영수증 없는 통과 금지). 프로덕션 트리 경로는 require_promotion=False 라 무관."""
+    import pytest
+    with pytest.raises(ValueError, match="promotion_gate"):
+        _classify(_TRUE)   # require_promotion=True(default), 게이트 미주입 → 게이트 분기에서 raise
 
 
 def test_unconfirmed_tree_node_is_hallucinated():

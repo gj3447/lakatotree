@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,11 +25,26 @@ from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
 from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
+from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
 
 
 FoundationProvider = Callable[[str], FoundationMap | None]
 ReproducibleProvider = Callable[[str, str], bool | None]
+
+
+# FF4 (보안, deep-dive 2026-06-26): judge-script sha 재유도가 *임의* 절대파일을 읽지 않도록 허용 루트 안으로
+#   containment(relative traversal 거부와 대칭). 허용 = repo ROOT + OS temp(테스트/런타임 작업영역) + 선택 env.
+def _allowed_script_roots() -> list[Path]:
+    roots = [Path(longinus.ROOT).resolve(), Path(tempfile.gettempdir()).resolve()]
+    for part in os.environ.get('LAKATOS_SCRIPT_ROOTS', '').split(os.pathsep):
+        part = part.strip()
+        if part:
+            try:
+                roots.append(Path(part).resolve())
+            except OSError:
+                pass
+    return roots
 
 # #H2 (human-attestation): floor 의 human 영수증으로 인정하는 KG Argument 의 kind 토큰.
 #   evidence_claim_service.event_from_argument 와 *동일* 집합(kind∈{evaluation,verdict}→human_verdict action) —
@@ -49,6 +66,8 @@ class JudgementService:
     """Owns node verdict, prediction, and scripted test-result mutations."""
 
     # KG: seed-lkt-engine-route-judgement-extract-20260616
+
+    _SCRIPT_MAX_BYTES = 8 << 20   # FF4: judge-script sha 재유도 size cap (무제한 read RAM-DoS 차단; judge 스크립트는 작다)
 
     def __init__(
         self,
@@ -157,6 +176,10 @@ class JudgementService:
                 resolved = p.resolve()
             except OSError:
                 return None, {'reason': 'unresolvable', 'script': s}
+            # FF4 (보안, deep-dive 2026-06-26): 절대경로도 허용 루트 안에 있어야 — relative traversal 거부와 대칭.
+            #   임의 파일(/etc/passwd 등) sha 오라클 + 무인증 RAM-DoS 차단. 허용 = repo ROOT + OS temp(+env).
+            if not any(r == resolved or r in resolved.parents for r in _allowed_script_roots()):
+                return None, {'reason': 'out_of_root', 'script': s}
             if not (resolved.is_file()):   # 미존재/비정규 = 재계산 불가
                 return None, {'reason': 'not_a_file', 'script': s}
         else:
@@ -165,11 +188,14 @@ class JudgementService:
                 return None, {'reason': 'path_traversal', 'script': s}
             if not resolved.is_file():
                 return None, {'reason': 'not_a_file', 'script': s}
+        # FF4 (보안): unbounded read_bytes → streaming file_sha + size cap (대용량 파일 RAM-exhaustion 차단).
         try:
-            content = resolved.read_bytes()
+            if resolved.stat().st_size > self._SCRIPT_MAX_BYTES:
+                return None, {'reason': 'too_large', 'script': s, 'size': resolved.stat().st_size}
+            sha = file_sha(str(resolved))
         except OSError:
             return None, {'reason': 'read_error', 'script': s}
-        return hashlib.sha256(content).hexdigest(), {'reason': 'file_content_sha', 'path': str(resolved)}
+        return sha, {'reason': 'file_content_sha', 'path': str(resolved)}
 
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
         # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
