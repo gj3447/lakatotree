@@ -2254,7 +2254,9 @@
   "span_lakatotree_selfdev_create_tree_dogfood",
   "span_lakatotree_ontology_gate",
   "span_lakatotree_design_audit_20260625",
-  "span_lakatotree_longinus_ast_resolver"
+  "span_lakatotree_frontier_fix_20260626",
+  "span_lakatotree_longinus_ast_resolver",
+  "span_lakatotree_runtime_lean_20260626"
  ],
  "kg_anchors_note": "코드 # KG: anchor 토큰의 선언 레지스트리(reverse-orphan 가드). 새 # KG: 노드 추가 시 여기 등록 필수 → KG 노드 생성 강제. live-KG 존재확인은 longinus.audit(online)."
 }
