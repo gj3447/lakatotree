@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from lakatos import longinus
-from lakatos.verdict.argue import grounded_extension
+from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
 from lakatos.ontology import DomainOntology
@@ -194,16 +194,11 @@ class JudgementService:
             #   write 가 이 지문을 원자 CAS 로 재검증해, read→write 사이 동시변경 시 0행 → 409(stale 승격 차단).
             snap_arg_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
                                  for a in (cand.get('args') or []) if a.get('id'))
-            varg = f'verdict:{tag}'
-            arguments = {varg}
-            attacks = []
-            for a in (cand.get('args') or []):
-                if not a.get('id'):
-                    continue
-                short = a['id'].split('/')[-1]
-                arguments.add(short)
-                attacks.append((short, varg if a.get('attacks') == tag else a.get('attacks')))
-            stands = varg in grounded_extension(arguments, attacks)
+            # #H8 (설계감사 2026-06-26): floor 의 stands 도 actor-aware assemble_af 정본으로 — 인라인 AF
+            #   조립(by 무시) 폐기. cand.args 가 이미 by 를 싣고 있어, 작성자가 자기 doubt 를 자기 rebuttal 로
+            #   막아 CANONICAL floor 를 통과하던 self-vouch 가 여기서도 봉쇄된다(add_critique/standing 과 통일).
+            arguments, attacks = assemble_af(tag, cand.get('args') or [])
+            stands = f'verdict:{tag}' in grounded_extension(arguments, attacks)
             # #H2 (human-attestation): floor 의 has_human 은 client 1비트(v.human_verdict)가 *단독* 으로 못 연다.
             #   v.human_verdict 는 'KG 에서 그 human Argument 를 찾아라'는 *요청* 으로만 쓰고, 실제 영수증은
             #   *영속된* human attestation Argument 존재(kind∈{evaluation,verdict} AND by 사람 actor)로 판정.
