@@ -1,0 +1,30 @@
+# LakatoTree 설계감사 H4(hard_core demote 가드) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=h4_receipt.verify 가 실제
+# lakatos.programme.agm.demote_canonical 를 구동(재구현 금지)하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-h4-hardcore
+target:
+  mode: in_process
+  callable: h4_receipt:verify              # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: H4-1
+    description: 동의 없는 hard_core demote 는 HardCoreProtected 로 차단된다(음성 오라클 — 결함이면 틀림)
+    gate:
+      - {event: hard_core_demote_refused, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:H4:hard_core_demote_refused
+      source: h4_receipt.py
+      symbol: verify
+      must_emit: hard_core_demote_refused
+
+  - id: H4-2
+    description: 명시 동의(allow_hard_core=True)에서만 정본 강등이 성공한다(옛 정본 잔존·credence 강등)
+    gate:
+      - {event: consented_demote_ok, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:H4:consented_demote_ok
+      source: h4_receipt.py
+      symbol: verify
+      must_emit: consented_demote_ok

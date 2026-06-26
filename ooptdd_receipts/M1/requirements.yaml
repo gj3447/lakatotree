@@ -1,0 +1,24 @@
+# LakatoTree 설계감사 M1(measurer≠producer) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=m1_receipt.verify 가 실제
+# lakatos.io.rebuild.RebuildExecutor.run(producer self-report vs 독립 measurer code path 분리)을
+# 구동하고 구조화 이벤트를 ship. positive(참값 0.279 측정) + 음성 오라클(거짓 999 동어반복 거부).
+name: lakatotree-design-audit-m1-measurer-separated
+target:
+  mode: in_process
+  callable: m1_receipt:verify            # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M1-1
+    description: >-
+      measurement 가 producer self-report(999)에 오염되지 않는다 — 독립 measurer(kind='measurement')가
+      완성된 산출물에서 측정한 참값(0.279)이 measurement 가 되고, 거짓 999 를 기대값으로 넣어도
+      동어반복으로 통과하지 않는다(음성 오라클). RebuildExecutor.run 을 실제 구동.
+    gate:
+      - {event: measurer_separated_from_producer, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M1:measurer_separated_from_producer
+      source: m1_receipt.py
+      symbol: verify
+      must_emit: measurer_separated_from_producer

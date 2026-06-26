@@ -1,0 +1,31 @@
+# LakatoTree 설계감사 M9(외부 readback positive 왕복 + actor 분리) — ooptdd 정식 영수증
+# (R02 trace arrival + R10 Longinus). hermetic: in_process + memory backend(zero-infra).
+# emit-adapter=m9_receipt.verify 가 실제 lakatos.io.oo_verify.assert_positive_roundtrip / _roundtrip
+# 를 구동(재구현 금지)하고 구조화 이벤트를 ship. 음성 오라클(drop/자기응답)이 RED 이빨을 증명.
+name: lakatotree-design-audit-m9-readback-roundtrip
+target:
+  mode: in_process
+  callable: m9_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M9-1
+    description: oo write→*독립* read→compare 의 positive 왕복이 (env 없이) GREEN — producer 가 쓴 store 를 분리된 reader 가 읽어 대조
+    gate:
+      - {event: independent_roundtrip_ok, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M9:independent_roundtrip_ok
+      source: m9_receipt.py
+      symbol: verify
+      must_emit: independent_roundtrip_ok
+
+  - id: M9-2
+    description: 음성 오라클 — test_session drop(silent ingest loss)·writer==reader(자기응답)가 각각 RED(AssertionError/ValueError)로 잡힘
+    gate:
+      - {event: drop_detected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M9:drop_detected
+      source: m9_receipt.py
+      symbol: verify
+      must_emit: drop_detected
