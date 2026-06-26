@@ -26,6 +26,7 @@ class TreeSpec:
     coverage_backlog: tuple[str, ...] = ()
     coverage_statement: str = ""
     ontology: str = ""   # 도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)
+    require_novel_anchor: bool = False   # FF1: cross-metric novel 서버앵커 강제(opt-in, 기본 off)
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
 
@@ -87,6 +88,7 @@ class TreeMutationService:
                 coverage_backlog=spec.coverage_backlog,
                 coverage_statement=spec.coverage_statement,
                 ontology=spec.ontology,
+                require_novel_anchor=spec.require_novel_anchor,
             )
         )
         summary = summary.plus(self.writer.upsert_nodes(spec.name, spec.nodes))

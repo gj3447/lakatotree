@@ -43,6 +43,10 @@ DEFAULT_PRIOR = GROUNDED['default_prior']['value']        # 무차별 원리 (La
 ABANDON_CREDENCE = GROUNDED['abandon_credence']['value']  # odds 1:9 폐기 문턱
 EFF_CAP = GROUNDED['eff_cap']['value']                    # 효과크기 상한 (Cohen d=4=large×5)
 WEIGHT_FLOOR = GROUNDED['weight_floor']['value']          # 마진 개선 최소 증거력
+# FF5b 정책(tier=policy, deep-dive 2026-06-26): 검증 안 된 *출처주장*(source 키 보유) verdict 의 trust 기본 =
+#   무정보(evidence_weight floor 0 → BF 중립=credence 불변). 내부(출처주장 없음) verdict 는 1.0 유지(비파괴).
+#   "source_trust 미지정 출처는 최대신뢰(fail-open) 금지" — client/누락이 최대 증거력을 공짜로 못 받는다.
+SOURCE_TRUST_FAILSAFE = 0.0
 
 
 def interpret(bf: float) -> dict:
@@ -96,7 +100,9 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
     odds = prior / (1 - prior)
     best_log_bf: dict = {}   # target → max log(BF) (BF>1 content-dedup)
     for v in verdicts:
-        st = v.get('source_trust', 1.0)
+        st = v.get('source_trust')
+        if st is None:   # FF5b: 미지정이면 — 출처주장(source) 있는 verdict 는 failsafe(무정보), 내부는 1.0(비파괴)
+            st = SOURCE_TRUST_FAILSAFE if v.get('source') is not None else 1.0
         if source_trust_map and v.get('source') in source_trust_map:
             st = source_trust_map[v['source']]   # ★고유벡터 글로벌 신뢰로 대체
         bf = bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0), st)

@@ -381,10 +381,12 @@ class JudgementService:
                             e.metric_value AS existing_metric_value,
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
-                            t.hard_core AS hard_core""", tree=name, tag=tag)
+                            t.hard_core AS hard_core,
+                            t.require_novel_anchor AS require_novel_anchor""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
+        require_novel_anchor = bool(pr.get('require_novel_anchor'))   # FF1 phase2: opt-in tree policy
         if pr['vsrc'] == 'scripted':
             raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). 새 노드로 분기할 것')
         # #H3 (receipt-integrity): server_sha 를 r.script 파일 *내용*에서 재유도해 영수증을 현실에 묶는다.
@@ -417,6 +419,8 @@ class JudgementService:
         novel_server_sha, _ = (self._recompute_script_sha(r.novel_script)
                                if r.novel_script else (None, {'reason': 'no_novel_script'}))
         both_anchored = sha_verified and novel_server_sha is not None
+        novel_server_anchored = novel_server_sha is not None              # FF1: novel 측정이 서버 재유도됨
+        cross_metric_novel = pr['nmet'] is not None and pr['nmet'] != pr['m']
         judge_measured_sha = stored_sha if both_anchored else ''
         judge_novel_sha = novel_server_sha if both_anchored else ''
         try:
@@ -488,6 +492,15 @@ class JudgementService:
         #   different_programme 로 강등 — '음의 휴리스틱을 떠남 = 다른 프로그램'(AXIS-CORR). bool 로 못 숨김.
         if hc_derived is False and verdict in ('progressive', 'progressive_conditional'):
             verdict, lakatos_status = 'different_programme', 'hard_core_violated_structural'
+        # FF1 (설계감사 2026-06-26, phase2 — opt-in tree policy require_novel_anchor): cross-metric novel 은
+        #   *서버앵커 영수증*(novel_script 서버 재유도) 없이 progressive 를 못 빚는다 — 없으면 'partial'(개선이나
+        #   독립 초과경험내용 미입증). client float 한 줄이 thesis 머리(progressive)를 사는 구멍을 닫는다.
+        #   judge() 는 순수 유지, 이 데모트는 *server 경계* 에서만(run() 도그푸드/직접 judge 무영향). 기본 off=비파괴.
+        novel_independent = bool(v.novel)
+        if (require_novel_anchor and v.novel and cross_metric_novel and not novel_server_anchored
+                and verdict in ('progressive', 'progressive_conditional')):
+            verdict, lakatos_status = 'partial', 'novel_not_server_anchored'
+            novel_independent = False
         # #H1 (설계감사): 질적 verdict 가 영수증 없는 self-report bool 로 progressive 를 떠받쳤는가.
         #   메트릭 개선은 실 영수증이나 '하드코어 보존·초과경험내용'(lakatos_*/ce_*)은 자기보고다. 독립
         #   영수증(독립 novel 측정 sha + ce_novel_corroborated) 없이 질적 bool 이 progressive(_conditional)를
@@ -509,7 +522,7 @@ class JudgementService:
         # 동일 원천). internal 노드=1.0. 영속(e.source_trust)도 이 값으로 → tree-level eureka_over_tree 도 정직.
         est = self._eigentrust_source_trust(name, tag)
         eu = eureka_classify({
-            'novel_registered': bool(pr['nmet']), 'novel_confirmed': v.novel, 'verdict': verdict,
+            'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent, 'verdict': verdict,
             'delta': v.delta, 'noise_band': pr['nb'] or 0.0, 'source_trust': est,
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)
@@ -517,7 +530,7 @@ class JudgementService:
         next_state = derive_node_state({
             'verdict': verdict,
             'verdict_source': 'scripted',
-            'novel_confirmed': v.novel,
+            'novel_confirmed': novel_independent,
             'metric_value': r.metric_value,
             'judged_at': ts,
         })
@@ -546,12 +559,14 @@ class JudgementService:
                        e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
                        e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
-                       e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr
+                       e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
+                       e.novel_server_anchored=$nsa
                    RETURN e.tag AS claimed""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
-                     script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=v.novel,
+                     script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
+                     nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
         for tr in prov_triples(name, tag, r.script, r.result_path, verdict, stored_sha, ts):

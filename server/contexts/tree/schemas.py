@@ -72,6 +72,9 @@ class CreateTreeIn(BaseModel):
     # 도메인 온톨로지(JSON): {"entities":{name:{required:[...],constraints:{attr:{enum|type|min|max}}}},
     # "closed_world":bool}. 선언하면 엔진이 노드 등록 시 강제(opt-in). 빈 문자열=강제 없음.
     ontology: str = ""
+    # FF1(설계감사 2026-06-26): opt-in 정책 — True 면 cross-metric novel 이 서버앵커 영수증(novel_script
+    #   서버 재유도) 없이 progressive 를 못 빚는다(없으면 partial 강등). 기본 False=비파괴.
+    require_novel_anchor: bool = False
 
 
 class PredictionIn(BaseModel):
