@@ -1,0 +1,41 @@
+# LakatoTree 설계감사 M5(재채점 락 원자화 / TOCTOU) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=m5_receipt.verify 가 실제
+# server.contexts.tree.judgement_service.JudgementService.submit_test_result(원자 CAS claim 경로)를
+# 구동(재구현 금지)하고 구조화 이벤트를 ship. 음성 오라클: claim 0행→409(가드 부재면 이중채점).
+name: lakatotree-design-audit-m5-atomic-rescore
+target:
+  mode: in_process
+  callable: m5_receipt:verify          # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M5-1
+    description: 동시 submit 으로 원자 CAS claim 이 0행이면(상대가 이미 점유) submit 이 409 로 이중채점을 차단한다(음성 오라클; 가드 부재면 이중채점)
+    gate:
+      - {event: concurrent_rescore_blocked, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M5:concurrent_rescore_blocked
+      source: m5_receipt.py
+      symbol: verify
+      must_emit: concurrent_rescore_blocked
+
+  - id: M5-2
+    description: 판결 SET op 가 WHERE vsrc<>'scripted' 원자 CAS 가드 + RETURN e.tag 를 실제 포함한다(구조적 비-vacuous)
+    gate:
+      - {event: atomic_cas_guard_present, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M5:atomic_cas_guard_present
+      source: m5_receipt.py
+      symbol: verify
+      must_emit: atomic_cas_guard_present
+
+  - id: M5-3
+    description: claim 승리 시 정상 채점(ok=True) + 단일 kg_tx(별개 비원자 write 없음)의 양성 대조
+    gate:
+      - {event: atomic_claim_won_scored, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M5:atomic_claim_won_scored
+      source: m5_receipt.py
+      symbol: verify
+      must_emit: atomic_claim_won_scored

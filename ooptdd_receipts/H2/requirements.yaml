@@ -1,0 +1,31 @@
+# LakatoTree 설계감사 H2(human CANONICAL floor 영수증) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=h2_receipt.verify 가 실제
+# server.contexts.tree.judgement_service.JudgementService.set_verdict(서버측 human-floor 게이트)를
+# 구동하고 구조화 이벤트를 ship. 음성 오라클(human Argument 없으면 409 차단) 포함 — 가짜 green 금지.
+name: lakatotree-design-audit-h2-human-floor
+target:
+  mode: in_process
+  callable: h2_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: H2-1
+    description: human Argument(KG 영속) 없으면 client human_verdict=True 한 비트만으론 CANONICAL floor 가 차단된다(409 no_receipt) — 음성 오라클
+    gate:
+      - {event: human_floor_blocked_without_kg_argument, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:H2:human_floor_blocked_without_kg_argument
+      source: h2_receipt.py
+      symbol: verify
+      must_emit: human_floor_blocked_without_kg_argument
+
+  - id: H2-2
+    description: KG 에 실제 human attestation Argument(kind=evaluation, by=human)가 있으면 CANONICAL floor 가 통과한다(양성 대조)
+    gate:
+      - {event: human_floor_opens_with_real_argument, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:H2:human_floor_opens_with_real_argument
+      source: h2_receipt.py
+      symbol: verify
+      must_emit: human_floor_opens_with_real_argument

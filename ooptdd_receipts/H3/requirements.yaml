@@ -1,0 +1,40 @@
+# LakatoTree 설계감사 H3(Longinus 척추) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=h3_receipt.verify 가 실제
+# lakatos.longinus.symbol_body_sha(서버측 sha 재유도)를 구동하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-h3-longinus
+target:
+  mode: in_process
+  callable: h3_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: H3-1
+    description: judge_script 심볼 본문 sha 가 서버측에서 CPG 본문해시로 재유도된다(client 값 신뢰 아님)
+    gate:
+      - {event: symbol_body_sha_recomputed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:lakatos:symbol_body_sha
+      source: h3_receipt.py
+      symbol: verify
+      must_emit: symbol_body_sha_recomputed
+
+  - id: H3-2
+    description: 부재/모호 심볼은 sha=None 으로 거짓 영수증을 거부한다(no-fake-green 오라클)
+    gate:
+      - {event: absent_symbol_refused, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:lakatos:absent_refused
+      source: h3_receipt.py
+      symbol: verify
+      must_emit: absent_symbol_refused
+
+  - id: H3-3
+    description: ast resolver 가 실제 모듈 할당을 해석한다(`==` 오인 트랩 닫힘의 양성 대조)
+    gate:
+      - {event: real_assignment_resolved, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:lakatos:real_assignment
+      source: h3_receipt.py
+      symbol: verify
+      must_emit: real_assignment_resolved

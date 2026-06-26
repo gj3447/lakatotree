@@ -1,0 +1,21 @@
+# LakatoTree 설계감사 M7(formal/Pidna.lean sorry=0 강제 배선) — ooptdd 정식 영수증(R02 trace arrival + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=m7_receipt.verify 가 실제 M7 가드 코드
+# (tests.test_design_audit_m7._pidna_enforces_sorry_zero / _WAE_RE / _PIDNA)를 구동해 Pidna.lean 의 sorry=0
+# 강제 배선을 정적(R12, lean 컴파일 없이)으로 확인하고 구조화 이벤트를 ship. 음성 오라클로 vacuous green 차단.
+name: lakatotree-design-audit-m7-sorry-enforcement
+target:
+  mode: in_process
+  callable: m7_receipt:verify              # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M7-1
+    description: formal/Pidna.lean 에 sorry=0 강제(set_option warningAsError true)가 배선됨 — sorry warning 이 build error 로 승격(양성+음성 오라클)
+    gate:
+      - {event: lean_sorry_enforcement_wired, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M7:lean_sorry_enforcement_wired
+      source: m7_receipt.py
+      symbol: verify
+      must_emit: lean_sorry_enforcement_wired

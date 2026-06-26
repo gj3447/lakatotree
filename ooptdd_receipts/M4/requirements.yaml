@@ -1,0 +1,33 @@
+# LakatoTree 설계감사 M4(writer 가 open_question 을 (e)-[:RAISES_QUESTION]->(q) 로 실체화) —
+# ooptdd 정식 영수증(R02 trace arrival + R10 Longinus 바인딩). hermetic: in_process + memory backend.
+# emit-adapter=m4_receipt.verify 가 실제 TreeKgWriter.add_node 왕복을 구동하고 구조화 이벤트를 ship.
+name: lakatotree-design-audit-m4-raises-question
+target:
+  mode: in_process
+  callable: m4_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: M4-1
+    description: >-
+      open_question 을 가진 노드를 실제 TreeKgWriter 로 쓰면 (e)-[:RAISES_QUESTION]->(q) 엣지가
+      KG 에 실체화된다(스칼라 e.open_question 우회 아님 — reader 가 엣지에서 question 을 본다)
+    gate:
+      - {event: raises_question_edge_written, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M4:raises_question_edge_written
+      source: m4_receipt.py
+      symbol: verify
+      must_emit: raises_question_edge_written
+
+  - id: M4-2
+    description: >-
+      writer→KG→reader 왕복 후 진짜 laudan 엔진의 opened 가 0 이 아니다(problem_balance 붕괴 수복)
+    gate:
+      - {event: opened_nonzero_after_roundtrip, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:M4:opened_nonzero_after_roundtrip
+      source: m4_receipt.py
+      symbol: verify
+      must_emit: opened_nonzero_after_roundtrip
