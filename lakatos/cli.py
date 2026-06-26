@@ -131,6 +131,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('tree-delete'); sp.add_argument('name')
     sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
+    sp.add_argument('--author', default='', help='노드 작성자 actor (FF3: CANONICAL floor human attestation actor≠author 강제)')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
     sp.add_argument('--comment', default=''); sp.add_argument('--algorithm', default='')
@@ -320,7 +321,7 @@ def main(argv=None):
                                      evidence_ref=(parts[2] if len(parts) > 2 else '')))
         out = call('POST', f'/api/tree/{a.name}/node',
                    dict(tag=a.tag, parents=a.parent, parent_edges=parent_edges,
-                        comment=a.comment, algorithm=a.algorithm))
+                        comment=a.comment, algorithm=a.algorithm, author=a.author))
     elif a.cmd == 'predict':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/prediction',
                    dict(metric_name=a.metric, direction=a.dir, baseline_value=a.baseline,
