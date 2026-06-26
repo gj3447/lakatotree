@@ -375,6 +375,22 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_marquez_positive_roundtrip_independent_readback",
     ),
     AuditNode(
+        tag="H10_qual_backed_client_sha", severity="HIGH", parent="H6_novel_sha_client_independence",
+        evidence="judgement_service.py:437 qual_backed=bool(r.novel_sha and ce_novel_corroborated) — raw client novel_sha",
+        story="client-receipt 클래스 슬라이스(H1↔H6 잔여): H1 의 질적-backing 판정이 H6 가 위조가능함을 증명한 raw "
+              "client r.novel_sha 를 그대로 신뢰 — client 가 novel_sha='아무거나'+ce_novel_corroborated=True 로 "
+              "qual_backed=True 를 만들어 self-report 표식을 회피, 영수증 없는 질적 progressive 가 CANONICAL floor 를 연다. "
+              "[PROM] H6 의 서버앵커 novel_server_sha 로 바인딩 — client 문자열로 질적-backing 못 산다. "
+              "(ce_novel_corroborated 자체=construct-validity 라 client 판단으로 남음 — 천장.)",
+        prediction=Prediction(metric_name="qual_backing_trusts_client_novel_sha", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="질적-backing 은 서버앵커 novel_server_sha 가 있을 때만 — client novel_sha 문자열 무효",
+                              closes_question="q-h10-qual-backing-anchor"),
+        novel_target=NovelTarget(metric_name="qual_backing_server_anchored",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_client_novel_sha_string_does_not_back_qualitative_claim",
+    ),
+    AuditNode(
         tag="M12_former_canonical_source", severity="MEDIUM", parent="H5_set_verdict_canonical_toctou",
         evidence="judgement_service.py:229(SET old.verdict='former_canonical', source 누락) vs app.py:603/certify.py",
         story="set_verdict 의 former_canonical 강등이 verdict_source='engine' 누락 → old 가 'admin' source 유지. "
