@@ -167,6 +167,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('rebuild-verify'); sp.add_argument('artifact')
     sp = sub.add_parser('rebuild-run'); sp.add_argument('artifact'); sp.add_argument('--recorded', type=float, required=True)
     sp.add_argument('--cmd-template', default='echo metric=0')
+    sp.add_argument('--measure-cmd', default='',   # #M10: kind='measurement' step 전용(producer 와 분리).
+                    help="measurement step 전용 명령 — 미지정 시 모든 step 이 단일 cmd-template 로 붕괴(measurer=producer)")
     sp = sub.add_parser('lineage-record'); sp.add_argument('output'); sp.add_argument('--sha', required=True)
     sp.add_argument('--producer', default=''); sp.add_argument('--producer-sha', default='')
     sp.add_argument('--input', action='append', default=[], help='path:sha (반복)')
@@ -373,9 +375,16 @@ def main(argv=None):
             return (r.stdout, r.returncode)
         ex = RebuildExecutor(run_bash=run_bash,
                              emit=emit, env_now=fingerprint_sha(environment_fingerprint())[:12], cid=cid)
-        res = ex.run(mani, recorded_metric=a.recorded, cmd_for=lambda st: a.cmd_template)
+        # #M10: kind='measurement' step 은 --measure-cmd 로 라우팅(producer 와 분리). 미지정이면 단일
+        #   cmd-template 로 떨어져 measurer=producer 붕괴 → 엔진이 measurer_separated=False 로 정직 노출.
+        def cmd_for(st):
+            if st.get('kind') == 'measurement' and a.measure_cmd:
+                return a.measure_cmd
+            return a.cmd_template
+        res = ex.run(mani, recorded_metric=a.recorded, cmd_for=cmd_for)
         out = dict(cid=cid, verdict=res.verdict, regenerated=res.regenerated_metric,
                    recorded=res.recorded_metric, within_tolerance=res.within_tolerance,
+                   measurer_separated=res.measurer_separated,   # 측정자≠생산자 영수증(붕괴 숨김 금지)
                    trace_events=[r['event'] for r in recs], oo_shipped=oo_sink.enabled())
     elif a.cmd == 'lineage-record':
         inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]

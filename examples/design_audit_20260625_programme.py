@@ -284,6 +284,21 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_client_novel_sha_string_does_not_buy_independence",
     ),
     AuditNode(
+        tag="M10_rebuild_cli_collapse", severity="MEDIUM", parent="M1_rebuild_self_report_measure",
+        evidence="cli.py:376(cmd_for=lambda st: a.cmd_template, st 무시) + rebuild.py(measurer_separated=measure_out is not None)",
+        story="M1 엔진수정은 kind='measurement' 출력만 신뢰하지만, *실제 재실행 유일 surface* CLI rebuild-run 이 "
+              "모든 step 에 단일 --cmd-template 를 먹여(st 무시) producer step==measurement step → 측정자=생산자 "
+              "붕괴(M1 결함이 surface 에서 부활). measurer_separated 영수증은 그래도 True 라 붕괴를 조용히 숨김. "
+              "[PROM] 분리를 kind 라벨이 아니라 *명령 구별* 로 판정(엔진, 모든 surface) + CLI --measure-cmd.",
+        prediction=Prediction(metric_name="rebuild_cli_single_template_collapse", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="measurement 명령==producer 명령이면 measurer_separated=False(엔진 판정) + CLI --measure-cmd 라우팅",
+                              closes_question="q-m10-cli-measurer-separation"),
+        novel_target=NovelTarget(metric_name="rebuild_collapse_detected_by_command_distinctness",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_collapsed_measurer_command_is_not_separated",
+    ),
+    AuditNode(
         tag="M12_former_canonical_source", severity="MEDIUM", parent="H5_set_verdict_canonical_toctou",
         evidence="judgement_service.py:229(SET old.verdict='former_canonical', source 누락) vs app.py:603/certify.py",
         story="set_verdict 의 former_canonical 강등이 verdict_source='engine' 누락 → old 가 'admin' source 유지. "
