@@ -14,6 +14,25 @@ import uuid
 
 from lakatos.io import oo_verify
 
+# ── clean-clone 재현성 가드(외부 3D evidence): 일부 examples/tests 는 리포지토리 *밖* 절대경로
+#   (<WORKSPACE>/PROJECT/3D/*_ICP_SPEC/evidence/...)의 측정 데이터를 import 시점/런타임에 읽는다. 그 데이터가
+#   없는 환경(CI clean clone)에선 collection 에러/런타임 실패로 스위트 전체가 빨개진다(이 PR 이 고치려던
+#   "clean clone tests green" 명제의 재발). → 그 디렉토리가 *없을 때만* 해당 3D-evidence 의존 테스트를
+#   수집 제외(skip). 데이터가 있는 dev box 에선 그대로 수집·실행. (z_height/z_layer 는 이미 자체 skipif 보유.)
+#   외부 데이터 의존 테스트의 표준 패턴. 데이터가 repo 로 들어오면(또는 env-var 화) 이 목록은 줄어든다.
+_EXT_3D_EVIDENCE_ROOT = "<WORKSPACE>/PROJECT/3D"
+collect_ignore = []
+if not os.path.isdir(_EXT_3D_EVIDENCE_ROOT):
+    collect_ignore += [
+        "test_consumer_d_engine_judged.py",        # import 시점 EV read (BLOOM_NODES=bloom_nodes())
+        "test_three_d_detection.py",         # → three_d_detection → consumer_d_engine_judged
+        "test_three_d_dashboard.py",
+        "test_three_d_engine_canonical.py",
+        "test_three_d_tree_invariants.py",
+        "test_record_judge.py",              # 런타임 audit_dir("<WORKSPACE>/PROJECT/3D/...") 무가드
+        "test_lx3_engine_judged.py",         # 런타임 judged_nodes() → consumer_c evidence read
+    ]
+
 _REPORTS: list = []
 _CID = os.getenv('LAKATOS_TEST_CID') or ('pytest-' + uuid.uuid4().hex[:12])
 
