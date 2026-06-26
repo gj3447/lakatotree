@@ -101,6 +101,8 @@ class TestResultIn(BaseModel):
     script_sha: str | None = None
     novel_measured: float | None = None
     novel_sha: str | None = None   # prom-honesty/sha: novel 측정의 출처(예측 측정 sha 와 다르면 독립 인정)
+    novel_script: str | None = None   # #H6: novel 측정의 *소스*(서버 재계산 대상). 있으면 서버가 이 본문에서
+                                      #   novel sha 를 재유도해 독립성을 client 문자열(novel_sha)이 아닌 현실에 묶는다.
     source_trust: float = 1.0
     result_path: str = ""
     log: str = ""

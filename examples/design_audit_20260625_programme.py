@@ -269,6 +269,21 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_set_verdict_canonical_409_on_concurrent_change",
     ),
     AuditNode(
+        tag="H6_novel_sha_client_independence", severity="HIGH", parent="H3_judge_script_sha_client",
+        evidence="judgement_service.py:364(measured_sha=r.script_sha, novel_sha=r.novel_sha 둘 다 client) / judge.py:134",
+        story="novel 독립성(measured_sha≠novel_sha)을 client 값으로 판정 — novel 측은 서버가 한 번도 재계산 안 함. "
+              "client 가 novel_sha 를 measured 와 다른 임의 문자열로 보내 '독립'을 위조 → partial 을 progressive 로 "
+              "승격. H3('서버가 sha 의 판관')가 정작 progressive 를 빚는 게이트에서 뚫림. [PROM] H3 의 _recompute_script_sha "
+              "를 novel 축까지 확장(novel_script 본문 재유도) — 양측 서버앵커일 때만 독립.",
+        prediction=Prediction(metric_name="novel_independence_trusts_client_sha", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="독립은 양측 서버재계산 sha 가 다를 때만 — client novel_sha 한 줄로 못 산다",
+                              closes_question="q-h6-novel-sha-anchor"),
+        novel_target=NovelTarget(metric_name="novel_independence_server_anchored",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_client_novel_sha_string_does_not_buy_independence",
+    ),
+    AuditNode(
         tag="M12_former_canonical_source", severity="MEDIUM", parent="H5_set_verdict_canonical_toctou",
         evidence="judgement_service.py:229(SET old.verdict='former_canonical', source 누락) vs app.py:603/certify.py",
         story="set_verdict 의 former_canonical 강등이 verdict_source='engine' 누락 → old 가 'admin' source 유지. "
