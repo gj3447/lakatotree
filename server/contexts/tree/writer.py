@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from lakatos.node_state import NodeState
 from lakatos.verdicts import is_self_report_blocked_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.ports import KgTx
@@ -82,10 +83,10 @@ class TreeKgWriter:
                    e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
                    e.open_question=$open_question, e.metric_name=$metric_name,
                    e.metric_value=$metric_value, e.metric_scope=$metric_scope,
-                   e.recorded_at=$ts
+                   e.recorded_at=$ts, e.node_state=$node_state
                MERGE (t)-[:HAS_NODE]->(e)
                RETURN t AS t""",
-                dict(tree=tree, ts=_utc_now(), **node.model_dump()),
+                dict(tree=tree, ts=_utc_now(), node_state=NodeState.DRAFT.value, **node.model_dump()),
             )
         ]
         for edge in parent_edges:
@@ -191,9 +192,9 @@ class TreeKgWriter:
                            e.comment=row.comment, e.limitation=row.limitation,
                            e.open_question=row.open_question, e.metric_name=row.metric_name,
                            e.metric_value=row.metric_value, e.metric_scope=row.metric_scope,
-                           e.recorded_at=row.ts
+                           e.recorded_at=row.ts, e.node_state=$node_state
                        MERGE (t)-[:HAS_NODE]->(e)""",
-                    dict(tree=tree, rows=rows),
+                    dict(tree=tree, rows=rows, node_state=NodeState.DRAFT.value),
                 )
             ])
             total = total.plus(WriteSummary(tx_count=1, op_count=1, rows=len(rows)))

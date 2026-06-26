@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from lakatos import longinus
+from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
@@ -60,6 +61,13 @@ def _is_human_attestation_arg(arg: dict) -> bool:
     if (arg.get('kind') or '').strip().lower() not in _HUMAN_ATTESTATION_KINDS:
         return False
     return bool((arg.get('by') or '').strip())
+
+
+def _require_state_transition(before, after: NodeState) -> None:
+    try:
+        assert_transition_allowed(before, after)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 class JudgementService:
@@ -209,6 +217,7 @@ class JudgementService:
                         OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
                         RETURN cur.verdict AS verdict,
                                cur.verdict_source AS verdict_source,
+                               cur.node_state AS node_state,
                                cur.source_trust AS source_trust,
                                cur.novel_confirmed AS novel_confirmed,
                                cur.qualitative_self_report AS qualitative_self_report,
@@ -217,6 +226,7 @@ class JudgementService:
             if not pre:
                 raise HTTPException(404, f'노드 없음: {tag}')
             cand = pre[0]
+            _require_state_transition(derive_node_state(cand), NodeState.CANONICAL)
             # #H5 (설계감사 2026-06-26): floor 판정의 스냅샷 지문 — verdict/source/qsr + 논증집합.
             #   write 가 이 지문을 원자 CAS 로 재검증해, read→write 사이 동시변경 시 0행 → 409(stale 승격 차단).
             snap_arg_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
@@ -265,8 +275,9 @@ class JudgementService:
                   OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
                   WHERE old.tag <> $tag
                   SET old.verdict='former_canonical', old.verdict_source='engine',
-                      old.current_best_pointer=false
+                      old.current_best_pointer=false, old.node_state=$former_state
                   SET cur.verdict='CANONICAL', cur.verdict_source='admin',
+                      cur.node_state=$canonical_state,
                       cur.current_best_pointer=true,
                       cur.canonical_scope=$scope,
                       cur.canonical_assumptions=$assumptions,
@@ -277,15 +288,28 @@ class JudgementService:
                     exp_verdict=cand.get('verdict'), exp_source=cand.get('verdict_source'),
                     exp_qsr=bool(cand.get('qualitative_self_report')),
                     exp_argn=len(snap_arg_fp), exp_arg_fp=snap_arg_fp,
+                    former_state=NodeState.FORMER_CANONICAL.value,
+                    canonical_state=NodeState.CANONICAL.value,
                     scope=v.scope, assumptions=v.assumptions,
                     evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted)
             if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박) → stale 승격 차단
                 raise HTTPException(409, '동시변경 감지(CANONICAL 원자 CAS 0행) — floor 판정 스냅샷'
                                          '(verdict/source/qsr/논증집합)이 승격 직전 변해 무효. 최신상태 재평가 필요.')
         else:
+            state_rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                       RETURN e.verdict AS verdict, e.verdict_source AS verdict_source,
+                              e.node_state AS node_state, e.pred_registered_at AS pred_registered_at,
+                              e.judged_at AS judged_at, e.metric_value AS metric_value''',
+                                 tree=name, tag=tag)
+            if not state_rows:
+                raise HTTPException(404, f'노드 없음: {tag}')
+            next_state = derive_node_state({'verdict': v.verdict, 'verdict_source': 'admin'})
+            _require_state_transition(derive_node_state(state_rows[0]), next_state)
             rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                      SET e.verdict=$verdict, e.verdict_source='admin' RETURN e.tag AS tag''',
-                           tree=name, tag=tag, verdict=v.verdict)
+                      SET e.verdict=$verdict, e.verdict_source='admin', e.node_state=$node_state
+                      RETURN e.tag AS tag''',
+                           tree=name, tag=tag, verdict=v.verdict,
+                           node_state=next_state.value)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         self.hist(name, 'verdict', tag, v.model_dump())
@@ -321,6 +345,7 @@ class JudgementService:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted')
                         AND e.pred_registered_at IS NULL
+                        AND coalesce(e.node_state, 'DRAFT') IN $allowed_from
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                       e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
                       e.pred_scale_type=$scale_type,
@@ -329,9 +354,13 @@ class JudgementService:
                       e.pred_novel_threshold=$novel_threshold, e.pred_script_sha=$judge_script_sha,
                       e.pred_credence=$credence,
                       e.novel_registered = ($novel_metric IS NOT NULL),
-                      e.pred_registered_at=$ts
+                      e.pred_registered_at=$ts,
+                      e.node_state=$node_state
                   RETURN e.tag AS tag""",
-                       tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(), **p.model_dump())
+                       tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(),
+                       node_state=NodeState.PREDICTED.value,
+                       allowed_from=[NodeState.DRAFT.value, NodeState.ADMINISTRATIVE.value],
+                       **p.model_dump())
         if not rows:
             raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
         if p.closes_question:
@@ -347,6 +376,9 @@ class JudgementService:
                             e.pred_novel AS novel, e.verdict_source AS vsrc,
                             e.pred_novel_metric AS nmet, e.pred_novel_direction AS ndir,
                             e.pred_novel_threshold AS nthr, e.pred_script_sha AS psha,
+                            e.pred_registered_at AS pred_registered_at,
+                            e.node_state AS node_state, e.judged_at AS judged_at,
+                            e.metric_value AS existing_metric_value,
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
                             t.hard_core AS hard_core""", tree=name, tag=tag)
@@ -482,6 +514,24 @@ class JudgementService:
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)
         ts = datetime.now(timezone.utc).isoformat()
+        next_state = derive_node_state({
+            'verdict': verdict,
+            'verdict_source': 'scripted',
+            'novel_confirmed': v.novel,
+            'metric_value': r.metric_value,
+            'judged_at': ts,
+        })
+        _require_state_transition(
+            derive_node_state({
+                'node_state': pr.get('node_state'),
+                'verdict_source': pr.get('vsrc'),
+                'pred_registered_at': pr.get('pred_registered_at'),
+                'pred_metric': pr.get('m'),
+                'metric_value': pr.get('existing_metric_value'),
+                'judged_at': pr.get('judged_at'),
+            }),
+            next_state,
+        )
         # #M5 (atomic-rescore): 판결 SET 의 *첫 절* 을 원자 CAS claim 으로 — register_prediction 의 원자
         #   write-WHERE 패턴 답습. WHERE (vsrc IS NULL OR vsrc<>'scripted') 가드로 단일 managed-write tx
         #   안에서 동시 submit 중 한쪽만 SET 매칭 → 이중채점(TOCTOU) 봉쇄. judge() 검증을 다 통과한 *뒤*
@@ -490,7 +540,8 @@ class JudgementService:
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
-                       e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
+                       e.verdict_source='scripted', e.node_state=$node_state,
+                       e.judge_script=$script, e.judge_script_sha=$sha,
                        e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
                        e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
                        e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
@@ -499,6 +550,7 @@ class JudgementService:
                    RETURN e.tag AS claimed""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
                      script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=v.novel,
+                     node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]

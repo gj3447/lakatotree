@@ -34,17 +34,18 @@ class _StatefulKg:
 
     def __init__(self, *, race: bool) -> None:
         self.race = race
-        self.snapshot_source = None         # read 시점 노드 verdict_source
+        self.snapshot_source = "scripted"   # read 시점 노드 verdict_source
         self.writes: list[tuple[str, dict]] = []
 
     def __call__(self, query, **p):
         if _SNAP_READ in query and "HAS_ARGUMENT" in query:        # :181 스냅샷 read
             return [{"verdict": "progressive", "verdict_source": self.snapshot_source,
+                     "node_state": "CANONICAL_CANDIDATE",
                      "source_trust": None, "novel_confirmed": True,
                      "qualitative_self_report": False, "args": []}]
         if _CANON_WRITE in query:                                   # :225 원자 CAS write
             self.writes.append((query, p))
-            current_source = "scripted" if self.race else self.snapshot_source
+            current_source = "engine" if self.race else self.snapshot_source
             # 원자 CAS: write 쿼리가 스냅샷 param(exp_source)을 현재 state 와 대조 — 불일치면 0행.
             if (p.get("exp_source") or "") != (current_source or ""):
                 return []
