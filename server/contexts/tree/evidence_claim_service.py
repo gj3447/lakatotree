@@ -138,13 +138,29 @@ class EvidenceClaimService:
                                           valid_until_rebutted=bool(rows[0]['vur']))
             out['standing'] = {'stands': stands, **decision}
             if decision['demoted']:
-                # 현재최선 철회: CANONICAL→former_canonical. 인간 admin(verdict_source='admin')과 구분.
-                self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                # #H7 (설계감사 2026-06-26): 강등도 H5 와 동형 낙관적 CAS — read→write 사이 동시 재승격/
+                #   새 critique 로 스냅샷(verdict + 논증집합 지문)이 변하면 0행 → stale 강등 *미적용*(skip).
+                #   강등은 사용자 요청이 아니라 critique 의 side-effect 라 409 가 아니라 skip(다음 standing read
+                #   가 최신상태로 재평가). H5(승격 방향)의 강등 방향 미러 — verdict-mutating write 의 원자성 통일.
+                snap_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
+                                 for a in (rows[0]['args'] or []) if a.get('id'))
+                demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
+                      WITH t, e
+                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                      WITH t, e, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
+                      WHERE size(arg_fp) = $exp_argn AND all(x IN arg_fp WHERE x IN $exp_arg_fp)
                       SET e.verdict='former_canonical', e.verdict_source='engine',
-                          e.current_best_pointer=false, e.standing_retracted_at=$ts""",
-                        tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat())
-                self.hist(name, 'standing_retraction', tag,
-                          {'from': 'CANONICAL', 'to': 'former_canonical', 'reason': decision['reason']})
+                          e.current_best_pointer=false, e.standing_retracted_at=$ts
+                      RETURN e.tag AS tag""",
+                        tree=name, tag=tag, exp_verdict=rows[0]['verdict'],
+                        exp_argn=len(snap_fp), exp_arg_fp=snap_fp,
+                        ts=datetime.now(timezone.utc).isoformat())
+                if not demoted_rows:   # 원자 CAS 0행 = 스냅샷 변경(동시 재승격/critique) → stale 강등 미적용
+                    out['standing']['demote_skipped'] = 'concurrent_change'
+                else:
+                    self.hist(name, 'standing_retraction', tag,
+                              {'from': 'CANONICAL', 'to': 'former_canonical', 'reason': decision['reason']})
         return out
 
     def add_research_event(self, name: str, tag: str, ev: ResearchEventIn) -> dict:
