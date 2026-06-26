@@ -314,6 +314,21 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_self_rebuttal_does_not_defend_verdict",
     ),
     AuditNode(
+        tag="M13_inline_af_class_lock", severity="MEDIUM", parent="H8_self_vouch_af",
+        evidence="tests/test_design_audit_m13.py (AST: grounded_extension 호출 함수는 assemble_af 동반 강제)",
+        story="클래스 봉인(인스턴스 아님): H8 은 3 호출부를 assemble_af 로 수렴했으나 *미래 인라인 AF* 가 클래스를 "
+              "재발시킬 수 있다. AST 클래스-커버 테스트 — server/·lakatos/ 의 grounded_extension 호출 함수는 반드시 "
+              "actor-aware assemble_af 도 호출. 위반시 commit 에서 RED → self-vouch 회귀를 사람이 아니라 CI 가 잡는다. "
+              "'완벽=클래스를 by-construction 불가능 + 재발 자동 RED' 의 구현.",
+        prediction=Prediction(metric_name="inline_af_assembly_reintroducible", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="grounded_extension 인라인 호출(assemble_af 미동반)은 클래스 테스트가 RED 로 차단",
+                              closes_question="q-m13-af-class-lock"),
+        novel_target=NovelTarget(metric_name="inline_af_banned_by_class_test",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_no_inline_af_assembly_actor_independence",
+    ),
+    AuditNode(
         tag="M10_rebuild_cli_collapse", severity="MEDIUM", parent="M1_rebuild_self_report_measure",
         evidence="cli.py:376(cmd_for=lambda st: a.cmd_template, st 무시) + rebuild.py(measurer_separated=measure_out is not None)",
         story="M1 엔진수정은 kind='measurement' 출력만 신뢰하지만, *실제 재실행 유일 surface* CLI rebuild-run 이 "
