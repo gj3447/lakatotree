@@ -31,7 +31,7 @@ try:   # ooptdd_loop = _vendor/ooptdd_loop (loop runner subset) — private repo
 except ModuleNotFoundError as e:
     sys.exit(f"ooptdd_loop 미해석 — _vendor/ooptdd_loop 벤더 누락? ({e}).")
 
-FINDINGS = ["H1", "H2", "H3", "H4", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"]
+FINDINGS = ["A2", "H1", "H2", "H3", "H4", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"]
 
 
 def _run_one(finding: str) -> tuple[int, int, bool, str]:

@@ -1,0 +1,32 @@
+# LakatoTree A2 eigentrust trust-coverage — ooptdd 정식 영수증(R02 trace + R10 Longinus, hermetic).
+# emit-adapter=a2_receipt.verify 가 실 server.read_models.compute_tree_metrics 를 *서빙 형상*(verdict_source
+# 키 present)으로 구동, 구조화 이벤트 ship. 픽스처-vs-실DB drift(키 absent vs present-None)로 인한 silent
+# canonical-path 붕괴(matched=0)를 RED-first 로 잡는다. Neo4j 불요(in_process + memory backend).
+name: lakatotree-a2-eigentrust-path-source-match
+
+target:
+  mode: in_process
+  callable: a2_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py 가 절대 root 로 오버라이드
+
+requirements:
+  - id: A2-1
+    description: 정본경로(canonical-path) progress 노드가 verdict_source 영수증을 달면 trust_coverage 가 그 노드 source 를 eigentrust 글로벌-신뢰 맵에 매칭(path_sources_matched>=1) — 영수증 없으면 inconclusive 강등으로 붕괴해 0(양성 오라클; 속성 성립 시에만 발화).
+    gate:
+      - {event: trust_path_source_matched, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:A2:trust_path_source_matched
+      source: a2_receipt.py
+      symbol: verify
+      must_emit: trust_path_source_matched
+
+  - id: A2-2
+    description: verdict_source 영수증 없는(키=None, 서빙 로더 형상) CANONICAL/progressive 노드는 _inconclusive_unscored 로 강등돼 canonical_path 가 붕괴(matched=0)함을 *명시 이벤트*로 노출 — 조용한 fake-green(픽스처는 키 생략으로 통과) 금지(음성 오라클).
+    gate:
+      - {event: canonical_path_collapsed_inconclusive, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:A2:canonical_path_collapsed_inconclusive
+      source: a2_receipt.py
+      symbol: verify
+      must_emit: canonical_path_collapsed_inconclusive
