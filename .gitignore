@@ -9,3 +9,6 @@ htmlcov/
 three_d_detection.html
 three_d_detection.dot
 three_d_detection.svg
+
+# Claude Code session worktrees/artifacts (not project)
+.claude/
