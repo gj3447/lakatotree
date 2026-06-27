@@ -59,15 +59,17 @@ LAKATOS_IT=1 bash scripts/fix_harness.sh    # #16/#17 실-Neo4j 영수증까지
 |---|---|
 | #2 #4 #5 #6 #7 #8 #9 #10 #12 #15 #18 #21 #22 #23 #24 (**15개**) | ✅ **FIXED → progressive** — 소스 수정 + 영수증 영구 green 회귀(xfail 제거), 엔진이 이중가드로 progressive 채점 |
 | #13 #14 (**2개**) | ✅ **FIXED → partial** — 수정·green 이나 단일 증상 오라클 → 엔진이 partial 천장(독립 mechanism 오라클 추가 시 progressive) |
+| #1 (P2) | ✅ **FIXED → progressive** (honest-exposure, 전용 PR) — floor 가 `measurement_externally_anchored` 노출(judge_receipt 단독=False). '위조불가 영수증' 과대표현 봉합, *거동 불변* |
+| #3 (P2) | ✅ **FIXED → progressive** (전용 PR) — noise_band 부재→약증거('부재 ≠ 선언-0') |
 | #16/#17 (P1) | 🔶 **PATCHED(gated)** — eager-lock 3 사이트 적용 + h9 CAS-클래스 가드 통과. **race 자체는 `LAKATOS_IT`(실 Neo4j) 영수증 필요** → 로컬 eureka 는 felt-but-not-true |
-| #1 #3 (P2) | ⏳ **FRONTIER** — 보류. 둘 다 *중심 거동* 변경이라 블라스트 거대(전용 처리 필요), 아래 |
 
-**수정 후 전체 스위트**: `pytest tests/` → **1401 passed / 13 skipped / 3 xfailed(#1·#3) / 0 failed**(고정·랜덤 순서). lint-imports 3/3, 커널 커버리지 ≥95% green.
-**하네스 보드**(`bash scripts/fix_harness.sh`): #1·#3 defect-test 만 RED(보류), #16/#17 skip ×2.
+**수정 후 전체 스위트**: `pytest tests/` → **1402+ passed / 13 skipped / 0 failed**(고정·랜덤 순서). lint-imports 3/3, 커널 커버리지 ≥95% green.
 
-### #1·#3 가 frontier 인 이유 (전용 처리 필요)
-- **#1 (CANONICAL floor)**: judge_receipt 단독 floor 를 닫으면(외부 측정 요구) 스크립트-progressive 의 CANONICAL 승격 *전체*가 영향 — 중심 보증 변경이라 전용 PR + 마이그레이션.
-- **#3 (noise_band)**: `noise_band<=0`(코드베이스 *기본값*)을 약증거로 바꾸면 dogfood programme·eureka 의 BF 계산 전부가 흔들림 — undeclared-uncertainty 시맨틱 결정 + 모든 예측에 noise_band 선언 마이그레이션.
+### 남은 *깊은* frontier (버그가 아니라 아키텍처 결정)
+- **#1 외부성 *강제*(option-a) + producer replay**: 본 PR 은 측정 외부성을 *정직히 노출*(거동 불변)했다. 모든
+  CANONICAL 에 외부앵커를 *강제*(option-a)하면 엔진의 문서화된 승격 거동(judge_receipt floor)을 바꿔 11개 floor
+  테스트가 영향 — 중심 시맨틱 변경이라 maintainer 결정 + 마이그레이션. forge 의 *근본* 봉합은 producer replay
+  (스크립트 재실행으로 metric_value 검증, app.py:395 미구현)이 필요하다. honest-exposure 가 그 전까지 간극을 가린다.
 
 ### #15 root 정책 (적용됨)
 `server/file_hashing.path_sha` 가 `raw_root()`(= `LAKATOS_RAW_ROOT` env, 미설정 시 repo 루트) 밖 경로를
