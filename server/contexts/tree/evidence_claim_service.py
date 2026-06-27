@@ -97,12 +97,17 @@ class EvidenceClaimService:
                     replay=replay_command(x['script'] or '', x['rp'] or ''))
 
     def add_critique(self, name: str, tag: str, c: CritiqueIn) -> dict:
-        self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        # fail-loud(나생문 #13): MERGE 가 노드 부재 시 no-op 이면 형제 mutation 과 달리 200·history 를
+        #   남겨 provenance 를 오염한다 → RETURN e.tag 로 매칭 확인, 0행이면 hist 전에 404.
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
               MERGE (a:Argument {id:$tree+'/'+$arg}) SET a.by=$by, a.kind=$kind, a.body=$body,
                     a.attacks=$attacks, a.at=$ts
-              MERGE (e)-[:HAS_ARGUMENT]->(a)""",
+              MERGE (e)-[:HAS_ARGUMENT]->(a)
+              RETURN e.tag AS tag""",
                 tree=name, tag=tag, arg=c.arg_id, by=c.by, kind=c.kind, body=c.body,
                 attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
+        if not rows:
+            raise HTTPException(404, f'노드 없음: {tag} (critique 대상 부재 — 등재 거부)')
         self.hist(name, 'critique', tag, c.model_dump())
         # ★certify.py:13 의 '새 반박이 G3(stands)를 깨면 자동 철회' 이행 — 승격이 stands 를 *요구*한
         # 것의 대칭. 비판 등재 직후 grounded standing 을 재계산하고, CANONICAL 의 standing 이 깨졌으면
@@ -129,6 +134,8 @@ class EvidenceClaimService:
                 snap_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
                                  for a in (rows[0]['args'] or []) if a.get('id'))
                 demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      SET e._cas = coalesce(e._cas,0) + 0
+                      WITH t, e
                       WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
                       WITH t, e
                       OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)

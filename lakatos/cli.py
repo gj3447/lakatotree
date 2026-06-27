@@ -194,6 +194,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--source-class', type=float); sp.add_argument('--primary-source', type=float)
     sp.add_argument('--provenance', type=float); sp.add_argument('--corroboration', type=float)
     sp.add_argument('--recency', type=float); sp.add_argument('--supply-chain', type=float, help='F04 supply-chain 축')
+    # 나생문 #21: rival/theory/longinus 증거 필드 — MCP/REST add_observation 패리티(관측을 이론좌표·경쟁프로그램 증거로 임베딩)
+    sp.add_argument('--theory-basis', default=''); sp.add_argument('--foundation-refs', default='', help='CSV')
+    sp.add_argument('--rival-name', default=''); sp.add_argument('--rival-relation', default='')
+    sp.add_argument('--rival-node', default=''); sp.add_argument('--comparison-axes', default='', help='CSV')
+    sp.add_argument('--longinus-refs', default='', help='JSON list')
     sp = sub.add_parser('world-action'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--command', default=''); sp.add_argument('--cwd', default='')
     sp.add_argument('--exit-code', type=int); sp.add_argument('--stdout', default=''); sp.add_argument('--stderr', default='')
@@ -391,11 +396,17 @@ def main(argv=None):
                    measurer_separated=res.measurer_separated,   # 측정자≠생산자 영수증(붕괴 숨김 금지)
                    trace_events=[r['event'] for r in recs], oo_shipped=oo_sink.enabled())
     elif a.cmd == 'lineage-record':
-        inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]
+        for p in a.input:   # 나생문 #22: ':' 없는 입력에 IndexError 크래시 방지 — MCP 가드와 동형
+            if ':' not in p:
+                sys.exit(f'lineage-record --input 형식 오류: {p!r} (path:sha 형식 필요)')
+        inputs = [[*p.rsplit(':', 1)] for p in a.input]
         out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
                    producer=a.producer, producer_sha=a.producer_sha, inputs=inputs, kind=a.kind))
     elif a.cmd == 'manifest-verify':
         from lakatos.io.lineage import load_dataset_manifest, verify_dataset_manifest
+        for p in a.current_sha:   # 나생문 #22: ':' 없는 입력에 IndexError 크래시 방지 — MCP 가드와 동형
+            if ':' not in p:
+                sys.exit(f'manifest-verify --current-sha 형식 오류: {p!r} (path:sha 형식 필요)')
         current_shas = {p.rsplit(':', 1)[0]: p.rsplit(':', 1)[1] for p in a.current_sha}
         out = verify_dataset_manifest(
             load_dataset_manifest(a.manifest),
@@ -412,6 +423,17 @@ def main(argv=None):
                          supply_chain_score=a.supply_chain).items():
             if v is not None:
                 body[k] = v
+        # 나생문 #21: rival/theory 증거 forward (MCP add_observation 미러)
+        for k, v in dict(theory_basis=a.theory_basis, rival_name=a.rival_name,
+                         rival_relation=a.rival_relation, rival_node=a.rival_node).items():
+            if v:
+                body[k] = v
+        if a.foundation_refs:
+            body['foundation_refs'] = [x.strip() for x in a.foundation_refs.split(',') if x.strip()]
+        if a.comparison_axes:
+            body['comparison_axes'] = [x.strip() for x in a.comparison_axes.split(',') if x.strip()]
+        if a.longinus_refs:
+            body['longinus_refs'] = json.loads(a.longinus_refs)
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/observation', body)
     elif a.cmd == 'world-action':
         body = dict(event_id=a.event_id, command=a.command, cwd=a.cwd, stdout_summary=a.stdout,

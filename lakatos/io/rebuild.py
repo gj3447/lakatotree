@@ -92,6 +92,14 @@ class RebuildExecutor:
         within = regen is not None and abs(regen - recorded_metric) <= tol
         self._ev('metric_compare', regenerated=regen, recorded=recorded_metric,
                  tolerance=tol, within=within, measurer_separated=measurer_separated)
-        verdict = 'rebuildable' if within else 'metric_mismatch'
+        # 나생문 #9: 'rebuildable' 은 *독립 measurer* 영수증일 때만 — measurement step 부재 시 source_out 은
+        #   producer 자기보고(last_producer_out) fallback 이라 M1(측정자≠생산자) 미충족. 같은 토큰으로 발급하면
+        #   docstring 의 M1 보증이 거짓이 된다 → 별 토큰 'rebuildable_unverified' 로 정직히 구별(within 은 보존).
+        if within and measurer_separated:
+            verdict = 'rebuildable'
+        elif within:
+            verdict = 'rebuildable_unverified'
+        else:
+            verdict = 'metric_mismatch'
         self._ev('rebuild_verdict', verdict=verdict, cid=self._cid)
         return RebuildResult(verdict, regen, recorded_metric, within, trace, measurer_separated)

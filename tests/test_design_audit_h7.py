@@ -33,8 +33,8 @@ class _StatefulKg:
         self.demote_queries: list[str] = []
 
     def __call__(self, query, **p):
-        if "MERGE (a:Argument" in query:            # critique 등재
-            return []
+        if "MERGE (a:Argument" in query:            # critique 등재 — 노드 존재(RETURN e.tag) 모델(#13 fail-loud)
+            return [{"tag": p.get("tag")}]
         if _READ in query and "collect({id:a.id" in query:   # :127 스냅샷 read — CANONICAL + 미방어 doubt
             return [{"verdict": "CANONICAL", "vur": True,
                      "args": [{"id": "T/d1", "attacks": "n"}]}]   # d1 이 verdict 직접공격 → stands=False

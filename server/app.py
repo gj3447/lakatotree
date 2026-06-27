@@ -626,7 +626,7 @@ def agm_revise(req: AgmReviseIn):
         if req.op == 'expansion':
             if not req.new:
                 raise HTTPException(422, 'expansion 은 new 필수')
-            r = expansion(base, _belief(req.new))
+            r = expansion(base, _belief(req.new), allow_hard_core=req.allow_hard_core)
         elif req.op == 'contraction':
             if not req.target_id:
                 raise HTTPException(422, 'contraction 은 target_id 필수')
