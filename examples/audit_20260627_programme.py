@@ -186,15 +186,16 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
 
     # ───── OPEN (RED 영수증 착륙 — 아직 미수정; guard_defect 는 xfail, mechanism 은 green) ─────
     AuditNode(
-        tag="OPEN1_canonical_floor_externality", severity="P2", parent="audit_20260627_root", claimed=False,
-        evidence="spine.py:167-189 · judge.py:98-110 · app.py:395",
-        story="CANONICAL floor 가 judge_receipt 단독으로 열린다 — 측정값은 재실행 안 되는 미검증 client float. "
-              "fix(a): 외부앵커 측정 없으면 reproducible/human 요구. defect=미검증 측정에 floor 닫힘 / mechanism="
-              "reproducible=True 면 정당히 열림(판관 존재).",
-        prediction=_P("canonical_floor_unverified_measurement", "외부앵커 없으면 judge_receipt 단독으로 CANONICAL floor 안 열림", "q-1-floor"),
-        novel_target=_N("external_or_human_receipt_required"),
-        guard_defect="test_canonical_floor_must_close_on_unverified_client_measurement",
-        guard_mechanism="test_judge_receipt_predicate_is_the_floor_signal"),
+        tag="OPEN1_canonical_floor_externality", severity="P2", parent="audit_20260627_root", claimed=True,
+        evidence="spine.py floor (measurement_externally_anchored) · judge.py:98-110 · app.py:395",
+        story="CANONICAL floor 가 judge_receipt(미검증 client 측정) 단독을 '위조불가 영수증'으로 과대표현. "
+              "honest 닫음(거동 불변): floor 가 measurement_externally_anchored 를 노출 — judge_receipt 단독이면 "
+              "False 로 정직 표기. defect=judge_receipt-only 가 anchored=False 로 표기 / mechanism=reproducible=True 면 "
+              "anchored=True. (외부성 *강제*·producer replay 는 frontier.)",
+        prediction=_P("canonical_floor_overstatement", "judge_receipt 단독 CANONICAL 은 measurement_externally_anchored=False 로 정직 노출", "q-1-floor"),
+        novel_target=_N("external_receipt_flagged_anchored"),
+        guard_defect="test_judge_receipt_only_canonical_is_flagged_not_externally_anchored",
+        guard_mechanism="test_external_receipt_is_flagged_externally_anchored"),
     AuditNode(
         tag="OPEN3_noise_band_maxes_bayes", severity="P2", parent="audit_20260627_root", claimed=False,
         evidence="bayes.py:57-72 · metrics.py:58,141",

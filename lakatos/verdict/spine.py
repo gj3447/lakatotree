@@ -187,10 +187,18 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
     #   추가로 요구한다. (set_verdict 가 노드의 qualitative_self_report 표식을 넘긴다.)
     if qualitative_self_report:
         judge_receipt = False
+    # 나생문 #1 (측정 외부성 — 정직 노출, 거동 불변): judge_receipt(scripted)는 floor 를 열 *수* 있으나, judge 는
+    #   결정론적이어도 그 입력(metric_value/novel_measured)은 서버가 재실행하지 않는 client float 라 측정의
+    #   *외부성*은 강제되지 않는다(producer replay 미구현 — app.py 자인). 그래서 floor 통과는 막지 않되(승격
+    #   거동 불변), 측정이 외부앵커(reproducible 실 replay | human attestation)로 *뒷받침되는지*를 영수증에
+    #   명시한다(measurement_externally_anchored). '위조불가 영수증'이라는 과대표현을 닫고 — floor 가 judge_receipt
+    #   단독이면 anchored=False 로 *정직히* 표기. 외부성 *강제*(option-a)·producer replay 는 별도 frontier.
+    externally_anchored = bool(reproducible is True or has_human)
     if judge_receipt or reproducible is True or has_human:
-        gates['floor'] = {'passed': True, 'reasons': []}
+        gates['floor'] = {'passed': True, 'reasons': [], 'measurement_externally_anchored': externally_anchored}
     else:
-        gates['floor'] = {'passed': False, 'reasons': ['no_receipt_for_canonical']}
+        gates['floor'] = {'passed': False, 'reasons': ['no_receipt_for_canonical'],
+                          'measurement_externally_anchored': externally_anchored}
         outcomes.append(GateOutcome('floor', ('no_receipt_for_canonical',)))
     out = compose_gates(*outcomes)
     return {'ok': out.passed, 'reasons': out.reasons, 'gates': gates}
