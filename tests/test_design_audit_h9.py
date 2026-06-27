@@ -54,9 +54,12 @@ def test_every_verdict_transition_write_has_cas_guard():
                 if not _TRANSITION.search(cy):
                     continue
                 n_transitions += 1
-                # 가드는 *첫 SET 이전*(MATCH/WHERE/WITH 영역)에 있어야 인정 — SET 절 안의 verdict='CANONICAL'
+                # 가드는 *첫 (실)SET 이전*(MATCH/WHERE/WITH 영역)에 있어야 인정 — SET 절 안의 verdict='CANONICAL'
                 # 리터럴이 자기 자신을 가드로 위장하는 false-pass 차단(Cypher 는 WHERE 가 SET 보다 앞).
-                pre_set = cy.split("SET", 1)[0]
+                # 단 eager-lock 무전이 SET(`SET x._cas=coalesce(x._cas,0)+0` — 술어 평가 전 노드 쓰기락 선점,
+                # #16/#17 원자화)은 verdict 전이가 아니므로 제거한 뒤 '첫 SET' 을 찾는다(락 SET 이 가드를 가리지 않게).
+                cas_stripped = re.sub(r"SET\s+\w+\._cas\s*=\s*coalesce\([^)]*\)\s*\+\s*0", "", cy)
+                pre_set = cas_stripped.split("SET", 1)[0]
                 if not any(tok in pre_set for tok in _GUARD_TOKENS):
                     snippet = " ".join(cy.split())[:120]
                     violations.append(f"{relpath}: 무가드 verdict-전이 SET → …{snippet}…")

@@ -153,4 +153,10 @@ def assert_positive_roundtrip(*, run_id: str = "marquez-positive-roundtrip",
         raise AssertionError(
             f"Marquez round-trip lost: ship→독립read→compare 가 미도착/불일치 — reasons={v.get('reasons')} "
             f"(drop={drop}). 독립 reader 가 producer 가 쓴 run({run_id})을 GET 으로 읽지 못함 = silent ingest loss.")
+    # 나생문 #10: presence(ok) 만으론 *부분* 적재유실(3 중 1 남음)을 못 잡는다 → read_back 을 ship 한 n_events 와
+    #   대조(oo_verify outcomes<expect_total 동형). M11 비대칭의 나머지 절반(부분 drop=RED) 봉합.
+    if not drop and v.get("read_back") != n_events:
+        raise AssertionError(
+            f"Marquez round-trip partial loss: ship {n_events} → 독립 readback {v.get('read_back')} "
+            f"(부분 ingest 유실; run {run_id}). presence 만으론 못 잡던 비대칭 — oo outcomes<expect_total 동형.")
     return v

@@ -181,8 +181,16 @@ class ProgrammeService:
         metrics = self.compute_metrics(td)
         bi = dict(bi)
         bi['canonical_credence'] = (metrics.get('bayes') or {}).get('canonical_credence') or 0.5
-        hard_core = tuple((td.get('hard_core') or ()) if isinstance(td.get('hard_core'), (list, tuple))
-                          else ([td['hard_core']] if td.get('hard_core') else ()))
+        # 나생문 #5: free-text hard_core 를 가정별로 토큰화(judgement_service 와 동형) — 단일 blob 으로 넘기면
+        #   _probe_moves 의 'already-probed' 제외가 dead-wired(metric_name 네임스페이스와 교차 불가)되고 PROBE 가
+        #   hard-core 전체를 단일 stale 타깃으로만 낸다. 가정별로 쪼개 per-assumption probe + 억제가 살아나게.
+        raw_hc = td.get('hard_core')
+        if isinstance(raw_hc, (list, tuple)):
+            hard_core = tuple(str(c).strip() for c in raw_hc if str(c).strip())
+        elif raw_hc:
+            hard_core = tuple(t.strip() for t in str(raw_hc).replace(';', ',').replace('\n', ',').split(',') if t.strip())
+        else:
+            hard_core = ()
         tested = tuple(r.get('metric_name') for r in td['nodes']
                        if r.get('verdict') in ('CANONICAL', 'progressive') and r.get('metric_name'))
         return appraise_and_plan(nodes=td['nodes'], frontier=td['frontier'], branch=bi,

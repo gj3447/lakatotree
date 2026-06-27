@@ -154,6 +154,36 @@ class JudgementService:
             return 1.0
         return float(eigen) if backed else 0.0
 
+    def _isolate_script_file(self, file_str: str) -> tuple[Path | None, dict]:
+        """FF4 경로격리 — 평이경로/`file::symbol` 양 분기 *공용*(나생문 #12: 분기 비대칭 봉합).
+
+        반환 (resolved, {}) = 통과 / (None, {'reason': ...}) = 거부.
+        통과 = 허용 루트(repo ROOT + OS temp + env) 내, size-cap 이하, 존재하는 정규파일.
+        상대경로는 ROOT 기준 join 후 traversal 거부, 절대경로는 _allowed_script_roots() 안일 때만 허용.
+        """
+        root = Path(longinus.ROOT).resolve()
+        p = Path(file_str)
+        if p.is_absolute():
+            try:
+                resolved = p.resolve()
+            except OSError:
+                return None, {'reason': 'unresolvable', 'script': file_str}
+            # 절대경로도 허용 루트 안에 있어야 — 임의 파일 sha 오라클 + 무인증 RAM-DoS 차단.
+            if not any(r == resolved or r in resolved.parents for r in _allowed_script_roots()):
+                return None, {'reason': 'out_of_root', 'script': file_str}
+        else:
+            resolved = (root / p).resolve()
+            if root not in resolved.parents and resolved != root:   # ../ 탈출 = traversal 거부
+                return None, {'reason': 'path_traversal', 'script': file_str}
+        if not resolved.is_file():   # 미존재/비정규 = 재계산 불가
+            return None, {'reason': 'not_a_file', 'script': file_str}
+        try:   # unbounded read 차단 — size cap (대용량 파일 RAM-exhaustion 방지)
+            if resolved.stat().st_size > self._SCRIPT_MAX_BYTES:
+                return None, {'reason': 'too_large', 'script': file_str, 'size': resolved.stat().st_size}
+        except OSError:
+            return None, {'reason': 'read_error', 'script': file_str}
+        return resolved, {}
+
     def _recompute_script_sha(self, script: str) -> tuple[str | None, dict]:
         """#H3 (prom-honesty/receipt-integrity): judge_script_sha 를 *서버가 파일 내용에서 재유도*.
 
@@ -161,45 +191,29 @@ class JudgementService:
         r.script 가 읽을 수 있는 소스면 서버가 그 본문으로 sha256 을 재계산해 영수증을 현실에 묶는다.
           - 'file::symbol' 형태 → longinus.symbol_body_sha (CPG 본문해시; 부재/모호=None).
           - 평이한 경로 → 파일 내용 hashlib.sha256.
-        안전 경로: 상대경로는 프로젝트 루트(longinus.ROOT) 기준 join 하되 루트를 벗어나면(traversal) 거부.
-        절대경로는 *존재하는 정규파일* 일 때만 직접 읽음. 재계산 불가(inline/미존재/traversal/심볼 모호)면
-        (None, …) 반환 → 호출부가 정직 fallback(client 값 유지 + server_verified=False).
+        두 분기 모두 _isolate_script_file 로 FF4 격리(허용 루트·size-cap)를 *동일하게* 거친다.
+        재계산 불가(inline/미존재/traversal/심볼 모호/루트 밖)면 (None, …) 반환 → 호출부가 정직 fallback
+        (client 값 유지 + server_verified=False).
         """
         s = (script or '').strip()
         if not s:
             return None, {'reason': 'empty_script'}
         if '::' in s:   # file::symbol — Longinus CPG 본문해시(심볼 실존검증)
             file_part, _, symbol = s.partition('::')
+            resolved, info = self._isolate_script_file(file_part)   # FF4 격리: 평이경로 분기와 대칭
+            if resolved is None:
+                return None, info
             try:
-                sha, info = longinus.symbol_body_sha(file_part, symbol)
+                sha, sinfo = longinus.symbol_body_sha(str(resolved), symbol)
             except OSError:
                 return None, {'reason': 'symbol_io_error', 'script': s}
             if sha is None:
-                return None, {'reason': 'symbol_unresolved', **info}
-            return sha, {'reason': 'symbol_body_sha', **info}
-        root = Path(longinus.ROOT).resolve()
-        p = Path(s)
-        if p.is_absolute():
-            try:
-                resolved = p.resolve()
-            except OSError:
-                return None, {'reason': 'unresolvable', 'script': s}
-            # FF4 (보안, deep-dive 2026-06-26): 절대경로도 허용 루트 안에 있어야 — relative traversal 거부와 대칭.
-            #   임의 파일(/etc/passwd 등) sha 오라클 + 무인증 RAM-DoS 차단. 허용 = repo ROOT + OS temp(+env).
-            if not any(r == resolved or r in resolved.parents for r in _allowed_script_roots()):
-                return None, {'reason': 'out_of_root', 'script': s}
-            if not (resolved.is_file()):   # 미존재/비정규 = 재계산 불가
-                return None, {'reason': 'not_a_file', 'script': s}
-        else:
-            resolved = (root / p).resolve()
-            if root not in resolved.parents and resolved != root:   # ../ 탈출 = traversal 거부
-                return None, {'reason': 'path_traversal', 'script': s}
-            if not resolved.is_file():
-                return None, {'reason': 'not_a_file', 'script': s}
-        # FF4 (보안): unbounded read_bytes → streaming file_sha + size cap (대용량 파일 RAM-exhaustion 차단).
+                return None, {'reason': 'symbol_unresolved', **sinfo}
+            return sha, {'reason': 'symbol_body_sha', **sinfo}
+        resolved, info = self._isolate_script_file(s)
+        if resolved is None:
+            return None, info
         try:
-            if resolved.stat().st_size > self._SCRIPT_MAX_BYTES:
-                return None, {'reason': 'too_large', 'script': s, 'size': resolved.stat().st_size}
             sha = file_sha(str(resolved))
         except OSError:
             return None, {'reason': 'read_error', 'script': s}
@@ -271,6 +285,8 @@ class JudgementService:
             #   지문 밖 — 노드 자체 verdict/source/qsr/논증까지만 낙관적 락; 광역은 후속.)
             # #M12: 직전 canonical 강등을 verdict_source='engine' 으로 귀속(다른 강등경로와 정합).
             rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
+                  SET cur._cas = coalesce(cur._cas,0) + 0
+                  WITH t, cur
                   WHERE coalesce(cur.verdict,'') = coalesce($exp_verdict,'')
                     AND coalesce(cur.verdict_source,'') = coalesce($exp_source,'')
                     AND coalesce(cur.qualitative_self_report,false) = $exp_qsr
@@ -558,6 +574,8 @@ class JudgementService:
         #   이 SET 이 실행되므로 거부 시 노드가 빈 scripted 로 잠기지 않는다. RETURN e.tag(claimed)=0행이면
         #   이미 scripted → 아래에서 409. (상단 238행 read-check 는 빠른 거절, 이 가드가 원자 권위.)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                   SET e._cas = coalesce(e._cas,0) + 0
+                   WITH e
                    WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.node_state=$node_state,

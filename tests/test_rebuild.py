@@ -42,7 +42,9 @@ def test_rebuild_regenerates_from_roots_ignoring_buffers():
     ex, calls, trace = make_exec()
     res = ex.run(MANI, recorded_metric=0.279, cmd_for=lambda s: f"run {s['producer']}")
     assert len(calls) == 2   # 버퍼 무시하고 recipe 2단계 전부 재실행
-    assert res.verdict == 'rebuildable' and res.within_tolerance
+    # 나생문 #9: 이 MANI 는 kind='measurement' step 이 없어 metric 출처가 producer 자기보고(M1 미충족)
+    #   → 정직한 토큰 'rebuildable_unverified'(within 은 보존). 독립 measurer 가 있으면 'rebuildable'.
+    assert res.verdict == 'rebuildable_unverified' and res.within_tolerance
 
 def test_metric_mismatch_fails():
     ex, calls, trace = make_exec(final_metric='metric=0.9')   # 재생성 결과 다름

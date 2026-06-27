@@ -134,11 +134,16 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
                        foundation_gaps: tuple = (), credibility_reasons: tuple = ()) -> tuple[bool, tuple]:
     """모든 승격 게이트 합성 (F-CON-1/2/5 + Foundation + Credibility) → 단일 결정."""
     _, reasons = promotion_gate(scripted_verdict=scripted_verdict, stands=stands, reproducible=reproducible)
+    # 나생문 #2: synthesize_promotion 과 동일한 CANONICAL floor — receipt-0 승격 차단(progressive_conditional
+    #   등 non-scripted PROMOTABLE 이 constitution-only 로 통과하던 잠재 fail-open 봉합; 두 composer 발산 제거).
+    judge_receipt = is_scripted_verdict(scripted_verdict)
+    floor = None if (judge_receipt or reproducible is True) else GateOutcome('floor', ('no_receipt_for_canonical',))
     out = compose_gates(
         GateOutcome('constitution', tuple(reasons)),
         GateOutcome('foundation', ('foundation_gaps:' + ','.join(foundation_gaps),))
         if foundation_gaps else None,
         GateOutcome('credibility', tuple(credibility_reasons)),
+        floor,
     )
     return (out.passed, out.reasons)
 

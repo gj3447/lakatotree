@@ -117,6 +117,11 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
         odds *= math.exp(lb)
     # prom-honesty/5 (적대감사 2026-06-20, 정정): distinct 강확증 다수에서 float odds 가 포화해 정확히
     #   1.0 을 반환할 수 있다 → docstring 을 [0,1) 에서 (0,1] 로 정정(상한 1.0 포함). 과장 제거.
+    # 나생문 #4: ≈395+ distinct 최대강도 확증서 odds 가 +inf 로 overflow → inf/(1+inf)=NaN(문서화된 (0,1]
+    #   위반, should_abandon_bayes 가 NaN<thr=False 로 fail-toward-retain, canonical_credence 에 NaN 누수).
+    #   유한 최대로 포화시켜 정확히 1.0 반환(문서화된 (0,1] 보존). 비-overflow 경로는 불변.
+    if not math.isfinite(odds):
+        return 1.0
     return odds / (1 + odds)
 
 
