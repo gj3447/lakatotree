@@ -85,7 +85,7 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     if not node.get("novel_confirmed"):
         reasons.append("novel_unconfirmed")  # the decisive false-aha signature
     bf = bayes_factor(node.get("verdict", ""), node.get("delta", 0.0),
-                      node.get("noise_band", 0.0), node.get("source_trust", 1.0))
+                      node.get("noise_band"), node.get("source_trust", 1.0))   # #3: 부재→None(약증거)
     if bf <= bf_substantial:
         reasons.append(f"bf_marginal:{bf:.3f}<={bf_substantial}")
     balance = problem_balance(int(node.get("closed", 0)), int(node.get("opened", 0)))
@@ -128,7 +128,7 @@ def _node_to_eureka_input(node: dict) -> dict:
         "novel_confirmed": node.get("novel_confirmed"),
         "verdict": node.get("verdict", ""),
         "delta": delta,
-        "noise_band": node.get("pred_noise_band") or 0.0,
+        "noise_band": node.get("pred_noise_band"),   # #3: 누락→None(약증거); 선언-0 은 보존
         "source_trust": node.get("source_trust", 1.0),
         "closed": len(node.get("pred_closes") or []),
         "opened": len(node.get("questions") or []),

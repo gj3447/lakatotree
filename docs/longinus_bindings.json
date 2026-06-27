@@ -1198,7 +1198,7 @@
    "symbol": "bayes_factor",
    "kind": "def",
    "line_hint": 51,
-   "sha256": "b4b1bffb11ccc10a",
+   "sha256": "b3dd304dcc38baf6",
    "layer": "bayes",
    "serving": "diagnostic",
    "frege_sinn": "판결+효과크기+출처신뢰→BF"
