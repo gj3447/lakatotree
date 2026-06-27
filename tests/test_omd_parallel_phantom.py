@@ -49,9 +49,12 @@ _OMD_DISJOINT = os.path.join(_OMD_ROOT, "omd_server", "disjoint.py")
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _load_real_disjoint():
     """실제 OMD disjoint.py 를 파일 경로로 직접 로드(stdlib-only, .core 안 끌어옴).
@@ -237,6 +240,7 @@ def test_task_without_reads_never_phantom_blocked():
 
 
 # ---- 교차검증: 실제 disjoint.py 가 보수적 overlap soundness 를 만족(독립 소스) ----
+@_skip_omd
 def test_real_disjoint_overlap_is_sound():
     """실제 OMD disjoint.py 를 file-path importlib 로 직접 로드해 soundness 확인:
     알려진 겹침엔 false-negative 없음, 궤도 밖 경로엔 false-positive 없음.
@@ -256,6 +260,7 @@ def test_real_disjoint_overlap_is_sound():
 #   인-테스트 미니 모델과 완전히 독립 — 실제 omd_server.Coordinator 가 generation
 #   추적으로 stale 읽기를 플래그함을 입증.
 # ============================================================================
+@_skip_omd
 def test_omd_d12_read_coherence_dimension_test_passes_in_real_substrate():
     """실제 OMD 서브스트레이트가 D12 read-set 코히런스(generation gate)를 구현했는지
     OMD 자체 venv 의 pytest 로 독립 검증.
@@ -291,6 +296,7 @@ def test_omd_d12_read_coherence_dimension_test_passes_in_real_substrate():
 
 
 # ---- 음성 대조(오라클 비-vacuous 증명): 존재하지 않는 테스트 경로는 rc!=0 ----
+@_skip_omd
 def test_subprocess_oracle_discriminates_bogus_test_path():
     """오라클이 진짜로 변별함을 증명: 가짜(존재하지 않는) 테스트 파일을 같은 러너로
     돌리면 pytest 가 rc!=0(또는 'no tests ran')을 낸다 = mechanism 오라클이 그냥

@@ -183,9 +183,12 @@ class MergeOrchestrator:
 # ===========================================================================
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def test_single_phase_merge_crash_strands_split_phase_recovers_exactly_once():
     # ---- NAIVE single-phase: crash mid-commit -> torn write ----------------
@@ -293,6 +296,7 @@ def _cfg_invariants(cfg_text):
 # ===========================================================================
 # GUARD: MECHANISM oracle (positive / novel). Independent of the in-test model.
 # ===========================================================================
+@_skip_omd
 def test_omd_tla_checks_merge_sha_and_at_most_one_merge_token():
     assert os.path.exists(TLA_PATH), "real OMD spec must exist: %s" % TLA_PATH
     assert os.path.exists(CFG_PATH), "real OMD cfg must exist: %s" % CFG_PATH
@@ -323,6 +327,7 @@ def test_omd_tla_checks_merge_sha_and_at_most_one_merge_token():
 # ===========================================================================
 # Extra regression / negative-control coverage (non load-bearing).
 # ===========================================================================
+@_skip_omd
 def test_cfg_parser_extracts_known_connect_invariants():
     """Sanity: parser recovers the full INVARIANTS list and excludes CONSTANTS."""
     with open(CFG_PATH, "r", encoding="utf-8") as f:

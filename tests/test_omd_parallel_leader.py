@@ -46,9 +46,12 @@ _CFG_SECTIONS = {
 # --------------------------------------------------------------------------
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _tla_declared_operators(tla_text):
     """`<Name> ==` 형태로 *선언된* 연산자 이름 집합."""
@@ -185,6 +188,7 @@ def test_split_brain_double_write_epoch_fencing_admits_one_writer():
 # ==========================================================================
 # guard_mechanism — 실 OMD substrate 독립 corroboration (STRUCTURAL TLA)
 # ==========================================================================
+@_skip_omd
 def test_omd_tla_checks_single_leader_and_stale_cannot_lead():
     """omd_leader.tla 가 fencing 불변식 셋을 *선언* AND .cfg 가 *체크* 등재.
 
@@ -225,6 +229,7 @@ def test_omd_tla_checks_single_leader_and_stale_cannot_lead():
 # ==========================================================================
 # 회귀/음성 통제 (보조) — 파서 판별력 + cfg 절 경계.
 # ==========================================================================
+@_skip_omd
 def test_cfg_parser_discriminates_and_respects_section_boundaries():
     """.cfg 파서가 INVARIANTS 절만 수집하고 CONSTANTS/SPEC 토큰은 안 줍는지."""
     sample = (

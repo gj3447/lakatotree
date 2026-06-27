@@ -127,9 +127,12 @@ class _LeaseScheduler:
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _drive_orphan_schedule(reclaim_enabled, ttl_ticks=3, horizon=50):
     """Adversarial schedule: holder acquires, crashes immediately, waiter blocks.
@@ -189,6 +192,7 @@ def test_reclaim_is_finite_time_not_just_eventual():
 # GUARD: MECHANISM oracle (positive / novel) — BEHAVIORAL subprocess in OMD venv.
 # Independent source of truth: the REAL OMD substrate's own D2 reclaim suite.
 # --------------------------------------------------------------------------- #
+@_skip_omd
 def test_omd_d2_reclaim_dimension_test_passes_in_real_substrate():
     """Independent corroboration: the REAL OMD substrate reclaims both voluntary
     `bail` and involuntary zombie-timeout via ONE routine. We do NOT re-derive
@@ -218,6 +222,7 @@ def test_omd_d2_reclaim_dimension_test_passes_in_real_substrate():
     )
 
 
+@_skip_omd
 def test_omd_concurrency_doc_declares_unified_reclaim_routine():
     """Lighter independent corroboration (documentary): CONCURRENCY.md states the
     voluntary + involuntary paths converge on ONE reclaim routine. Negative

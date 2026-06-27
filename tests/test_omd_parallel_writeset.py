@@ -41,9 +41,12 @@ import pytest
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _naive_covered(path: str, globs) -> bool:
     """LOOSE(naive) 포함 판정 — `fnmatch.fnmatch` 직접. `*`/char-class 가 `/` 를 가로지르고
@@ -155,6 +158,7 @@ def test_loose_overlap_admits_orphan_write_exact_path_in_globs_rejects():
 # ═════════════════════════════════════════════════════════════════════════════
 # guard_mechanism — 양성/novel 오라클 (REAL OMD disjoint.py, 독립 진리원천)
 # ═════════════════════════════════════════════════════════════════════════════
+@_skip_omd
 def test_omd_path_in_globs_is_exact_no_false_positive_on_out_of_orbit():
     """실 OMD substrate 가 정확(soundness) write-set 감사 매처를 *실제로* 구현하는지 코로보레이트.
     in-test 모델을 재사용하지 않고 disjoint.py 를 파일경로로 import 해 path_in_globs/
@@ -190,6 +194,7 @@ def test_omd_path_in_globs_is_exact_no_false_positive_on_out_of_orbit():
 # ─────────────────────────────────────────────────────────────────────────────
 # 추가 회귀/negative-control (load-bearing 아님)
 # ─────────────────────────────────────────────────────────────────────────────
+@_skip_omd
 def test_negative_control_real_matcher_rejects_bogus_out_of_orbit_path():
     """실 disjoint.py 매처가 완전히 무관한 경로(`zzz/elsewhere.py`)를 어떤 a-궤도 glob 에도
     덮이지 않는다고 거부 — 오라클이 bogus 입력을 통과시키지 않음을 입증."""
@@ -199,6 +204,7 @@ def test_negative_control_real_matcher_rejects_bogus_out_of_orbit_path():
     assert mod.path_in_globs("a/deep/nested/x.py", ["a/**"]) is True
 
 
+@_skip_omd
 def test_in_test_fixed_model_matches_real_omd_on_audit_cases():
     """독립성 교차검증: in-test FIXED 모델과 실 OMD path_in_globs 가 핵심 감사 케이스에서 *일치*
     (두 오라클이 같은 진리를 서로 다른 코드로 증언). 단, 측정 출처는 분리되어 있다."""

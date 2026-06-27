@@ -76,9 +76,12 @@ class Resource:
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _run_gc_pause_schedule(*, enforce_fence: bool):
     """Kleppmann GC-pause 스케줄을 결정론적 step 재배열로 구동.
@@ -185,6 +188,7 @@ def test_pure_ttl_lease_admits_stale_write_fencing_token_rejects_it():
 # ════════════════════════════════════════════════════════════════════════════
 #  guard_mechanism — 양성/novel oracle (실 OMD spec 구조 corroboration)
 # ════════════════════════════════════════════════════════════════════════════
+@_skip_omd
 def test_omd_tla_checks_unique_live_fence_and_no_stale_mutate():
     """실 OMD TLA spec 이 fencing 불변식을 *정의 + model-check* 함을 독립 확증.
 
@@ -222,6 +226,7 @@ def test_omd_tla_checks_unique_live_fence_and_no_stale_mutate():
 
 
 # ── 추가 음성통제: cfg 파서가 INVARIANTS 밖 토큰을 오인하지 않는지 ─────────────
+@_skip_omd
 def test_cfg_parser_does_not_match_non_invariant_section_tokens():
     """파서가 다른 섹션의 토큰(예: CONSTANTS 의 'MaxFence')을 invariant 로 오인하면 안 된다."""
     lease_cfg = _read(LEASE_CFG)
