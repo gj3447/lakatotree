@@ -112,3 +112,53 @@ class ReproducibilityContract:
             current_shas=current_shas,
             current_env=current_env,
         )
+
+
+# ── Producer replay — 채점 스크립트 *재실행* 으로 client metric_value 검증 (나생문 #1 근본 봉합) ──────
+#   LineageReplayGate 는 계보 DAG *모양*(source/staleness/env)을 본다. 그러나 #1 의 forge 는 노드의
+#   metric_value 가 서버가 재실행하지 않는 client float 라는 것 — judge 가 그 숫자를 ground truth 로 신뢰한다.
+#   producer_replay 는 score_cmd 를 (주입 포트로) 다시 돌려 재생성 metric 이 recorded 와 일치하는지 대조해
+#   위조를 끊는다. io/rebuild.RebuildExecutor 가 recipe 전체를 재실행하는 것의 *채점경로 한정* 판(板).
+from lakatos.io.rebuild import _parse_metric   # noqa: E402 — 같은 io 층 metric 파서 재사용(DRY)
+
+
+@dataclass(frozen=True)
+class ProducerReplayVerdict:
+    """채점 스크립트 재실행 결과. verified: True=외부검증 / False=위조·크래시·metric부재 / None=재실행불가(비차단)."""
+    verified: bool | None
+    regenerated: float | None
+    recorded: float
+    reason: str
+
+
+def producer_replay(*, score_cmd: str | None, recorded_metric: float, run_bash,
+                    tolerance: float = 1e-9) -> ProducerReplayVerdict:
+    """채점 스크립트를 *재실행*해 client 가 보고한 recorded_metric 을 검증 (나생문 #1 근본 봉합).
+
+    judge 는 결정론적이나 그 입력(metric_value)은 서버가 재실행 안 하던 client float 였다(app.py:395 자인).
+    여기서 score_cmd 를 주입된 run_bash 포트((cmd)→(stdout, exit_code))로 다시 돌려 재생성 metric 이
+    recorded 와 일치하는지 대조한다 — '영수증은 현실이 끊어준다'를 측정 자체에 적용.
+
+      verified=True  : 재실행 성공 ∧ |regen−recorded|≤tolerance → 측정 외부검증(외부앵커 자격)
+      verified=False : 불일치(위조)·exit≠0(크래시, #24 정합)·metric 부재 → 신뢰 불가(forge 적발)
+      verified=None  : score_cmd 없음 → 재실행 불가(증명 못 함, *차단 안 함* — reproducible=None 동형)
+
+    포트 주입이라 순수/hermetic: 실 실행은 호출자(서버 integration tier)가 sandbox 로 공급한다 — 본 함수는
+    *판정 로직*만. (live HTTP 서버가 client 스크립트를 직접 실행하는 것은 보안상 별도 gated 통합 — 미연결.)
+    """
+    if not score_cmd:
+        return ProducerReplayVerdict(verified=None, regenerated=None,
+                                     recorded=recorded_metric, reason='no_rerunnable_scorer')
+    out, code = run_bash(score_cmd)
+    if code != 0:
+        return ProducerReplayVerdict(verified=False, regenerated=None,
+                                     recorded=recorded_metric, reason=f'scorer_nonzero_exit:{code}')
+    regen = _parse_metric(out)
+    if regen is None:
+        return ProducerReplayVerdict(verified=False, regenerated=None,
+                                     recorded=recorded_metric, reason='no_metric_in_output')
+    if abs(regen - recorded_metric) <= tolerance:
+        return ProducerReplayVerdict(verified=True, regenerated=regen,
+                                     recorded=recorded_metric, reason='externally_verified')
+    return ProducerReplayVerdict(verified=False, regenerated=regen,
+                                 recorded=recorded_metric, reason='metric_mismatch')

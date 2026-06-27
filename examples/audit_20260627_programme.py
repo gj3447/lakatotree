@@ -198,7 +198,7 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_mechanism="test_external_receipt_is_flagged_externally_anchored"),
     # ───── 깊은 frontier(아키텍처): producer replay — #1 의 근본 봉합(구현 전 RED 하네스) ─────
     AuditNode(
-        tag="FRONTIER_producer_replay", severity="P2", parent="OPEN1_canonical_floor_externality", claimed=False,
+        tag="FRONTIER_producer_replay", severity="P2", parent="OPEN1_canonical_floor_externality", claimed=True,
         evidence="server/app.py:395 (producer replay 미구현) · io/rebuild.py(재실행 존재, 채점경로 미연결) · #1 honest-exposure",
         story="#1 의 *근본* 봉합 — 채점 스크립트를 재실행해 client metric_value 를 검증(위조 적발). honest-exposure 는 "
               "간극을 노출만 했다. producer_replay 가 재생성 metric≠recorded 면 verified=False 로 forge 를 끊는다. "
