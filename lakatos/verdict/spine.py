@@ -150,7 +150,8 @@ def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: boo
 
 def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
                          foundation=None, credibility: dict | None = None, verdict_source=_UNSET,
-                         qualitative_self_report: bool = False) -> dict:
+                         qualitative_self_report: bool = False,
+                         producer_replay_verified: bool | None = None) -> dict:
     """완전 합성 승격 게이트 — 헌법(promotion_gate) + FoundationGate(준비도) +
     CredibilityPromotionGate(인터넷 등급). 입력 있는 게이트만 실행, 단일 결정 + per-gate 리포트.
 
@@ -192,8 +193,11 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
     #   *외부성*은 강제되지 않는다(producer replay 미구현 — app.py 자인). 그래서 floor 통과는 막지 않되(승격
     #   거동 불변), 측정이 외부앵커(reproducible 실 replay | human attestation)로 *뒷받침되는지*를 영수증에
     #   명시한다(measurement_externally_anchored). '위조불가 영수증'이라는 과대표현을 닫고 — floor 가 judge_receipt
-    #   단독이면 anchored=False 로 *정직히* 표기. 외부성 *강제*(option-a)·producer replay 는 별도 frontier.
-    externally_anchored = bool(reproducible is True or has_human)
+    #   단독이면 anchored=False 로 *정직히* 표기.
+    # 근본 봉합 진척: producer replay(io.replay.producer_replay — 채점 스크립트 재실행으로 client metric 검증)가
+    #   verified=True 면 측정이 재실행으로 확증된 것 → *세 번째 외부앵커*. (호출자가 검증값을 넘긴다; live HTTP 서버가
+    #   client 스크립트를 직접 실행하는 것은 보안상 별도 gated 통합 — 미연결. 외부성 *강제*(option-a)도 frontier.)
+    externally_anchored = bool(reproducible is True or has_human or producer_replay_verified is True)
     if judge_receipt or reproducible is True or has_human:
         gates['floor'] = {'passed': True, 'reasons': [], 'measurement_externally_anchored': externally_anchored}
     else:
