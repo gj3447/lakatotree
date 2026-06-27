@@ -209,7 +209,7 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_mechanism="test_producer_replay_verifies_honest_metric"),
     # ───── 깊은 frontier: producer replay *live 통합*(서버가 채점 스크립트 재실행) — 구현 전 RED 하네스 ─────
     AuditNode(
-        tag="FRONTIER_producer_replay_live", severity="P2", parent="FRONTIER_producer_replay", claimed=False,
+        tag="FRONTIER_producer_replay_live", severity="P2", parent="FRONTIER_producer_replay", claimed=True,
         evidence="server.app._producer_replay_for_node(미구현) · judgement_service set_verdict(reproducible_for_node 동형) · LAKATOS_REPLAY_EXEC 게이트",
         story="프리미티브(io.replay.producer_replay)는 판정로직만 — 서버가 채점 스크립트를 *실제 재실행*해야 런타임에 "
               "forge 가 닫힌다. live 통합: _producer_replay_for_node(기본 비실행=보안, 게이트 ON+sandbox 러너 시 위조 "
