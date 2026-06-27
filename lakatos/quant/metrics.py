@@ -55,7 +55,7 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         d = {'verdict': r['verdict']}
         if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
             d['delta'] = r['metric_value'] - r['pred_baseline']
-            d['noise_band'] = r.get('pred_noise_band') or 0.0
+            d['noise_band'] = r.get('pred_noise_band')   # #3: 누락→None(약증거); 선언-0 은 보존
         seq.append(d)
     consec = 0
     for r in chain:                                # leaf 쪽부터 연속 비진보
@@ -138,7 +138,7 @@ def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
         d = {'verdict': r['verdict']}
         if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
             d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
-            d['noise_band'] = r.get('pred_noise_band') or 0.0
+            d['noise_band'] = r.get('pred_noise_band')   # #3: 누락→None(약증거); 선언-0 은 보존
         if r.get('pred_closes'):
             d['target'] = r['pred_closes']
         # A2: 출처신뢰를 credence 로 전달 — 전엔 떨궈서 branch_credence 가 항상 1.0(죽은 경로).
@@ -300,7 +300,7 @@ def _multiplicity_screen(nodes: list) -> dict:
                 and r.get('metric_value') is not None and r.get('pred_baseline') is not None):
             fam[(r.get('metric_name'), r.get('metric_scope'))].append(dict(
                 tag=r['tag'], delta=r['metric_value'] - r['pred_baseline'],
-                noise_band=r.get('pred_noise_band') or 0.0,
+                noise_band=r.get('pred_noise_band'),   # #3: 누락→None(약증거); 선언-0 은 보존
                 direction=r.get('pred_direction') or 'lower'))
     out = {}
     for key, cands in fam.items():

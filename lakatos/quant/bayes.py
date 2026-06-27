@@ -60,14 +60,19 @@ def effect_size(delta: float, noise_band: float,
     return abs(delta) / max(noise_band, floor)
 
 
-def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0,
+def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float | None = 0.0,
                  source_trust: float = 1.0) -> float:
     """판결 + 효과크기 + 인터넷 출처신뢰 → Bayes factor. 권위 출처 = 강한 증거(P1).
-    equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게."""
+    equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게.
+
+    나생문 #3 (failsafe): noise_band 가 *부재*(None)면 측정 척도 미상 → 약증거(WEIGHT_FLOOR) — 불확실성을
+    선언 안 한 것이 최대 증거력을 공짜로 받지 못하게(SOURCE_TRUST_FAILSAFE 와 동형, multiplicity 의 untestable
+    과 정합). *선언된* noise_band(0 포함)는 결정론적 측정 척도로 보고 정상 효과크기를 적용한다(선언-0 = 무잡음
+    측정 = 큰 민감도 정당). 즉 '부재 ≠ 0' — feeder 는 누락을 0 으로 강등하지 말고 None 으로 흘릴 것."""
     base = BF_BASE.get(verdict, 1.0)
     if base == 1.0:
         return 1.0
-    es = min(effect_size(delta, noise_band), EFF_CAP) / EFF_CAP   # 0..1
+    es = 0.0 if noise_band is None else min(effect_size(delta, noise_band), EFF_CAP) / EFF_CAP   # 부재→약, 선언→0..1
     w = max(es, WEIGHT_FLOOR) * evidence_weight(source_trust)   # ★출처신뢰 결합
     return math.exp(math.log(base) * w)   # base>1 → BF>1, base<1 → BF<1
 
@@ -105,7 +110,7 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
             st = SOURCE_TRUST_FAILSAFE if v.get('source') is not None else 1.0
         if source_trust_map and v.get('source') in source_trust_map:
             st = source_trust_map[v['source']]   # ★고유벡터 글로벌 신뢰로 대체
-        bf = bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0), st)
+        bf = bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band'), st)   # #3: 부재→None(약증거)
         tgt = v.get('target')
         if bf > 1.0 and tgt is not None:
             lb = math.log(bf)

@@ -34,8 +34,8 @@ def judgment_pvalue(delta: float, noise_band: float, direction: str) -> float | 
 
     direction='lower' 면 delta<0 이 개선. noise_band=0 → None (검정 불가, 정직②).
     """
-    if noise_band <= 0 or not math.isfinite(delta):
-        return None
+    if noise_band is None or noise_band <= 0 or not math.isfinite(delta):
+        return None   # #3: 부재(None)·선언≤0 = 검정 척도 부재 → untestable(정직②)
     if direction not in ('lower', 'higher'):
         raise ValueError("direction 은 'lower'|'higher'")
     z = (-delta if direction == 'lower' else delta) / noise_band
