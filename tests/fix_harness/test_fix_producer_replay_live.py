@@ -142,11 +142,9 @@ def test_judgement_service_accepts_producer_replay_port():
     assert callable(svc.producer_replay_for_node)
 
 
-# ── (C) gated 통합 e2e: 실 HTTP + 실 sandbox 실행으로 위조 적발(로컬 skip). ──────────────────────────
-@pytest.mark.skipif(not os.environ.get("LAKATOS_IT"),
-                    reason="LAKATOS_IT 미설정 — live producer-replay e2e(실 sandbox 실행) skip")
-def test_live_producer_replay_catches_forge_end_to_end():   # pragma: no cover
-    raise NotImplementedError("LAKATOS_IT live producer-replay e2e — sandbox 러너 구현 후 채움")
+# ── (C) gated 통합 e2e — 실 Neo4j + 실 sandbox 실행으로 persist 된 anchor readback ───────────────────
+#   tests/integration/test_producer_replay_live.py 로 채워짐(LAKATOS_IT 게이트, testcontainers Neo4j):
+#   정직 측정 재실행 → measurement_externally_anchored=True · 위조 → False 가 CANONICAL 노드에 persist 됨을 단언.
 
 
 # 이중 가드 export (defect=위조 적발 / mechanism=정직 외부검증).

@@ -283,6 +283,9 @@ class JudgementService:
             if not decision['ok']:
                 raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
                                          f"게이트별: {decision['gates']}")
+            # 나생문 #1: 측정 외부성(reproducible|human|producer-replay 검증)을 노드에 *persist* — floor 의
+            #   honest-exposure 를 실제 관측가능하게(judge_receipt 단독 CANONICAL 은 anchored=False 로 보인다).
+            floor_anchored = bool(decision['gates'].get('floor', {}).get('measurement_externally_anchored'))
             # #H5 원자 CAS: 스냅샷(verdict/source/qsr + 논증집합 지문)이 write 시점에도 동일할 때만 승격.
             #   동시 재채점(source 변경)·반박 critique(논증집합 변경)가 끼면 0행 → 409. (M5 의 submit 원자가드를
             #   verdict-승격 경로로 미러. 단 credibility/foundation/reproducible 등 광역 신뢰그래프 race 는
@@ -309,7 +312,8 @@ class JudgementService:
                       cur.canonical_scope=$scope,
                       cur.canonical_assumptions=$assumptions,
                       cur.canonical_evidence_window=$evidence_window,
-                      cur.valid_until_rebutted=$valid_until_rebutted
+                      cur.valid_until_rebutted=$valid_until_rebutted,
+                      cur.measurement_externally_anchored=$mea
                   RETURN cur.tag AS tag''',
                     tree=name, tag=tag,
                     exp_verdict=cand.get('verdict'), exp_source=cand.get('verdict_source'),
@@ -318,7 +322,8 @@ class JudgementService:
                     former_state=NodeState.FORMER_CANONICAL.value,
                     canonical_state=NodeState.CANONICAL.value,
                     scope=v.scope, assumptions=v.assumptions,
-                    evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted)
+                    evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted,
+                    mea=floor_anchored)
             if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박) → stale 승격 차단
                 raise HTTPException(409, '동시변경 감지(CANONICAL 원자 CAS 0행) — floor 판정 스냅샷'
                                          '(verdict/source/qsr/논증집합)이 승격 직전 변해 무효. 최신상태 재평가 필요.')
