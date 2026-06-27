@@ -396,6 +396,17 @@ NODES = [
     for n in AUDIT_NODES
 ]
 
+# frontier 질문 — 발견당 1개. claimed(수정 착륙) = CLOSED(closed_by=노드), 미수정 = OPEN.
+# (scripts/sync_lakatos_programme_to_kg.py 가 NODES/FRONTIER 를 Neo4j KG 로 idempotent MERGE 동기화.)
+FRONTIER = [
+    dict(name=n.prediction.closes_question,
+         status="CLOSED" if n.claimed else "OPEN",
+         closed_by=[n.tag] if n.claimed else None,
+         body=f"[{n.severity}] {n.tag}: {n.prediction.novel_prediction} "
+              f"(guards: defect={n.guard_defect} / mechanism={n.guard_mechanism})")
+    for n in AUDIT_NODES if n.prediction is not None
+]
+
 
 if __name__ == "__main__":
     rc = receipt()
