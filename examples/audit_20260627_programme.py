@@ -207,6 +207,18 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         novel_target=_N("producer_replay_verifies_measurement"),
         guard_defect="test_producer_replay_catches_fabricated_metric",
         guard_mechanism="test_producer_replay_verifies_honest_metric"),
+    # ───── 깊은 frontier: producer replay *live 통합*(서버가 채점 스크립트 재실행) — 구현 전 RED 하네스 ─────
+    AuditNode(
+        tag="FRONTIER_producer_replay_live", severity="P2", parent="FRONTIER_producer_replay", claimed=False,
+        evidence="server.app._producer_replay_for_node(미구현) · judgement_service set_verdict(reproducible_for_node 동형) · LAKATOS_REPLAY_EXEC 게이트",
+        story="프리미티브(io.replay.producer_replay)는 판정로직만 — 서버가 채점 스크립트를 *실제 재실행*해야 런타임에 "
+              "forge 가 닫힌다. live 통합: _producer_replay_for_node(기본 비실행=보안, 게이트 ON+sandbox 러너 시 위조 "
+              "적발) + JudgementService 포트 → set_verdict 가 floor 로 흘림. defect=위조 적발 / mechanism=정직 외부검증. "
+              "보안: client 스크립트 기본 비실행, 명시 게이트+sandbox 경유만. 구현 전 RED 하네스 — 미착륙 OPEN.",
+        prediction=_P("server_does_not_reexecute_scorer", "서버가 채점 스크립트를 재실행해 client metric 검증(위조 적발)", "q-producer-replay-live"),
+        novel_target=_N("gated_sandbox_replay_wired"),
+        guard_defect="test_producer_replay_for_node_catches_fabricated_when_enabled",
+        guard_mechanism="test_producer_replay_for_node_verifies_honest_when_enabled"),
     AuditNode(
         tag="OPEN3_noise_band_maxes_bayes", severity="P2", parent="audit_20260627_root", claimed=False,
         evidence="bayes.py:57-72 · metrics.py:58,141",
