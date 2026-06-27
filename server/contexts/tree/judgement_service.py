@@ -85,12 +85,15 @@ class JudgementService:
         hist: HistoryAppend,
         foundation: FoundationProvider,
         reproducible_for_node: ReproducibleProvider,
+        producer_replay_for_node: ReproducibleProvider | None = None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
         self.hist = hist
         self.foundation = foundation
         self.reproducible_for_node = reproducible_for_node
+        # 나생문 #1 근본 봉합(live): 채점 스크립트 재실행으로 측정 외부검증(미주입=None 반환 no-op = 거동 불변).
+        self.producer_replay_for_node = producer_replay_for_node or (lambda _n, _t: None)
 
     def _node_eigentrust(self, name: str, tag: str) -> tuple[str | None, float | None, bool]:
         """노드의 인터넷 관측 그래프 eigentrust → (src, eigen, backed). src=None: internal 노드
@@ -275,6 +278,7 @@ class JudgementService:
                 credibility=credibility,
                 reproducible=self.reproducible_for_node(name, tag),
                 qualitative_self_report=bool(cand.get('qualitative_self_report')),   # #H1: 질적 self-report 표식 → 메트릭 단독 floor 차단
+                producer_replay_verified=self.producer_replay_for_node(name, tag),   # 나생문 #1 live: 재실행 검증 → 세 번째 외부앵커
             )
             if not decision['ok']:
                 raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
