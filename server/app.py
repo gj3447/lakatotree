@@ -69,6 +69,8 @@ from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
+from lakatos.io.replay import producer_replay as _producer_replay   # 나생문 #1 live: 채점 스크립트 재실행 판정
+from lakatos.io.prov import replay_command as _replay_command       # judge_script(경로)+result_path → 재현명령
 from server.container import AppContainer
 from server.settings import ServerSettings
 
@@ -262,6 +264,7 @@ def _judgement_service():
         hist=hist,
         foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
         reproducible_for_node=_reproducible_for_node,
+        producer_replay_for_node=_producer_replay_for_node,   # 나생문 #1 live: 채점 스크립트 재실행 검증
     )
 
 
@@ -416,6 +419,67 @@ def _reproducible_for_node(name: str, tag: str) -> bool | None:
         if not server_sha or server_sha != recorded.get(src):
             return None   # 파일 부재/sha 불일치 → client 자기선언만으론 영수증 못 줌(증명 불가)
     return True
+
+
+# 나생문 #1 live producer replay — 채점 스크립트 재실행 검증. 보안: opt-in(LAKATOS_REPLAY_EXEC), 기본 OFF.
+_REPLAY_TOL = 1e-9          # 서버 *고정* 허용오차 — 결정론적 재실행이라 client noise_band 로 넓히지 않는다(review #3)
+_replay_exec_warned = False
+
+
+def _replay_exec_enabled() -> bool:
+    """LAKATOS_REPLAY_EXEC 을 *명시적 boolean* 으로 — '0'/'false'/'off' 도 truthy 라 켜지던 footgun 차단(review #2).
+    켜질 때 한 번 loud warning(서버가 client judge_script 를 재실행한다는 경고)."""
+    global _replay_exec_warned
+    on = os.environ.get('LAKATOS_REPLAY_EXEC', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    if on and not _replay_exec_warned:
+        logging.warning('LAKATOS_REPLAY_EXEC 활성 — 서버가 producer replay 로 client judge_script 를 재실행한다. '
+                        'sandbox 격리(컨테이너/seccomp/rlimit)를 운영자가 보장할 것.')
+        _replay_exec_warned = True
+    return on
+
+
+def _replay_run(score_cmd: str) -> tuple[str, int]:
+    """채점 *재현명령*('python <script> <result_path>') sandbox 재실행 — 게이트 하에서만 호출됨(가드).
+
+    timeout 으로 행 차단, shell=False(shlex.split)로 shell 주입 차단. 더 강한 격리(컨테이너/seccomp/rlimit)는
+    운영자 책임/후속 — live exec 은 opt-in 이며 기본 OFF. hermetic 테스트선 monkeypatch 됨.
+    """
+    import shlex
+    import subprocess
+    try:
+        argv = shlex.split(score_cmd or '')
+        if not argv:
+            return ('replay_error:empty_cmd', 1)
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+    except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+        return (f'replay_error:{type(exc).__name__}', 1)   # 비정상 → producer_replay 가 verified=False 로 처리
+    return (p.stdout, p.returncode)
+
+
+def _producer_replay_for_node(name: str, tag: str) -> bool | None:
+    """나생문 #1 근본 봉합(live): 노드의 채점 스크립트를 *실제 재실행*해 recorded metric_value 검증(위조 적발).
+
+    보안 기본: LAKATOS_REPLAY_EXEC 게이트 OFF 면 client 스크립트를 *실행하지 않고* None(증명불가, 비차단).
+    게이트 ON 이면 judge_script(경로) + result_path 로 prov.replay_command('python <script> <result_path>')를 만들어
+    (review #1: judge_script 는 *경로*지 명령이 아니다 — 그대로 exec 하면 모든 실노드서 실패) _replay_run 으로 재실행,
+    io.replay.producer_replay 로 recorded 와 *서버 고정 tol* 대조 → True/False/None. judge_script 가 'inline'/
+    'file::symbol'(재현명령으로 만들 수 없는 형태)이면 None(증명불가).
+    set_verdict 가 synthesize_promotion(producer_replay_verified=)로 흘려 measurement_externally_anchored 세 번째 앵커.
+    """
+    if not _replay_exec_enabled():
+        return None   # 게이트 OFF: client 스크립트 비실행(보안 기본)
+    rows = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 RETURN e.judge_script AS judge_script, e.metric_value AS metric_value,
+                        e.result_path AS result_path''', tree=name, tag=tag)
+    if not rows:
+        return None
+    r = rows[0]
+    js, mv, rp = r.get('judge_script'), r.get('metric_value'), r.get('result_path')
+    if not js or mv is None or js == 'inline' or '::' in js:
+        return None   # inline/file::symbol(재현명령 불가)·측정 부재 → 증명불가
+    score_cmd = _replay_command(js, rp or '')   # 'python <script> <result_path>' (provenance 재현형식과 동일)
+    v = _producer_replay(score_cmd=score_cmd, recorded_metric=float(mv), run_bash=_replay_run, tolerance=_REPLAY_TOL)
+    return v.verified
 
 
 def _foundation_rows(name: str):
