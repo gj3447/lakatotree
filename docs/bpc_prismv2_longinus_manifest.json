@@ -443,5 +443,34 @@
       "gate_rule": "lot capture_date > 2026-06-16 AND calib=group-A → 측정거부 (CALIB_GEOMETRY_GATE_PATCH_20260624.md)",
       "fix": "GROUP_B_CALIB_BOARD_RECAPTURE_SPEC_20260624.md — ★SUPERSEDED 2026-06-25: 재촬영 불필요(기존 VFQZ0016~0024 보드로 재솔브). evidence c3_groupB_calib_solved_20260625.md"
     }
-  }
+  },
+  "session_consolidations_20260630": [
+    {
+      "sourceId": "consumer_b.StepDisplay.NormalizerKeyMiss.20260630",
+      "kg_node": "impl-jgbpc-step-normalizer-keymiss-fix-20260630",
+      "sourcePath": "<WORKSPACE>/.claude/projects/-data-user-PROJECT-3D/memory/bpc-ui-render-verified-tabbolt-gabz-miskey.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "binding_state": "PIERCED",
+      "session": "fa7996a3_20260630",
+      "claim": "탭볼트 단차 빈칸 진범=hole_result_normalizer.py:123 deviation_washer_z_mm→dev_washer_z_mm 리네임, mapper feature_info_mapper.py:156 미스(라이브+리플레이 둘다 '-'). fix=노멀라이저 원래이름 보존+local_zdf_replay gated washer편차 emit. 90 PASS+e2e PASS."
+    },
+    {
+      "sourceId": "consumer_b.Laptop.DtRunAndCodeSync.20260630",
+      "kg_node": "proc-jgbpc-laptop-app-dt-run-and-codesync-20260630",
+      "sourcePath": "<WORKSPACE>/.claude/projects/-data-user-PROJECT-3D/memory/bpc-laptop-app-run-dt-fix-codesync-20260630.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "binding_state": "PIERCED",
+      "session": "fa7996a3_20260630",
+      "claim": "노트북 consumer_b 풀앱+좌측 실GL DT. 진범=런처bat ACP파이썬·.env.local없어 db_agent크래시·SSH세션0 + 옛 DT블록 import raise→2D폴백; origin/user 2커밋뒤→머지 e1e921d(충돌0) 복구. fix=run_app_laptop.bat+schtasks /it. 진단 py-spy."
+    },
+    {
+      "sourceId": "consumer_b.Docs.StructureMermaidAndRunbook.20260630",
+      "kg_node": "doc-bpc-structure-mermaid-and-test-runbook-20260630",
+      "sourcePath": "<WORKSPACE>/PROJECT/3D/COMMENTS/RUNBOOK_테스트_정상동작.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "binding_state": "PIERCED",
+      "session": "fa7996a3_20260630",
+      "claim": "두 프로그램 구조 mermaid 13장(COMMENTS/mermaid/, mmdc 통과)+테스트·정상동작 런북(5축). 시간병목=persist/IO지 추론 아님."
+    }
+  ]
 }
