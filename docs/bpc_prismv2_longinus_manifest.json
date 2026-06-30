@@ -10,7 +10,10 @@
     "PLAN_BPC_PrismV2_EarlyAckRGBA_V16Barcode_AI_Fallback_20260611_IMPL",
     "CT_BPC_V16Label_To_Lot_20260609",
     "CT_PrismV2_To_BpcIcpSpec_AIPipeline_20260529",
-    "PLAN_PrismV2_TrueCustomPipeline_20260527"
+    "PLAN_PrismV2_TrueCustomPipeline_20260527",
+    "PrismV2.DevelopCanonicalBranch.20260630",
+    "consumer_b.FeatureLocalMeasurementGate.LakatoTree.20260630",
+    "consumer_b.TabBoltZCapabilityGate"
   ],
   "longinus": {
     "sourceId": "LakatoTree.BpcPrismV2SegKnowledgePack",
@@ -19,6 +22,26 @@
     "manifestSourcePath": "docs/bpc_consumer_a_longinus_manifest.json:1",
     "binding_state": "PIERCED"
   },
+  "longinus_decisions_20260630": [
+    {
+      "sourceId": "PrismV2.DevelopCanonicalBranch.20260630",
+      "sourcePath": "<WORKSPACE>/PROJECT/3D/BPC_ICP_SPEC/evidence/prom_consumer_a_develop_branch_policy_longinus_20260630.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "tag": "feature_local_gate_20260630",
+      "parent": "consumer_a_port365",
+      "binding_state": "PIERCED",
+      "claim": "PrismV2 multi-agent development source of truth is origin/develop; stale user/feature worktrees must merge or rebase origin/develop before integration."
+    },
+    {
+      "sourceId": "consumer_b.FeatureLocalMeasurementGate.LakatoTree.20260630",
+      "sourcePath": "<WORKSPACE>/PROJECT/3D/BPC_ICP_SPEC/evidence/prom_bpc_feature_local_measurement_gate_lakatotree_20260630.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "tag": "feature_local_gate_20260630",
+      "parent": "consumer_a_port365",
+      "binding_state": "PIERCED",
+      "claim": "Global registration is frozen/gated view_health; product verdicts use feature-id local geometry and measurement capability."
+    }
+  ],
   "hard_core": [
     "2d_segmentation_is_location_and_coarse_decision_only",
     "3d_geometry_is_measurement_truth",
@@ -27,6 +50,8 @@
     "cup_uses_cad_prior_bore_edge_delta_and_nadir_z",
     "big_02_big_09_are_defects_not_calibration_anchors",
     "tab_bolt_preserves_base_tab_washer_top_head_top",
+    "tab_bolt_weak_view_or_high_zspread_is_capability_not_product_truth",
+    "global_registration_health_is_not_product_verdict_truth",
     "label_segmentation_is_roi_helper_not_lot_truth"
   ],
   "segmentation_classes": [
@@ -175,6 +200,21 @@
   ],
   "consumer_a_bindings": [
     {
+      "sourceId": "PrismV2.DevelopCanonicalBranch.20260630",
+      "sourcePath": "../consumer_a/docs/AGENT_BRANCH_POLICY_20260630.md:1",
+      "purpose": "multi_agent_develop_branch_policy"
+    },
+    {
+      "sourceId": "consumer_a.part_375.measure_lot.view_health",
+      "sourcePath": "../consumer_a/consumer_a_core/domain/bpc_inspection/dc375_lot_pipeline.py:2714",
+      "purpose": "frozen_global_registration_health_report_not_product_truth"
+    },
+    {
+      "sourceId": "consumer_a.part_375.TabBoltStepPolicy.zspread_suspect_mm",
+      "sourcePath": "../consumer_a/consumer_a_core/domain/bpc_inspection/dc375_lot_pipeline.py:177",
+      "purpose": "tab_bolt_high_z_layer_spread_capability_gate"
+    },
+    {
       "sourceId": "bpc_feature_contract.BPC_2DMASKEDBASE_CLASSES",
       "sourcePath": "../consumer_a/services/inspection/src/adapters/bpc/bpc_feature_contract.py:10",
       "purpose": "production_measurement_class_contract"
@@ -289,7 +329,8 @@
   ],
   "recommended_lakatotree_node": {
     "tree": "LakatosTree_BPC_20View_20260612",
-    "tag": "seg_v3_consumer_a_contract",
+    "tag": "feature_local_gate_20260630",
+    "parent": "consumer_a_port365",
     "metric": "contract_missing_count",
     "direction": "lower",
     "novel_metric": "seg_contract_missing_count",

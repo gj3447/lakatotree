@@ -85,6 +85,27 @@ def test_lakatotree_references_resolve_inside_this_repo() -> None:
     assert (ROOT / manifest_path).exists()
 
 
+def test_20260630_branch_and_measurement_gate_are_longinus_bound() -> None:
+    data = _load()
+    decisions = {item["sourceId"]: item for item in data["longinus_decisions_20260630"]}
+    assert {
+        "PrismV2.DevelopCanonicalBranch.20260630",
+        "consumer_b.FeatureLocalMeasurementGate.LakatoTree.20260630",
+    } <= set(decisions)
+
+    for item in decisions.values():
+        assert item["binding_state"] == "PIERCED"
+        assert item["tree"] == "LakatosTree_BPC_20View_20260612"
+        assert item["tag"] == "feature_local_gate_20260630"
+        assert item["parent"] == "consumer_a_port365"
+        assert Path(item["sourcePath"].split(":", 1)[0]).exists(), item
+
+    ids = {item["sourceId"] for item in data["consumer_a_bindings"]}
+    assert "PrismV2.DevelopCanonicalBranch.20260630" in ids
+    assert "consumer_a.part_375.measure_lot.view_health" in ids
+    assert "consumer_a.part_375.TabBoltStepPolicy.zspread_suspect_mm" in ids
+
+
 def test_workspace_evidence_is_declared_but_not_required_for_public_ci() -> None:
     data = _load()
     evidence = data["workspace_evidence"]
