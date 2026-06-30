@@ -6,6 +6,7 @@
   "roots": {
     "bhgman_tool": "/data/kjra/PROJECT/PI/bhgman_tool",
     "lakatotree": "/data/kjra/PROJECT/PI/lakatotree",
+    "bpc_icp_spec": "/data/kjra/PROJECT/3D/BPC_ICP_SPEC",
     "prismv2": "/data/kjra/PROJECT/3D/prismv2",
     "jg_bpc": "/data/kjra/PROJECT/3D/3d_vision_jg_bpc"
   },
@@ -81,6 +82,42 @@
       "layer": "L1_workspace_map",
       "claim": "This workspace map declares which 3D claims are pierced, candidate, preliminary, or absent.",
       "acceptance_check": "python -m pytest tests/test_workspace_longinus_manifest.py -q"
+    },
+    {
+      "sourceId": "PrismV2.DevelopCanonicalBranch.20260630",
+      "repo": "bpc_icp_spec",
+      "sourcePath": "evidence/prom_prismv2_develop_branch_policy_longinus_20260630.md:1",
+      "kg_anchor": "PrismV2.DevelopCanonicalBranch.20260630",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "Orphan",
+      "lens_law": "PutGet",
+      "layer": "L2_branch_policy",
+      "claim": "PrismV2 active multi-agent development baseline is origin/develop; kjra/stale worktrees must not be treated as the active source of truth."
+    },
+    {
+      "sourceId": "BPC.FeatureLocalMeasurementGate.LakatoTree.20260630",
+      "repo": "bpc_icp_spec",
+      "sourcePath": "evidence/prom_bpc_feature_local_measurement_gate_lakatotree_20260630.md:1",
+      "kg_anchor": "BPC.FeatureLocalMeasurementGate.LakatoTree.20260630",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "PatternDiv",
+      "lens_law": "PutPut",
+      "layer": "L2_measurement_capability",
+      "claim": "BPC product verdicts are feature-local geometry plus capability; weak TAB_BOLT evidence is suspect/ABSTAIN, not silent OK or hard NG."
+    },
+    {
+      "sourceId": "prismv2.AgentBranchPolicy20260630",
+      "repo": "prismv2",
+      "sourcePath": "docs/AGENT_BRANCH_POLICY_20260630.md:1",
+      "kg_anchor": "PrismV2.DevelopCanonicalBranch.20260630",
+      "confidence": "EXTRACTED",
+      "binding_state": "PIERCED",
+      "drift_type": "Orphan",
+      "lens_law": "GetPut",
+      "layer": "L2_branch_policy",
+      "claim": "Repository-local PrismV2 memory for the origin/develop canonical branch policy."
     },
     {
       "sourceId": "prismv2.bpc.AlignmentConfig",
@@ -194,6 +231,8 @@
   "hard_blocks": [
     "Do not equate global CAD alignment residual with feature z correctness.",
     "Do not accept z measurement when result falls back to CAD/default z without explicit measured_z provenance.",
+    "Do not let stale PrismV2 kjra/feature worktrees override origin/develop branch policy.",
+    "Do not promote TAB_BOLT high zspread, weak n_views, partial arc, or missing layer evidence into hard product NG.",
     "Do not promote LX3 placeholder bolt coordinates as production dimensional truth.",
     "Do not promote OMD while binding_state is NO_SOURCE."
   ]

@@ -80,6 +80,25 @@ def test_bpc_z_risk_is_not_marked_pierced() -> None:
     assert any("CAD/default fallback" in item["claim"] for item in risky)
 
 
+def test_prismv2_develop_and_feature_gate_are_pierced() -> None:
+    data = _load()
+    by_id = {item["sourceId"]: item for item in data["bindings"]}
+
+    for source_id in (
+        "PrismV2.DevelopCanonicalBranch.20260630",
+        "BPC.FeatureLocalMeasurementGate.LakatoTree.20260630",
+        "prismv2.AgentBranchPolicy20260630",
+    ):
+        item = by_id[source_id]
+        assert item["confidence"] == "EXTRACTED"
+        assert item["binding_state"] == "PIERCED"
+        path = item["sourcePath"].split(":", 1)[0]
+        assert (_repo_root(data, item["repo"]) / path).exists(), item
+
+    assert "origin/develop" in by_id["PrismV2.DevelopCanonicalBranch.20260630"]["claim"]
+    assert "suspect/ABSTAIN" in by_id["BPC.FeatureLocalMeasurementGate.LakatoTree.20260630"]["claim"]
+
+
 def test_lx3_and_omd_are_not_overpromoted() -> None:
     data = _load()
     by_id = {item["sourceId"]: item for item in data["bindings"]}
@@ -98,5 +117,7 @@ def test_hard_blocks_name_the_semantic_failure_modes() -> None:
     text = "\n".join(data["hard_blocks"])
     assert "global CAD alignment residual" in text
     assert "CAD/default z" in text
+    assert "origin/develop" in text
+    assert "TAB_BOLT high zspread" in text
     assert "placeholder bolt" in text
     assert "OMD" in text
