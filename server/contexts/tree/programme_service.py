@@ -24,7 +24,8 @@ from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
 from lakatos.programme.tradition import (ResearchTradition, TraditionCommitment, TraditionRevision,
                                          appraise_tradition_revision)
-from server.contexts.tree.advice import with_advice
+from lakatos import assurance
+from server.contexts.tree.advice import advice_for, with_advice
 from server.contexts.tree.diagnostics import diagnose_required_constraints
 from server.contexts.tree.schemas import (
     ArtifactIn,
@@ -381,8 +382,30 @@ class ProgrammeService:
         4xx 엔 advice 레지스트리가 다음 명령을 제안(suggest-only, 게이트 우회 off-switch 없음)."""
         trial = self._cycle_trial(c)
         if c.dry_run:
-            return dict(tree=name, tag=c.tag, dry_run=True, **trial,
-                        note='incore trial — 영수증 아님·아무것도 쓰지 않음. 제출은 dry_run=false 로')
+            out = dict(tree=name, tag=c.tag, dry_run=True, **trial,
+                       note='incore trial — 영수증 아님·아무것도 쓰지 않음. 제출은 dry_run=false 로')
+            # R2-NOVEL(s3): FF1 강등 사전 예고 — 트리 정책 1-read 를 *fail-safe* 로 결합. 조회 실패
+            #   (KG-less fake/운영 단절)=힌트 생략: 불확실한 정책으로 예고를 지어내지 않는다. 이 read 는
+            #   dry_run 분기 전용(fake-heavy 비-dry 경로엔 새 kg 쿼리 0 — CLAUDE.md 함정 규율).
+            try:
+                rows = self.kg('MATCH (t:LakatosTree {name:$tree}) '
+                               'RETURN t.require_novel_anchor AS require_novel_anchor, '
+                               't.assurance_tier AS assurance_tier', tree=name)
+            except Exception:   # noqa: BLE001 — 진단 힌트 전용: 실패=생략(dry_run 은 반드시 산다)
+                rows = None
+            if rows:
+                pol = rows[0]
+                # judgement_service.submit_test_result 의 무장 규칙 미러(SSOT=assurance 디스패치):
+                #   tier 게이트(receipted/anchored) ∨ 트리 opt-in 플래그(FF1 phase2).
+                armed = (assurance.GATE_NOVEL_ANCHOR in assurance.gates_for(
+                             'submit_test_result', assurance.resolve_tier(pol.get('assurance_tier')))
+                         or bool(pol.get('require_novel_anchor')))
+                cross_metric_novel = c.novel_metric is not None and c.novel_metric != c.metric_name
+                out['would_demote_to_partial'] = bool(
+                    armed and cross_metric_novel and trial.get('novel_preview')
+                    and not c.novel_script
+                    and trial.get('verdict_preview') in ('progressive', 'progressive_conditional'))
+            return out
         created = not self._cycle_node_exists(name, c.tag)
         try:
             self.add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),
@@ -394,7 +417,9 @@ class ProgrammeService:
                 closes_question=c.closes_question, credence=c.credence))
             res = self.submit_test_result(name, c.tag, TestResultIn(
                 metric_value=c.measured, script=c.script, script_sha=c.script_sha,
-                novel_measured=c.novel_measured, source_trust=c.source_trust,
+                novel_measured=c.novel_measured,
+                novel_script=c.novel_script,   # R2-NOVEL(s1): 서버앵커 소스 관통 — 없으면 FF1 partial
+                source_trust=c.source_trust,
                 counterexample_response=c.counterexample_response, counterexample_type=c.counterexample_type,
                 ce_excess_content=c.ce_excess_content, ce_novel_corroborated=c.ce_novel_corroborated,
                 ce_in_heuristic_spirit=c.ce_in_heuristic_spirit,
@@ -414,10 +439,19 @@ class ProgrammeService:
                 self.add_critique(name, c.tag, critique)
         except HTTPException as e:
             raise with_advice(e)
-        return dict(tree=name, tag=c.tag, verdict=res.get('verdict'), novel=res.get('novel'),
-                    delta=res.get('delta'), critiques=len(c.critiques),
-                    standing=self.standing(name, c.tag),
-                    note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        out = dict(tree=name, tag=c.tag, verdict=res.get('verdict'), novel=res.get('novel'),
+                   lakatos=res.get('lakatos'),   # R2-NOVEL(s2): FF1 강등사유를 삼키지 않는다
+                   delta=res.get('delta'), critiques=len(c.critiques),
+                   standing=self.standing(name, c.tag),
+                   note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        if 'novel_server_anchored' in res:   # 있으면 노출(가시성) — 없는 키를 지어내지 않는다
+            out['novel_server_anchored'] = res['novel_server_anchored']
+        if res.get('lakatos') == 'novel_not_server_anchored':
+            # suggest-only advice(H9 SSOT=advice.py 레지스트리) — 상태코드/verdict 불변, 우회 수단 아님.
+            tip = advice_for('novel_not_server_anchored')
+            if tip:
+                out['advice'], out['advice_mode'] = tip, 'suggest-only'
+        return out
 
     def add_artifact(self, name: str, a: ArtifactIn) -> dict:
         self.insert_artifact(dict(tree=name, node_tag=a.node_tag, kind=a.kind,

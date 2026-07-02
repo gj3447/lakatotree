@@ -175,8 +175,12 @@ def agm_revise(spec_json: str) -> str:
 def run_cycle(name: str, spec_json: str) -> str:
     """한 연구 사이클 오케스트레이션(서버 in-process, **bash 미실행**) — spec_json=CycleIn 필드:
     tag/metric_name/baseline/measured 필수 + 선택 parent/novel_*/credence/source_trust/critiques[].
-    G3 봉인 1-verb: 이 한 호출이 노드+사전등록+판결영수증까지(실패 시 신규노드 0 롤백, 4xx 에 advice
-    동봉). `dry_run:true` = incore 판정 미리보기(쓰기 0, 영수증 아님). build/judge(bash)가 필요하면
+    R2-NOVEL: cross-metric novel(novel_metric≠metric_name)은 `novel_script`(서버가 읽을 실파일 경로
+    또는 file::symbol)를 동봉해야 서버앵커 성립 — require_novel_anchor/receipted+ 트리에서 미동봉이면
+    200-partial 강등(응답 lakatos='novel_not_server_anchored' + advice 동봉). 미지 필드는 422(forbid —
+    오타 무음드롭 없음). G3 봉인 1-verb: 이 한 호출이 노드+사전등록+판결영수증까지(실패 시 신규노드 0
+    롤백, 4xx 에 advice 동봉). `dry_run:true` = incore 판정 미리보기(쓰기 0, 영수증 아님) +
+    `would_demote_to_partial` 로 novel-anchor 강등 사전 예고. build/judge(bash)가 필요하면
     CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
     try:
         spec = json.loads(spec_json or '{}')
