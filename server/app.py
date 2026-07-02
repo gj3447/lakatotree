@@ -179,6 +179,15 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
+@app.get('/version')
+def version():
+    """서빙 코드 신원 + stale 자기보고(G2, S5 봉합). 배포 프로브가 boot_git_sha vs disk_head_sha 로 stale 탐지.
+
+    이전엔 /version 이 없어 프로세스가 어느 커밋에서 부팅했는지 알 수 없었다(6커밋 stale 서빙이 감지 불가였음)."""
+    from server.version import served_version
+    return served_version()
+
+
 @app.post('/api/ops/reconcile-outbox')
 def reconcile_outbox_op():
     """B1 복구 운영 트리거(#4) — pending OutboxEntry(KG 정본)를 PG history 에 *멱등* 재적용.
