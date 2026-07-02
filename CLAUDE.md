@@ -7,7 +7,9 @@
 
 1. **편집 시작 전** OMD lease: `mcp__omd__declare(task, writes=[...])` → `claim` → **HELD 확인**.
    다른 세션의 untracked/미커밋 파일이 내 write-set 과 겹치면 **손 떼고 분리 태스크로 전환**.
-2. 10분 넘는 작업은 `heartbeat`/`renew` — 안 치면 agent RETIRED + fenced_out(재claim 은 새 agent 로).
+2. claim 직후 **페이스 선언**: `heartbeat(agent, ttl=3600)` — 인터랙티브 세션의 per-agent 생존창.
+   미선언이면 기계 물방울 기본(agent_ttl 90s)이라 verb 간 침묵 중 RETIRED 된다(F2, 실전 재현됨).
+2b. lease-only 흐름(start/connect 미경유)을 닫을 땐 `cancel(task, reason)` — PENDING 잔류 방지(F4).
 3. **커밋은 반드시 pathspec**: `git add <내파일들> && git commit -- <내파일들>`.
    맨 `git commit` 은 남이 스테이징한 파일까지 인덱스 전체를 쓸어담는다(사고 전례 0691263).
 4. 전체회귀 판정 시 남의 in-flight RED 파일은 `--ignore=<파일>` 후 판정하고, 내 커밋에 절대 포함 금지.
@@ -35,6 +37,7 @@
 - `ruff --fix` 가 re-export 를 F401 오판 제거(테스트 파손) → 복구 시 `noqa: F401`.
 - fake-heavy 경로(run_cycle 등)에 새 kg 쿼리를 넣으면 KG-less 테스트가 실 neo4j 를 친다 —
   파괴적 결정(삭제 등)의 조회는 fail-safe(불확실=안 지움).
-- :55170 재시작: **포트로 죽이고**(`ss -ltnp | grep :55170`; `pkill -f "app:app"` 금지 — 자기 쉘 자살),
-  creds 는 `/proc/<pid>/environ` 에서 회수(쉘에 주입 안 돼 있음), healthz 는 기동 직후 몇 초 degraded 과도기.
+- :55170 재시작: **`scripts/dev_server_restart.sh` 만 사용** — 정본 env(~/.config/lakatotree/server.env,
+  0600) 없으면 기동 거부(무-creds 무음 degraded 사고 재발 방지), healthz 3/3 수렴 게이트 내장
+  (version 200 ≠ 건강). 손 재시작(pkill -f 자기쉘 자살·environ 단일사본) 금지.
 - 이벤트 리터럴은 emit-adapter 에만 — 엔진 코드에 절대 금지(ooptdd 규율).
