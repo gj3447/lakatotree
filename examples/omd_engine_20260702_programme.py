@@ -199,6 +199,24 @@ NODES_DEF: tuple[EngineNode, ...] = (
         guard_mechanism="test_omd_p5_complete_task_dimension_test_passes_in_real_substrate",
     ),
     EngineNode(
+        tag="p6_multiproc_ha", dimension="P6 D14 멀티프로세스 HA 실측", parent="adoption_hardcore",
+        evidence="tests/test_p6_multiproc_ha.py 3종(실 subprocess 드라이버, SIGKILL/SIGSTOP) · omd_server/core.py _acquire_leadership/_assert_leader(기존 D14 기제) · 커밋 aa6d6d9(증분12, 코드 무변경 측정 증분)",
+        story="D14(단일리더/epoch fence)는 단일 프로세스 안 두 객체로만 검증 — 실제 프로세스 크래시/"
+              "GC-pause 를 가로지르는 integration 실측 부재(미검증 보장). problemshift(측정): 실 OS "
+              "프로세스로 ① 살아있는 리더 옆 2호 기동 CoordinatorConflict 거부, ② SIGKILL 크래시→TTL→"
+              "takeover(epoch+1), ③ SIGSTOP(GC-pause)→takeover→SIGCONT 좀비 리더 변이 전부 FENCED — "
+              "split-brain 봉쇄가 프로세스 경계에서 실증(SQLite WAL+BEGIN IMMEDIATE cross-process 직렬화 "
+              "확인). SPOF 잔여 = §7 의도된 설계(단일 인스턴스 강제)로 처분; transitions 유지공백은 정직 미해소.",
+        prom="core._acquire_leadership(CAS)/_assert_leader(변이 write-fence)/coordinator_heartbeat + 실 subprocess 드라이버",
+        prediction=Prediction(metric_name="p6_d14_unverified_across_processes", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="실 OMD 가 admission 거부/SIGKILL takeover epoch+1/SIGSTOP 좀비 fence-out 3종을 실 OS 프로세스로 통과(증분12 차원테스트 green)",
+                              closes_question="q-omd-p6-spof"),
+        novel_target=NovelTarget(metric_name="omd_p6_multiproc_ha_dimension_test_passes", direction="higher", threshold=1.0),
+        guard_defect="test_epochless_lease_splits_brain_epoch_fence_blocks_zombie",
+        guard_mechanism="test_omd_p6_multiproc_ha_dimension_test_passes_in_real_substrate",
+    ),
+    EngineNode(
         tag="p5_strict_writeset_gate", dimension="P5 strict-writeset commit 게이트", parent="adoption_hardcore",
         evidence="omd_server/core.py commit(strict_writeset: 궤도-밖 자동 제외) · tests/test_p5_strict_writeset.py · 커밋 40ab3f3",
         story="write-set 위반이 commit 땐 경고만(advisory)·connect 에서야 거부 = 일 다 한 뒤 늦은 실패. "
@@ -290,10 +308,8 @@ OPEN_QUESTIONS = [
          body="[P3] SERVER_SPEC §충돌='구조적 불가·경보' 의미론 vs 실코드베이스의 충돌=정상사건 — "
               "rollback+alarm 이 아니라 graceful 복구(재시도·rebase 안내) 경로가 필요한가."),
     # q-omd-p4-barrier-restart: 증분11(p4_barrier_restart_unit, 커밋 5f5db33)이 닫음 — OPEN 목록에서 제거.
-    dict(name="q-omd-p6-spof",
-         body="[P6] 단일 coordinator+leader·SQLite store·repo-wide merge_token = SPOF. D14 는 "
-              "단일프로세스 테스트만 — 멀티프로세스/파티션 integration 실측 부재. transitions 라이브러리 "
-              "유지 공백 리스크 포함."),
+    # q-omd-p6-spof: 증분12(p6_multiproc_ha, 커밋 aa6d6d9)가 실측 공백을 닫음 — OPEN 목록에서 제거.
+    # (SPOF 잔여=§7 의도된 설계로 처분; transitions 유지공백 리스크만 research_event 로 정직 표기.)
 ]
 
 
