@@ -7,9 +7,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 
 from fastapi import HTTPException
+
+from lakatos.programme.consilience import (
+    ConsilienceTargetMissing,
+    branch_verdict_sequences,
+    consilience_report,
+    project_tree_rows,
+    report_bytes,
+)
 
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.mutations import TreeMutationService, TreeSpec
@@ -64,6 +73,29 @@ class TreeService:
 
     def normalized_parent_edges(self, node: NodeIn) -> list[ParentEdgeIn]:
         return self._validator().normalized_parent_edges(node)
+
+    def consilience(self, name: str, leaf1: str, leaf2: str, credence: bool = False) -> dict:
+        """G7 재합류 연산자 표면(R9-CONSIL) — 두 leaf 의 incore 3-way 병합 리포트. 무변이(GET 계약):
+        tree_data 소비만, 그래프 쓰기 0, verdict_mutation=False(canonical 화는 기존 게이트로).
+
+        credence=False 기본 — 레거시 트리는 pred_closes 가 대부분 빈값이라 true 기본은 전면 422 오폭.
+        credence=True 면 두 leaf 의 루트경로(조상 전체) verdict 시퀀스로 union_credence 동봉 —
+        BF>1 무타깃 확증은 ConsilienceTargetMissing → 422 번역(무음 병합 금지, fail-closed).
+        report_sha = report_bytes(canonical JSON) 의 sha256 16자 — 수송 가능한 증거 지문."""
+        td = self.tree_data(name)   # 미존재 트리 = 404 (repo 계약)
+        parents, stances, verdicts = project_tree_rows(td.get("nodes") or [])
+        missing = [leaf for leaf in (leaf1, leaf2) if leaf not in parents]
+        if missing:
+            raise HTTPException(404, f"노드 없음: {missing} — 빈 조상 무음 병합 금지")
+        bv = branch_verdict_sequences(parents, verdicts, leaf1, leaf2) if credence else None
+        try:
+            report = consilience_report(parents=parents, stances=stances,
+                                        leaf1=leaf1, leaf2=leaf2, branch_verdicts=bv)
+        except ConsilienceTargetMissing as exc:
+            raise HTTPException(422, f"consilience credence fail-closed: {exc}") from exc
+        rb = report_bytes(report)
+        return {"tree": name, "leaf1": leaf1, "leaf2": leaf2, "report": report,
+                "report_sha": hashlib.sha256(rb.encode("utf-8")).hexdigest()[:16]}
 
     def add_node(self, name: str, node: NodeIn, tree_data: dict | None = None) -> dict:
         td = tree_data if tree_data is not None else self.tree_data(name)

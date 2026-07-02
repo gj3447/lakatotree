@@ -190,3 +190,59 @@ def consilience_report(*, parents: dict, stances: dict, leaf1: str, leaf2: str,
 def report_bytes(report: dict) -> str:
     """바이트동일 결정론 직렬화(정렬 키 canonical JSON) — 리포트는 수송 가능한 증거다."""
     return _canon(report)
+
+
+# ── R9-CONSIL projector (후속 PROM 2026-07-03): load_tree_data 노드 행 → 연산자 입력 ─────────
+def project_tree_rows(nodes: list) -> tuple:
+    """load_tree_data 의 정규화 노드 행 → (parents, stances, verdicts). 순수(입력 불변).
+
+    parents  = {tag: row['parents']} (BRANCHED_FROM DAG).
+    stances  = 노드가 선언한 타깃(pred_closes SSOT, 없으면 pred_metric fallback) →
+               {target: {'verdict', 'metric_value'}} canonical dict. 타깃 없는 노드는 stance 없음.
+    verdicts = 노드별 {'tag','verdict','delta'?,'noise_band','target'(=pred_closes or None),
+               'source_trust'} (metrics._verdict_seq 아날로그, union_credence 입력 원료).
+
+    ★무음 필터 금지: BF>1 어휘(progressive 등) verdict 인데 target 없음 → 여기서 거르면
+    union_credence 의 fail-closed(ConsilienceTargetMissing)가 장님이 된다. 그대로 전달한다 —
+    fail-closed 의 소유자는 union_credence(:145-150) 하나다. 미판정 placeholder(proof 등)는
+    BF_BASE 밖(=BF 1.0 무정보)이라 fold 에 무해."""
+    parents: dict = {}
+    stances: dict = {}
+    verdicts: list = []
+    for row in nodes:
+        tag = row.get("tag")
+        if not tag:
+            continue
+        parents[tag] = list(row.get("parents") or [])
+        target = row.get("pred_closes") or row.get("pred_metric") or None
+        if target:
+            stances[tag] = {target: {"verdict": row.get("verdict"),
+                                     "metric_value": row.get("metric_value")}}
+        v = {"tag": tag, "verdict": row.get("verdict"),
+             "noise_band": row.get("pred_noise_band") or 0.0,
+             "target": row.get("pred_closes") or None,
+             "source_trust": row.get("source_trust")}
+        if row.get("metric_value") is not None and row.get("pred_baseline") is not None:
+            v["delta"] = row["metric_value"] - row["pred_baseline"]   # 효과크기(방향은 BF 가 |delta|)
+        if row.get("source") is not None:
+            v["source"] = row["source"]    # eigentrust 글로벌 맵 바인딩 키(A2 대칭)
+        verdicts.append(v)
+    return parents, stances, verdicts
+
+
+def branch_verdict_sequences(parents: dict, verdicts: list, leaf1: str, leaf2: str) -> tuple:
+    """두 leaf 의 루트경로(조상 포함) verdict 시퀀스 (base, side1, side2) — union_credence 입력.
+
+    base = 공통조상 교집합, side = 각 leaf 의 조상 전체(자신 포함, DAG 다중부모 존중).
+    branch_credence 는 가환(odds 곱 + target max-dedup)이라 정렬 순회로 결정론 확보.
+    무음 필터 없음 — 시퀀스에 든 BF>1 무타깃은 union_credence 가 fail-closed 로 거부한다."""
+    by: dict = {}
+    for v in verdicts:
+        by.setdefault(v.get("tag"), v)
+    a1 = _ancestors_inclusive(parents, leaf1)
+    a2 = _ancestors_inclusive(parents, leaf2)
+
+    def seq(tags: set) -> list:
+        return [by[t] for t in sorted(tags) if t in by]
+
+    return seq(a1 & a2), seq(a1), seq(a2)

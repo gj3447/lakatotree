@@ -39,6 +39,12 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
     def metrics(name: str, snapshot: bool = False):
         return service_factory().metrics(name, snapshot=snapshot)
 
+    @router.get("/api/tree/{name}/consilience")
+    def consilience(name: str, leaf1: str, leaf2: str, credence: bool = False):
+        """G7 재합류(R9-CONSIL) — 두 leaf 3-way 병합 리포트(criss-cross=가상조상, conflict=데이터).
+        무변이(GET 이 계약). credence=true 는 union_credence 동봉 — 무타깃 확증=422 fail-closed."""
+        return service_factory().consilience(name, leaf1, leaf2, credence=credence)
+
     @router.post("/api/tree/{name}/node")
     def add_node(name: str, n: NodeIn):
         return service_factory().add_node(name, n)
