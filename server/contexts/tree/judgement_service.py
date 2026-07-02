@@ -443,9 +443,27 @@ class JudgementService:
                     reasons=list(x.get('reasons') or []),
                     note='measurement-grade: felt=novel 등록, true=확증+substantial BF+순문제폐쇄. standing 은 별도 층')
 
+    def _baseline_lineage(self, name: str, tag: str, p: PredictionIn) -> str:
+        """R12(ManifestoGap S1): 예측 baseline 을 부모의 서버-persist measured 에 앵커.
+        anchored=부모 measured 와 |Δ|≤noise_band · unanchored=벗어남(전략적 부풀림 노출) ·
+        no_prior=부모 measured 없음(콜드스타트 명시). 비파괴 마크(강제 아님) + fail-safe(조회 실패=no_prior)."""
+        try:
+            rows = self.kg(
+                "MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:BRANCHED_FROM]->(par) "
+                "WHERE par.metric_value IS NOT NULL "
+                "RETURN par.metric_value AS parent_measured ORDER BY par.judged_at DESC LIMIT 1",
+                tree=name, tag=tag)
+        except Exception:
+            return "no_prior"
+        if not rows or rows[0].get("parent_measured") is None:
+            return "no_prior"
+        pm = float(rows[0]["parent_measured"])
+        return "anchored" if abs(float(p.baseline_value) - pm) <= float(p.noise_band or 0.0) else "unanchored"
+
     def register_prediction(self, name: str, tag: str, p: PredictionIn) -> dict:
         meta = self.kg("MATCH (t:LakatosTree {name:$n}) RETURN t.ontology AS ontology", n=name)
         onto = DomainOntology.from_json(meta[0].get("ontology")) if meta else None
+        baseline_lineage = self._baseline_lineage(name, tag, p)   # R12: 등록 전 계보 앵커 판정
         if onto is not None:   # 선언된 metric 어휘 강제(opt-in) — 개선 metric + novel metric 둘 다
             viols = (onto.metric_violations(p.metric_name, p.direction)
                      + onto.metric_violations(p.novel_metric, p.novel_direction))
@@ -464,10 +482,12 @@ class JudgementService:
                       e.pred_credence=$credence,
                       e.novel_registered = ($novel_metric IS NOT NULL),
                       e.pred_registered_at=$ts,
-                      e.node_state=$node_state
+                      e.node_state=$node_state,
+                      e.baseline_lineage=$baseline_lineage
                   RETURN e.tag AS tag""",
                        tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(),
                        node_state=NodeState.PREDICTED.value,
+                       baseline_lineage=baseline_lineage,   # R12: 계보 앵커 마크(비파괴)
                        allowed_from=[NodeState.DRAFT.value, NodeState.ADMINISTRATIVE.value],
                        **p.model_dump())
         if not rows:
