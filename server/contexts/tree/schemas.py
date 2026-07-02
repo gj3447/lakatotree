@@ -261,6 +261,10 @@ class WorldActionIn(BaseModel):
 class CycleIn(BaseModel):
     """Single-cycle orchestration input. Server does graph work, not bash execution."""
 
+    # R2-NOVEL(2026-07-03): CycleIn 만 pydantic 기본 extra=ignore 였다 — 오타/구서버 필드가 *무음드롭*
+    #   되어(예: novel_script 오타 → 앵커 미성립) 라이브 GitAbsorption 11×partial 을 조용히 재생산.
+    #   상단 주석(#11-14)이 명문화한 함정 그대로 — forbid 로 명시 거부(422).
+    model_config = _SERVER_SET_ONLY
     tag: str = Field(min_length=1)
     # G3(git-흡수): incore trial — True 면 judge 순수함수로 판정 *미리보기*만 반환하고 아무것도 쓰지
     #   않는다(git commit --dry-run / merge-ort incore 이식). 미리보기는 영수증이 아니다.
@@ -277,6 +281,10 @@ class CycleIn(BaseModel):
     novel_direction: str | None = None
     novel_threshold: float | None = None
     novel_measured: float | None = None
+    # R2-NOVEL: cross-metric novel 의 *서버앵커 소스*(FF1) — 서버가 이 실파일(또는 file::symbol)에서
+    #   novel sha 를 재유도해야 require_novel_anchor/receipted+ 트리에서 progressive 가 선다.
+    #   봉인 1-verb 에 이 입력이 없던 것이 라이브 11×partial 사고의 관통 결함(submit 까지 전달).
+    novel_script: str | None = None
     credence: float | None = Field(None, ge=0, le=1)
     source_trust: float = 1.0
     algorithm: str = ""

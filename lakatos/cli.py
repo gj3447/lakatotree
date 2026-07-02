@@ -24,6 +24,8 @@
   question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
   agm <spec.json>                AGM 신념개정 — hard core revision/contraction(P1)
   cycle <spec.json>              하네스 한 사이클 — 상계read→하계build/judge→critique→standing
+  cycle-dry <name> <spec.json>   run_cycle 미리보기(REST dry_run=true 직행, 쓰기 0) — verdict_preview
+                                 + would_demote_to_partial(FF1 novel-anchor 강등 사전 예고, R2-NOVEL)
   tree-create <name> [--title T --hard-core H --frontier-rule F]  새 나무 생성/메타 upsert (add_node 전 필수)
   tree-delete <name> [--cascade]  나무 삭제(파괴적; 노드 있으면 --cascade 필수)
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
@@ -101,6 +103,11 @@ def _build_parser() -> argparse.ArgumentParser:
                                              '비-노드면 문제수지 미집계=metrics.unattributed_closed)')
     sp = sub.add_parser('agm'); sp.add_argument('spec', help='AgmReviseIn JSON 파일(신념개정)')
     sp = sub.add_parser('cycle'); sp.add_argument('spec', help='CycleSpec JSON 파일(하네스 한 사이클)')
+    # R2-NOVEL: 서버 run_cycle dry_run 미리보기 — harness_run(CycleSpec bash 실행기) 경유 금지, REST 직행.
+    sp = sub.add_parser('cycle-dry')
+    sp.add_argument('name')
+    sp.add_argument('spec', help='CycleIn JSON 파일 — dry_run=true 로 POST /api/tree/{name}/cycle '
+                                 '(쓰기 0 미리보기: verdict_preview + would_demote_to_partial)')
     # P6-2: CLI↔MCP 비대칭 해소 — verdict(행정판결)/critique(Dung 의문)/standing(정당성) 추가
     sp = sub.add_parser('verdict'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('verdict')
     sp.add_argument('--note', default=''); sp.add_argument('--scope', default='')
@@ -306,6 +313,12 @@ def main(argv=None):
         from lakatos.harness_run import main as run_cycle
         run_cycle(a.spec)   # 하네스가 직접 prov JSON 출력 (bash 실행은 client-side, server RCE 회피)
         return
+    elif a.cmd == 'cycle-dry':
+        # R2-NOVEL: REST run_cycle dry_run 직행(harness_run/CycleSpec 의 bash 실행기 의미론과 무관).
+        #   서버 incore trial(쓰기 0) + would_demote_to_partial(FF1 novel-anchor 강등 사전 예고) 반환.
+        spec = json.loads(open(a.spec).read())
+        spec['dry_run'] = True   # 이 verb 의 계약: 항상 미리보기(스펙의 dry_run=false 를 덮어씀)
+        out = call('POST', f'/api/tree/{a.name}/cycle', spec)
     elif a.cmd == 'claim-standing':
         suffix = '?require_replay=false' if a.no_replay else ''
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')

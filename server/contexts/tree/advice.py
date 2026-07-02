@@ -19,6 +19,11 @@ _REGISTRY: tuple[tuple[str, str], ...] = (
     ("동시/재채점 차단", "동시 제출 감지 — 새 노드로 분기하거나 get_tree 로 최신 상태 확인 후 재시도."),
     ("novel_measured", "novel_metric 을 선언했으면 독립 측정 novel_measured=<float> 를 함께 제출 "
                        "(가능하면 novel_script 도 — 서버앵커 영수증), 아니면 novel_* 필드를 제거."),
+    # R2-NOVEL: FF1 앵커-데모트(4xx 아닌 200-partial) 의 다음 수 — run_cycle 이 이 키로 직조회한다.
+    ("novel_not_server_anchored", "cross-metric novel 이 서버앵커 미성립으로 partial 강등 — 같은 사이클을 "
+                                  "novel_script=<서버가 읽을 실파일 경로 또는 file::symbol> 동봉으로 새 tag "
+                                  "에 재실행하거나, 이 노드에 동일 metric_value + 서버앵커 script/novel_script "
+                                  "재제출(freshen)로 승급. dry_run=true 가 would_demote_to_partial 로 사전 예고."),
     ("metric 온톨로지 위반", "트리 ontology 가 선언한 metric 어휘/방향만 허용 — get_tree 로 ontology 확인."),
     ("judge_script_sha", "script 를 실재 파일 경로(또는 file::symbol)로 제출하면 서버가 sha 를 재유도한다 — "
                          "inline 이면 sha 검증 불가로 미검증 표기."),
