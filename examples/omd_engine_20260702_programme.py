@@ -133,6 +133,23 @@ NODES_DEF: tuple[EngineNode, ...] = (
         guard_mechanism="test_omd_p2_hotfile_dimension_test_passes_in_real_substrate",
     ),
     EngineNode(
+        tag="p2_shared_lane_3way", dimension="P2 shared 레인 3-way 응결", parent="p2_hotfile_diagnosis",
+        evidence="omd_server/core.py WRITE_MODES/_conflicts(shared 공존)/declare(shared)/shared_conflict · store.py tasks.shared · tests/test_p2_shared_lane.py · 커밋 c41356d(증분10) · 현장실측 field-hotfiles-jgbpc-20260702(hot 30파일)",
+        story="진단(hot_files)만으론 hot 파일이 여전히 직렬화/거부(실행 레인 부재 — q-omd-p2-threeway-lane). "
+              "problemshift: declare(shared=[...])+claim(mode='shared') 로 shared↔shared 동시 HELD 공존, "
+              "응결은 git 3-way 자동병합, 같은 hunk 진짜 충돌은 shared_conflict(정상사건·retryable·rebase "
+              "힌트, P3 부분 해소). 배타(write/read) 궤도의 '구조적 불가=경보' 의미론은 불변 — disjoint 는 "
+              "여전히 1급시민, hot 파일만 별도 레인.",
+        prom="core.WRITE_MODES + _conflicts shared 공존 + next_task shared-aware 게이트 + Phase C shared_conflict + MCP declare(shared=)",
+        prediction=Prediction(metric_name="p2_hot_file_forced_serialization", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="실 OMD 가 공존/배타보존/3-way automerge/shared_conflict/경보 음성컨트롤 5종을 실 git 위에서 통과(증분10 차원테스트 green)",
+                              closes_question="q-omd-p2-threeway-lane"),
+        novel_target=NovelTarget(metric_name="omd_p2_shared_lane_dimension_test_passes", direction="higher", threshold=1.0),
+        guard_defect="test_disjoint_only_serializes_hot_file_shared_lane_parallelizes",
+        guard_mechanism="test_omd_p2_shared_lane_dimension_test_passes_in_real_substrate",
+    ),
+    EngineNode(
         tag="p4_idem_gc", dimension="P4 idempotency 테이블 GC", parent="adoption_hardcore",
         evidence="omd_server/core.py _sweep_inline(idem_ttl 지난 DONE 정리) · tests/test_p4_idem_gc.py · 커밋 e29d7f2",
         story="CONCURRENCY §D9 자백 부채: 'request_id 행 무한 누적'. exactly-once 테이블이 GC 없이는 "
@@ -251,9 +268,7 @@ OPEN_QUESTIONS = [
     dict(name="q-omd-p1-field-adoption",
          body="[P1 궁극심판] 실 현장 repo(예: consumer_b)의 통합브랜치에서 adoption_ratio 를 주기 실측해 "
               "임계(예: ≥0.9) 위에 서는가 — 감사 도구가 아니라 *현장 데이터*가 닫는 질문."),
-    dict(name="q-omd-p2-threeway-lane",
-         body="[P2 잔여] hot/shared glob 등급의 1급 경로 — 연결 시 3-way merge 허용(충돌 시에만 fail) "
-              "또는 hot 전용 빠른 직렬 레인. 현재는 진단·권고만 있고 실행 레인이 없다."),
+    # q-omd-p2-threeway-lane: 증분10(p2_shared_lane_3way, 커밋 c41356d)이 닫음 — OPEN 목록에서 제거.
     dict(name="q-omd-p3-conflict-recovery",
          body="[P3] SERVER_SPEC §충돌='구조적 불가·경보' 의미론 vs 실코드베이스의 충돌=정상사건 — "
               "rollback+alarm 이 아니라 graceful 복구(재시도·rebase 안내) 경로가 필요한가."),
