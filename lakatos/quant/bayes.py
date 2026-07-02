@@ -61,7 +61,7 @@ def effect_size(delta: float, noise_band: float,
 
 
 def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0,
-                 source_trust: float = 1.0) -> float:
+                 source_trust: float | None = 1.0) -> float:
     """판결 + 효과크기 + 인터넷 출처신뢰 → Bayes factor. 권위 출처 = 강한 증거(P1).
     equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게."""
     base = BF_BASE.get(verdict, 1.0)
