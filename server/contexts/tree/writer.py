@@ -185,11 +185,14 @@ class TreeKgWriter:
         ontology: str = "",
         require_novel_anchor: bool = False,
         assurance_tier: str | None = None,
+        attestor_dids: Sequence[str] | None = None,
     ) -> WriteSummary:
         # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
         #   tier 미선언 upsert 에 절대 안 덮인다(T2 write-clobber 교정: TreeSpec 기본값 flip 이 아니라
         #   ON CREATE SET). 선언 시엔 DB-side 단조 ratchet CASE(랭크 정본=assurance.TIER_RANK 생성물)가
         #   원자 판정 — 상향만 관철, 하향은 기존값 유지 → RETURN 불일치로 TierDowngrade(→409).
+        # G10: attestor_dids(서명자 allow-list=키 실물)도 tier 와 같은 非클로버 규율 — None(미선언)은
+        #   기존값 불변, 선언 시에만 교체(revocation 은 정당한 운영이라 ratchet 아님·명시 교체).
         results = self.kg_tx([
             (
                 """MERGE (t:LakatosTree {name:$tree})
@@ -202,6 +205,9 @@ class TreeKgWriter:
                          WHEN $declared_tier IS NULL THEN t.assurance_tier
                          WHEN $declared_rank >= """ + _TIER_RANK_CASE + """ THEN $declared_tier
                          ELSE t.assurance_tier END
+                   SET t.attestor_dids = CASE
+                         WHEN $attestor_dids IS NULL THEN t.attestor_dids
+                         ELSE $attestor_dids END
                    RETURN t.assurance_tier AS assurance_tier""",
                 dict(
                     tree=name,
@@ -216,6 +222,7 @@ class TreeKgWriter:
                     declared_tier=assurance_tier,
                     declared_rank=assurance.tier_rank(assurance_tier),
                     default_tier=assurance.DEFAULT_NEW_TREE_TIER,
+                    attestor_dids=(None if attestor_dids is None else list(attestor_dids)),
                     ts=_utc_now(),
                 ),
             )

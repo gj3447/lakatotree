@@ -83,6 +83,7 @@ class TreeService:
             ontology=spec.ontology,
             require_novel_anchor=spec.require_novel_anchor,
             assurance_tier=spec.assurance_tier,
+            attestor_dids=(None if spec.attestor_dids is None else tuple(spec.attestor_dids)),
         ))
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:

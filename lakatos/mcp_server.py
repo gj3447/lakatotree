@@ -213,19 +213,22 @@ def close_question(name: str, qname: str, closed_by: str = '') -> str:
 def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: str = '',
                 doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
                 ontology: str = '', require_novel_anchor: bool = False,
-                assurance_tier: str = '') -> str:
+                assurance_tier: str = '', attestor_dids_csv: str = '') -> str:
     """새 라카토스 나무 생성/메타 upsert — MERGE (t:LakatosTree {name}). add_node 전에 먼저 호출(없는 나무에
     add_node 는 404 '나무 없음'). 멱등이되 last-write-wins: 같은 name 재호출은 보낸 title/hard_core/
     frontier_rule 로 덮어씀(생략 필드 = 빈값으로 초기화). hard_core/frontier_rule 비우면 policy_warnings
     (hard_core_required 등) 경고만 — 차단 아님. coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티).
     assurance_tier(G6) = notebook|receipted|anchored — 생략 시 신규 트리는 anchored 기본(구조코어는 모든
-    tier 무조건), 기존 트리는 무변경. 하향 선언은 409(단조 ratchet)."""
+    tier 무조건), 기존 트리는 무변경. 하향 선언은 409(단조 ratchet). attestor_dids_csv(G10) = 쉼표구분
+    did:key allow-list — 선언하면 anchored tier 판결 쓰기에 write-cert(서명 명령) 강제, 생략=불변."""
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
              doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog,
              ontology=ontology, require_novel_anchor=require_novel_anchor,
-             assurance_tier=(assurance_tier.strip() or None))), ensure_ascii=False)
+             assurance_tier=(assurance_tier.strip() or None),
+             attestor_dids=([d.strip() for d in attestor_dids_csv.split(',') if d.strip()]
+                            if attestor_dids_csv.strip() else None))), ensure_ascii=False)
 
 
 @mcp.tool()

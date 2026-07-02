@@ -24,6 +24,7 @@ from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Respo
 from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
 from lakatos.verdicts import ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict, receipt_content_sha
+from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
@@ -427,7 +428,8 @@ class JudgementService:
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
                             t.hard_core AS hard_core,
                             t.require_novel_anchor AS require_novel_anchor,
-                            t.assurance_tier AS assurance_tier""", tree=name, tag=tag)
+                            t.assurance_tier AS assurance_tier,
+                            t.attestor_dids AS attestor_dids""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
@@ -458,6 +460,37 @@ class JudgementService:
                 raise HTTPException(409, f"채점 스크립트 sha256 불일치 — 사전등록 {pr['psha'][:12]} ≠ 제출 {r.script_sha[:12]}")
         # 저장·prov 는 server_sha(파일 재유도) 우선; 재계산 불가면 client 값 보존(server-미검증 플래그와 함께).
         stored_sha = server_sha if sha_verified else (r.script_sha or '')
+        # G10(git-흡수): attestor 선언 트리의 판결 쓰기는 *서명 cert 가 유일한 명령원*(push-cert 이식,
+        #   receive-pack.c:2179-2199 — cert 와 다른 명령의 동시 제출=프로토콜 에러). 발동 = tier 게이트
+        #   무장(assurance.GATE_WRITE_CERT) ∧ attestor allow-list(키 실물) 선언 — on/off 플래그가 아니라
+        #   키 선언이 스위치(advisory GIT_PUSH_CERT_STATUS 는 정확히 P1 실패라 반전). allow-list 없는
+        #   트리는 서명자 자체가 없어 잠글 수 없다(dead-σ: 키 없는 배포를 409 로 잠그지 않는다).
+        #   명령 바인딩 = {tree, tag, prev_receipt_sha(G1 체인 포인터 CAS), metric_value, script_sha}
+        #   → sign-X-execute-Y 불가 + replay 는 옛 포인터 서명이 되어 구조적으로 죽는다.
+        #   author 는 client 문자열이 아니라 서명(signer_did)에서 유도되어 스탬프된다(Sybil 갭 봉합).
+        attestors = [str(d).strip() for d in (pr.get('attestor_dids') or []) if d and str(d).strip()]
+        cert_required = (assurance.GATE_WRITE_CERT in assurance.gates_for('submit_test_result', tier)
+                         and bool(attestors))
+        attested_by_did = None
+        if cert_required or r.write_cert is not None:
+            if r.write_cert is None:
+                raise HTTPException(403, f'write-cert 필수 — attestor 선언 {tier} 트리의 판결 쓰기는 서명 '
+                                         f'명령만 인정(allow-list {len(attestors)}명). client author 문자열은 '
+                                         f'authorship 이 아니다(G10 Sybil 봉합)')
+            expected_command = dict(tree=name, tag=tag, prev_receipt_sha=pr.get('prev_receipt_sha'),
+                                    metric_value=r.metric_value, script_sha=stored_sha)
+            try:
+                attestation = verify_write_cert(
+                    r.write_cert.model_dump(),
+                    expected_command=expected_command,
+                    # 자발적 cert(비강제 트리): allow-list 없으면 자기서명 검증만 — authorship 증명이지
+                    # 권위 주장이 아니다(권위 필터는 allow-list 가 정본).
+                    allowlist=attestors if attestors else [r.write_cert.signer_did])
+            except CertSignerNotAllowed as e:
+                raise HTTPException(403, str(e))
+            except CertError as e:
+                raise HTTPException(422, str(e))
+            attested_by_did = attestation['signer_did']
         nt = None
         if pr['nmet'] and pr['ndir'] and pr['nthr'] is not None:
             nt = NovelTarget(metric_name=pr['nmet'], direction=pr['ndir'], threshold=pr['nthr'])
@@ -624,7 +657,8 @@ class JudgementService:
                        e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
-                       e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier
+                       e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
+                       e.attested_by_did=$attested_by_did
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
@@ -640,6 +674,7 @@ class JudgementService:
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
                      nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
                      atier=tier,   # G6 S5: 이 판결이 어느 tier 로 resolve 됐는지 스탬프(fsck tier-resolve 흔적)
+                     attested_by_did=attested_by_did,   # G10: author=서명 유도(client 문자열 아님), 무cert=null
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
@@ -669,6 +704,8 @@ class JudgementService:
                 'requires_human': bool(decided.get('requires_human')),
                 # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).
                 'script_sha_server_verified': sha_verified, 'judge_script_sha': stored_sha,
+                # G10: authorship 은 서명에서 유도(무cert=None) — client 문자열이 아니다.
+                'attested_by': attested_by_did,
                 'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
                            'reasons': list(eu.reasons), 'bf': round(eu.bf, 3)},
                 'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}
