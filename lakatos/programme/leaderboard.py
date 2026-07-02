@@ -34,7 +34,7 @@ class Competitor:
 
 
 def score_competitor(c: Competitor) -> dict:
-    fert = predictive_fertility(c.nodes)
+    fert = predictive_fertility(c.nodes, scope='all_nodes')   # G5: 리더보드는 프로그램 전체(all_nodes) 발전성 — 명시 라벨
     return {
         'name': c.name,
         'laudan_score': round(branch_score(c.metric_improvement_pct, c.closed, c.opened), 3),

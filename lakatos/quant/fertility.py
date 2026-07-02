@@ -16,12 +16,19 @@ NOBEL_MIN_PREDICTIONS = GROUNDED['nobel_min_predictions']['value']  # 표본 하
 NOBEL_MIN_HITRATE_LB = GROUNDED['nobel_min_hitrate_lb']['value']    # Wilson 95% 하한 ≥0.7 (실효 통과선 ≈9/9, LB=0.701; T-H-2)
 
 
-def predictive_fertility(nodes: list) -> dict:
-    """가지/트리의 novel 예측 발전성. nodes = 노드 dict 리스트."""
+def predictive_fertility(nodes: list, *, scope: str = 'unscoped') -> dict:
+    """가지/트리의 novel 예측 발전성. nodes = 노드 dict 리스트.
+
+    G5(git-흡수 2026-07-02, read-model drift 봉합): fertility 는 표면마다 *다른 스코프*로 계산됐다 —
+    tree_metrics 는 canonical-path, leaderboard 는 all-nodes — 같은 'fertility' 이름이 다른 의미를 나르는
+    silent divergence(아키텍처 감사 유일 HIGH). git 의 '파생값은 동결 어휘로 한 곳에서 계산'(merge-ort
+    conflict 어휘) 이식: scope 를 *명시 echo* 해 이름이 의미를 표류시키지 못하게 한다(다른 스코프=다른 라벨).
+    표면 호출자는 반드시 scope 를 선언한다(test_git_absorption_g5 가 소스 스캔으로 강제).
+    """
     registered = sum(1 for r in nodes if r.get('novel_registered'))
     confirmed = sum(1 for r in nodes if r.get('novel_registered') and r.get('novel_confirmed'))
     fert = round(confirmed / registered, 3) if registered else 0.0
-    return dict(registered=registered, confirmed=confirmed, fertility=fert)
+    return dict(registered=registered, confirmed=confirmed, fertility=fert, scope=scope)
 
 
 def nobel_grade(fert: dict) -> bool:

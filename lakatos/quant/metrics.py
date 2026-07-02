@@ -276,7 +276,9 @@ def _fertility_layer(tv: '_TreeView | list', by: dict | None = None,
     """이론 발전성 — 정본경로 novel 예측 적중 track record (과학=예측력). nobel_grade 동봉."""
     if not isinstance(tv, _TreeView):
         tv = _tv(nodes=nodes, by=by, path=tv)
-    fert = predictive_fertility([tv.by[t] for t in tv.path]) if tv.path else predictive_fertility(tv.nodes)
+    # G5: 스코프 명시 — tree_metrics 는 정본경로(canonical_path) 발전성. path 없으면 all_nodes 로 폴백(라벨도 그렇게).
+    fert = (predictive_fertility([tv.by[t] for t in tv.path], scope='canonical_path')
+            if tv.path else predictive_fertility(tv.nodes, scope='all_nodes'))
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
     return fert
