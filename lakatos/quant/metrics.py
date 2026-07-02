@@ -294,6 +294,18 @@ def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
     return eureka_over_tree([tv.by[t] for t in tv.path]) if tv.path else eureka_over_tree(tv.nodes)
 
 
+def _anchored_ratio(nodes: list) -> dict:
+    """P0b(ManifestoGap R8): cross-metric novel 판결(novel_server_anchored 필드 보유) 중 *서버앵커*
+    비율 — FF1 이 default-ON(신규 anchored 트리)인지, 아니면 novel 이 client float 한 줄로 서는지의
+    단일 관측. 분모 = novel_server_anchored 가 판정된 노드(True/False), 분자 = True. G5 단일 프로젝터."""
+    judged = [r for r in nodes if r.get('novel_server_anchored') is not None]
+    anchored = sum(1 for r in judged if r.get('novel_server_anchored'))
+    return dict(scope='all_nodes', novel_measured=len(judged), server_anchored=anchored,
+                anchored_ratio=round(anchored / len(judged), 3) if judged else None,
+                note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
+                     'None=novel 판정 노드 없음.')
+
+
 def _multiplicity_screen(nodes: list) -> dict:
     """gap8 다중비교 — improved 판결을 (metric_name, scope) family 별 BH/Bonferroni 스크린.
     판결은 불변(judge 권위) — family 수준 false-progressive 경보만."""
@@ -387,6 +399,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                          trust_coverage_mode=cfg.get('trust_coverage_mode'))
     fert = _fertility_layer(tv)
     eureka = _eureka_layer(tv)
+    anchored = _anchored_ratio(nodes)   # P0b(MG R8): cross-metric novel 중 서버앵커 비율
     multiplicity = _multiplicity_screen(nodes)
     coverage = _coverage(cfg)
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
@@ -398,6 +411,11 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
                else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
 
+    if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
+        _drift = anchored['novel_measured'] - anchored['server_anchored']
+        alerts = [*alerts, f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
+                           f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). anchored_ratio="
+                           f"{anchored['anchored_ratio']}"]
     if closed_q - receipted_closed_q > 0:
         alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 무채점 "
                            f"노드(close_ratio 는 유지, close_ratio_receipted 로 세분 공시; 재귀속은 ADR+GO)"]
@@ -414,6 +432,6 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                               unreceipted_closes=closed_q - receipted_closed_q),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
-                eureka=eureka, multiplicity=multiplicity, alerts=alerts,
+                eureka=eureka, anchored=anchored, multiplicity=multiplicity, alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
                                 mode=('lenient-counted' if lenient else 'inconclusive-excluded')))

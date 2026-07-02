@@ -720,6 +720,12 @@ class JudgementService:
         #   sha256(canonical payload) 를 Python 에서 미리 계산(prev=노드의 현 포인터로 체인). 아래 #M5 CAS
         #   *같은 statement* 안에서 SET 직후 MERGE(rec {receipt_sha}) ON CREATE SET + 포인터 전진 →
         #   CAS 가드가 0행이면 receipt 도 안 생김(원자성 보존, 신규 race 창 0). e.verdict 는 체인 head 의 파생 캐시.
+        # P0a (ManifestoGap R8): producer replay 상태를 판결에 persist — 채점 스크립트 재실행 검증이
+        #   시도됐나/일치했나를 label 로 공시(TOUCH_THE_SKY '영수증은 현실이 끊어 준다'의 관측가능화).
+        #   not_attempted = LAKATOS_REPLAY_EXEC off(dead-σ 교정: 검증 불가는 부재지 반증 아님) 또는 미주입;
+        #   verified = 재실행 측정이 제출값과 일치; mismatch = 불일치(승격 floor 가 이걸로 차단).
+        _replay = self.producer_replay_for_node(name, tag)
+        replay_status = 'not_attempted' if _replay is None else ('verified' if _replay else 'mismatch')
         prev_rsha = pr.get('prev_receipt_sha')
         target_id = pr.get('closes')   # q_target_identity_scheme: 선언 의미키(pred_closes)
         receipt_fields = dict(tree=name, tag=tag, target_id=target_id, verdict=verdict,
@@ -743,7 +749,7 @@ class JudgementService:
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
-                       e.attested_by_did=$attested_by_did
+                       e.attested_by_did=$attested_by_did, e.replay_status=$replay_status
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
@@ -761,6 +767,7 @@ class JudgementService:
                      nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
                      atier=tier,   # G6 S5: 이 판결이 어느 tier 로 resolve 됐는지 스탬프(fsck tier-resolve 흔적)
                      attested_by_did=attested_by_did,   # G10: author=서명 유도(client 문자열 아님), 무cert=null
+                     replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch)
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
