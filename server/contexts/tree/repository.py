@@ -128,7 +128,10 @@ class TreeKgRepository:
             "MATCH (t:LakatosTree {name:$n}) RETURN t.title AS title, t.hard_core AS hard_core, "
             "t.frontier_rule AS frontier_rule, t.doc AS doc, "
             "t.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement, "
-            "t.ontology AS ontology, t.assurance_tier AS assurance_tier",
+            "t.ontology AS ontology, t.assurance_tier AS assurance_tier, "
+            # R1(후속 PROM): 게이트 정책의 사전 공시 — 제출자가 403/partial 을 맞기 *전에* 알 수 있어야.
+            "t.require_novel_anchor AS require_novel_anchor, t.attestor_dids AS attestor_dids, "
+            "t.updated_at AS updated_at",
             n=name,
         )
         if not t:
@@ -153,6 +156,25 @@ class TreeKgRepository:
                e.pred_direction AS pred_direction, e.pred_closes AS pred_closes,
                e.pred_metric AS pred_metric, e.pred_registered_at AS pred_registered_at,
                e.judged_at AS judged_at,
+               e.pred_scale_type AS pred_scale_type, e.pred_novel AS pred_novel,
+               e.pred_novel_metric AS pred_novel_metric, e.pred_novel_direction AS pred_novel_direction,
+               e.pred_novel_threshold AS pred_novel_threshold, e.pred_script_sha AS pred_script_sha,
+               e.pred_credence AS pred_credence,
+               e.judge_script AS judge_script, e.judge_script_sha AS judge_script_sha,
+               e.lakatos_status AS lakatos_status, e.qualitative_self_report AS qualitative_self_report,
+               e.novel_server_anchored AS novel_server_anchored,
+               e.assurance_tier_resolved AS assurance_tier_resolved,
+               e.attested_by_did AS attested_by_did, e.current_receipt_sha AS current_receipt_sha,
+               e.eureka_felt AS eureka_felt, e.eureka_true AS eureka_true,
+               e.eureka_hallucinated AS eureka_hallucinated, e.eureka_reasons AS eureka_reasons,
+               e.eureka_bf AS eureka_bf,
+               e.current_best_pointer AS current_best_pointer, e.canonical_scope AS canonical_scope,
+               e.canonical_assumptions AS canonical_assumptions,
+               e.canonical_evidence_window AS canonical_evidence_window,
+               e.valid_until_rebutted AS valid_until_rebutted,
+               e.measurement_externally_anchored AS measurement_externally_anchored,
+               e.author AS author, e.recorded_at AS recorded_at,
+               e.demoted_at AS demoted_at, e.standing_retracted_at AS standing_retracted_at,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
                [pe IN parent_edges | pe.tag] AS parents, parent_edges AS parent_edges,
                questions AS questions
