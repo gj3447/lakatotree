@@ -280,6 +280,21 @@ def fsck(tree: str = '', emit_skiplist: bool = False) -> str:
 
 
 @mcp.tool()
+def consilience(name: str, leaf1: str, leaf2: str, credence: bool = False) -> str:
+    """G7 재합류 연산자(R9) — 두 가지 leaf 의 incore 3-way 병합 리포트(무변이 GET, verdict_mutation
+    =False — canonical 화는 기존 human/admin 게이트로). criss-cross(NCA 2+)는 가상조상(standing-불활성),
+    비양립은 conflict *데이터*{target,base,side1,side2}(clean=false 여도 병합 완료). credence=True 는
+    union_credence(같은타깃 확증 dedup·음의증거 양측누적) 동봉 — BF>1 무타깃 확증은 422 fail-closed
+    (레거시 트리는 pred_closes 빈값이 흔해 기본 False). report_sha=canonical JSON sha256 16자."""
+    import urllib.parse as up
+    q = up.urlencode({'leaf1': leaf1, 'leaf2': leaf2, 'credence': str(credence).lower()})
+    r = httpx.get(f'{BASE}/api/tree/{name}/consilience?{q}', headers=_headers(), timeout=30)
+    if r.status_code >= 400:   # 422(fail-closed)/404 를 예외 아닌 구조화 오류로 — MCP 소비자 친화
+        return json.dumps({'error': r.status_code, 'detail': r.text[:300]}, ensure_ascii=False)
+    return json.dumps(r.json(), ensure_ascii=False)
+
+
+@mcp.tool()
 def node_receipts(name: str, tag: str) -> str:
     """G1 :VerdictReceipt 체인 + 현 포인터(head) 조회 — R5 공개 읽기표면. lineage rebuild_verify(동명이인,
     데이터 계보용)와 다른 물건."""
