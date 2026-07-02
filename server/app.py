@@ -191,6 +191,38 @@ def version():
     return served_version()
 
 
+@app.get('/api/ops/fsck')
+def ops_fsck(tree: str = '', emit_skiplist: bool = False):
+    """R6 전수감사 verb(비변이) — fsck_node *같은 callable* 로 전 트리 노드 record 스캔(재구현 금지 —
+    가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/fsck_skiplist.json, record
+    content-sha)는 감사·경계 동일 주입. ?emit_skiplist=1 = 면제 후보 방출(사람 검토→git 커밋 파이프라인).
+    projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도)."""
+    from server.contexts.audit import fsck as _fsck
+    names = [tree] if tree else [r['name'] for r in kg('MATCH (t:LakatosTree) RETURN t.name AS name ORDER BY t.name')]
+    skip = _fsck.load_skiplist()
+    findings, candidates, total = [], [], 0
+    for n in names:
+        td = tree_data(n)
+        for row in td.get('nodes', []):
+            total += 1
+            fs = _fsck.fsck_node(row, skiplist=skip)
+            for f in fs:
+                findings.append(dict(tree=n, tag=row.get('tag'), check_id=f.check_id,
+                                     severity=f.severity, detail=f.detail))
+            if emit_skiplist and fs:
+                candidates.append(dict(tree=n, tag=row.get('tag'), sha=_fsck.record_content_sha(row),
+                                       checks=sorted({f.check_id for f in fs})))
+    counts: dict = {}
+    for f in findings:
+        counts[f['check_id']] = counts.get(f['check_id'], 0) + 1
+    out = dict(trees=len(names), total_records=total, findings_count=len(findings),
+               counts=counts, skiplist_size=len(skip),
+               findings=findings[:500], findings_truncated=max(0, len(findings) - 500))
+    if emit_skiplist:
+        out['skiplist_candidates'] = candidates
+    return out
+
+
 @app.post('/api/ops/reconcile-outbox')
 def reconcile_outbox_op():
     """B1 복구 운영 트리거(#4) — pending OutboxEntry(KG 정본)를 PG history 에 *멱등* 재적용.
