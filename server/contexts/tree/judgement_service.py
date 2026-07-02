@@ -25,6 +25,7 @@ from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
 from lakatos.verdicts import ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict, receipt_content_sha
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
+from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
@@ -487,6 +488,7 @@ class JudgementService:
                             e.pred_registered_at AS pred_registered_at,
                             e.node_state AS node_state, e.judged_at AS judged_at,
                             e.metric_value AS existing_metric_value,
+                            e.verdict AS existing_verdict, e.lakatos_status AS existing_lstat,
                             e.current_receipt_sha AS prev_receipt_sha,
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
@@ -504,8 +506,20 @@ class JudgementService:
         require_novel_anchor = (
             assurance.GATE_NOVEL_ANCHOR in assurance.gates_for('submit_test_result', tier)
             or bool(pr.get('require_novel_anchor')))   # FF1 phase2: opt-in tree policy 는 그대로 존중
+        # novel-anchor freshen (2026-07-03): 앵커-데모트 partial 은 *동일 metric_value* 의 서버앵커
+        #   재제출로만 승급 가능(G1 "바이트동일 재제출=freshen" 정합). 값이 다르면 re-roll → 409 유지.
+        #   앵커 성립 여부는 아래 sha 재유도 후 재검(freshen_anchor 인데 미앵커면 409) — client 문자열
+        #   재제출로는 이 통로를 못 연다(FF1 봉합 유지).
+        freshen_anchor = False
         if pr['vsrc'] == 'scripted':
-            raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). 새 노드로 분기할 것')
+            can_freshen = (pr.get('existing_verdict') == 'partial'
+                           and pr.get('existing_lstat') == 'novel_not_server_anchored'
+                           and r.metric_value == pr.get('existing_metric_value'))
+            if not can_freshen:
+                raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). '
+                                         '새 노드로 분기할 것 (예외: novel_not_server_anchored partial 은 '
+                                         '동일 metric_value + 서버앵커 script/novel_script 재제출로 freshen 가능)')
+            freshen_anchor = True
         # #H3 (receipt-integrity): server_sha 를 r.script 파일 *내용*에서 재유도해 영수증을 현실에 묶는다.
         #   불일치 비교 대상을 client-vs-client(psha vs script_sha, 동어반복) → server-vs-client/registered 로 교체.
         server_sha, sha_info = self._recompute_script_sha(r.script)
@@ -566,6 +580,10 @@ class JudgementService:
         #   다른 metric novel 은 그 자체로 독립 사실이라 judge 의 same-metric 게이트 밖(영향 없음).
         novel_server_sha, _ = (self._recompute_script_sha(r.novel_script)
                                if r.novel_script else (None, {'reason': 'no_novel_script'}))
+        # freshen 자격 재검: 이번 재제출이 *양측 서버앵커* 를 실제로 성립시켜야만 좁은 통로가 열린다.
+        if freshen_anchor and not (sha_verified and novel_server_sha is not None):
+            raise HTTPException(409, 'freshen 거부 — 재제출의 script 와 novel_script 가 둘 다 서버가 '
+                                     '읽을 수 있는 파일 경로여야 한다 (client 문자열로는 승급 불가)')
         both_anchored = sha_verified and novel_server_sha is not None
         novel_server_anchored = novel_server_sha is not None              # FF1: novel 측정이 서버 재유도됨
         cross_metric_novel = pr['nmet'] is not None and pr['nmet'] != pr['m']
@@ -713,6 +731,9 @@ class JudgementService:
                    SET e._cas = coalesce(e._cas,0) + 0
                    WITH e
                    WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
+                      OR ($freshen AND e.verdict = 'partial'
+                          AND e.lakatos_status = 'novel_not_server_anchored'
+                          AND e.metric_value = $mv)
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.node_state=$node_state,
                        e.judge_script=$script, e.judge_script_sha=$sha,
@@ -733,6 +754,7 @@ class JudgementService:
                    SET e.current_receipt_sha=$rsha
                    RETURN e.tag AS claimed""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
+                     freshen=freshen_anchor,   # novel-anchor freshen: CAS 탈출은 앵커-데모트 partial 동일값 재제출만
                      script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
@@ -753,6 +775,23 @@ class JudgementService:
                 ops.append(("""MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
                       MERGE (a)-[rel:PROV_REL {kind:$rk}]->(b)""",
                             dict(f=tr['from'], to=tr['to'], rk=tr['rel'])))
+        # R6(후속 PROM): pre-commit fsck 시트 — 이제 쓸 record 를 *쓰기 전에* 같은 체커(boundary_fsck ==
+        #   fsck_node == 감사)로 검사. 정상 경로는 by-construction 통과(prereg 필수·tier/receipt 스탬프
+        #   동봉)라 이 시트의 가치는 활성 필터가 아니라 **드리프트 보험**: 미래의 어떤 write 경로 변경이
+        #   스탬프를 빠뜨리면 라이브에서 즉시 422(원자성 무훼손 — kg_tx 이전 거부, 잠긴 노드 없음).
+        #   prereg 다리: judge() 가 이미 PredictionMissing 으로 구조 강제하므로(여기 도달 = pred_metric
+        #   실재), 시트에는 실측 timestamp 또는 metric-등록 증거를 싣는다 — 시트의 실이빨은 tier/원장
+        #   스탬프 드리프트(레거시 read-double 이 timestamp 필드를 안 실어도 prereg 로 오발화하지 않음).
+        _prospective = dict(verdict=verdict, verdict_source='scripted',
+                            pred_registered_at=(pr.get('pred_registered_at')
+                                                or ('(pred-metric-registered)' if pr.get('m') else None)),
+                            judged_at=ts,
+                            source_trust=est, assurance_tier_resolved=tier,
+                            current_receipt_sha=rsha, qualitative_self_report=qual_self_report)
+        _seat = audit_fsck.boundary_fsck(_prospective)
+        if _seat:
+            raise HTTPException(422, f'pre-commit fsck 거부(쓰기 전 — 원장/스탬프 드리프트): '
+                                     f'{[(f.check_id, f.severity) for f in _seat]}')
         tx_result = self.kg_tx(ops)
         # #M5: 원자 CAS claim 결과 판정 — 첫 op(가드된 판결 SET)이 0행이면 동시 submit 이 이미 점유 → 409.
         #   per-op 결과 shape(len==ops, 각 op 의 .data() 리스트)일 때만 검사(실제 KG 트랜잭션). 그 외(미모델
@@ -762,8 +801,10 @@ class JudgementService:
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
         self.hist(name, 'test_result', tag, dict(value=r.metric_value, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
-                                                 novel=v.novel, script_sha=stored_sha))
-        return {'ok': True, 'verdict': verdict, 'delta': round(v.delta, 4), 'novel': v.novel,
+                                                 novel=v.novel, script_sha=stored_sha,
+                                                 freshen=freshen_anchor))
+        return {'ok': True, 'freshen': freshen_anchor,
+                'verdict': verdict, 'delta': round(v.delta, 4), 'novel': v.novel,
                 'lakatos': lakatos_status, 'metric_verdict': v.verdict,
                 'requires_human': bool(decided.get('requires_human')),
                 # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).
