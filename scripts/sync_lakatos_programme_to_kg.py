@@ -51,7 +51,9 @@ analysis-contract programme. If you point --module elsewhere, also override
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
+import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -62,6 +64,8 @@ from typing import Any
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+
+from lakatos.verdicts import FORCEFUL_SOURCES   # noqa: E402 — repo root 를 path 에 넣은 뒤 import(cwd 독립)
 
 
 # ── target identity (consumer_b analysis-contract programme) ──────────────────────────
@@ -193,11 +197,30 @@ def _node_records(prog: Programme, node_prefix: str, rival_infix: str) -> list[d
     return rows
 
 
+# G4(git-흡수 2026-07-02, S4 봉합): 미러 행의 *내용 무결성 필드*. content_sha 계산에서 제외(자기참조 방지).
+_SHA_EXCLUDE = frozenset({'content_sha'})
+
+
+def _node_content_sha(row: dict) -> str:
+    """행의 정본 필드 튜플에 대한 sha256(content_sha 자신 제외). git commit-graph verify 패턴 —
+    verify 는 카운트가 아니라 이 sha 를 KG 행에서 *재유도*해 대조한다. 변조 = sha 불일치 = 검출."""
+    canon = {k: row[k] for k in sorted(row) if k not in _SHA_EXCLUDE}
+    blob = json.dumps(canon, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(blob.encode('utf-8')).hexdigest()[:16]
+
+
 def _node_row(n: dict, *, name: str, branch: str) -> dict:
-    return dict(
+    verdict_source = n.get('verdict_source')   # 모듈이 선언한 영수증 출처(대개 None=구조/행정 노드)
+    row = dict(
         name=name,
         tag=n.get('tag'),
         verdict=n.get('verdict'),
+        # S4 봉합: provenance 튜플 전량 export — KG 가 force_of(영수증 vs 자기보고)를 표현할 수 있게.
+        verdict_source=verdict_source,
+        node_state=n.get('node_state'),
+        judged_at=n.get('judged_at'),
+        # engine_scored 는 *파생 전용* — verdict_source 가 영수증(FORCEFUL)일 때만 True. 손기록 불가(S4 위조 봉합).
+        engine_scored=verdict_source in FORCEFUL_SOURCES,
         comment=n.get('comment', ''),
         limitation=n.get('limitation', ''),
         algorithm=n.get('algorithm', ''),
@@ -208,6 +231,26 @@ def _node_row(n: dict, *, name: str, branch: str) -> dict:
         branch=branch,
         parent_tag=n.get('parent'),
     )
+    row['content_sha'] = _node_content_sha(row)
+    return row
+
+
+def verify_content(source_rows: list[dict], kg_rows_by_name: dict[str, dict]) -> list[dict]:
+    """행별 content-sha 재유도 대조(카운트 아님) → 불일치 목록. git commit-graph verify 이식.
+
+    각 소스 행의 content_sha 를 재유도해 KG 저장 행의 content_sha 와 비교. KG 행 변조·필드 표류·행 부재를
+    검출한다. 빈 리스트 = 미러가 소스와 내용까지 일치(무결).
+    """
+    drift: list[dict] = []
+    for src in source_rows:
+        want = src.get('content_sha') or _node_content_sha(src)
+        kg = kg_rows_by_name.get(src['name'])
+        if kg is None:
+            drift.append(dict(name=src['name'], reason='missing_in_kg', want=want, got=None))
+        elif kg.get('content_sha') != want:
+            drift.append(dict(name=src['name'], reason='content_sha_mismatch',
+                              want=want, got=kg.get('content_sha')))
+    return drift
 
 
 def _lineage_records(prog: Programme, node_prefix: str, rival_infix: str) -> list[dict]:
@@ -271,6 +314,11 @@ UNWIND $rows AS row
 MERGE (n:LakatosNode {name:row.name})
 SET n.tag = row.tag,
     n.verdict = row.verdict,
+    n.verdict_source = row.verdict_source,
+    n.node_state = row.node_state,
+    n.judged_at = row.judged_at,
+    n.engine_scored = row.engine_scored,
+    n.content_sha = row.content_sha,
     n.comment = row.comment,
     n.limitation = row.limitation,
     n.algorithm = row.algorithm,
@@ -408,7 +456,9 @@ def do_apply(prog: Programme, batch: CypherBatch, hub_name: str) -> int:
     return 0
 
 
-def do_verify(prog: Programme, hub_name: str) -> int:
+def do_verify(prog: Programme, hub_name: str, *, node_prefix: str = DEFAULT_NODE_PREFIX,
+              rival_infix: str = DEFAULT_RIVAL_INFIX) -> int:
+    source_rows = _node_records(prog, node_prefix, rival_infix)
     drv = _driver()
     try:
         with drv.session() as s:
@@ -422,8 +472,15 @@ def do_verify(prog: Programme, hub_name: str) -> int:
                 'MATCH (:KnowledgeHub:LakatosTree {name:$h})-[:HAS_NODE]->'
                 '(c:LakatosNode)-[:BRANCHED_FROM]->(:LakatosNode) '
                 'RETURN count(*) AS c', h=hub_name).single()['c']
+            # G4: 카운트가 아니라 *행별 content_sha 재유도* (git commit-graph verify 패턴).
+            kg_rows = s.run(
+                'MATCH (:KnowledgeHub:LakatosTree {name:$h})-[:HAS_NODE]->(n:LakatosNode) '
+                'RETURN n.name AS name, n.content_sha AS content_sha', h=hub_name).data()
     finally:
         drv.close()
+
+    kg_by_name = {r['name']: r for r in kg_rows}
+    content_drift = verify_content(source_rows, kg_by_name)
 
     ok = True
     checks = [
@@ -439,11 +496,18 @@ def do_verify(prog: Programme, hub_name: str) -> int:
         if got != want:
             ok = False
         print(f'  [{mark}] {label:32s} KG={got}  source={want}')
+    # G4: 내용 검증 — 카운트가 맞아도 행 내용이 변조/표류하면 잡는다.
+    cmark = 'OK ' if not content_drift else 'MISMATCH'
+    print(f'  [{cmark}] {"per-row content_sha":32s} drift={len(content_drift)}')
+    for d in content_drift[:10]:
+        print(f'        - {d["name"]}: {d["reason"]} (want={d["want"]} got={d["got"]})')
+    if content_drift:
+        ok = False
     if not ok:
-        print('\nVERIFY FAILED — KG drifted from python source. '
+        print('\nVERIFY FAILED — KG drifted from python source (count 또는 content). '
               'Re-run --apply (after user GO) or reconcile hand-curation.')
         return 1
-    print('\nVERIFY PASSED — KG matches python source.')
+    print('\nVERIFY PASSED — KG matches python source (count + per-row content).')
     return 0
 
 
@@ -474,14 +538,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.apply:
         return do_apply(prog, batch, args.hub_name)
     if args.verify:
-        return do_verify(prog, args.hub_name)
+        return do_verify(prog, args.hub_name, node_prefix=args.node_prefix,
+                         rival_infix=args.rival_infix)
 
     # default: dry-run — print counts + cypher, no connection
     print_counts(prog)
     print()
     print_cypher(batch)
-    print(f'\nDRY-RUN ONLY — no database connection. '
-          f'Run --apply (KG write, user GO) then --verify against your NEO4J_URI.')
+    print('\nDRY-RUN ONLY — no database connection. '
+          'Run --apply (KG write, user GO) then --verify against your NEO4J_URI.')
     return 0
 
 
