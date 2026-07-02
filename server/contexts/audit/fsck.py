@@ -32,6 +32,7 @@ _SEVERITY = {
     "VERDICT_WITHOUT_PREREG": ERROR,    # scripted 판결인데 사전등록(pred_registered_at) 없음 = 영수증 사슬 끊김
     "SCRIPTED_WITHOUT_SOURCE": ERROR,   # scripted 어휘인데 verdict_source 가 영수증(FORCEFUL)이 아님 = force_of 오판
     "VERDICT_WRITE_WITHOUT_TIER_RESOLVE": ERROR,   # G6: 판결 write 에 tier resolve 흔적 없음 = 디스패치 우회/G6 이전
+    "RECEIPT_CHAIN_MISMATCH": ERROR,    # R5: current_receipt_sha 가 동봉 체인 밖(dangling — 변조/부패). verify 라우트와 공용 어휘
 }
 
 
@@ -83,8 +84,19 @@ def _check_tier_resolve(rec: dict) -> Finding | None:
     return None
 
 
+def _check_receipt_chain(rec: dict) -> Finding | None:
+    """R5: enriched 레코드(감사 스윕이 receipts 동봉) 전용 — head 포인터가 체인 밖이면 dangling.
+    비동봉 레코드는 판단 보류(발화 없음 — 기존 record-level 계약 비파괴)."""
+    if "receipts" in rec and rec.get("current_receipt_sha"):
+        shas = {r.get("receipt_sha") for r in (rec.get("receipts") or [])}
+        if rec["current_receipt_sha"] not in shas:
+            return Finding("RECEIPT_CHAIN_MISMATCH", _SEVERITY["RECEIPT_CHAIN_MISMATCH"],
+                           f"current_receipt_sha={rec['current_receipt_sha'][:12]}… 가 동봉 체인에 없음(dangling)")
+    return None
+
+
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
-           _check_tier_resolve)
+           _check_tier_resolve, _check_receipt_chain)
 
 
 def record_content_sha(rec: dict) -> str:

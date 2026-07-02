@@ -271,11 +271,26 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
 
 
 @mcp.tool()
+def node_receipts(name: str, tag: str) -> str:
+    """G1 :VerdictReceipt 체인 + 현 포인터(head) 조회 — R5 공개 읽기표면. lineage rebuild_verify(동명이인,
+    데이터 계보용)와 다른 물건."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/receipts'), ensure_ascii=False)
+
+
+@mcp.tool()
+def verify_verdict(name: str, tag: str) -> str:
+    """체인 fold 재유도 vs 캐시 대조(캐시 신뢰 금지, 재유도가 판관). 부패는 500 아닌 열거 finding
+    (RECEIPT_CHAIN_MISMATCH). ok:false = 변조/드리프트 — 즉시 조사 대상."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/receipts/verify'), ensure_ascii=False)
+
+
+@mcp.tool()
 def submit_result(name: str, tag: str, value: float, script: str,
                   script_sha: str = '', novel_measured: float = None,
                   novel_script: str = '',
                   data_branch: bool = False, data_replay_passed: bool = True,
-                  human_verdict_required: bool = False) -> str:
+                  human_verdict_required: bool = False,
+                  write_cert_json: str = '') -> str:
     """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected.
     ENG-DU-2: data_branch(데이터 재생성 의존)+data_replay_passed=false → progressive_conditional;
     human_verdict_required=true → ambiguous(인간 판정 보류)."""
@@ -288,6 +303,8 @@ def submit_result(name: str, tag: str, value: float, script: str,
         body['novel_measured'] = novel_measured
     if novel_script:                     # FF1: 서버앵커 novel 측정 영수증(cross-metric 독립성)
         body['novel_script'] = novel_script
+    if write_cert_json:                  # G10/R5: 서명 write-cert(CLI cert-sign 산출 JSON 그대로)
+        body['write_cert'] = json.loads(write_cert_json)
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/test_result', body), ensure_ascii=False)
 
 
