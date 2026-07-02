@@ -199,6 +199,24 @@ NODES_DEF: tuple[EngineNode, ...] = (
         guard_mechanism="test_omd_p5_complete_task_dimension_test_passes_in_real_substrate",
     ),
     EngineNode(
+        tag="p3_conflict_recovery_ux", dimension="P3 충돌 복구 UX(진단+rerere)", parent="p2_shared_lane_3way",
+        evidence="omd_server/gitio.py GitMergeConflict/enable_rerere/merge_into 완성경로/commits_touching(first-parent) · core.py _diagnose_conflict · tests/test_p3_conflict_ux.py 4종 · conformance conflict_recovery_ux must=True · 커밋 72128b5(증분13) · 문헌관측 3건(jj/mergequeue+zuul/rerere, G-Web 통과)",
+        story="'배타 충돌=경보'는 옳으나(유일 경로=우회) 경보 이후가 비어 있었다 — 진단 0·레시피 0·동일충돌 "
+              "반복. problemshift(문헌: Zuul reporter=보고가 UX 본체 / git rerere / jj first-class conflicts): "
+              "O1 응답에 conflict_files+culprits(first-parent bypass_audit 분류로 우회 sha·작성자 지목)+rebase "
+              "hint 동봉(shared_conflict 도 수신, 의미론 분리 불변); O2 rerere.enabled+autoUpdate(rr-cache 전 "
+              "worktree 공유), 기록해소가 전부 재적용되면 merge_into 가 머지 완성(trailer 보존). ⚠진단도 "
+              "first-parent 워크 필수(흡수된 feature 커밋 오탐). O3(resolve-태스크 승격)=정직 잔여.",
+        prom="gitio.GitMergeConflict/enable_rerere/merge_into + core._diagnose_conflict + Phase C 동봉",
+        prediction=Prediction(metric_name="p3_conflict_alarm_unactionable", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="실 OMD 가 우회충돌 진단(sha·kind·author)/shared 진단/rerere 활성/동일충돌 자동재해소→connect 성공 4종을 실 git 로 통과(증분13 차원테스트 green)",
+                              closes_question="q-omd-p3-conflict-recovery"),
+        novel_target=NovelTarget(metric_name="omd_p3_conflict_ux_dimension_test_passes", direction="higher", threshold=1.0),
+        guard_defect="test_bare_alarm_gives_no_recovery_enriched_response_and_rerere_do",
+        guard_mechanism="test_omd_p3_conflict_ux_dimension_test_passes_in_real_substrate",
+    ),
+    EngineNode(
         tag="p6_multiproc_ha", dimension="P6 D14 멀티프로세스 HA 실측", parent="adoption_hardcore",
         evidence="tests/test_p6_multiproc_ha.py 3종(실 subprocess 드라이버, SIGKILL/SIGSTOP) · omd_server/core.py _acquire_leadership/_assert_leader(기존 D14 기제) · 커밋 aa6d6d9(증분12, 코드 무변경 측정 증분)",
         story="D14(단일리더/epoch fence)는 단일 프로세스 안 두 객체로만 검증 — 실제 프로세스 크래시/"
@@ -304,9 +322,8 @@ OPEN_QUESTIONS = [
          body="[P1 궁극심판] 실 현장 repo(예: consumer_b)의 통합브랜치에서 adoption_ratio 를 주기 실측해 "
               "임계(예: ≥0.9) 위에 서는가 — 감사 도구가 아니라 *현장 데이터*가 닫는 질문."),
     # q-omd-p2-threeway-lane: 증분10(p2_shared_lane_3way, 커밋 c41356d)이 닫음 — OPEN 목록에서 제거.
-    dict(name="q-omd-p3-conflict-recovery",
-         body="[P3] SERVER_SPEC §충돌='구조적 불가·경보' 의미론 vs 실코드베이스의 충돌=정상사건 — "
-              "rollback+alarm 이 아니라 graceful 복구(재시도·rebase 안내) 경로가 필요한가."),
+    # q-omd-p3-conflict-recovery: 증분13(p3_conflict_recovery_ux, 커밋 72128b5)이 닫음 —
+    # O1 진단+O2 rerere 로 actionable 복구 성립. O3(resolve-태스크 승격)는 잔여 옵션(research_event).
     # q-omd-p4-barrier-restart: 증분11(p4_barrier_restart_unit, 커밋 5f5db33)이 닫음 — OPEN 목록에서 제거.
     # q-omd-p6-spof: 증분12(p6_multiproc_ha, 커밋 aa6d6d9)가 실측 공백을 닫음 — OPEN 목록에서 제거.
     # (SPOF 잔여=§7 의도된 설계로 처분; transitions 유지공백 리스크만 research_event 로 정직 표기.)
