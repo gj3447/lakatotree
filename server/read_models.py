@@ -38,4 +38,13 @@ def compute_tree_metrics(td: dict) -> dict:
     m["layer_flips"] = layer_flips(td["nodes"], td["frontier"])
     # G6: 메트릭 소비자에게 보증 tier 를 함께 공시 — 숫자의 신뢰 등급을 숫자 옆에(legacy=G6 이전 트리).
     m["assurance_tier"] = td.get("assurance_tier") or "legacy"
+    # G3 S3: note_only_ratio 는 *모니터 신호*로 강등 — 진보 게이트도 채점 오라클도 아니다
+    #   (q_adoption_metric_confound: 채택률로 채점하면 행동 confound). 관측만 공시, credence-low.
+    nodes = td.get("nodes") or []
+    note_only = [n for n in nodes
+                 if not n.get("verdict_source") and not n.get("pred_registered_at")]
+    m["honesty_monitor"] = {
+        "note_only_ratio": round(len(note_only) / len(nodes), 4) if nodes else 0.0,
+        "monitor_only": True,   # 게이트 아님 — 정직경로 채택은 G3 경제학(1-verb run_cycle)이 만든다
+    }
     return m

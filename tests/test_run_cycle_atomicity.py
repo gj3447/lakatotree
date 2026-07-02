@@ -1,4 +1,4 @@
-"""run_cycle 일관성 계약 characterization — Phase 3(UoW) 결정의 박제.
+"""run_cycle 일관성 계약 characterization — Phase 3(UoW) 결정의 박제 + G3 문제이동 반영.
 
 판단(2026-06-16): run_cycle 을 단일 분산 트랜잭션으로 만드는 정식 UoW 는 *하지 않는다*.
 근거 — ① submit_test_result 가 register_prediction 의 KG write 를 read-back 한 뒤 Python
@@ -6,10 +6,12 @@ judge() 로 판정한다(write→read→compute→write 사슬) → 단순 ops b
 tx 관통)는 Tree/Judgement/EvidenceClaim 3개 서비스를 가로지르는 고위험 변경. ③ 실제 노출은
 좁고 *자기치유적*: 노드 write 는 MERGE, 예측은 SET(멱등) → 부분 실패 후 재실행이 안전.
 
-이 파일은 그 일관성 모델을 *암묵적 성질*에서 *테스트된 계약*으로 승격시킨다:
-  - run_cycle 은 원자적이지 *않다* (중간 실패 시 앞 단계 write 는 롤백 안 됨) — 알려진/의도된 경계
-  - 복구 경로 = 재실행 (멱등 write 라 안전)
-  - 그 멱등의 구조적 근거 = 노드 write 가 MERGE 기반
+★G3(git-흡수 2026-07-02) 문제이동 — 계약이 *두 구간*으로 갈라졌다(UoW 없이 보상 롤백으로):
+  - pre-receipt(node/predict/submit 실패): 이 사이클이 만든 신규 노드는 보상 롤백 → 신규노드 0
+    (가드: tests/test_git_absorption_g3.py — 고아 예측노드 debris 금지).
+  - post-receipt(critique 이후 실패): 판결 영수증이 *내구점* — 롤백하지 않는다(G1 불변영수증·
+    G9 증거불멸). 이 파일이 박제하는 것이 바로 이 구간이다.
+이 파일의 테스트는 여전히 유효하다: critique-실패 시 앞 단계 write 잔존 + 재실행 완주(멱등).
 # KG: span_lakatotree_engine
 """
 import importlib
