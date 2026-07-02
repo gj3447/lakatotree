@@ -166,6 +166,23 @@ NODES_DEF: tuple[EngineNode, ...] = (
         guard_mechanism="test_omd_p4_idem_gc_dimension_test_passes_in_real_substrate",
     ),
     EngineNode(
+        tag="p4_barrier_restart_unit", dimension="P4 §3.D 배리어 재기동 단위복구 + CONSUMED", parent="p4_idem_gc",
+        evidence="omd_server/core.py _barrier_recover(_recover 말미)/barrier_consume(MCP 노출) · tests/test_p4_barrier_restart.py 5종 · conformance barrier_restart_recovery must=True · 커밋 5f5db33(증분11)",
+        story="증분8 deviation 3·4 자백 부채: TRIPPING 중 크래시 시 _recover 가 task 개별 조정만 해 배리어 "
+              "잔해가 방치 — 'BROKEN 신호 없이 반쪽 MERGED'(§3.D 함정); TRIPPED→CONSUMED 는 FSM 정의만. "
+              "problemshift: _barrier_recover 가 잔해를 단위로 조정(전멤버 MERGED→TRIPPED 전진수정 / "
+              "일부만→BROKEN coordinator_crash_partial_trip fail-loud, MERGED 는 단조 유지) + barrier_consume "
+              "이 멤버별 merge_sha 수거·멱등 noop·비-TRIPPED 거부. 적합성 must=True 승격으로 회귀가드.",
+        prom="core._barrier_recover + core.barrier_consume + server.py MCP verb + conformance 승격",
+        prediction=Prediction(metric_name="p4_half_trip_left_silent_on_restart", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="실 OMD 재기동이 전진수정/부분트립 BROKEN/ARMED 무해/수거+멱등/거부 5종을 실 git+크래시주입으로 통과(증분11 차원테스트 green)",
+                              closes_question="q-omd-p4-barrier-restart"),
+        novel_target=NovelTarget(metric_name="omd_p4_barrier_restart_dimension_test_passes", direction="higher", threshold=1.0),
+        guard_defect="test_task_only_recovery_leaves_half_trip_silent_unit_recovery_fails_loud",
+        guard_mechanism="test_omd_p4_barrier_restart_dimension_test_passes_in_real_substrate",
+    ),
+    EngineNode(
         tag="p5_complete_task_oneshot", dimension="P5 complete_task 원샷 wrapper", parent="adoption_hardcore",
         evidence="omd_server/core.py complete_task(finish+connect 합성, MCP 노출) · tests/test_p5_complete_task.py · 커밋 40ab3f3/44b6187",
         story="7~8 verb happy-path 는 망각-스트랜드를 구조적으로 만든다: finish 망각 → 영구 IN_ORBIT·궤도 "
@@ -272,9 +289,7 @@ OPEN_QUESTIONS = [
     dict(name="q-omd-p3-conflict-recovery",
          body="[P3] SERVER_SPEC §충돌='구조적 불가·경보' 의미론 vs 실코드베이스의 충돌=정상사건 — "
               "rollback+alarm 이 아니라 graceful 복구(재시도·rebase 안내) 경로가 필요한가."),
-    dict(name="q-omd-p4-barrier-restart",
-         body="[P4 잔여] CONCURRENCY §3.D 배리어-bound CONNECTING 재기동 단위복구 미구현 + "
-              "TRIPPED→CONSUMED 수거 동사 미구현 — 크래시 시 배리어 부분 트립이 남는다."),
+    # q-omd-p4-barrier-restart: 증분11(p4_barrier_restart_unit, 커밋 5f5db33)이 닫음 — OPEN 목록에서 제거.
     dict(name="q-omd-p6-spof",
          body="[P6] 단일 coordinator+leader·SQLite store·repo-wide merge_token = SPOF. D14 는 "
               "단일프로세스 테스트만 — 멀티프로세스/파티션 integration 실측 부재. transitions 라이브러리 "
