@@ -1374,7 +1374,7 @@
    "symbol": "evidence_weight",
    "kind": "def",
    "line_hint": 77,
-   "sha256": "4f0d24b011595637",
+   "sha256": "a4420b75534878ed",
    "layer": "trust",
    "serving": "wired",
    "frege_sinn": "출처신뢰→log(BF) 가중 (bayes.bayes_factor 실사용)"

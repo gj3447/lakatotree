@@ -76,12 +76,17 @@ def eigentrust(local_trust: dict, pre_trusted: dict,
     return t
 
 
-def evidence_weight(source_trust: float, floor: float = 0.0) -> float:
+def evidence_weight(source_trust: float | None, floor: float = 0.0) -> float:
     """출처 신뢰 → 증거 가중 [floor, 1]. 베이즈 BF 지수에 곱해 P(E|H) 결합.
 
     나생문 F-MATH-4: floor=0 → zero-trust(junk) 출처는 무정보(BF=1), credence 안 움직임.
+    G8(git-흡수 2026-07-02, 크래시 봉합): source_trust=None(라이브 데이터에 실재 — repository 가 raw None
+    통과)이면 min(1.0, None) 이 TypeError → tree_metrics 500(333v2·ice-orca-dragon 재현). git fsck 정신:
+    부패 입력은 crash 가 아니라 *안전 강등*(None = 무신뢰 = 가중 0, fail-safe). 이는 크래시-안전이지 trust
+    *기본값 정책*(FF5b: absent 키 default) 이 아니다 — 여기선 present-but-None 만 fail-safe 로 중립화한다.
     """
-    return floor + (1.0 - floor) * max(0.0, min(1.0, source_trust))
+    st = 0.0 if source_trust is None else source_trust
+    return floor + (1.0 - floor) * max(0.0, min(1.0, st))
 
 
 # ── P6 배선: eigentrust/trustrank 를 *실* observation 그래프에 돌려 글로벌 출처신뢰 산출 ──
