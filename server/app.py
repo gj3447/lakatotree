@@ -10,8 +10,11 @@ env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB,
      (선택) LAKATOS_API_TOKEN (run.sh 가 .env 에서 주입)  # OPS-HON-4: LAKATOS_PG_DSN 은 미존재였음
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
-import json, logging, os, secrets, sys
-from contextlib import asynccontextmanager, contextmanager
+import logging
+import os
+import secrets
+import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -30,7 +33,6 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import TypeAdapter
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
-import psycopg2.pool
 from psycopg2 import OperationalError as PgOperationalError
 from server.adapters.mongo import LazyMongoDatabase
 from server.adapters.neo4j import LazyNeo4jDriver
@@ -44,7 +46,7 @@ from server.api_schemas import (
     ElementIn,
     ElementUseIn,
     FoundationRequirementIn,
-    LonginusRefIn,
+    LonginusRefIn,   # noqa: F401 — re-export(테스트/외부: server.app.LonginusRefIn)
     NodeIn,
     ObservationIn,
     ParentEdgeIn,
@@ -68,7 +70,7 @@ from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
-from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
+from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha   # noqa: F401 — _file_sha re-export(테스트/외부)
 from lakatos.io.replay import producer_replay as _producer_replay   # 나생문 #1 live: 채점 스크립트 재실행 판정
 from lakatos.io.prov import replay_command as _replay_command       # judge_script(경로)+result_path → 재현명령
 from server.container import AppContainer
@@ -633,7 +635,10 @@ def _belief(b: BeliefIn) -> Belief:
 
 def _load_belief_base(tree: str) -> list:
     """A4: 트리의 영속 belief base 를 KG 에서 로드 (HAS_BELIEF). 없으면 빈 base."""
+    # G9(git-흡수 2026-07-02): active base = 포인터가 살아있는(abandoned=false) belief 만. 폐기된 belief 는
+    #   물리 삭제가 아니라 abandoned=true 로 표식(git prune: 도달가능 객체는 불멸, 포인터만 죽는다) — 증거 불멸.
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(b:Belief)
+                 WHERE coalesce(b.abandoned, false) = false
                  RETURN b.belief_id AS belief_id, b.statement AS statement, b.kind AS kind,
                         b.credence AS credence, b.problem_balance AS problem_balance,
                         b.connectivity AS connectivity, b.depends_on AS depends_on
@@ -658,13 +663,20 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                MERGE (bel:Belief {belief_id: b.belief_id})
                SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
                    bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
-                   bel.depends_on=b.depends_on, bel.updated_at=$ts
+                   bel.depends_on=b.depends_on, bel.updated_at=$ts,
+                   bel.abandoned=false, bel.was_credence=null, bel.was_kind=null
                MERGE (t)-[:HAS_BELIEF]->(bel)""", dict(tree=tree, beliefs=beliefs, ts=ts))]
+    # G9 TRAP1: r.base(결과 base)에 재등장한 belief 는 abandoned=false 로 *부활*(git branch-revive). removed
+    #   에만 있는 belief 는 아래에서 abandoned=true 표식. 두 op 가 한 tx 라 revive/abandon 이 원자적으로 갈린다.
     demote = list(r.removed) + ([old_canonical_id] if op == 'demote_canonical' and old_canonical_id else [])
     if r.removed:
+        # G9: 폐기=포인터 죽음(비파괴) — DETACH DELETE 대신 abandoned 표식 + was_* 복구영수증(branch.c '(was oid)').
+        #   belief 노드·엣지·의존 증거는 도달가능하게 잔존. 물리 소거는 도달성 스윕의 prunable 게이트만 소유.
         ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(bel:Belief)
-                       WHERE bel.belief_id IN $removed DETACH DELETE bel""",
-                    dict(tree=tree, removed=list(r.removed))))
+                       WHERE bel.belief_id IN $removed
+                       SET bel.abandoned=true, bel.was_credence=bel.credence,
+                           bel.was_kind=bel.kind, bel.abandoned_at=$ts""",
+                    dict(tree=tree, removed=list(r.removed), ts=ts)))
     if demote:
         # auto-rejudge: belief 가 사라진/강등된 같은 tag 의 CANONICAL 노드를 엔진이 강등(수동 재채점 0).
         # A4-richer: spine.reconcile_standing 정책 적용 — CANONICAL ∧ valid_until_rebutted=True 만
