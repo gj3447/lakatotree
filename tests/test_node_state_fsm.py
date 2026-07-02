@@ -54,7 +54,9 @@ def test_writer_persists_draft_node_state_to_kg():
     TreeKgWriter(kg_tx).add_node("T", NodeIn(tag="root"), [])
 
     cypher, params = captured[0][0]
-    assert "e.node_state=$node_state" in cypher
+    # G1(2026-07-02): node_state 는 verdict-preservation CASE 를 통해 SET 된다(scored 보존/draft 갱신).
+    # 계약 불변 — 신규 노드는 $node_state=DRAFT 로 지속(ELSE 분기). 리터럴 shape 만 CASE 로 바뀜.
+    assert "e.node_state = CASE" in cypher and "$node_state" in cypher
     assert params["node_state"] == NodeState.DRAFT.value
 
 
