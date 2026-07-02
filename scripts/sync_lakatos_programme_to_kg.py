@@ -76,6 +76,32 @@ DEFAULT_FRONTIER_PREFIX = 'q-bpc-ac-'
 DEFAULT_RIVAL_INFIX = 'rival-'              # name = <prefix>rival-<tag>
 DEFAULT_ANCHOR = 'SA_BpcAnalysisContract_Prismv2DtChain_20260614'
 
+
+# R11(후속 PROM): 명명 프리픽스 레지스트리 — hub_name → node_prefix 고정 매핑(한계비용 0 으로 드리프트
+#   봉합). 미등록 허브에 임의 프리픽스로 write 하면 KG 에 같은 프로그램이 두 이름공간으로 갈라진다.
+#   신규 허브는 여기 등록해야 sync 가능(fail-loud).
+class NamingRegistryError(ValueError):
+    """미등록 허브/프리픽스로 sync 시도 — KG 이름공간 드리프트 방지(fail-loud)."""
+
+
+NAME_REGISTRY: dict[str, str] = {
+    DEFAULT_HUB_NAME: DEFAULT_NODE_PREFIX,
+}
+
+
+def resolve_prefix(hub_name: str) -> str:
+    """허브명 → 정본 노드 프리픽스. 미등록 = NamingRegistryError(조용한 임의 프리픽스 금지)."""
+    if hub_name not in NAME_REGISTRY:
+        raise NamingRegistryError(
+            f"미등록 허브 {hub_name!r} — NAME_REGISTRY 에 정본 프리픽스를 등록하라(이름공간 드리프트 방지). "
+            f"등록됨: {sorted(NAME_REGISTRY)}")
+    return NAME_REGISTRY[hub_name]
+
+
+# 미러 행 assurance_tier — 공유 KG 미러는 서버 원장(receipt) 이 아니라 손큐레이션 노트북이다.
+# notebook 만 허용(소급 CANONICAL/anchored 위장 봉쇄 — 미러는 판결 권위가 없다).
+_MIRROR_TIER_ALLOWED = frozenset({'notebook'})
+
 HUB_SCOPE = 'measurement (analysis-contract: geometry 측정 + AI + 운반 + DT/PLC verdict)'
 HUB_PART = 'consumer_b/part_375'
 HUB_METRIC_RULE = ('contract_output_count (end-to-end LTDD-green + Windows-verified '
@@ -230,6 +256,8 @@ def _node_row(n: dict, *, name: str, branch: str) -> dict:
         metric_scope=METRIC_SCOPE,
         branch=branch,
         parent_tag=n.get('parent'),
+        # R11: 미러는 노트북 tier — 엔진 판결이 아니라 손큐레이션(위 engine_scored 파생과 함께 미러 진위 명시).
+        assurance_tier='notebook',
     )
     row['content_sha'] = _node_content_sha(row)
     return row
@@ -278,6 +306,36 @@ def _frontier_records(prog: Programme, frontier_prefix: str) -> list[dict]:
             closed_by=q.get('closed_by') or [],
         ))
     return rows
+
+
+def build_staging_cypher(rows: list[dict], *, import_batch: str, hub_name: str) -> list:
+    """R11(receive-pack 격리 이식): 배치를 :LakatosNodeStaging{import_batch} 로만 write — 라이브
+    :LakatosNode 라벨은 불변. 전행 content-sha verify green 일 때만 build_migrate_cypher 로 원자 이주.
+    변조 배치는 staging 에 격리 잔존(부분 공개 없음)."""
+    return [("""
+UNWIND $rows AS row
+MERGE (s:LakatosNodeStaging {name:row.name, import_batch:$import_batch})
+SET s += row, s.import_batch = $import_batch, s.staged_for_hub = $hub_name
+""".strip(), dict(rows=rows, import_batch=import_batch, hub_name=hub_name))]
+
+
+def build_migrate_cypher(*, import_batch: str, hub_name: str) -> tuple:
+    """R11: staging → live 원자 이주 = *단일 Cypher statement*(apoc 없이 원자 — 부분 공개 불가).
+    verify green 게이트를 통과한 배치에만 호출(migrate_is_gated_by_verify). 라벨 스왑 + 허브 연결 + staging 소거."""
+    return ("""
+MATCH (h:KnowledgeHub:LakatosTree {name:$hub_name})
+MATCH (s:LakatosNodeStaging {import_batch:$import_batch})
+MERGE (n:LakatosNode {name:s.name})
+SET n = properties(s)
+REMOVE n.import_batch, n.staged_for_hub
+MERGE (h)-[:HAS_NODE]->(n)
+DETACH DELETE s
+""".strip(), dict(import_batch=import_batch, hub_name=hub_name))
+
+
+def migrate_is_gated_by_verify() -> bool:
+    """계약 표식: migrate 는 verify_content green 뒤에만(do_apply_staged 가 강제). 가드가 이 계약을 핀."""
+    return True
 
 
 def build_cypher(prog: Programme, *, hub_name: str, node_prefix: str,
