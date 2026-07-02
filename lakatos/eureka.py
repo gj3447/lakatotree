@@ -108,6 +108,19 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
                          bf=bf, balance=balance, reasons=tuple(reasons))
 
 
+def closed_count(value) -> int:
+    """'닫는 질문 수'의 단일 정본(R7, G5 단일 프로젝터 장르) — str(질문명)=1·빈str=0, list=원소수,
+    int=그대로, None=0. 봉합한 버그: len(pred_closes)가 질문명 *글자수*(len('q_lx3_enabler')=13)를
+    닫은 질문 수로 계산해 problem_balance 를 거짓 부양했다. judgement seam(1 if closes else 0)과 동형."""
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return 1 if value.strip() else 0
+    if isinstance(value, (list, tuple, set)):
+        return len([v for v in value if v])
+    return int(value)
+
+
 def _node_to_eureka_input(node: dict) -> dict:
     """Assemble the eureka input dict from a *real* lakatotree tree node (server
     ``repository``/``read_models`` shape). Derivations match the engine, not invented:
@@ -130,7 +143,7 @@ def _node_to_eureka_input(node: dict) -> dict:
         "delta": delta,
         "noise_band": node.get("pred_noise_band") or 0.0,
         "source_trust": node.get("source_trust", 1.0),
-        "closed": len(node.get("pred_closes") or []),
+        "closed": closed_count(node.get("pred_closes")),   # R7: 글자수 버그 봉합(str 질문명=1)
         "opened": len(node.get("questions") or []),
     }
 
@@ -146,14 +159,23 @@ def eureka_over_tree(nodes: list) -> dict:
     is a separate, higher gate. Returns the same shape as :func:`eureka_rate` plus
     ``measurement_grade=True`` so a caller never mistakes it for the full (promotion) verdict.
     """
-    verdicts = [classify(_node_to_eureka_input(n), require_promotion=False) for n in nodes]
+    inputs = [_node_to_eureka_input(n) for n in nodes]
+    verdicts = [classify(i, require_promotion=False) for i in inputs]
     felt = sum(1 for v in verdicts if v.felt)
     true = sum(1 for v in verdicts if v.true)
     hallucinated = sum(1 for v in verdicts if v.hallucinated)
+    # R7 사실 세분(true 정의·hallucination_rate 헤드라인 *불변* — 지표 마사지 아님): 장부 자체가
+    # 없는(closed==0∧opened==0) felt-실패는 '측정 실패'가 아니라 '문제 장부 부재'라는 별개 사실 —
+    # OmdEngine 7/7(확증+BF 완전체인데 pred_closes 미선언) 장르를 실패 사유와 구분해 공시만 한다.
+    ledger_absent = sum(1 for i, v in zip(inputs, verdicts)
+                        if v.hallucinated and i["closed"] == 0 and i["opened"] == 0)
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
         "true_rate": round(true / felt, 3) if felt else 0.0,
         "hallucination_rate": round(hallucinated / felt, 3) if felt else 0.0,
+        "problem_ledger_absent": ledger_absent,
+        "hallucinated_reason_split": {"problem_ledger_absent": ledger_absent,
+                                      "measurement_failed": hallucinated - ledger_absent},
         "measurement_grade": True,
     }
 
