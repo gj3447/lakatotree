@@ -87,7 +87,6 @@ def test_fsck_verb_same_checker_and_seat_rejects_before_tx(monkeypatch, tmp_path
     revived = app.ops_fsck()
     assert revived['findings_count'] >= 1, '변조된 레코드가 여전히 면제됨(내용주소 소멸 규율 위반)'
     # (C) submit pre-commit 시트: boundary_fsck 거부 → 422 *그리고* kg_tx 호출 0(쓰기 전 거부).
-    import server.contexts.tree.judgement_service as js_mod
     calls = {'tx': 0}
     pred = {'m': 'seam', 'd': 'lower', 'b': 10.0, 'nb': 0.0, 'scale': 'ratio', 'novel': '',
             'vsrc': None, 'nmet': None, 'ndir': None, 'nthr': None, 'psha': None, 'closes': None,
