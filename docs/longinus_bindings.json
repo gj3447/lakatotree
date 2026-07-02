@@ -1252,8 +1252,8 @@
    "file": "lakatos/quant/fertility.py",
    "symbol": "predictive_fertility",
    "kind": "def",
-   "line_hint": 18,
-   "sha256": "538ae419e49e571a",
+   "line_hint": 19,
+   "sha256": "bcde52bfb3ce57b6",
    "layer": "fertility",
    "serving": "diagnostic",
    "frege_sinn": "novel 예측 적중 track record"
