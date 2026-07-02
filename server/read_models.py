@@ -36,4 +36,6 @@ def compute_tree_metrics(td: dict) -> dict:
             cfg["trust_coverage_mode"] = gst["coverage"]["mode"]
     m = tree_metrics(td["nodes"], td["frontier"], cfg=cfg)
     m["layer_flips"] = layer_flips(td["nodes"], td["frontier"])
+    # G6: 메트릭 소비자에게 보증 tier 를 함께 공시 — 숫자의 신뢰 등급을 숫자 옆에(legacy=G6 이전 트리).
+    m["assurance_tier"] = td.get("assurance_tier") or "legacy"
     return m

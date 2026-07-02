@@ -36,9 +36,13 @@ _CORRUPT = {
     # 'proof'(비-scripted)로 두어 SOURCE_TRUST_NULL 만 단독 발동(순수 WARN 케이스 — prereg 검사 안 걸림).
     "SOURCE_TRUST_NULL": {"verdict": "proof", "source_trust": None},
     "MIXED_JUDGED_AT_TYPE": {"verdict": "proof", "judged_at": {"epoch": 1}},   # dict = 비-ISO
-    "VERDICT_WITHOUT_PREREG": {"verdict": "rejected"},                         # scripted 인데 prereg 없음
+    "VERDICT_WITHOUT_PREREG": {"verdict": "rejected", "assurance_tier_resolved": "legacy"},   # scripted 인데 prereg 없음
     "SCRIPTED_WITHOUT_SOURCE": {"verdict": "progressive", "verdict_source": "conjecture",
-                                "pred_registered_at": "2026-07-02"},           # scripted 인데 비-영수증 source
+                                "pred_registered_at": "2026-07-02",
+                                "assurance_tier_resolved": "legacy"},          # scripted 인데 비-영수증 source
+    # G6: scripted 판결 write 인데 tier-resolve 스탬프 없음(디스패치 우회/G6 이전 — skiplist 로만 면제)
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE": {"verdict": "progressive", "verdict_source": "scripted",
+                                           "pred_registered_at": "2026-07-02"},
 }
 
 
@@ -70,5 +74,6 @@ def test_fsck_is_structural_not_verdict_authority():
     """fsck-clean ≠ epistemically blessed — 판결이 progressive 여도 fsck 는 구조만 본다(판결 축복 아님)."""
     # 구조가 온전하면(prereg+영수증 source) progressive 여도 findings 0 — 하지만 이는 '판결이 옳다'가 아님.
     sound = {"verdict": "progressive", "verdict_source": "scripted", "pred_registered_at": "2026-07-02",
-             "judged_at": "2026-07-02T00:00:00Z", "source_trust": 0.9}
+             "judged_at": "2026-07-02T00:00:00Z", "source_trust": 0.9,
+             "assurance_tier_resolved": "anchored"}   # G6 이후 sound shape: tier-resolve 스탬프 포함
     assert F.fsck_node(sound) == []   # 구조 clean — 판결 진위는 judge 층 소관(fsck 범위 밖)

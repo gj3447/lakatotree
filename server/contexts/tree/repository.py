@@ -119,14 +119,16 @@ class TreeKgRepository:
         self.kg = kg
 
     def list_trees(self) -> list[dict]:
-        return self.kg("MATCH (t:LakatosTree) RETURN t.name AS name, t.title AS title")
+        # G6: tier 를 목록에도 공시 — '이 트리 판결을 얼마나 믿을 것인가'가 열람의 첫 질문.
+        return self.kg("MATCH (t:LakatosTree) RETURN t.name AS name, t.title AS title, "
+                       "t.assurance_tier AS assurance_tier")
 
     def load_tree_data(self, name: str) -> dict:
         t = self.kg(
             "MATCH (t:LakatosTree {name:$n}) RETURN t.title AS title, t.hard_core AS hard_core, "
             "t.frontier_rule AS frontier_rule, t.doc AS doc, "
             "t.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement, "
-            "t.ontology AS ontology",
+            "t.ontology AS ontology, t.assurance_tier AS assurance_tier",
             n=name,
         )
         if not t:

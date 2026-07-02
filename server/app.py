@@ -587,6 +587,10 @@ def leaderboard_view(trees: str, snapshot: bool = False):
     if len(names) < 2:
         raise HTTPException(422, '비교는 트리 ≥2 (trees=a,b,...)')
     lb = build_leaderboard([_competitor_for_tree(n) for n in names])
+    # G6: 리더보드 행에 보증 tier 공시 — 점수 비교의 전제(어느 tier 게이트를 지난 점수인가)를 점수 옆에.
+    tiers = {n: (tree_data(n).get('assurance_tier') or 'legacy') for n in names}
+    for row in lb.get('rows', []):
+        row['assurance_tier'] = tiers.get(row.get('name'), 'legacy')
     if snapshot:
         MONGO['leaderboard_snapshots'].insert_one(dict(
             key=','.join(sorted(names)), at=datetime.now(timezone.utc).isoformat(), board=lb))
