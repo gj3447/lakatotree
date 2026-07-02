@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import tempfile
 from collections.abc import Callable
@@ -24,7 +23,7 @@ from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, ju
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
 from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
-from lakatos.verdicts import ADMIN_VERDICTS, is_admin_verdict
+from lakatos.verdicts import ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict, receipt_content_sha
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
@@ -411,6 +410,7 @@ class JudgementService:
                             e.pred_registered_at AS pred_registered_at,
                             e.node_state AS node_state, e.judged_at AS judged_at,
                             e.metric_value AS existing_metric_value,
+                            e.current_receipt_sha AS prev_receipt_sha,
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
                             t.hard_core AS hard_core,
@@ -582,6 +582,17 @@ class JudgementService:
         #   안에서 동시 submit 중 한쪽만 SET 매칭 → 이중채점(TOCTOU) 봉쇄. judge() 검증을 다 통과한 *뒤*
         #   이 SET 이 실행되므로 거부 시 노드가 빈 scripted 로 잠기지 않는다. RETURN e.tag(claimed)=0행이면
         #   이미 scripted → 아래에서 409. (상단 238행 read-check 는 빠른 거절, 이 가드가 원자 권위.)
+        # G1(git-흡수): 이 scripted 판결을 *불변 내용주소 :VerdictReceipt* 로 발행한다. receipt_sha =
+        #   sha256(canonical payload) 를 Python 에서 미리 계산(prev=노드의 현 포인터로 체인). 아래 #M5 CAS
+        #   *같은 statement* 안에서 SET 직후 MERGE(rec {receipt_sha}) ON CREATE SET + 포인터 전진 →
+        #   CAS 가드가 0행이면 receipt 도 안 생김(원자성 보존, 신규 race 창 0). e.verdict 는 체인 head 의 파생 캐시.
+        prev_rsha = pr.get('prev_receipt_sha')
+        target_id = pr.get('closes')   # q_target_identity_scheme: 선언 의미키(pred_closes)
+        receipt_fields = dict(tree=name, tag=tag, target_id=target_id, verdict=verdict,
+                              verdict_source='scripted', metric_name=pr['m'], metric_value=r.metric_value,
+                              novel_confirmed=novel_independent, lakatos_status=lakatos_status,
+                              judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha)
+        rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
                    WITH e
@@ -595,12 +606,21 @@ class JudgementService:
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa
+                   WITH e
+                   MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                     ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
+                       rec.verdict=$v, rec.verdict_source='scripted', rec.metric_name=$mn,
+                       rec.metric_value=$mv, rec.novel_confirmed=$novel, rec.lakatos_status=$lstat,
+                       rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha
+                   MERGE (e)-[:HAS_RECEIPT]->(rec)
+                   SET e.current_receipt_sha=$rsha
                    RETURN e.tag AS claimed""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
                      script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
                      nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
+                     rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
         for tr in prov_triples(name, tag, r.script, r.result_path, verdict, stored_sha, ts):
@@ -632,3 +652,29 @@ class JudgementService:
                 'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
                            'reasons': list(eu.reasons), 'bf': round(eu.bf, 3)},
                 'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}
+
+    def load_receipt_chain(self, name: str, tag: str) -> dict:
+        """노드의 :VerdictReceipt 체인 + 현 포인터 로드(G1). fold/verify 의 read 경로."""
+        head_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                     RETURN e.current_receipt_sha AS head, e.verdict AS cache_verdict,
+                            e.verdict_source AS cache_source""", tree=name, tag=tag)
+        if not head_rows:
+            raise HTTPException(404, f'노드 없음: {tag}')
+        h = head_rows[0]
+        recs = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:HAS_RECEIPT]->(r:VerdictReceipt)
+                     RETURN r.receipt_sha AS receipt_sha, r.prev_receipt_sha AS prev_receipt_sha,
+                            r.verdict AS verdict, r.verdict_source AS verdict_source""", tree=name, tag=tag)
+        return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
+                'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
+
+    def verify_verdict_chain(self, name: str, tag: str) -> dict:
+        """G1 rebuild_verify(verdict 판): 체인 fold 로 현재 verdict 를 *재유도*해 e.verdict 캐시와 대조.
+
+        캐시를 손상시키면(또는 포인터 dangling) 불일치/ReceiptChainBroken 으로 검출 — '캐시 신뢰 금지, 재유도가 판관'.
+        """
+        chain = self.load_receipt_chain(name, tag)
+        folded = fold_receipt_chain(chain['receipts'], chain['head'],
+                                    cache_verdict=chain['cache_verdict'], cache_source=chain['cache_source'])
+        ok = folded['verdict'] == chain['cache_verdict']
+        return {'ok': ok, 'rederived': folded['verdict'], 'cache': chain['cache_verdict'],
+                'from_receipt': folded['from_receipt']}
