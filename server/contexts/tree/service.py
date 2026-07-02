@@ -20,6 +20,7 @@ from lakatos.programme.consilience import (
     report_bytes,
 )
 
+from lakatos.verdicts import FORCEFUL_SOURCES as _FORCEFUL_SOURCES
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.mutations import TreeMutationService, TreeSpec
 from server.contexts.tree.repository import TreeKgRepository
@@ -120,10 +121,27 @@ class TreeService:
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:
         """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
-        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지."""
+        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지.
+
+        R10-s4(후속 PROM): engine verdict/:VerdictReceipt 보유 트리는 cascade 여도 409 하드가드 —
+        cascade 한 방이 증거불멸(G1/G9)을 물리 파기하는 열린 창을 봉합. 조회 실패=409 fail-safe
+        (불확실하면 안 지움 — CLAUDE.md §4 파괴적 결정 규율). full tombstone(포인터죽음화)은 DEFER."""
         n = len(self.tree_data(name).get("nodes", []))   # 404 if missing
         if n and not cascade:
             raise HTTPException(409, f"나무에 노드 {n}개 — cascade=true 로만 전체 삭제(파괴적·복구불가)")
+        if n:   # cascade=True 여도 원장 보유면 하드가드(영수증 물리파괴 방지)
+            try:
+                probe = self.kg("MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e) "
+                                "WHERE e.verdict_source IN $forceful OR e.current_receipt_sha IS NOT NULL "
+                                "RETURN count(e) AS n",
+                                tree=name, forceful=sorted(_FORCEFUL_SOURCES))
+                receipted = int((probe[0].get("n") if probe else 0) or 0)
+            except Exception:
+                raise HTTPException(409, "삭제 전 원장 확인 실패 — fail-safe 차단(불확실하면 안 지움). "
+                                         "KG 연결 확인 후 재시도.")
+            if receipted:
+                raise HTTPException(409, f"engine 판결/영수증 보유 노드 {receipted}개 — cascade 삭제 차단"
+                                         f"(증거불멸 G1/G9: 영수증 물리파괴 금지). demote/포인터죽음은 별도 경로.")
         self._mutations().delete_tree(name)
         return {"ok": True, "tree": name, "deleted_nodes": n, "cascade": cascade}
 
