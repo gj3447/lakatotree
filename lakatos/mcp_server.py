@@ -175,7 +175,9 @@ def agm_revise(spec_json: str) -> str:
 def run_cycle(name: str, spec_json: str) -> str:
     """한 연구 사이클 오케스트레이션(서버 in-process, **bash 미실행**) — spec_json=CycleIn 필드:
     tag/metric_name/baseline/measured 필수 + 선택 parent/novel_*/credence/source_trust/critiques[].
-    build/judge(bash)가 필요하면 CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
+    G3 봉인 1-verb: 이 한 호출이 노드+사전등록+판결영수증까지(실패 시 신규노드 0 롤백, 4xx 에 advice
+    동봉). `dry_run:true` = incore 판정 미리보기(쓰기 0, 영수증 아님). build/judge(bash)가 필요하면
+    CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
     try:
         spec = json.loads(spec_json or '{}')
     except json.JSONDecodeError as e:

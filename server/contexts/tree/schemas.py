@@ -232,6 +232,9 @@ class CycleIn(BaseModel):
     """Single-cycle orchestration input. Server does graph work, not bash execution."""
 
     tag: str = Field(min_length=1)
+    # G3(git-흡수): incore trial — True 면 judge 순수함수로 판정 *미리보기*만 반환하고 아무것도 쓰지
+    #   않는다(git commit --dry-run / merge-ort incore 이식). 미리보기는 영수증이 아니다.
+    dry_run: bool = False
     parent: str = ""
     metric_name: str
     baseline: float
