@@ -132,6 +132,13 @@ def _build_parser() -> argparse.ArgumentParser:
                     help='G6 보증 tier — 생략 시 신규=anchored 기본/기존=유지, 하향 선언은 409(단조 ratchet)')
     sp.add_argument('--attestor-did', action='append', default=[],
                     help='(반복) G10 서명자 allow-list(did:key) — 선언 시 anchored 판결쓰기에 write-cert 강제')
+    sp = sub.add_parser('cert-keygen', help='G10 열쇠공: Ed25519 키쌍 생성 → {secret_hex, did} (secret 은 보관 책임 사용자)')
+    sp = sub.add_parser('cert-sign', help='G10 열쇠공: 판결쓰기 명령 서명 → WriteCertIn JSON(stdout). prev 는 서버 receipts 에서 회수')
+    sp.add_argument('name')
+    sp.add_argument('tag')
+    sp.add_argument('--secret-hex', required=True, help='cert-keygen 의 secret_hex')
+    sp.add_argument('--metric-value', type=float, required=True)
+    sp.add_argument('--script-sha', default='', help='채점 스크립트 sha256(서버 재계산과 일치해야)')
     sp = sub.add_parser('tree-delete'); sp.add_argument('name')
     sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
@@ -321,6 +328,17 @@ def main(argv=None):
                         coverage_backlog=a.coverage_backlog, ontology=a.ontology,
                         assurance_tier=(a.assurance_tier or None),
                         attestor_dids=(a.attestor_did or None)))
+    elif a.cmd == 'cert-keygen':
+        from lakatos.write_cert import keygen
+        secret_hex, did = keygen()
+        out = dict(secret_hex=secret_hex, did=did,
+                   note='secret 은 출력물 밖에 저장하지 말 것 — 트리 attestor_dids 에 did 를 등록하면 강제 발동')
+    elif a.cmd == 'cert-sign':
+        from lakatos.write_cert import build_write_cert
+        chain = call('GET', f'/api/tree/{a.name}/node/{a.tag}/receipts')   # prev 포인터 회수(CAS 바인딩)
+        command = dict(tree=a.name, tag=a.tag, prev_receipt_sha=chain.get('head'),
+                       metric_value=a.metric_value, script_sha=a.script_sha)
+        out = build_write_cert(bytes.fromhex(a.secret_hex), command)
     elif a.cmd == 'tree-delete':
         out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
     elif a.cmd == 'node':

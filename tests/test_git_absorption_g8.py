@@ -43,6 +43,9 @@ _CORRUPT = {
     # G6: scripted 판결 write 인데 tier-resolve 스탬프 없음(디스패치 우회/G6 이전 — skiplist 로만 면제)
     "VERDICT_WRITE_WITHOUT_TIER_RESOLVE": {"verdict": "progressive", "verdict_source": "scripted",
                                            "pred_registered_at": "2026-07-02"},
+    # R5: head 포인터가 동봉 체인 밖(dangling — 변조/부패). 비동봉 레코드는 발화 없음(enriched 전용).
+    "RECEIPT_CHAIN_MISMATCH": {"verdict": "proof", "current_receipt_sha": "d" * 64,
+                               "receipts": []},
 }
 
 

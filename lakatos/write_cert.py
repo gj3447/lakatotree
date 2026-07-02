@@ -267,6 +267,27 @@ def verify_nonce(seed: bytes, tree: str, ts_iso: str, nonce: str) -> bool:
     return hmac.compare_digest(issue_nonce(seed, tree, ts_iso), nonce or "")
 
 
+# ── 열쇠공(클라이언트 조성) — keygen / cert 조립 (R5: 자물쇠만 있고 열쇠공 없던 갭 봉합) ──────
+def keygen() -> tuple[str, str]:
+    """새 Ed25519 키쌍 → (secret_hex 64자, did:key). 시드는 os.urandom(비결정 — 서버 검증엔 무관)."""
+    import os
+    secret = os.urandom(32)
+    return secret.hex(), did_key_encode(ed25519_public_key(secret))
+
+
+def build_write_cert(secret32: bytes, command: dict, issued_at: str | None = None) -> dict:
+    """명령을 서명해 WriteCertIn 형태 dict 조성 — 서명 대상은 canonical_cert_blob(고정 필드셋).
+    CLI cert-sign / MCP write_cert_json 의 공용 조성기(순수: HTTP 없음, prev 회수는 호출자 몫)."""
+    ts = issued_at or datetime.now(timezone.utc).isoformat()
+    sig = ed25519_sign(secret32, canonical_cert_blob(command, ts))
+    return {
+        'signer_did': did_key_encode(ed25519_public_key(secret32)),
+        'signature': sig.hex(),
+        'issued_at': ts,
+        'command': {k: command.get(k) for k in COMMAND_FIELDS},
+    }
+
+
 # ── cert 검증(서버 경계) — 서명·신원·명령 바인딩·신선도를 한 곳에서 ─────────────────────────
 def _parse_iso(ts: str) -> datetime:
     try:
