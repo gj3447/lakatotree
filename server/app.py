@@ -24,6 +24,7 @@ from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
 from lakatos.programme.kuhn import assess_paradigm, propose_supersession
 from lakatos.programme.explore import rank_questions
+from lakatos.verdicts import receipt_content_sha
 from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
@@ -686,12 +687,52 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
         # A4-richer: spine.reconcile_standing 정책 적용 — CANONICAL ∧ valid_until_rebutted=True 만
         # 자동 강등. 인간이 '반박-자동무효'를 끈 노드(valid_until_rebutted=False=human_locked)는 belief
         # contraction 으로도 자동 강등 금지(인간경계 존중). 전엔 blanket SET 이 이 lock 을 무시했음(버그).
-        ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
-                       WHERE e.tag IN $demote AND e.verdict='CANONICAL'
-                             AND coalesce(e.valid_until_rebutted, true) = true
-                       SET e.verdict='former_canonical', e.verdict_source='engine',
-                           e.current_best_pointer=false, e.demoted_at=$ts""",
-                    dict(tree=tree, demote=demote, ts=ts)))
+        # R4(후속 PROM): blanket → per-tag 가드 op — 각 강등이 v1 null-스펙 :VerdictReceipt 를 동반한다.
+        #   per-tag prev 포인터는 pre-read(fail-safe: KG-less 환경/조회실패 시 기존 blanket 무영수증 경로
+        #   유지 — 회귀 0, 영수증 공백은 fsck FORCEFUL_SOURCE_WITHOUT_RECEIPT 가 후행 감사). CAS 미스
+        #   (동시 재채점/head 전진)는 그 태그만 no-op(skip) — critique-side H7 skip 의미론과 동형.
+        _prevs = None
+        try:
+            _prevs = {r['tag']: r.get('prev') for r in kg(
+                """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                   WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                         AND coalesce(e.valid_until_rebutted, true) = true
+                   RETURN e.tag AS tag, e.current_receipt_sha AS prev""",
+                tree=tree, demote=demote)}
+        except Exception:
+            _prevs = None   # fail-safe: 불확실하면 기존 경로(강등은 하되 영수증 없이 — 파괴적 아님)
+        if not _prevs:
+            # 빈 pre-read 도 blanket 폴백 — (a) KG-less/fake 환경 (b) read→tx 사이 canonical 등장(TOCTOU)
+            #   모두에서 강등 의미론(blanket WHERE 재검사)이 보존된다. per-tag 영수증은 pre-read 가 실제
+            #   canonical 을 본 경우에만(원장 공백은 fsck 가 후행 감사 — R6).
+            _prevs = None
+        if _prevs is None:
+            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                           WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                                 AND coalesce(e.valid_until_rebutted, true) = true
+                           SET e.verdict='former_canonical', e.verdict_source='engine',
+                               e.current_best_pointer=false, e.demoted_at=$ts""",
+                        dict(tree=tree, demote=demote, ts=ts)))
+        else:
+            for _tag, _prev in _prevs.items():
+                _rsha = receipt_content_sha(dict(
+                    tree=tree, tag=_tag, target_id=None, verdict='former_canonical',
+                    verdict_source='engine', metric_name=None, metric_value=None,
+                    novel_confirmed=None, lakatos_status=None, judged_at=ts,
+                    judge_script_sha=None, prev_receipt_sha=_prev))
+                ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                               WHERE e.verdict='CANONICAL'
+                                     AND coalesce(e.valid_until_rebutted, true) = true
+                                     AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                               SET e.verdict='former_canonical', e.verdict_source='engine',
+                                   e.current_best_pointer=false, e.demoted_at=$ts
+                               MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                                 ON CREATE SET rec.tree=$tree, rec.tag=$tag,
+                                   rec.verdict='former_canonical', rec.verdict_source='engine',
+                                   rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                               MERGE (e)-[:HAS_RECEIPT]->(rec)
+                               SET e.current_receipt_sha=$rsha""",
+                            dict(tree=tree, tag=_tag, ts=ts, prev_rsha=_prev, rsha=_rsha)))
     kg_tx(ops)
     hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
                                   'programme_shift_candidate': r.programme_shift_candidate,

@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.verdict.spine import reconcile_standing
+from lakatos.verdicts import receipt_content_sha
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
@@ -117,6 +118,7 @@ class EvidenceClaimService:
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                      RETURN e.verdict AS verdict,
                             coalesce(e.valid_until_rebutted, true) AS vur,
+                            e.current_receipt_sha AS prev_receipt_sha,
                             collect({id:a.id, attacks:a.attacks, by:a.by}) AS args""",
                        tree=name, tag=tag)
         if rows:
@@ -133,20 +135,34 @@ class EvidenceClaimService:
                 #   가 최신상태로 재평가). H5(승격 방향)의 강등 방향 미러 — verdict-mutating write 의 원자성 통일.
                 snap_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
                                  for a in (rows[0]['args'] or []) if a.get('id'))
+                # R4(후속 PROM): standing 철회 강등도 원장에 산다 — v1 null-스펙 receipt + 포인터 CAS.
+                _ts = datetime.now(timezone.utc).isoformat()
+                _prev = rows[0].get('prev_receipt_sha')
+                _rsha = receipt_content_sha(dict(
+                    tree=name, tag=tag, target_id=None, verdict='former_canonical',
+                    verdict_source='engine', metric_name=None, metric_value=None,
+                    novel_confirmed=None, lakatos_status=None, judged_at=_ts,
+                    judge_script_sha=None, prev_receipt_sha=_prev))
                 demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                       SET e._cas = coalesce(e._cas,0) + 0
                       WITH t, e
                       WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
+                        AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                       WITH t, e
                       OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                       WITH t, e, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
                       WHERE size(arg_fp) = $exp_argn AND all(x IN arg_fp WHERE x IN $exp_arg_fp)
                       SET e.verdict='former_canonical', e.verdict_source='engine',
                           e.current_best_pointer=false, e.standing_retracted_at=$ts
+                      MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='former_canonical',
+                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                      MERGE (e)-[:HAS_RECEIPT]->(rec)
+                      SET e.current_receipt_sha=$rsha
                       RETURN e.tag AS tag""",
                         tree=name, tag=tag, exp_verdict=rows[0]['verdict'],
                         exp_argn=len(snap_fp), exp_arg_fp=snap_fp,
-                        ts=datetime.now(timezone.utc).isoformat())
+                        ts=_ts, prev_rsha=_prev, rsha=_rsha)
                 if not demoted_rows:   # 원자 CAS 0행 = 스냅샷 변경(동시 재승격/critique) → stale 강등 미적용
                     out['standing']['demote_skipped'] = 'concurrent_change'
                 else:

@@ -230,8 +230,15 @@ class JudgementService:
             raise HTTPException(403, f'판결 어휘({v.verdict})는 test_result 스크립트 전용 — 수동 지정 금지. '
                                      f'행정 상태만: {sorted(ADMIN_VERDICTS)}')
         if v.verdict == 'CANONICAL':
+            # R4(후속 PROM): 승격도 원장에 산다 — 포인터/직전-canonical 스냅샷을 pre 에서 읽어 receipt 를
+            #   Python 에서 내용주소로 선계산(prev 체인), write CAS 가 두 스냅샷을 재검증한다.
             pre = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
                         OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
+                        WITH t, cur, collect({id:a.id, attacks:a.attacks, by:a.by, kind:a.kind}) AS args
+                        OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
+                        WHERE old.tag <> $tag
+                        WITH t, cur, args,
+                             head(collect({tag: old.tag, prev: old.current_receipt_sha})) AS oldrec
                         RETURN cur.verdict AS verdict,
                                cur.verdict_source AS verdict_source,
                                cur.node_state AS node_state,
@@ -240,7 +247,9 @@ class JudgementService:
                                cur.qualitative_self_report AS qualitative_self_report,
                                cur.author AS author,
                                t.assurance_tier AS assurance_tier,
-                               collect({id:a.id, attacks:a.attacks, by:a.by, kind:a.kind}) AS args''',
+                               cur.current_receipt_sha AS prev_receipt_sha,
+                               oldrec.tag AS old_tag, oldrec.prev AS old_prev,
+                               args AS args''',
                           tree=name, tag=tag)
             if not pre:
                 raise HTTPException(404, f'노드 없음: {tag}')
@@ -303,12 +312,28 @@ class JudgementService:
             #   verdict-승격 경로로 미러. 단 credibility/foundation/reproducible 등 광역 신뢰그래프 race 는
             #   지문 밖 — 노드 자체 verdict/source/qsr/논증까지만 낙관적 락; 광역은 후속.)
             # #M12: 직전 canonical 강등을 verdict_source='engine' 으로 귀속(다른 강등경로와 정합).
+            # R4(후속 PROM): 승격·강등 모두 *같은 statement* 에서 v1 null-스펙 :VerdictReceipt 를 민팅하고
+            #   포인터를 전진시킨다 — 측정 필드는 전부 null(측정영수증 위장 금지, null 이 정직), prev 링크가
+            #   reflog 동형 복구영수증('(was <tag>)' = prev 한 칸 걷기). 포인터/old 스냅샷도 CAS 에 편입:
+            #   pre-read 와 write 사이에 head 전진·canonical 교체가 끼면 0행 → 409(어차피 floor 재평가 대상).
+            ts = datetime.now(timezone.utc).isoformat()
+            prev_rsha = cand.get('prev_receipt_sha')
+            _null_spec = dict(tree=name, target_id=None, metric_name=None, metric_value=None,
+                              novel_confirmed=None, lakatos_status=None, judged_at=ts,
+                              judge_script_sha=None)
+            rsha = receipt_content_sha(dict(_null_spec, tag=tag, verdict='CANONICAL',
+                                            verdict_source='admin', prev_receipt_sha=prev_rsha))
+            old_tag, old_prev = cand.get('old_tag'), cand.get('old_prev')
+            old_rsha = receipt_content_sha(dict(_null_spec, tag=old_tag, verdict='former_canonical',
+                                                verdict_source='engine', prev_receipt_sha=old_prev)) \
+                if old_tag else None
             rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
                   SET cur._cas = coalesce(cur._cas,0) + 0
                   WITH t, cur
                   WHERE coalesce(cur.verdict,'') = coalesce($exp_verdict,'')
                     AND coalesce(cur.verdict_source,'') = coalesce($exp_source,'')
                     AND coalesce(cur.qualitative_self_report,false) = $exp_qsr
+                    AND coalesce(cur.current_receipt_sha,'') = coalesce($prev_rsha,'')
                   WITH t, cur
                   OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
                   WITH t, cur, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
@@ -316,8 +341,19 @@ class JudgementService:
                   WITH t, cur
                   OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
                   WHERE old.tag <> $tag
-                  SET old.verdict='former_canonical', old.verdict_source='engine',
-                      old.current_best_pointer=false, old.node_state=$former_state
+                  WITH t, cur, old
+                  WHERE (old IS NULL AND $old_tag IS NULL)
+                     OR (old.tag = $old_tag AND coalesce(old.current_receipt_sha,'') = coalesce($old_prev,''))
+                  FOREACH (_ IN CASE WHEN old IS NOT NULL THEN [1] ELSE [] END |
+                      SET old.verdict='former_canonical', old.verdict_source='engine',
+                          old.current_best_pointer=false, old.node_state=$former_state,
+                          old.demoted_at=$ts, old.current_receipt_sha=$old_rsha
+                      MERGE (orec:VerdictReceipt {receipt_sha:$old_rsha})
+                        ON CREATE SET orec.tree=$tree, orec.tag=$old_tag,
+                          orec.verdict='former_canonical', orec.verdict_source='engine',
+                          orec.judged_at=$ts, orec.prev_receipt_sha=$old_prev
+                      MERGE (old)-[:HAS_RECEIPT]->(orec)
+                  )
                   SET cur.verdict='CANONICAL', cur.verdict_source='admin',
                       cur.node_state=$canonical_state,
                       cur.current_best_pointer=true,
@@ -326,6 +362,11 @@ class JudgementService:
                       cur.canonical_evidence_window=$evidence_window,
                       cur.valid_until_rebutted=$valid_until_rebutted,
                       cur.measurement_externally_anchored=$mea
+                  MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                    ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='CANONICAL',
+                      rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                  MERGE (cur)-[:HAS_RECEIPT]->(rec)
+                  SET cur.current_receipt_sha=$rsha
                   RETURN cur.tag AS tag''',
                     tree=name, tag=tag,
                     exp_verdict=cand.get('verdict'), exp_source=cand.get('verdict_source'),
@@ -335,25 +376,48 @@ class JudgementService:
                     canonical_state=NodeState.CANONICAL.value,
                     scope=v.scope, assumptions=v.assumptions,
                     evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted,
-                    mea=floor_anchored)
-            if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박) → stale 승격 차단
+                    mea=floor_anchored,
+                    ts=ts, prev_rsha=prev_rsha, rsha=rsha,
+                    old_tag=old_tag, old_prev=old_prev, old_rsha=old_rsha)
+            if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박/head 전진) → 차단
                 raise HTTPException(409, '동시변경 감지(CANONICAL 원자 CAS 0행) — floor 판정 스냅샷'
-                                         '(verdict/source/qsr/논증집합)이 승격 직전 변해 무효. 최신상태 재평가 필요.')
+                                         '(verdict/source/qsr/논증집합/영수증 포인터/직전 canonical)이 승격 직전 '
+                                         '변해 무효. 최신상태 재평가 필요.')
         else:
             state_rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                        RETURN e.verdict AS verdict, e.verdict_source AS verdict_source,
                               e.node_state AS node_state, e.pred_registered_at AS pred_registered_at,
-                              e.judged_at AS judged_at, e.metric_value AS metric_value''',
+                              e.judged_at AS judged_at, e.metric_value AS metric_value,
+                              e.current_receipt_sha AS prev_receipt_sha''',
                                  tree=name, tag=tag)
             if not state_rows:
                 raise HTTPException(404, f'노드 없음: {tag}')
             next_state = derive_node_state({'verdict': v.verdict, 'verdict_source': 'admin'})
             _require_state_transition(derive_node_state(state_rows[0]), next_state)
+            # R4(후속 PROM): 행정 verdict 이동도 원장에 산다 — v1 null-스펙 receipt + 포인터 전진,
+            #   mini-CAS(verdict/포인터 스냅샷)로 read→write race 는 0행 → 409.
+            ts = datetime.now(timezone.utc).isoformat()
+            prev_rsha = state_rows[0].get('prev_receipt_sha')
+            rsha = receipt_content_sha(dict(
+                tree=name, tag=tag, target_id=None, verdict=v.verdict, verdict_source='admin',
+                metric_name=None, metric_value=None, novel_confirmed=None, lakatos_status=None,
+                judged_at=ts, judge_script_sha=None, prev_receipt_sha=prev_rsha))
             rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
+                        AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                       SET e.verdict=$verdict, e.verdict_source='admin', e.node_state=$node_state
+                      MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict=$verdict,
+                          rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                      MERGE (e)-[:HAS_RECEIPT]->(rec)
+                      SET e.current_receipt_sha=$rsha
                       RETURN e.tag AS tag''',
                            tree=name, tag=tag, verdict=v.verdict,
-                           node_state=next_state.value)
+                           node_state=next_state.value,
+                           exp_verdict=state_rows[0].get('verdict'),
+                           prev_rsha=prev_rsha, rsha=rsha, ts=ts)
+            if not rows:   # mini-CAS 0행 = read→write 사이 동시변경(재채점/head 전진) → stale 이동 차단
+                raise HTTPException(409, '동시변경 감지(행정 verdict mini-CAS 0행) — 최신상태 재평가 필요.')
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         self.hist(name, 'verdict', tag, v.model_dump())
