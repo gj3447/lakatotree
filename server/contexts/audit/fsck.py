@@ -33,6 +33,7 @@ _SEVERITY = {
     "SCRIPTED_WITHOUT_SOURCE": ERROR,   # scripted 어휘인데 verdict_source 가 영수증(FORCEFUL)이 아님 = force_of 오판
     "VERDICT_WRITE_WITHOUT_TIER_RESOLVE": ERROR,   # G6: 판결 write 에 tier resolve 흔적 없음 = 디스패치 우회/G6 이전
     "RECEIPT_CHAIN_MISMATCH": ERROR,    # R5: current_receipt_sha 가 동봉 체인 밖(dangling — 변조/부패). verify 라우트와 공용 어휘
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT": ERROR,   # R6: FORCEFUL 판결인데 원장 포인터 없음(G1 이전/우회 write — skiplist 로만 면제)
 }
 
 
@@ -95,8 +96,18 @@ def _check_receipt_chain(rec: dict) -> Finding | None:
     return None
 
 
+def _check_forceful_receipt(rec: dict) -> Finding | None:
+    """R6: FORCEFUL source(scripted/engine/…) 판결인데 :VerdictReceipt 포인터가 없음 — G1 이전 write
+    (legacy, skiplist 로만 면제) 또는 원장 우회(진짜 부패). 라이브 159건+333v2 손기록 10건의 장르."""
+    if rec.get("verdict_source") in FORCEFUL_SOURCES and not rec.get("current_receipt_sha"):
+        return Finding("FORCEFUL_SOURCE_WITHOUT_RECEIPT", _SEVERITY["FORCEFUL_SOURCE_WITHOUT_RECEIPT"],
+                       f"verdict_source='{rec.get('verdict_source')}' 인데 current_receipt_sha 없음 "
+                       f"(원장 공백 — 레코드 열거 면제만 가능, 규칙 면제 불가)")
+    return None
+
+
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
-           _check_tier_resolve, _check_receipt_chain)
+           _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt)
 
 
 def record_content_sha(rec: dict) -> str:
@@ -131,3 +142,22 @@ def boundary_fsck(rec: dict, *, min_severity: str = ERROR,
     """
     thr = _ORDER[min_severity]
     return [f for f in fsck_node(rec, skiplist=skiplist) if _ORDER[f.severity] >= thr]
+
+
+def load_skiplist(path: str | None = None) -> frozenset[str]:
+    """git-추적 skiplist 로드(R6 확정결정: KG 저장 기각 — writer 셀프등재 자기면제 구멍).
+
+    기본 = <repo>/docs/fsck_skiplist.json, env LAKATOS_FSCK_SKIPLIST 로 대체(테스트/운영 오버라이드).
+    형식 {"entries": [{"sha": <record_content_sha>, "tree": ..., "tag": ..., "reason": ...}]} —
+    sha 외 필드는 사람 검토 기록. 파일 부재 = 빈 면제(fail-safe). 감사·경계가 *같은* 로더를 쓴다."""
+    import os
+    from pathlib import Path
+    p = Path(path or os.environ.get("LAKATOS_FSCK_SKIPLIST")
+             or Path(__file__).resolve().parents[3] / "docs" / "fsck_skiplist.json")
+    if not p.is_file():
+        return frozenset()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return frozenset()   # 부패한 skiplist = 면제 0(fail-safe: 면제가 늘어나는 방향 금지)
+    return frozenset(e.get("sha") for e in data.get("entries", []) if e.get("sha"))

@@ -271,6 +271,15 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
 
 
 @mcp.tool()
+def fsck(tree: str = '', emit_skiplist: bool = False) -> str:
+    """R6 전수감사(비변이) — 전 트리(또는 tree 지정) 노드 record 를 fsck 단일 체커로 스캔.
+    counts 로 부패 분포, emit_skiplist=True 로 면제 후보(record content-sha) 방출(사람 검토→git 커밋)."""
+    import urllib.parse as up
+    q = up.urlencode({k: v for k, v in dict(tree=tree, emit_skiplist=emit_skiplist and '1' or '').items() if v})
+    return json.dumps(_get(f'/api/ops/fsck' + (f'?{q}' if q else '')), ensure_ascii=False)
+
+
+@mcp.tool()
 def node_receipts(name: str, tag: str) -> str:
     """G1 :VerdictReceipt 체인 + 현 포인터(head) 조회 — R5 공개 읽기표면. lineage rebuild_verify(동명이인,
     데이터 계보용)와 다른 물건."""

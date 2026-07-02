@@ -46,6 +46,10 @@ _CORRUPT = {
     # R5: head 포인터가 동봉 체인 밖(dangling — 변조/부패). 비동봉 레코드는 발화 없음(enriched 전용).
     "RECEIPT_CHAIN_MISMATCH": {"verdict": "proof", "current_receipt_sha": "d" * 64,
                                "receipts": []},
+    # R6: FORCEFUL source 인데 원장 포인터 없음(G1 이전/우회 — skiplist 로만 면제).
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT": {"verdict": "progressive", "verdict_source": "scripted",
+                                        "pred_registered_at": "2026-07-02",
+                                        "assurance_tier_resolved": "legacy"},
 }
 
 
@@ -78,5 +82,6 @@ def test_fsck_is_structural_not_verdict_authority():
     # 구조가 온전하면(prereg+영수증 source) progressive 여도 findings 0 — 하지만 이는 '판결이 옳다'가 아님.
     sound = {"verdict": "progressive", "verdict_source": "scripted", "pred_registered_at": "2026-07-02",
              "judged_at": "2026-07-02T00:00:00Z", "source_trust": 0.9,
-             "assurance_tier_resolved": "anchored"}   # G6 이후 sound shape: tier-resolve 스탬프 포함
+             "assurance_tier_resolved": "anchored",   # G6 이후 sound shape: tier-resolve 스탬프 포함
+             "current_receipt_sha": "a1" * 32}        # R6 이후 sound shape: 원장 포인터 포함
     assert F.fsck_node(sound) == []   # 구조 clean — 판결 진위는 judge 층 소관(fsck 범위 밖)
