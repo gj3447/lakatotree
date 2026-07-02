@@ -251,9 +251,12 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
                         direction: str = 'lower', noise_band: float = 0.0,
                         novel_metric: str = '', novel_direction: str = '',
                         novel_threshold: float = 0.0, script_sha: str = '',
-                        credence: float | None = None) -> str:
+                        credence: float | None = None, closes_question: str = '') -> str:
     """실행 전 사전등록 예측(의무). 구조적 novel(novel_metric/threshold) 권장 — 텍스트 아닌 실측 대조.
-    credence[0,1]=예측 신뢰도 → calibration/certify G4(calibrated) 입력. 안 주면 인증서 G4 영구 미통과."""
+    credence[0,1]=예측 신뢰도 → calibration/certify G4(calibrated) 입력. 안 주면 인증서 G4 영구 미통과.
+    closes_question = 이 예측이 적중하면 닫히는 frontier 질문 — **여기 선언해야** judgement seam 이
+    채점시점 problem_balance(closed−opened)를 계산해 eureka 가 살아난다('submit 후 close' 관례는
+    balance 0 → 전부 hallucinated 공회전). 사후 closure 소급집계는 없음(false-부양 방지 seam)."""
     body = dict(metric_name=metric, direction=direction, baseline_value=baseline, noise_band=noise_band)
     if novel_metric:
         body.update(novel_metric=novel_metric, novel_direction=novel_direction or 'higher',
@@ -262,6 +265,8 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
         body['judge_script_sha'] = script_sha
     if credence is not None:
         body['credence'] = credence
+    if closes_question:
+        body['closes_question'] = closes_question
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/prediction', body), ensure_ascii=False)
 
 

@@ -47,3 +47,22 @@ def test_mcp_submit_result_omits_empty_result_path(monkeypatch):
     monkeypatch.setattr(mcp, "_post", lambda p, b: (seen.append((p, b)), {"ok": True})[1])
     mcp.submit_result("T", "n1", 1.0, "pytest tests/x.py")
     assert "result_path" not in seen[0][1]
+
+
+def test_mcp_register_prediction_forwards_closes_question(monkeypatch):
+    """eureka problem-ledger 가동(SelfDev q-mcp-closes-question-eureka-ledger): 엔진 Prediction 엔
+    closes_question 이 있고 judgement seam 은 채점시점 closed=1 을 이걸로 계산하는데, MCP 래퍼가
+    미노출이라 'submit 후 close' 관례 → 전 캠페인 eureka 공회전. 전달을 강제한다."""
+    seen: list = []
+    monkeypatch.setattr(mcp, "_post", lambda p, b: (seen.append((p, b)), {"ok": True})[1])
+    mcp.register_prediction("T", "n1", "m", 1.0, closes_question="q-x")
+    path, body = seen[0]
+    assert path.endswith("/prediction")
+    assert body["closes_question"] == "q-x"
+
+
+def test_mcp_register_prediction_omits_empty_closes_question(monkeypatch):
+    seen: list = []
+    monkeypatch.setattr(mcp, "_post", lambda p, b: (seen.append((p, b)), {"ok": True})[1])
+    mcp.register_prediction("T", "n1", "m", 1.0)
+    assert "closes_question" not in seen[0][1]
