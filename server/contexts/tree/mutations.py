@@ -31,6 +31,7 @@ class TreeSpec:
     # G6: 보증 tier 선언(notebook/receipted/anchored). None=미선언 — 신규 트리는 writer 의 ON CREATE 가
     #   기본 anchored 스탬프, 기존 트리는 tier 무변경(legacy 소급 스탬프 금지). 선언은 단조 ratchet(하향 409).
     assurance_tier: str | None = None
+    attestor_dids: tuple[str, ...] | None = None   # G10: None=불변, 선언=교체
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
 
@@ -99,6 +100,7 @@ class TreeMutationService:
                     ontology=spec.ontology,
                     require_novel_anchor=spec.require_novel_anchor,
                     assurance_tier=spec.assurance_tier,
+                    attestor_dids=spec.attestor_dids,
                 )
             )
         except TierDowngrade as e:
