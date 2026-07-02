@@ -128,6 +128,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--coverage-statement', default='')
     sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
     sp.add_argument('--ontology', default='', help='도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)')
+    sp.add_argument('--assurance-tier', default='', choices=['', 'notebook', 'receipted', 'anchored'],
+                    help='G6 보증 tier — 생략 시 신규=anchored 기본/기존=유지, 하향 선언은 409(단조 ratchet)')
     sp = sub.add_parser('tree-delete'); sp.add_argument('name')
     sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
@@ -314,7 +316,8 @@ def main(argv=None):
         out = call('POST', f'/api/tree/{a.name}',
                    dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
                         doc=a.doc, coverage_statement=a.coverage_statement,
-                        coverage_backlog=a.coverage_backlog, ontology=a.ontology))
+                        coverage_backlog=a.coverage_backlog, ontology=a.ontology,
+                        assurance_tier=(a.assurance_tier or None)))
     elif a.cmd == 'tree-delete':
         out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
     elif a.cmd == 'node':

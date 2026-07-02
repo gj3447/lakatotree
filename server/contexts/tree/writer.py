@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from lakatos import assurance
 from lakatos.node_state import NodeState
 from lakatos.verdicts import FORCEFUL_SOURCES, is_self_report_blocked_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
@@ -78,6 +79,16 @@ def _reject_scored(nodes: Sequence[NodeIn]) -> None:
 class TreeNotFound(Exception):
     """add_node 대상 나무가 KG 에 없음(MATCH 0행). 침묵 no-op 대신 fail-loud — mutations 가 404 로 번역.
     (service 경로는 load_tree_data 가 먼저 404; 이건 writer 직접호출까지 막는 defense-in-depth.)"""
+
+
+class TierDowngrade(Exception):
+    """G6: assurance_tier 다운그레이드 선언이 단조 ratchet CAS 에 거부됨 — mutations 가 409 로 번역.
+    DB-side CASE(assurance.cypher_tier_rank_case 생성물)가 원자 판정하고, writer 는 RETURN 된 결과가
+    선언과 다르면(=하향이라 관철 안 됨) raise 한다(읽고-쓰기 race 없음)."""
+
+
+# G6 단조 ratchet 의 DB-side 랭크 CASE — 서열 정본(assurance.TIER_RANK)에서 생성(표류 불가).
+_TIER_RANK_CASE = assurance.cypher_tier_rank_case("t.assurance_tier")
 
 
 class TreeKgWriter:
@@ -173,14 +184,25 @@ class TreeKgWriter:
         coverage_statement: str = "",
         ontology: str = "",
         require_novel_anchor: bool = False,
+        assurance_tier: str | None = None,
     ) -> WriteSummary:
-        self.kg_tx([
+        # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
+        #   tier 미선언 upsert 에 절대 안 덮인다(T2 write-clobber 교정: TreeSpec 기본값 flip 이 아니라
+        #   ON CREATE SET). 선언 시엔 DB-side 단조 ratchet CASE(랭크 정본=assurance.TIER_RANK 생성물)가
+        #   원자 판정 — 상향만 관철, 하향은 기존값 유지 → RETURN 불일치로 TierDowngrade(→409).
+        results = self.kg_tx([
             (
                 """MERGE (t:LakatosTree {name:$tree})
+                     ON CREATE SET t.assurance_tier = coalesce($declared_tier, $default_tier)
                    SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
                        t.doc=$doc, t.coverage_backlog=$coverage_backlog,
                        t.coverage_statement=$coverage_statement, t.ontology=$ontology,
-                       t.require_novel_anchor=$require_novel_anchor, t.updated_at=$ts""",
+                       t.require_novel_anchor=$require_novel_anchor, t.updated_at=$ts
+                   SET t.assurance_tier = CASE
+                         WHEN $declared_tier IS NULL THEN t.assurance_tier
+                         WHEN $declared_rank >= """ + _TIER_RANK_CASE + """ THEN $declared_tier
+                         ELSE t.assurance_tier END
+                   RETURN t.assurance_tier AS assurance_tier""",
                 dict(
                     tree=name,
                     title=title,
@@ -191,10 +213,18 @@ class TreeKgWriter:
                     coverage_statement=coverage_statement,
                     ontology=ontology,
                     require_novel_anchor=require_novel_anchor,
+                    declared_tier=assurance_tier,
+                    declared_rank=assurance.tier_rank(assurance_tier),
+                    default_tier=assurance.DEFAULT_NEW_TREE_TIER,
                     ts=_utc_now(),
                 ),
             )
         ])
+        if assurance_tier is not None:
+            got = (results[0][0] or {}).get("assurance_tier") if results and results[0] else None
+            if got != assurance_tier:   # ratchet 이 하향 선언을 거부하고 기존 tier 를 유지함
+                raise TierDowngrade(
+                    f"assurance_tier 다운그레이드 거부: 현재 '{got}' → 선언 '{assurance_tier}' (단조 ratchet)")
         return WriteSummary(tx_count=1, op_count=1, rows=1)
 
     def upsert_nodes(self, tree: str, nodes: Sequence[NodeIn]) -> WriteSummary:

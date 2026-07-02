@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from lakatos import longinus
+from lakatos import assurance, longinus
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
@@ -238,6 +238,7 @@ class JudgementService:
                                cur.novel_confirmed AS novel_confirmed,
                                cur.qualitative_self_report AS qualitative_self_report,
                                cur.author AS author,
+                               t.assurance_tier AS assurance_tier,
                                collect({id:a.id, attacks:a.attacks, by:a.by, kind:a.kind}) AS args''',
                           tree=name, tag=tag)
             if not pre:
@@ -269,6 +270,17 @@ class JudgementService:
             credibility = self._eigentrust_credibility(
                 name, tag, novel_confirmed=bool(cand.get('novel_confirmed')),
                 has_human_verdict=has_human)
+            # G6 S4 (git-흡수): anchored tier 의 replay 승격 FLOOR — producer replay 가 *실행되어 실패*
+            #   (False)했으면 CANONICAL 승격 차단. 재실행이 측정을 반증한 노드를 최강 주장으로 못 올린다.
+            #   dead-σ 교정(관통위험 ④): LAKATOS_REPLAY_EXEC off 면 replay=None(검증 불가)로 *비차단* —
+            #   floor 를 exec-트리거로 오설정하면 exec-OFF 배포가 anchored 승격 전부 409 lock 이 된다.
+            tier = assurance.resolve_tier(cand.get('assurance_tier'))
+            replay_v = self.producer_replay_for_node(name, tag)
+            if (assurance.GATE_REPLAY_FLOOR in assurance.gates_for('set_verdict_canonical', tier)
+                    and replay_v is False):
+                raise HTTPException(409, "CANONICAL 승격 차단(G6 anchored replay floor): producer replay "
+                                         "가 실행되어 측정 재검증에 *실패*했다 — 재측정과 모순되는 노드는 "
+                                         "최강 주장이 될 수 없다(재실험 또는 새 노드로 분기).")
             decision = synthesize_promotion(
                 scripted_verdict=cand.get('verdict') or 'proof',
                 verdict_source=cand.get('verdict_source'),   # SSOT floor: 레거시 NULL-source 는 영수증 아님
@@ -277,7 +289,7 @@ class JudgementService:
                 credibility=credibility,
                 reproducible=self.reproducible_for_node(name, tag),
                 qualitative_self_report=bool(cand.get('qualitative_self_report')),   # #H1: 질적 self-report 표식 → 메트릭 단독 floor 차단
-                producer_replay_verified=self.producer_replay_for_node(name, tag),   # 나생문 #1 live: 재실행 검증 → 세 번째 외부앵커
+                producer_replay_verified=replay_v,   # 나생문 #1 live: 재실행 검증 → 세 번째 외부앵커(G6 floor 와 동일 관측 1회)
             )
             if not decision['ok']:
                 raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
@@ -414,11 +426,18 @@ class JudgementService:
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
                             t.hard_core AS hard_core,
-                            t.require_novel_anchor AS require_novel_anchor""", tree=name, tag=tag)
+                            t.require_novel_anchor AS require_novel_anchor,
+                            t.assurance_tier AS assurance_tier""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
-        require_novel_anchor = bool(pr.get('require_novel_anchor'))   # FF1 phase2: opt-in tree policy
+        # G6(git-흡수): tier 정책은 assurance 디스패치 테이블(SSOT)이 결정 — 핸들러가 하드코딩하지 않는다.
+        #   receipted/anchored tier 는 novel-anchor 게이트를 무장(신규 트리 기본=anchored, git default-OFF 반전);
+        #   legacy(무tier)/notebook 은 트리의 opt-in 플래그(FF1)로만 발동(거동 불변, 소급 강등 없음).
+        tier = assurance.resolve_tier(pr.get('assurance_tier'))
+        require_novel_anchor = (
+            assurance.GATE_NOVEL_ANCHOR in assurance.gates_for('submit_test_result', tier)
+            or bool(pr.get('require_novel_anchor')))   # FF1 phase2: opt-in tree policy 는 그대로 존중
         if pr['vsrc'] == 'scripted':
             raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). 새 노드로 분기할 것')
         # #H3 (receipt-integrity): server_sha 를 r.script 파일 *내용*에서 재유도해 영수증을 현실에 묶는다.
@@ -605,7 +624,7 @@ class JudgementService:
                        e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
-                       e.novel_server_anchored=$nsa
+                       e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
@@ -620,6 +639,7 @@ class JudgementService:
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
                      nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
+                     atier=tier,   # G6 S5: 이 판결이 어느 tier 로 resolve 됐는지 스탬프(fsck tier-resolve 흔적)
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
