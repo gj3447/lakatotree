@@ -13,6 +13,7 @@ import psycopg2.extras
 from fastapi import HTTPException
 
 from lakatos.quant.calibrate import brier_score, calibration_error, log_score
+from lakatos.verdict.judge import NovelTarget, Prediction, judge
 from lakatos.programme.explore import rank_questions as default_rank_questions
 from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _branch_pressure_pct,
                                expected_progress_gain, realized_reward)
@@ -23,6 +24,8 @@ from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
 from lakatos.programme.tradition import (ResearchTradition, TraditionCommitment, TraditionRevision,
                                          appraise_tradition_revision)
+from lakatos import assurance
+from server.contexts.tree.advice import advice_for, with_advice
 from server.contexts.tree.diagnostics import diagnose_required_constraints
 from server.contexts.tree.schemas import (
     ArtifactIn,
@@ -181,8 +184,16 @@ class ProgrammeService:
         metrics = self.compute_metrics(td)
         bi = dict(bi)
         bi['canonical_credence'] = (metrics.get('bayes') or {}).get('canonical_credence') or 0.5
-        hard_core = tuple((td.get('hard_core') or ()) if isinstance(td.get('hard_core'), (list, tuple))
-                          else ([td['hard_core']] if td.get('hard_core') else ()))
+        # 나생문 #5: free-text hard_core 를 가정별로 토큰화(judgement_service 와 동형) — 단일 blob 으로 넘기면
+        #   _probe_moves 의 'already-probed' 제외가 dead-wired(metric_name 네임스페이스와 교차 불가)되고 PROBE 가
+        #   hard-core 전체를 단일 stale 타깃으로만 낸다. 가정별로 쪼개 per-assumption probe + 억제가 살아나게.
+        raw_hc = td.get('hard_core')
+        if isinstance(raw_hc, (list, tuple)):
+            hard_core = tuple(str(c).strip() for c in raw_hc if str(c).strip())
+        elif raw_hc:
+            hard_core = tuple(t.strip() for t in str(raw_hc).replace(';', ',').replace('\n', ',').split(',') if t.strip())
+        else:
+            hard_core = ()
         tested = tuple(r.get('metric_name') for r in td['nodes']
                        if r.get('verdict') in ('CANONICAL', 'progressive') and r.get('metric_name'))
         return appraise_and_plan(nodes=td['nodes'], frontier=td['frontier'], branch=bi,
@@ -323,28 +334,124 @@ class ProgrammeService:
                     methodology_pressure=ap.methodology_pressure, ontology_pressure=ap.ontology_pressure,
                     reasons=list(ap.reasons), authority=ap.authority)
 
+    # ── G3(git-흡수): 봉인 1-verb 정직 사이클 보조 — incore trial + 보상 롤백 ──────────────
+    def _cycle_trial(self, c: CycleIn) -> dict:
+        """incore trial(merge-ort.h:86 이식) — judge 순수함수로 *쓰기 0* 사전 판정.
+
+        첫 write 전에 4xx 대부분(무측정 novel·척도 위반 등)을 격추한다 = git 의 '빈 커밋 거부'.
+        반환은 미리보기이지 영수증이 아니다(사전등록 없는 판정은 rung 이 될 수 없음)."""
+        nt = None
+        if c.novel_metric and c.novel_direction and c.novel_threshold is not None:
+            nt = NovelTarget(metric_name=c.novel_metric, direction=c.novel_direction,
+                             threshold=c.novel_threshold)
+        try:
+            pred = Prediction(metric_name=c.metric_name, direction=c.direction,
+                              baseline_value=c.baseline, noise_band=c.noise_band,
+                              novel_prediction='(incore cycle trial)')
+            v = judge(pred, c.measured, novel_target=nt, novel_measured=c.novel_measured)
+        except ValueError as e:
+            raise with_advice(HTTPException(422, str(e)))
+        return {'verdict_preview': v.verdict, 'delta_preview': round(v.delta, 4),
+                'novel_preview': v.novel}
+
+    def _cycle_node_exists(self, name: str, tag: str) -> bool:
+        """롤백 대상 판별용 존재 확인 — *삭제 결정* 입력이라 불확실은 '존재함'으로(fail-safe:
+        KG 조회 불가 시 절대 안 지운다). 진짜 KG 장애면 어차피 직후 add_node 가 실패해 4xx."""
+        try:
+            return bool(self.kg('MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag}) '
+                                'RETURN e.tag AS tag', tree=name, tag=tag))
+        except Exception:
+            return True   # 모르면 기존 노드 취급 → 보상 롤백 억제(파괴적 op 는 확신 있을 때만)
+
+    def _rollback_cycle_node(self, name: str, tag: str) -> None:
+        """보상 롤백 — *이 사이클이 만든* 신규 노드만 제거(실패시 신규노드 0).
+
+        영수증-안전 가드: verdict_source 가 붙었거나 :VerdictReceipt 가 달린 노드는 절대 안 지운다
+        (G1 불변영수증·G9 증거불멸 존중 — 롤백은 미채점 debris 청소지 역사 소거가 아님)."""
+        self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+              WHERE e.verdict_source IS NULL AND NOT (e)-[:HAS_RECEIPT]->()
+              DETACH DELETE e''', tree=name, tag=tag)
+
     def run_cycle(self, name: str, c: CycleIn) -> dict:
-        self.add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),
-                                   algorithm=c.algorithm, comment=c.comment))
-        self.register_prediction(name, c.tag, PredictionIn(
-            metric_name=c.metric_name, direction=c.direction, baseline_value=c.baseline,
-            noise_band=c.noise_band, novel_metric=c.novel_metric, novel_direction=c.novel_direction,
-            novel_threshold=c.novel_threshold, judge_script_sha=c.script_sha,
-            closes_question=c.closes_question, credence=c.credence))
-        res = self.submit_test_result(name, c.tag, TestResultIn(
-            metric_value=c.measured, script=c.script, script_sha=c.script_sha,
-            novel_measured=c.novel_measured, source_trust=c.source_trust,
-            counterexample_response=c.counterexample_response, counterexample_type=c.counterexample_type,
-            ce_excess_content=c.ce_excess_content, ce_novel_corroborated=c.ce_novel_corroborated,
-            ce_in_heuristic_spirit=c.ce_in_heuristic_spirit,
-            lakatos_anomaly=c.lakatos_anomaly, lakatos_consequence=c.lakatos_consequence,
-            lakatos_excess=c.lakatos_excess, lakatos_hardcore=c.lakatos_hardcore))
-        for critique in c.critiques:
-            self.add_critique(name, c.tag, critique)
-        return dict(tree=name, tag=c.tag, verdict=res.get('verdict'), novel=res.get('novel'),
-                    delta=res.get('delta'), critiques=len(c.critiques),
-                    standing=self.standing(name, c.tag),
-                    note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        """봉인 1-verb 정직 사이클(git-흡수 G3, P3 porcelain 경제학 역전) — 사전등록→채점→제출→영수증을
+        client 호출 *한 번*에. note 경로(2-verb)보다 정직경로가 구조적으로 싸다.
+
+        ① incore trial(쓰기 0)이 먼저 4xx 격추 · dry_run=True 면 여기서 미리보기 반환(영수증 아님).
+        ② write 후 실패는 보상 롤백 — 이 사이클이 만든 신규 노드 0 (고아 예측노드 debris 금지).
+        ③ 판결 영수증 착륙이 내구점: 그 후(critique) 실패는 롤백 금지(G1/G9 — 영수증 파괴 불가).
+        4xx 엔 advice 레지스트리가 다음 명령을 제안(suggest-only, 게이트 우회 off-switch 없음)."""
+        trial = self._cycle_trial(c)
+        if c.dry_run:
+            out = dict(tree=name, tag=c.tag, dry_run=True, **trial,
+                       note='incore trial — 영수증 아님·아무것도 쓰지 않음. 제출은 dry_run=false 로')
+            # R2-NOVEL(s3): FF1 강등 사전 예고 — 트리 정책 1-read 를 *fail-safe* 로 결합. 조회 실패
+            #   (KG-less fake/운영 단절)=힌트 생략: 불확실한 정책으로 예고를 지어내지 않는다. 이 read 는
+            #   dry_run 분기 전용(fake-heavy 비-dry 경로엔 새 kg 쿼리 0 — CLAUDE.md 함정 규율).
+            try:
+                rows = self.kg('MATCH (t:LakatosTree {name:$tree}) '
+                               'RETURN t.require_novel_anchor AS require_novel_anchor, '
+                               't.assurance_tier AS assurance_tier', tree=name)
+            except Exception:   # noqa: BLE001 — 진단 힌트 전용: 실패=생략(dry_run 은 반드시 산다)
+                rows = None
+            if rows:
+                pol = rows[0]
+                # judgement_service.submit_test_result 의 무장 규칙 미러(SSOT=assurance 디스패치):
+                #   tier 게이트(receipted/anchored) ∨ 트리 opt-in 플래그(FF1 phase2).
+                armed = (assurance.GATE_NOVEL_ANCHOR in assurance.gates_for(
+                             'submit_test_result', assurance.resolve_tier(pol.get('assurance_tier')))
+                         or bool(pol.get('require_novel_anchor')))
+                cross_metric_novel = c.novel_metric is not None and c.novel_metric != c.metric_name
+                out['would_demote_to_partial'] = bool(
+                    armed and cross_metric_novel and trial.get('novel_preview')
+                    and not c.novel_script
+                    and trial.get('verdict_preview') in ('progressive', 'progressive_conditional'))
+            return out
+        created = not self._cycle_node_exists(name, c.tag)
+        try:
+            self.add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),
+                                       algorithm=c.algorithm, comment=c.comment))
+            self.register_prediction(name, c.tag, PredictionIn(
+                metric_name=c.metric_name, direction=c.direction, baseline_value=c.baseline,
+                noise_band=c.noise_band, novel_metric=c.novel_metric, novel_direction=c.novel_direction,
+                novel_threshold=c.novel_threshold, judge_script_sha=c.script_sha,
+                closes_question=c.closes_question, credence=c.credence))
+            res = self.submit_test_result(name, c.tag, TestResultIn(
+                metric_value=c.measured, script=c.script, script_sha=c.script_sha,
+                novel_measured=c.novel_measured,
+                novel_script=c.novel_script,   # R2-NOVEL(s1): 서버앵커 소스 관통 — 없으면 FF1 partial
+                source_trust=c.source_trust,
+                counterexample_response=c.counterexample_response, counterexample_type=c.counterexample_type,
+                ce_excess_content=c.ce_excess_content, ce_novel_corroborated=c.ce_novel_corroborated,
+                ce_in_heuristic_spirit=c.ce_in_heuristic_spirit,
+                lakatos_anomaly=c.lakatos_anomaly, lakatos_consequence=c.lakatos_consequence,
+                lakatos_excess=c.lakatos_excess, lakatos_hardcore=c.lakatos_hardcore))
+        except HTTPException as e:
+            if created:
+                self._rollback_cycle_node(name, c.tag)   # 영수증-안전 가드 포함(신규·미채점만)
+            raise with_advice(e)
+        except Exception:
+            if created:
+                self._rollback_cycle_node(name, c.tag)
+            raise
+        # ── 영수증 착륙(내구점) 이후 — critique 실패는 4xx+advice 로 전파하되 롤백하지 않는다.
+        try:
+            for critique in c.critiques:
+                self.add_critique(name, c.tag, critique)
+        except HTTPException as e:
+            raise with_advice(e)
+        out = dict(tree=name, tag=c.tag, verdict=res.get('verdict'), novel=res.get('novel'),
+                   lakatos=res.get('lakatos'),   # R2-NOVEL(s2): FF1 강등사유를 삼키지 않는다
+                   delta=res.get('delta'), critiques=len(c.critiques),
+                   standing=self.standing(name, c.tag),
+                   note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        if 'novel_server_anchored' in res:   # 있으면 노출(가시성) — 없는 키를 지어내지 않는다
+            out['novel_server_anchored'] = res['novel_server_anchored']
+        if res.get('lakatos') == 'novel_not_server_anchored':
+            # suggest-only advice(H9 SSOT=advice.py 레지스트리) — 상태코드/verdict 불변, 우회 수단 아님.
+            tip = advice_for('novel_not_server_anchored')
+            if tip:
+                out['advice'], out['advice_mode'] = tip, 'suggest-only'
+        return out
 
     def add_artifact(self, name: str, a: ArtifactIn) -> dict:
         self.insert_artifact(dict(tree=name, node_tag=a.node_tag, kind=a.kind,

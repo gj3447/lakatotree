@@ -7,10 +7,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 
 from fastapi import HTTPException
 
+from lakatos.programme.consilience import (
+    ConsilienceTargetMissing,
+    branch_verdict_sequences,
+    consilience_report,
+    project_tree_rows,
+    report_bytes,
+)
+
+from lakatos.verdicts import FORCEFUL_SOURCES as _FORCEFUL_SOURCES
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.mutations import TreeMutationService, TreeSpec
 from server.contexts.tree.repository import TreeKgRepository
@@ -65,6 +75,29 @@ class TreeService:
     def normalized_parent_edges(self, node: NodeIn) -> list[ParentEdgeIn]:
         return self._validator().normalized_parent_edges(node)
 
+    def consilience(self, name: str, leaf1: str, leaf2: str, credence: bool = False) -> dict:
+        """G7 재합류 연산자 표면(R9-CONSIL) — 두 leaf 의 incore 3-way 병합 리포트. 무변이(GET 계약):
+        tree_data 소비만, 그래프 쓰기 0, verdict_mutation=False(canonical 화는 기존 게이트로).
+
+        credence=False 기본 — 레거시 트리는 pred_closes 가 대부분 빈값이라 true 기본은 전면 422 오폭.
+        credence=True 면 두 leaf 의 루트경로(조상 전체) verdict 시퀀스로 union_credence 동봉 —
+        BF>1 무타깃 확증은 ConsilienceTargetMissing → 422 번역(무음 병합 금지, fail-closed).
+        report_sha = report_bytes(canonical JSON) 의 sha256 16자 — 수송 가능한 증거 지문."""
+        td = self.tree_data(name)   # 미존재 트리 = 404 (repo 계약)
+        parents, stances, verdicts = project_tree_rows(td.get("nodes") or [])
+        missing = [leaf for leaf in (leaf1, leaf2) if leaf not in parents]
+        if missing:
+            raise HTTPException(404, f"노드 없음: {missing} — 빈 조상 무음 병합 금지")
+        bv = branch_verdict_sequences(parents, verdicts, leaf1, leaf2) if credence else None
+        try:
+            report = consilience_report(parents=parents, stances=stances,
+                                        leaf1=leaf1, leaf2=leaf2, branch_verdicts=bv)
+        except ConsilienceTargetMissing as exc:
+            raise HTTPException(422, f"consilience credence fail-closed: {exc}") from exc
+        rb = report_bytes(report)
+        return {"tree": name, "leaf1": leaf1, "leaf2": leaf2, "report": report,
+                "report_sha": hashlib.sha256(rb.encode("utf-8")).hexdigest()[:16]}
+
     def add_node(self, name: str, node: NodeIn, tree_data: dict | None = None) -> dict:
         td = tree_data if tree_data is not None else self.tree_data(name)
         return self._mutations().add_node(name, node, td)
@@ -81,14 +114,34 @@ class TreeService:
             coverage_statement=spec.coverage_statement,
             coverage_backlog=tuple(spec.coverage_backlog),
             ontology=spec.ontology,
+            require_novel_anchor=spec.require_novel_anchor,
+            assurance_tier=spec.assurance_tier,
+            attestor_dids=(None if spec.attestor_dids is None else tuple(spec.attestor_dids)),
         ))
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:
         """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
-        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지."""
+        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지.
+
+        R10-s4(후속 PROM): engine verdict/:VerdictReceipt 보유 트리는 cascade 여도 409 하드가드 —
+        cascade 한 방이 증거불멸(G1/G9)을 물리 파기하는 열린 창을 봉합. 조회 실패=409 fail-safe
+        (불확실하면 안 지움 — CLAUDE.md §4 파괴적 결정 규율). full tombstone(포인터죽음화)은 DEFER."""
         n = len(self.tree_data(name).get("nodes", []))   # 404 if missing
         if n and not cascade:
             raise HTTPException(409, f"나무에 노드 {n}개 — cascade=true 로만 전체 삭제(파괴적·복구불가)")
+        if n:   # cascade=True 여도 원장 보유면 하드가드(영수증 물리파괴 방지)
+            try:
+                probe = self.kg("MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e) "
+                                "WHERE e.verdict_source IN $forceful OR e.current_receipt_sha IS NOT NULL "
+                                "RETURN count(e) AS n",
+                                tree=name, forceful=sorted(_FORCEFUL_SOURCES))
+                receipted = int((probe[0].get("n") if probe else 0) or 0)
+            except Exception:
+                raise HTTPException(409, "삭제 전 원장 확인 실패 — fail-safe 차단(불확실하면 안 지움). "
+                                         "KG 연결 확인 후 재시도.")
+            if receipted:
+                raise HTTPException(409, f"engine 판결/영수증 보유 노드 {receipted}개 — cascade 삭제 차단"
+                                         f"(증거불멸 G1/G9: 영수증 물리파괴 금지). demote/포인터죽음은 별도 경로.")
         self._mutations().delete_tree(name)
         return {"ok": True, "tree": name, "deleted_nodes": n, "cascade": cascade}
 

@@ -107,7 +107,8 @@ def test_directions_total_visits_is_sum_of_visits(monkeypatch):
 
 # ── B5 OPS-COR-2/3: _path_sha 공통 헬퍼 (rebuild_verify·get_lineage 공유) ──
 
-def test_path_sha_file_streams_and_dir_composite(tmp_path):
+def test_path_sha_file_streams_and_dir_composite(tmp_path, monkeypatch):
+    monkeypatch.setenv('LAKATOS_RAW_ROOT', str(tmp_path))   # #15: path_sha 는 raw_root 안만 해시 — tmp 를 root 로 선언
     app = load_app()
     f = tmp_path / 'f.bin'; f.write_bytes(b'zdf' * 100000)
     assert app._path_sha(str(f)) == app._file_sha(str(f))     # 파일=스트리밍 sha

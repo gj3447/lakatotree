@@ -141,3 +141,22 @@ Core evidence files in the shared workspace:
 8. Preserve lineage from ZDF/source images through masks, feature observations, and final result JSON.
 
 The machine-readable form of this pack is `docs/bpc_prismv2_longinus_manifest.json`.
+
+## 2026-06-30 Longinus Binding
+
+The active BPC PrismV2 branch/capability update is bound under:
+
+- `PrismV2.DevelopCanonicalBranch.20260630`
+- `BPC.FeatureLocalMeasurementGate.LakatoTree.20260630`
+- tree: `LakatosTree_BPC_20View_20260612`
+- node: `feature_local_gate_20260630`
+- parent: `prismv2_port365`
+
+The binding pins two operational facts:
+
+1. PrismV2 multi-agent development baseline is `origin/develop`; stale `kjra`
+   or feature worktrees must merge/rebase `origin/develop` before integration.
+2. BPC product verdicts come from feature-local geometry plus measurement
+   capability. Global registration is frozen/gated health, and TAB_BOLT high
+   zspread/weak view/missing layer evidence is `suspect`/`ABSTAIN`, not silent
+   OK and not hard NG.

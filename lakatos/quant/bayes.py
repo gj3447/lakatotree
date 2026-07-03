@@ -43,6 +43,10 @@ DEFAULT_PRIOR = GROUNDED['default_prior']['value']        # 무차별 원리 (La
 ABANDON_CREDENCE = GROUNDED['abandon_credence']['value']  # odds 1:9 폐기 문턱
 EFF_CAP = GROUNDED['eff_cap']['value']                    # 효과크기 상한 (Cohen d=4=large×5)
 WEIGHT_FLOOR = GROUNDED['weight_floor']['value']          # 마진 개선 최소 증거력
+# FF5b 정책(tier=policy, deep-dive 2026-06-26): 검증 안 된 *출처주장*(source 키 보유) verdict 의 trust 기본 =
+#   무정보(evidence_weight floor 0 → BF 중립=credence 불변). 내부(출처주장 없음) verdict 는 1.0 유지(비파괴).
+#   "source_trust 미지정 출처는 최대신뢰(fail-open) 금지" — client/누락이 최대 증거력을 공짜로 못 받는다.
+SOURCE_TRUST_FAILSAFE = 0.0
 
 
 def interpret(bf: float) -> dict:
@@ -57,7 +61,7 @@ def effect_size(delta: float, noise_band: float,
 
 
 def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0,
-                 source_trust: float = 1.0) -> float:
+                 source_trust: float | None = 1.0) -> float:
     """판결 + 효과크기 + 인터넷 출처신뢰 → Bayes factor. 권위 출처 = 강한 증거(P1).
     equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게."""
     base = BF_BASE.get(verdict, 1.0)
@@ -96,7 +100,9 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
     odds = prior / (1 - prior)
     best_log_bf: dict = {}   # target → max log(BF) (BF>1 content-dedup)
     for v in verdicts:
-        st = v.get('source_trust', 1.0)
+        st = v.get('source_trust')
+        if st is None:   # FF5b: 미지정이면 — 출처주장(source) 있는 verdict 는 failsafe(무정보), 내부는 1.0(비파괴)
+            st = SOURCE_TRUST_FAILSAFE if v.get('source') is not None else 1.0
         if source_trust_map and v.get('source') in source_trust_map:
             st = source_trust_map[v['source']]   # ★고유벡터 글로벌 신뢰로 대체
         bf = bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0), st)
@@ -111,6 +117,11 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
         odds *= math.exp(lb)
     # prom-honesty/5 (적대감사 2026-06-20, 정정): distinct 강확증 다수에서 float odds 가 포화해 정확히
     #   1.0 을 반환할 수 있다 → docstring 을 [0,1) 에서 (0,1] 로 정정(상한 1.0 포함). 과장 제거.
+    # 나생문 #4: ≈395+ distinct 최대강도 확증서 odds 가 +inf 로 overflow → inf/(1+inf)=NaN(문서화된 (0,1]
+    #   위반, should_abandon_bayes 가 NaN<thr=False 로 fail-toward-retain, canonical_credence 에 NaN 누수).
+    #   유한 최대로 포화시켜 정확히 1.0 반환(문서화된 (0,1] 보존). 비-overflow 경로는 불변.
+    if not math.isfinite(odds):
+        return 1.0
     return odds / (1 + odds)
 
 

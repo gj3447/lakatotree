@@ -9,9 +9,28 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from lakatos.verdicts import is_self_report_blocked_verdict
+from lakatos import assurance
+from lakatos.node_state import NodeState
+from lakatos.verdicts import FORCEFUL_SOURCES, is_self_report_blocked_verdict
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.ports import KgTx
+
+# G1(git-흡수 2026-07-02, S3 봉합): 노드-쓰기는 verdict 의 유일 발행처가 아니다 — 채점(scripted/engine/…)은
+#   judgement_service 가 CAS 로 쓴다. 그런데 add_node/upsert_nodes 가 verdict/node_state/metric_* 를 무가드
+#   블랭킷 SET 해, 이미 채점된 tag 를 같은 tag 로 다시 쓰면 scripted 'rejected'(BF 1/6)가 draft 'proof' 로 덮여
+#   부적 증거가 credence 에서 지워졌다(H9 리터럴 스캐너가 못 보는 파라미터화 SET). git 의 first-write-wins
+#   발행(object-file.c:408-472: 이미 바인딩된 이름은 재바인딩 불가)을 이식: 기존 노드의 verdict_source 가
+#   *영수증*(FORCEFUL_SOURCES)이면 verdict-bearing 필드를 MATCH 시 보존, 아니면(draft) 정상 갱신. DB-side CASE 라
+#   원자적(읽고-쓰기 race 없음). verdict *권위*는 여전히 judge/set_verdict 층에 — writer 는 파괴만 못 한다.
+#   verdict-bearing 필드만 CASE 로 가드; 메타(comment/algorithm/script/…)는 항상 갱신(draft 편집 보존).
+_FORCEFUL = sorted(FORCEFUL_SOURCES)
+_PRESERVE_IF_SCORED = (
+    "e.verdict = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.verdict ELSE {v} END, "
+    "e.node_state = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.node_state ELSE {ns} END, "
+    "e.metric_name = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.metric_name ELSE {mn} END, "
+    "e.metric_value = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.metric_value ELSE {mv} END, "
+    "e.metric_scope = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.metric_scope ELSE {ms} END"
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +81,16 @@ class TreeNotFound(Exception):
     (service 경로는 load_tree_data 가 먼저 404; 이건 writer 직접호출까지 막는 defense-in-depth.)"""
 
 
+class TierDowngrade(Exception):
+    """G6: assurance_tier 다운그레이드 선언이 단조 ratchet CAS 에 거부됨 — mutations 가 409 로 번역.
+    DB-side CASE(assurance.cypher_tier_rank_case 생성물)가 원자 판정하고, writer 는 RETURN 된 결과가
+    선언과 다르면(=하향이라 관철 안 됨) raise 한다(읽고-쓰기 race 없음)."""
+
+
+# G6 단조 ratchet 의 DB-side 랭크 CASE — 서열 정본(assurance.TIER_RANK)에서 생성(표류 불가).
+_TIER_RANK_CASE = assurance.cypher_tier_rank_case("t.assurance_tier")
+
+
 class TreeKgWriter:
     """Owns Cypher write shape for the tree context."""
 
@@ -74,18 +103,20 @@ class TreeKgWriter:
     def add_node(self, tree: str, node: NodeIn, parent_edges: Sequence[ParentEdgeIn]) -> WriteSummary:
         """Single-node compatibility path: node and branch edges share one tx."""
         _reject_scored([node])   # prom-honesty/1: 스크립트 판결 self-report 차단(by-construction)
-        ops = [
+        ops: list[tuple[str, dict]] = [
             (
                 """MATCH (t:LakatosTree {name:$tree})
                MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+$tag})
-               SET e.tag=$tag, e.verdict=$verdict, e.script=$script, e.result_path=$result_path,
+               SET e.tag=$tag, e.script=$script, e.result_path=$result_path,
                    e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
-                   e.open_question=$open_question, e.metric_name=$metric_name,
-                   e.metric_value=$metric_value, e.metric_scope=$metric_scope,
-                   e.recorded_at=$ts
+                   e.open_question=$open_question, e.recorded_at=$ts, e.author=$author,
+                   """ + _PRESERVE_IF_SCORED.format(
+                       v="$verdict", ns="$node_state",
+                       mn="$metric_name", mv="$metric_value", ms="$metric_scope") + """
                MERGE (t)-[:HAS_NODE]->(e)
                RETURN t AS t""",
-                dict(tree=tree, ts=_utc_now(), **node.model_dump()),
+                dict(tree=tree, ts=_utc_now(), node_state=NodeState.DRAFT.value,
+                     forceful=_FORCEFUL, **node.model_dump()),
             )
         ]
         for edge in parent_edges:
@@ -152,13 +183,32 @@ class TreeKgWriter:
         coverage_backlog: Sequence[str] = (),
         coverage_statement: str = "",
         ontology: str = "",
+        require_novel_anchor: bool = False,
+        assurance_tier: str | None = None,
+        attestor_dids: Sequence[str] | None = None,
     ) -> WriteSummary:
-        self.kg_tx([
+        # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
+        #   tier 미선언 upsert 에 절대 안 덮인다(T2 write-clobber 교정: TreeSpec 기본값 flip 이 아니라
+        #   ON CREATE SET). 선언 시엔 DB-side 단조 ratchet CASE(랭크 정본=assurance.TIER_RANK 생성물)가
+        #   원자 판정 — 상향만 관철, 하향은 기존값 유지 → RETURN 불일치로 TierDowngrade(→409).
+        # G10: attestor_dids(서명자 allow-list=키 실물)도 tier 와 같은 非클로버 규율 — None(미선언)은
+        #   기존값 불변, 선언 시에만 교체(revocation 은 정당한 운영이라 ratchet 아님·명시 교체).
+        results = self.kg_tx([
             (
                 """MERGE (t:LakatosTree {name:$tree})
+                     ON CREATE SET t.assurance_tier = coalesce($declared_tier, $default_tier)
                    SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
                        t.doc=$doc, t.coverage_backlog=$coverage_backlog,
-                       t.coverage_statement=$coverage_statement, t.ontology=$ontology, t.updated_at=$ts""",
+                       t.coverage_statement=$coverage_statement, t.ontology=$ontology,
+                       t.require_novel_anchor=$require_novel_anchor, t.updated_at=$ts
+                   SET t.assurance_tier = CASE
+                         WHEN $declared_tier IS NULL THEN t.assurance_tier
+                         WHEN $declared_rank >= """ + _TIER_RANK_CASE + """ THEN $declared_tier
+                         ELSE t.assurance_tier END
+                   SET t.attestor_dids = CASE
+                         WHEN $attestor_dids IS NULL THEN t.attestor_dids
+                         ELSE $attestor_dids END
+                   RETURN t.assurance_tier AS assurance_tier""",
                 dict(
                     tree=name,
                     title=title,
@@ -168,10 +218,20 @@ class TreeKgWriter:
                     coverage_backlog=list(coverage_backlog),
                     coverage_statement=coverage_statement,
                     ontology=ontology,
+                    require_novel_anchor=require_novel_anchor,
+                    declared_tier=assurance_tier,
+                    declared_rank=assurance.tier_rank(assurance_tier),
+                    default_tier=assurance.DEFAULT_NEW_TREE_TIER,
+                    attestor_dids=(None if attestor_dids is None else list(attestor_dids)),
                     ts=_utc_now(),
                 ),
             )
         ])
+        if assurance_tier is not None:
+            got = (results[0][0] or {}).get("assurance_tier") if results and results[0] else None
+            if got != assurance_tier:   # ratchet 이 하향 선언을 거부하고 기존 tier 를 유지함
+                raise TierDowngrade(
+                    f"assurance_tier 다운그레이드 거부: 현재 '{got}' → 선언 '{assurance_tier}' (단조 ratchet)")
         return WriteSummary(tx_count=1, op_count=1, rows=1)
 
     def upsert_nodes(self, tree: str, nodes: Sequence[NodeIn]) -> WriteSummary:
@@ -186,14 +246,15 @@ class TreeKgWriter:
                     """MATCH (t:LakatosTree {name:$tree})
                        UNWIND $rows AS row
                        MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+row.tag})
-                       SET e.tag=row.tag, e.verdict=row.verdict, e.script=row.script,
+                       SET e.tag=row.tag, e.script=row.script,
                            e.result_path=row.result_path, e.algorithm=row.algorithm,
                            e.comment=row.comment, e.limitation=row.limitation,
-                           e.open_question=row.open_question, e.metric_name=row.metric_name,
-                           e.metric_value=row.metric_value, e.metric_scope=row.metric_scope,
-                           e.recorded_at=row.ts
+                           e.open_question=row.open_question, e.recorded_at=row.ts,
+                           """ + _PRESERVE_IF_SCORED.format(
+                               v="row.verdict", ns="$node_state",
+                               mn="row.metric_name", mv="row.metric_value", ms="row.metric_scope") + """
                        MERGE (t)-[:HAS_NODE]->(e)""",
-                    dict(tree=tree, rows=rows),
+                    dict(tree=tree, rows=rows, node_state=NodeState.DRAFT.value, forceful=_FORCEFUL),
                 )
             ])
             total = total.plus(WriteSummary(tx_count=1, op_count=1, rows=len(rows)))

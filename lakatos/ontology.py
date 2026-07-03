@@ -58,6 +58,10 @@ class EntityType:
             if "type" in rule and not _type_ok(v, rule["type"]):
                 out.append(f"'{attr}'={v!r} 타입≠{rule['type']}")
             n = _num(v)
+            # fail-closed: min/max 가 선언됐는데 값이 (존재하나) 비-숫자면 범위검증 불가 → 위반.
+            #   (type:number 가 함께 선언됐으면 그쪽이 이미 잡으므로 중복 방출 회피.)
+            if ("min" in rule or "max" in rule) and "type" not in rule and n is None:
+                out.append(f"'{attr}'={v!r} 비-숫자 — 수치 범위(min/max) 검증 불가")
             if "min" in rule and n is not None and n < rule["min"]:
                 out.append(f"'{attr}'={v} < min {rule['min']}")
             if "max" in rule and n is not None and n > rule["max"]:

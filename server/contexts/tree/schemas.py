@@ -29,6 +29,7 @@ class NodeIn(BaseModel):
     parent: str | None = None
     parents: list[str] = Field(default_factory=list)
     parent_edges: list[ParentEdgeIn] = Field(default_factory=list)
+    author: str = ""   # FF3: 노드 작성자 actor — CANONICAL floor 의 human attestation actor≠author 강제용(self-vouch 봉쇄)
     verdict: str = "proof"
     script: str = ""
     result_path: str = ""
@@ -72,6 +73,15 @@ class CreateTreeIn(BaseModel):
     # 도메인 온톨로지(JSON): {"entities":{name:{required:[...],constraints:{attr:{enum|type|min|max}}}},
     # "closed_world":bool}. 선언하면 엔진이 노드 등록 시 강제(opt-in). 빈 문자열=강제 없음.
     ontology: str = ""
+    # FF1(설계감사 2026-06-26): opt-in 정책 — True 면 cross-metric novel 이 서버앵커 영수증(novel_script
+    #   서버 재유도) 없이 progressive 를 못 빚는다(없으면 partial 강등). 기본 False=비파괴.
+    require_novel_anchor: bool = False
+    # G6(git-흡수): 보증 tier 선언 — notebook|receipted|anchored (닫힌 어휘, 오타 422). 생략(None)이면
+    #   신규 트리는 anchored 기본(ON CREATE), 기존 트리는 무변경(legacy 소급 스탬프 금지). 하향 선언 409.
+    assurance_tier: str | None = None
+    # G10: 서명자 allow-list(did:key, 키 실물) — None=불변(비클로버), 선언 시 교체(revocation 정당).
+    #   anchored tier ∧ 이 목록 비어있지 않음 = 판결 쓰기에 write-cert 강제 발동.
+    attestor_dids: list[str] | None = None
 
 
 class PredictionIn(BaseModel):
@@ -92,6 +102,31 @@ class PredictionIn(BaseModel):
     credence: float | None = Field(None, ge=0, le=1)
 
 
+class CertCommandIn(BaseModel):
+    """G10 write-cert 의 서명된 *명령*(push-cert 명령행 아날로그) — 고정 필드셋(서명 범위 전부).
+
+    prev_receipt_sha 가 G1 영수증 체인 포인터에 CAS 바인딩 — replay 는 옛 포인터 서명이 되어 죽는다."""
+
+    model_config = _SERVER_SET_ONLY
+    tree: str
+    tag: str
+    prev_receipt_sha: str | None = None
+    metric_value: float
+    script_sha: str = ""
+
+
+class WriteCertIn(BaseModel):
+    """G10 write certificate — 서명 blob 이 곧 명령(cert 와 다른 명령의 동시 제출 = 프로토콜 에러).
+
+    author 는 client 문자열이 아니라 signer_did(did:key, Ed25519)에서 유도된다(Sybil 갭 봉합)."""
+
+    model_config = _SERVER_SET_ONLY
+    signer_did: str = Field(min_length=1)
+    signature: str = Field(min_length=1)   # hex(Ed25519 sig 64B)
+    issued_at: str = Field(min_length=1)   # ISO — 신선도 창(write_cert.CERT_MAX_AGE_SECONDS)
+    command: CertCommandIn
+
+
 class TestResultIn(BaseModel):
     """Judge-script result. The server derives the verdict from this payload."""
 
@@ -99,6 +134,8 @@ class TestResultIn(BaseModel):
     metric_value: float
     script: str = Field(min_length=1)
     script_sha: str | None = None
+    # G10: attestor 선언 트리(anchored tier)의 판결 쓰기는 서명 cert 필수 — 명령은 cert 에서만 파싱.
+    write_cert: WriteCertIn | None = None
     novel_measured: float | None = None
     novel_sha: str | None = None   # prom-honesty/sha: novel 측정의 출처(예측 측정 sha 와 다르면 독립 인정)
     novel_script: str | None = None   # #H6: novel 측정의 *소스*(서버 재계산 대상). 있으면 서버가 이 본문에서
@@ -224,7 +261,14 @@ class WorldActionIn(BaseModel):
 class CycleIn(BaseModel):
     """Single-cycle orchestration input. Server does graph work, not bash execution."""
 
+    # R2-NOVEL(2026-07-03): CycleIn 만 pydantic 기본 extra=ignore 였다 — 오타/구서버 필드가 *무음드롭*
+    #   되어(예: novel_script 오타 → 앵커 미성립) 라이브 GitAbsorption 11×partial 을 조용히 재생산.
+    #   상단 주석(#11-14)이 명문화한 함정 그대로 — forbid 로 명시 거부(422).
+    model_config = _SERVER_SET_ONLY
     tag: str = Field(min_length=1)
+    # G3(git-흡수): incore trial — True 면 judge 순수함수로 판정 *미리보기*만 반환하고 아무것도 쓰지
+    #   않는다(git commit --dry-run / merge-ort incore 이식). 미리보기는 영수증이 아니다.
+    dry_run: bool = False
     parent: str = ""
     metric_name: str
     baseline: float
@@ -237,6 +281,10 @@ class CycleIn(BaseModel):
     novel_direction: str | None = None
     novel_threshold: float | None = None
     novel_measured: float | None = None
+    # R2-NOVEL: cross-metric novel 의 *서버앵커 소스*(FF1) — 서버가 이 실파일(또는 file::symbol)에서
+    #   novel sha 를 재유도해야 require_novel_anchor/receipted+ 트리에서 progressive 가 선다.
+    #   봉인 1-verb 에 이 입력이 없던 것이 라이브 11×partial 사고의 관통 결함(submit 까지 전달).
+    novel_script: str | None = None
     credence: float | None = Field(None, ge=0, le=1)
     source_trust: float = 1.0
     algorithm: str = ""

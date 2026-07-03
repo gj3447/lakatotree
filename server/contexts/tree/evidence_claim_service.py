@@ -12,24 +12,9 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from lakatos.verdict.argue import grounded_extension
+from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.verdict.spine import reconcile_standing
-
-
-def _assemble_af(tag: str, arg_rows: list) -> tuple[set, list]:
-    """노드 verdict + 등재된 Argument 들 → Dung AF (arguments, attacks). standing 과 add_critique 공유.
-    critique.attacks==tag 이면 verdict 직접 공격, 아니면 다른 argument 공격(verdict 방어)."""
-    verdict_arg = f'verdict:{tag}'
-    arguments = {verdict_arg}
-    attacks: list = []
-    for a in arg_rows:
-        if not a.get('id'):
-            continue
-        short = a['id'].split('/')[-1]
-        arguments.add(short)
-        tgt = verdict_arg if a.get('attacks') == tag else a.get('attacks')
-        attacks.append((short, tgt))
-    return arguments, attacks
+from lakatos.verdicts import receipt_content_sha
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
@@ -113,12 +98,17 @@ class EvidenceClaimService:
                     replay=replay_command(x['script'] or '', x['rp'] or ''))
 
     def add_critique(self, name: str, tag: str, c: CritiqueIn) -> dict:
-        self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        # fail-loud(나생문 #13): MERGE 가 노드 부재 시 no-op 이면 형제 mutation 과 달리 200·history 를
+        #   남겨 provenance 를 오염한다 → RETURN e.tag 로 매칭 확인, 0행이면 hist 전에 404.
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
               MERGE (a:Argument {id:$tree+'/'+$arg}) SET a.by=$by, a.kind=$kind, a.body=$body,
                     a.attacks=$attacks, a.at=$ts
-              MERGE (e)-[:HAS_ARGUMENT]->(a)""",
+              MERGE (e)-[:HAS_ARGUMENT]->(a)
+              RETURN e.tag AS tag""",
                 tree=name, tag=tag, arg=c.arg_id, by=c.by, kind=c.kind, body=c.body,
                 attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
+        if not rows:
+            raise HTTPException(404, f'노드 없음: {tag} (critique 대상 부재 — 등재 거부)')
         self.hist(name, 'critique', tag, c.model_dump())
         # ★certify.py:13 의 '새 반박이 G3(stands)를 깨면 자동 철회' 이행 — 승격이 stands 를 *요구*한
         # 것의 대칭. 비판 등재 직후 grounded standing 을 재계산하고, CANONICAL 의 standing 이 깨졌으면
@@ -128,11 +118,12 @@ class EvidenceClaimService:
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                      RETURN e.verdict AS verdict,
                             coalesce(e.valid_until_rebutted, true) AS vur,
-                            collect({id:a.id, attacks:a.attacks}) AS args""",
+                            e.current_receipt_sha AS prev_receipt_sha,
+                            collect({id:a.id, attacks:a.attacks, by:a.by}) AS args""",
                        tree=name, tag=tag)
         if rows:
             verdict_arg = f'verdict:{tag}'
-            arguments, attacks = _assemble_af(tag, rows[0]['args'])
+            arguments, attacks = assemble_af(tag, rows[0]['args'])
             stands = verdict_arg in grounded_extension(arguments, attacks)
             decision = reconcile_standing(rows[0]['verdict'], stands=stands,
                                           valid_until_rebutted=bool(rows[0]['vur']))
@@ -144,18 +135,34 @@ class EvidenceClaimService:
                 #   가 최신상태로 재평가). H5(승격 방향)의 강등 방향 미러 — verdict-mutating write 의 원자성 통일.
                 snap_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
                                  for a in (rows[0]['args'] or []) if a.get('id'))
+                # R4(후속 PROM): standing 철회 강등도 원장에 산다 — v1 null-스펙 receipt + 포인터 CAS.
+                _ts = datetime.now(timezone.utc).isoformat()
+                _prev = rows[0].get('prev_receipt_sha')
+                _rsha = receipt_content_sha(dict(
+                    tree=name, tag=tag, target_id=None, verdict='former_canonical',
+                    verdict_source='engine', metric_name=None, metric_value=None,
+                    novel_confirmed=None, lakatos_status=None, judged_at=_ts,
+                    judge_script_sha=None, prev_receipt_sha=_prev))
                 demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      SET e._cas = coalesce(e._cas,0) + 0
+                      WITH t, e
                       WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
+                        AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                       WITH t, e
                       OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                       WITH t, e, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
                       WHERE size(arg_fp) = $exp_argn AND all(x IN arg_fp WHERE x IN $exp_arg_fp)
                       SET e.verdict='former_canonical', e.verdict_source='engine',
                           e.current_best_pointer=false, e.standing_retracted_at=$ts
+                      MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='former_canonical',
+                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                      MERGE (e)-[:HAS_RECEIPT]->(rec)
+                      SET e.current_receipt_sha=$rsha
                       RETURN e.tag AS tag""",
                         tree=name, tag=tag, exp_verdict=rows[0]['verdict'],
                         exp_argn=len(snap_fp), exp_arg_fp=snap_fp,
-                        ts=datetime.now(timezone.utc).isoformat())
+                        ts=_ts, prev_rsha=_prev, rsha=_rsha)
                 if not demoted_rows:   # 원자 CAS 0행 = 스냅샷 변경(동시 재승격/critique) → stale 강등 미적용
                     out['standing']['demote_skipped'] = 'concurrent_change'
                 else:
@@ -433,7 +440,7 @@ class EvidenceClaimService:
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         verdict_arg = f'verdict:{tag}'
-        arguments, attacks = _assemble_af(tag, rows[0]['args'])
+        arguments, attacks = assemble_af(tag, rows[0]['args'])
         ext = grounded_extension(arguments, attacks)
         stands = verdict_arg in ext
         return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,

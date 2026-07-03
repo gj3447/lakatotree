@@ -31,6 +31,7 @@ from lakatos.engine import (
     ResearchFrame,
     SourceCredibilityScore,
 )
+from lakatos.trust import _host as _trust_host   # 나생문 #8: host-경계 매칭 재사용(substring 스푸핑 차단)
 from lakatos.world_gates import scan_prompt_injection, web_gate
 
 # 외부 프로그램의 lakatos_role → *우리 트리* 안의 lakatos_location.
@@ -49,14 +50,24 @@ _CONFIDENCE_WEIGHT = {"HIGH": 0.9, "MEDIUM": 0.65, "LOW": 0.4}
 
 
 def _source_type(url: str) -> str:
-    """URL 도메인 → 출처 종류(분해신뢰의 source class)."""
-    u = (url or "").lower()
-    if "mvtec.com" in u:
+    """URL host → 출처 종류(분해신뢰의 source class).
+
+    나생문 #8: substring 매칭('mvtec.com' in u)은 도메인 스푸핑에 뚫린다(mvtec.com.evil.example).
+    trust._host 의 host-경계 매칭을 재사용해 trust.authoritative_url 과 정합(trust.py:102 'mirror' 약속 이행).
+    """
+    host = _trust_host(url)
+    if not host:
+        return "web"
+
+    def _is(*domains: str) -> bool:
+        return any(host == d or host.endswith("." + d) for d in domains)
+
+    if _is("mvtec.com"):
         return "vendor_primary_doc"          # HALCON 거동의 1차 출처(벤더 공식 문서)
-    if "arxiv.org" in u:
+    if _is("arxiv.org"):
         return "preprint"
-    if any(d in u for d in ("sciencedirect", "springer", "frontiersin", "ncbi.nlm.nih.gov",
-                            "/pmc/", "openaccess.thecvf", "link.springer")):
+    if _is("sciencedirect.com", "springer.com", "link.springer.com", "frontiersin.org",
+           "ncbi.nlm.nih.gov", "openaccess.thecvf.com"):
         return "peer_reviewed"
     return "web"
 

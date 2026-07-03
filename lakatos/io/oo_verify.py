@@ -116,9 +116,10 @@ def session_finish(reports: list, cid: str, *, mode: str = '1', retries: int | N
     try:
         recs = test_outcome_records(reports, cid=cid, meta=meta or {})
         _ship(recs)
-    except Exception as exc:   # 관측은 판결을 바꾸지 않는다 — ship 실패는 경고만
-        return {'shipped': 0, 'fail_build': False,
-                'messages': [f'trace ship skipped ({type(exc).__name__}: {exc}); 빌드 영향 없음']}
+    except Exception as exc:   # 관측은 판결을 바꾸지 않는다 — warn 은 경고만, strict 는 도착보증이라 실패
+        return {'shipped': 0, 'fail_build': mode == 'strict',
+                'messages': [f'trace ship skipped ({type(exc).__name__}: {exc})'
+                             + ('; strict — 도착 미확인으로 빌드 실패' if mode == 'strict' else '; 빌드 영향 없음')]}
     msgs = [f'{len(reports)} test traces shipped → oo tests stream '
             f'(cid={cid}; RCA: trace_cycle("{cid}"))']
     if mode == '0':
@@ -130,9 +131,10 @@ def session_finish(reports: list, cid: str, *, mode: str = '1', retries: int | N
         verdict = verify_policy(v, mode)
         msgs.append(verdict['message'] + ('' if v.get('ok') else f' (cid={cid})'))
         return {'shipped': len(reports), 'messages': msgs, 'fail_build': verdict['fail_build']}
-    except Exception as exc:
-        msgs.append(f'verify skipped ({type(exc).__name__}: {exc})')
-        return {'shipped': len(reports), 'messages': msgs, 'fail_build': False}
+    except Exception as exc:   # strict 는 도착보증 게이트 — verify 예외도 fail-open 금지(나생문 #23)
+        msgs.append(f'verify skipped ({type(exc).__name__}: {exc})'
+                    + ('; strict — 도착 미확인으로 빌드 실패' if mode == 'strict' else ''))
+        return {'shipped': len(reports), 'messages': msgs, 'fail_build': mode == 'strict'}
 
 
 # ── M9: write→독립 read→compare positive 왕복 (항상 ON, actor 분리) ─────────────────

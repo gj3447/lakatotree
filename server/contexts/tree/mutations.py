@@ -9,10 +9,11 @@ from dataclasses import dataclass, field
 
 from fastapi import HTTPException
 
+from lakatos import assurance
 from server.contexts.tree.materialization import TreeMaterializationPlanner
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.validation import LakatosSemanticValidator, PolicyFinding
-from server.contexts.tree.writer import TreeKgWriter, TreeNotFound, WriteSummary
+from server.contexts.tree.writer import TierDowngrade, TreeKgWriter, TreeNotFound, WriteSummary
 from server.ports import HistoryAppend
 
 
@@ -26,6 +27,11 @@ class TreeSpec:
     coverage_backlog: tuple[str, ...] = ()
     coverage_statement: str = ""
     ontology: str = ""   # 도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)
+    require_novel_anchor: bool = False   # FF1: cross-metric novel 서버앵커 강제(opt-in, 기본 off)
+    # G6: 보증 tier 선언(notebook/receipted/anchored). None=미선언 — 신규 트리는 writer 의 ON CREATE 가
+    #   기본 anchored 스탬프, 기존 트리는 tier 무변경(legacy 소급 스탬프 금지). 선언은 단조 ratchet(하향 409).
+    assurance_tier: str | None = None
+    attestor_dids: tuple[str, ...] | None = None   # G10: None=불변, 선언=교체
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
 
@@ -71,24 +77,34 @@ class TreeMutationService:
         self.hist(name, "tree_delete", None, {})
 
     def upsert_tree(self, spec: TreeSpec) -> dict:
+        # G6: 선언 tier 어휘는 닫힌 집합 — 오타(예: 'precious')를 무음 저장하면 게이트 0 인 유령 tier 가 생긴다.
+        if spec.assurance_tier is not None and spec.assurance_tier not in assurance.TIERS:
+            raise HTTPException(422, f"assurance_tier 미정의 어휘: '{spec.assurance_tier}' — "
+                                     f"{list(assurance.TIERS)} 중 하나(생략=신규 anchored/기존 유지)")
         bulk = self._validate_bulk_nodes(spec)
         meta_findings = self.validator.validate_tree_meta(
             hard_core=spec.hard_core,
             frontier_rule=spec.frontier_rule,
         )
         summary = WriteSummary()
-        summary = summary.plus(
-            self.writer.upsert_tree_meta(
-                name=spec.name,
-                title=spec.title,
-                hard_core=spec.hard_core,
-                frontier_rule=spec.frontier_rule,
-                doc=spec.doc,
-                coverage_backlog=spec.coverage_backlog,
-                coverage_statement=spec.coverage_statement,
-                ontology=spec.ontology,
+        try:
+            summary = summary.plus(
+                self.writer.upsert_tree_meta(
+                    name=spec.name,
+                    title=spec.title,
+                    hard_core=spec.hard_core,
+                    frontier_rule=spec.frontier_rule,
+                    doc=spec.doc,
+                    coverage_backlog=spec.coverage_backlog,
+                    coverage_statement=spec.coverage_statement,
+                    ontology=spec.ontology,
+                    require_novel_anchor=spec.require_novel_anchor,
+                    assurance_tier=spec.assurance_tier,
+                    attestor_dids=spec.attestor_dids,
+                )
             )
-        )
+        except TierDowngrade as e:
+            raise HTTPException(409, f"G6 단조 ratchet: {e}")
         summary = summary.plus(self.writer.upsert_nodes(spec.name, spec.nodes))
         summary = summary.plus(self.writer.link_branch_edges(spec.name, bulk.parent_edges_by_tag))
         summary = summary.plus(self.writer.upsert_questions(spec.name, spec.questions))

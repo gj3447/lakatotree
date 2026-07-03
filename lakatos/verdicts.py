@@ -15,6 +15,10 @@ verdict_source(현실이 끊어 준 영수증의 출처)를 normalize_source 로
 # KG: span_lakatotree_verdict_registry
 """
 
+import hashlib
+import json
+import math
+
 SCRIPTED_VERDICTS = frozenset({
     "progressive",
     "partial",
@@ -136,6 +140,21 @@ _SOURCE_ALIASES = {
 _CANONICAL_HEADS = FORCEFUL_SOURCES | INCONCLUSIVE_SOURCES | STRUCTURAL_SOURCES
 VALID_VERDICT_SOURCES = _CANONICAL_HEADS   # 통제 어휘(레지스트리) — 새 토큰은 여기서만
 
+# ── 쓰기측 어휘 SSOT-of-record (아키텍처 감사 2026-06-26, finding D3) ──────────────────────────
+#   force_of(읽기)는 verdict_source 어휘를 한 곳에서 해석하는데, *쓰기*(서버 CAS: 승격/강등)의 'engine'/
+#   'admin'/'former_canonical' 은 VALID_VERDICT_SOURCES 와 대조 검증된 적이 없었다(SSOT 단방향, D3).
+#   ★주의: 쓰기 사이트의 그 문자열들은 *일부러 리터럴로 남긴다* — H9(test_design_audit_h9) 정적 스캐너가
+#   `SET ... verdict='former_canonical'` / `verdict_source='scripted'` 리터럴을 grep 해 "모든 verdict-전이
+#   write 에 CAS 가드"를 by-construction 강제하기 때문이다. 상수로 파라미터화하면 그 안전망이 눈머는다.
+#   대신 이 상수는 어휘의 *명명 정본*이고, assert 는 읽기 어휘(force_of 의 frozenset)와의 동기화를 import
+#   시점에 못 박으며, test_verdict_write_vocabulary 가 쓰기 사이트 리터럴을 레지스트리와 대조한다(양쪽 닫음).
+SOURCE_ENGINE = 'engine'   # 엔진 결정(채점/게이트/자동강등)이 SET — force_of 에서 FORCEFUL(영수증)
+SOURCE_ADMIN = 'admin'     # 구조/행정 SET(승격 표식 등) — force_of 에서 STRUCTURAL(force 없음)
+VERDICT_FORMER_CANONICAL = 'former_canonical'   # CANONICAL 강등 표적(ADMIN∩PROGRESS 어휘)
+assert SOURCE_ENGINE in FORCEFUL_SOURCES, 'SOURCE_ENGINE 가 통제 어휘(FORCEFUL_SOURCES)와 어긋남'
+assert SOURCE_ADMIN in STRUCTURAL_SOURCES, 'SOURCE_ADMIN 가 통제 어휘(STRUCTURAL_SOURCES)와 어긋남'
+assert VERDICT_FORMER_CANONICAL in ADMIN_VERDICTS, 'VERDICT_FORMER_CANONICAL 가 레지스트리와 어긋남'
+
 _SOURCE_ABSENT = object()   # verdict_source 키 자체가 없음(레거시/픽스처) — None(영수증 미도래)과 구분
 
 
@@ -193,3 +212,94 @@ def is_self_report_blocked_verdict(verdict: str) -> bool:
 def is_registered_verdict(verdict: str) -> bool:
     # 나생문 F-ARCH-2: 엔진/재빌드 판결도 등록 어휘 (분기 차단)
     return verdict in VERDICT_REGISTRY
+
+
+# ── G1 (git-흡수 2026-07-02): 내용주소 verdict 영수증 — 발행층 SSOT ──────────────────────────
+#   git objects(odb/source-loose.c:614-621, object-file.c:408-472: hash-before-write · link(2) EEXIST
+#   first-write-wins)를 verdict 에 이식: verdict-bearing 사실을 *불변 내용주소 :VerdictReceipt* 로 발행하고
+#   노드의 e.verdict 는 체인 head 의 *파생 캐시*로 둔다. receipt_sha = sha256(버전드 타입헤더 + JCS canonical
+#   JSON of 고정 필드셋) — 내용 편집→다른 sha→다른 노드라 *변조가 표현 불가능*(tamper self-evident, 정책 아님).
+#   prev_receipt_sha 체인 = reflog append-only(refs/files-backend.c). fold_receipt_chain 이 head 에서 prev 를
+#   거슬러 무결성 확인 후 현재 verdict 재유도 — e.verdict 캐시가 fold 와 어긋나면 변조 검출(rebuild_verify 의
+#   verdict 판). ★인코딩 정본은 G4 미러(_node_content_sha)와 같은 json 규율을 공유하되(sync 가 이 primitive 를
+#   import), metric_value/judged_at 정규화를 *blob 안에서* 강제해 write·rederive 경로가 표류 못 하게 한다
+#   (int 3 ↔ float 3.0, mixed judged_at 타입이 다른 blob 을 내는 것을 봉쇄).
+_RECEIPT_ENCODING_VERSION = 'v1'
+# 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
+#   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
+#   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
+RECEIPT_FIELDS = (
+    'tree', 'tag', 'target_id', 'verdict', 'verdict_source', 'metric_name', 'metric_value',
+    'novel_confirmed', 'lakatos_status', 'judged_at', 'judge_script_sha', 'prev_receipt_sha',
+)
+
+
+def _coerce_metric_value(v):
+    """metric_value 정규화(blob 결정론): None 유지, 수치는 float 로 통일(int 3 == float 3.0), 비유한(NaN/inf)은
+    None(json 직렬화 불가·무의미). write·rederive 양쪽이 이 함수를 거치므로 legacy int 가 sha 를 발산시키지 못한다."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _coerce_judged_at(v):
+    """judged_at 정규화: ISO str 은 그대로(정본), 그 외(legacy dict/epoch=fsck MIXED_JUDGED_AT_TYPE)는 결정론 문자열."""
+    if v is None or isinstance(v, str):
+        return v
+    return str(v)
+
+
+def canonical_receipt_blob(fields: dict) -> bytes:
+    """verdict 영수증의 정본 바이트열 — 버전드 타입헤더 + JCS(sorted keys·compact·UTF-8) canonical JSON.
+
+    필드셋은 RECEIPT_FIELDS 로 고정하고 metric_value/judged_at 는 내부 정규화. 언어이식성(git typed-object
+    name==content 모델)과 재유도 안정성을 위해 Python repr/pickle·float 포맷 모호성을 배제한다.
+    """
+    payload = {k: fields.get(k) for k in RECEIPT_FIELDS}
+    payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
+    payload['judged_at'] = _coerce_judged_at(payload.get('judged_at'))
+    body = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    header = f'verdict-receipt\x00{_RECEIPT_ENCODING_VERSION}\n'
+    return header.encode('utf-8') + body.encode('utf-8')
+
+
+def receipt_content_sha(fields: dict) -> str:
+    """내용주소 sha256(full 64-hex). 노드는 이 값을 current_receipt_sha 포인터로 든다. (G4 미러의 [:16] 절단은
+    drift 알람 휴리스틱이라 별개 — 같은 primitive 를 공유하되 receipt 무결성은 full 해시.)"""
+    return hashlib.sha256(canonical_receipt_blob(fields)).hexdigest()
+
+
+class ReceiptChainBroken(Exception):
+    """head_sha 가 체인에 없거나(dangling 포인터) prev 링크가 끊김(genesis 미도달) = 변조/부패."""
+
+
+def fold_receipt_chain(receipts, head_sha, *, cache_verdict=None, cache_source=None) -> dict:
+    """불변 영수증 체인을 head 에서 prev 로 거슬러 무결성 확인 후 현재 {verdict, verdict_source} 재유도.
+
+    receipts: [{receipt_sha, prev_receipt_sha, verdict, verdict_source}, ...]. head_sha: 노드의 current 포인터.
+    - 체인 빔 ∧ head 없음 = legacy 노드(영수증 체제 이전) → 캐시 신뢰(force_of 의 _SOURCE_ABSENT 아날로그).
+    - head 가 체인에 없음 = dangling(변조) → ReceiptChainBroken.
+    - head 에서 prev 를 거슬러 genesis(prev=None)까지 도달 못 함 = 끊긴 체인 → ReceiptChainBroken.
+    반환: {'verdict','verdict_source','from_receipt': bool}. from_receipt=False 는 legacy 캐시 fallback.
+    """
+    by_sha = {r['receipt_sha']: r for r in receipts}
+    if not head_sha and not by_sha:
+        return {'verdict': cache_verdict, 'verdict_source': cache_source, 'from_receipt': False}
+    if head_sha not in by_sha:
+        raise ReceiptChainBroken(f'current_receipt_sha={head_sha!r} 가 체인에 없음(dangling/변조)')
+    head = by_sha[head_sha]
+    # reflog 무결성: head→prev→…→genesis 도달성 확인(사이클/끊김 검출).
+    seen, cur = set(), head_sha
+    while cur is not None:
+        if cur in seen:
+            raise ReceiptChainBroken(f'체인 사이클 감지 @ {cur!r}')
+        seen.add(cur)
+        node = by_sha.get(cur)
+        if node is None:
+            raise ReceiptChainBroken(f'prev 링크 {cur!r} 가 체인에 없음(끊김)')
+        cur = node.get('prev_receipt_sha')
+    return {'verdict': head.get('verdict'), 'verdict_source': head.get('verdict_source'), 'from_receipt': True}

@@ -19,7 +19,9 @@ from server.contexts.tree.evidence_claim_service import EvidenceClaimService
 from server.contexts.tree.schemas import CritiqueIn
 
 _READ = "RETURN e.verdict AS verdict"
-_DEMOTE = "SET e.verdict='former_canonical'"
+# 데모트 write 식별은 *안정 의미 마커*(standing_retracted_at)로 — verdict 값이 리터럴('former_canonical')
+# 이든 상수 param($former=VERDICT_FORMER_CANONICAL)이든 무관(구현 디테일에 안 묶임). CAS 구조는 별도 단언.
+_DEMOTE = "standing_retracted_at"
 
 
 class _StatefulKg:
@@ -31,8 +33,8 @@ class _StatefulKg:
         self.demote_queries: list[str] = []
 
     def __call__(self, query, **p):
-        if "MERGE (a:Argument" in query:            # critique 등재
-            return []
+        if "MERGE (a:Argument" in query:            # critique 등재 — 노드 존재(RETURN e.tag) 모델(#13 fail-loud)
+            return [{"tag": p.get("tag")}]
         if _READ in query and "collect({id:a.id" in query:   # :127 스냅샷 read — CANONICAL + 미방어 doubt
             return [{"verdict": "CANONICAL", "vur": True,
                      "args": [{"id": "T/d1", "attacks": "n"}]}]   # d1 이 verdict 직접공격 → stands=False

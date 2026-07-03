@@ -35,13 +35,63 @@ def test_lenient_mode_opts_out_to_legacy_counting():
     assert any("부풀림" in a for a in m["alerts"])
 
 
-def test_read_models_projects_verdict_source_so_d1_fires_in_prod():
-    """R3 적대 재검증 발견: read_models 가 verdict_source 를 *투영하지 않아* 실 KG 노드는 키 부재 →
-    D1 의 inconclusive 검출이 prod 에서 한 번도 안 떴다(inert). 투영을 강제하는 회귀 가드."""
-    import inspect
-    from server import read_models
-    assert "verdict_source" in inspect.getsource(read_models.load_tree_data), \
-        "read_models nodes 투영에 verdict_source 누락 → D1 prod inert(영수증 없는 green 통과)"
+def _kg_projecting(stored_nodes, stored_obs):
+    """실 Neo4j 투영 동형 fake: 노드 행은 *쿼리 RETURN 이 그 필드를 호명할 때만* 그 키를 돌려준다
+    (e.verdict_source AS verdict_source 가 없으면 Neo4j 도 그 키를 안 준다). + 관측은 obs 쿼리가
+    issue 될 때만 방출. → repository 가 투영/관측쿼리를 빠뜨리면 D1/A2 가 *실제로* 죽는다는 프로덕션
+    동치를 단위에서 revert-proof 로 잡는다(전 fake-green: inspect.getsource 로 *죽은* read_models 사본 검사)."""
+    passthru = ("tag", "verdict", "parent", "metric_value", "metric_scope", "pred_baseline", "pred_direction")
+
+    def kg(q, **kw):
+        if "RETURN t.title" in q:
+            return [dict(title="T", hard_core="", frontier_rule="", doc="",
+                         coverage_backlog=[], coverage_statement="")]
+        if "HAS_RESEARCH_EVENT" in q:
+            return stored_obs
+        if "HAS_FRONTIER" in q:
+            return []
+        if "HAS_NODE" in q:
+            rows = []
+            for n in stored_nodes:
+                row = {k: v for k, v in n.items() if k in passthru}
+                if "verdict_source" in q:            # 투영이 호명할 때만 키 존재(None 포함)
+                    row["verdict_source"] = n.get("verdict_source")
+                if "source_trust" in q:
+                    row["source_trust"] = n.get("source_trust")
+                rows.append(row)
+            return rows
+        return []
+    return kg
+
+
+def test_prod_path_projects_provenance_and_observations_so_d1_a2_fire():
+    """D1 감사 2026-06-26 (HIGH 해소, revert-proof): 프로덕션 read-model(TreeKgRepository.load_tree_data →
+    compute_tree_metrics)이 self-report(verdict_source=None) 진보를 inconclusive 로 *실제* 검출(D1)하고,
+    internet 관측을 방출해 eigentrust 맵을 *실제* 주입(A2)한다. repository 가 verdict_source 투영 또는 관측
+    쿼리를 빠뜨리면(=옛 prod-inert 버그) 아래 단언이 깨진다."""
+    import json
+
+    from server.contexts.tree.repository import TreeKgRepository
+    from server.read_models import compute_tree_metrics
+
+    stored = [
+        {"tag": "root", "verdict": "proof", "metric_value": 10.0, "metric_scope": "s", "pred_baseline": 10.0},
+        {"tag": "c", "parent": "root", "verdict": "CANONICAL", "verdict_source": None,
+         "metric_value": 1.0, "metric_scope": "s", "pred_baseline": 10.0, "pred_direction": "lower"},
+    ]
+    obs = [dict(node="c", payload=json.dumps(
+        {"url": "peer://a", "source_type": "peer_reviewed", "corroboration_score": 0.9}))]
+
+    td = TreeKgRepository(_kg_projecting(stored, obs)).load_tree_data("T")
+
+    # D1: prod 경로가 verdict_source(None)을 투영 → self-report 진보가 inconclusive 로 제외(영수증 없는 green ✗).
+    m = compute_tree_metrics(td)
+    assert m["canonical"] is None, "self-report CANONICAL 이 prod 에서 검증 canonical 로 샜다(D1 inert)"
+    assert m["provenance"]["mode"] == "inconclusive-excluded"
+    assert m["provenance"]["count"] == 1 and "c" in m["provenance"]["inconclusive_progress"]
+    # A2: prod 경로가 관측을 방출 → eigentrust 글로벌 신뢰 맵이 실제 구성·주입된다.
+    assert td["observations"], "prod 경로가 internet 관측을 안 방출 → A2 eigentrust inert"
+    assert m["bayes"]["trust_coverage"]["map_supplied"] is True
 
 
 def test_legacy_nodes_without_verdict_source_key_unaffected():

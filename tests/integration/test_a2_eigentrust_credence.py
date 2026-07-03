@@ -1,16 +1,22 @@
 """A2 실DB 영수증: eigentrust 글로벌 신뢰가 canonical_credence 를 *실제로 움직인다* (Gate 1 해금).
 
-mock 으로는 못 떨군 영수증: 실 Neo4j 에 트리+노드+다출처 internet 관측을 만들고, read_models 의 실
-경로(load_tree_data → compute_tree_metrics)를 태운다. 정본경로 progressive 노드가 *저신뢰* 출처
-(블로그, peer_reviewed 와 co-support 되어 eigentrust 정규화로 낮아짐)에 묶이면, 맵 주입 credence 가
+mock 으로는 못 떨군 영수증: 실 Neo4j 에 트리+노드+다출처 internet 관측을 만들고, 프로덕션 read-model 의 실
+경로(TreeKgRepository.load_tree_data → compute_tree_metrics)를 태운다. 정본경로 progressive 노드가 *저신뢰*
+출처(블로그, peer_reviewed 와 co-support 되어 eigentrust 정규화로 낮아짐)에 묶이면, 맵 주입 credence 가
 맵-없음(per-node 기본 1.0) baseline 보다 *낮다* — 글로벌 그래프 신뢰가 판결 신뢰도를 가중함을 입증.
 """
 import pytest
 
 from server.container import AppContainer
-from server.read_models import compute_tree_metrics, load_tree_data
+from server.contexts.tree.repository import TreeKgRepository
+from server.read_models import compute_tree_metrics
 
 pytestmark = pytest.mark.integration
+
+
+def load_tree_data(name, *, kg):
+    """프로덕션 경로 그대로(D1 감사 2026-06-26: 죽은 read_models 사본 제거 후 단일 정본)."""
+    return TreeKgRepository(kg).load_tree_data(name)
 
 
 class _DummyMongo:

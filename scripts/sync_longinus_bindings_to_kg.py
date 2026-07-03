@@ -104,8 +104,12 @@ def main() -> int:
         if args.verify:
             by_id = {s["sourceId"]: s for s in sites}
             with drv.session() as ses:
+                # Occam 묘비 제외(2026-07-02): supersede 된 구식 바인딩은 sourceId 가 _archived_sourceId
+                # 로 이동해 NULL — 살아있는 미러가 아니라 의도된 역사 보존이므로 orphan 으로 세지 않는다.
+                # (전엔 NULL 50개가 dict 에서 None 키 하나로 붕괴해 'KG_ORPHAN None' 오보 — 리포팅 결함.)
                 rows = ses.run(
                     "MATCH (rs:ReferenceSite:Longinus) WHERE rs.repo=$repo "
+                    "AND rs.sourceId IS NOT NULL "
                     "RETURN rs.sourceId AS id, rs.sha256 AS sha, rs.sourcePath AS path",
                     repo=repo).data()
             kg = {r["id"]: r for r in rows}

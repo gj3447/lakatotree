@@ -39,8 +39,9 @@ def receipt() -> dict[str, bool]:
     matches = glob.glob(os.path.join(_ROOT, _RECEIPT_GLOB))
     if not matches:
         return {}
+    # -p no:randomly: dogfood 채점은 *결정론* — pytest-randomly 설치 여부와 무관히 같은 receipt(재현가능).
     cmd = (f"cd {_ROOT} && . .venv/bin/activate 2>/dev/null; "
-           f"python -m pytest {_RECEIPT_GLOB} -v --no-header -p no:cacheprovider 2>&1")
+           f"python -m pytest {_RECEIPT_GLOB} -v --no-header -p no:cacheprovider -p no:randomly 2>&1")
     out = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True).stdout
     res: dict[str, bool] = {}
     for line in out.splitlines():
@@ -269,6 +270,22 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_set_verdict_canonical_409_on_concurrent_change",
     ),
     AuditNode(
+        tag="H9_verdict_cas_class_lock", severity="HIGH", parent="H5_set_verdict_canonical_toctou",
+        evidence="tests/test_design_audit_h9.py (AST: 모든 verdict-전이/scripted SET 은 첫-SET-이전 가드 동반)",
+        story="클래스 봉인(인스턴스 아님): H5/H7/M5/M12 가 verdict-mutating write 를 하나씩 원자 CAS 화했으나 *미래* "
+              "무가드 전이가 TOCTOU/self-report 를 부활시킨다. AST 클래스-커버 테스트 — server/·lakatos/ 의 모든 Cypher "
+              "에서 verdict 를 CANONICAL/former_canonical 로 전이하거나 verdict_source='scripted' 채점하는 SET 은 *같은 "
+              "쿼리의 첫 SET 이전* 에 스냅샷 재검증 가드를 동반. 무가드 전이=RED. + verdict_source server-set-only 단언. "
+              "'완벽=클래스 by-construction 불가능+재발 자동 RED' 의 verdict-write 판.",
+        prediction=Prediction(metric_name="unguarded_verdict_transition_reintroducible", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="스냅샷 재검증 없는 verdict-전이 write 는 클래스 테스트가 RED 로 차단(4사이트 보장)",
+                              closes_question="q-h9-verdict-cas-class-lock"),
+        novel_target=NovelTarget(metric_name="verdict_transition_cas_enforced_by_class_test",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_every_verdict_transition_write_has_cas_guard",
+    ),
+    AuditNode(
         tag="H7_add_critique_demote_toctou", severity="HIGH", parent="H5_set_verdict_canonical_toctou",
         evidence="evidence_claim_service.py:127(read)→:142(무가드 SET former_canonical) / H5 는 승격만 CAS",
         story="add_critique 자동강등이 비원자 TOCTOU — H5 의 거울쌍. 비판 등재 후 스냅샷 읽어 reconcile_standing "
@@ -299,6 +316,36 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         guard_test="test_client_novel_sha_string_does_not_buy_independence",
     ),
     AuditNode(
+        tag="H8_self_vouch_af", severity="HIGH", parent="M8_doubt_resolution_actor",
+        evidence="evidence_claim_service.py:_assemble_af(by collect 후 폐기) + judgement_service 인라인 AF(by 무시) / argue.py",
+        story="standing 을 좌우하는 Dung AF 조립이 Argument 의 by(actor)를 버려, 작성자가 자기 doubt 를 자기 "
+              "rebuttal 로 막아 verdict standing 을 유지(self-vouch)할 수 있었다. M8 은 claim_standing 경로만 "
+              "닫았고 set_verdict floor·add_critique 강등의 AF 조립은 by 무시. [PROM] argue.assemble_af 정본으로 "
+              "수렴 — 방어 엣지의 두 actor 가 같으면 AF 진입 차단(3 호출부 통일). 작성자vs방어자 독립=Sybil 천장.",
+        prediction=Prediction(metric_name="af_assembly_ignores_actor_self_vouch", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="self-defense 엣지(attacker by==target by)는 AF 진입 못 함(자기 doubt 자기 rebuttal 무효)",
+                              closes_question="q-h8-actor-independent-af"),
+        novel_target=NovelTarget(metric_name="self_defense_edge_dropped_from_af",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_self_rebuttal_does_not_defend_verdict",
+    ),
+    AuditNode(
+        tag="M13_inline_af_class_lock", severity="MEDIUM", parent="H8_self_vouch_af",
+        evidence="tests/test_design_audit_m13.py (AST: grounded_extension 호출 함수는 assemble_af 동반 강제)",
+        story="클래스 봉인(인스턴스 아님): H8 은 3 호출부를 assemble_af 로 수렴했으나 *미래 인라인 AF* 가 클래스를 "
+              "재발시킬 수 있다. AST 클래스-커버 테스트 — server/·lakatos/ 의 grounded_extension 호출 함수는 반드시 "
+              "actor-aware assemble_af 도 호출. 위반시 commit 에서 RED → self-vouch 회귀를 사람이 아니라 CI 가 잡는다. "
+              "'완벽=클래스를 by-construction 불가능 + 재발 자동 RED' 의 구현.",
+        prediction=Prediction(metric_name="inline_af_assembly_reintroducible", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="grounded_extension 인라인 호출(assemble_af 미동반)은 클래스 테스트가 RED 로 차단",
+                              closes_question="q-m13-af-class-lock"),
+        novel_target=NovelTarget(metric_name="inline_af_banned_by_class_test",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_no_inline_af_assembly_actor_independence",
+    ),
+    AuditNode(
         tag="M10_rebuild_cli_collapse", severity="MEDIUM", parent="M1_rebuild_self_report_measure",
         evidence="cli.py:376(cmd_for=lambda st: a.cmd_template, st 무시) + rebuild.py(measurer_separated=measure_out is not None)",
         story="M1 엔진수정은 kind='measurement' 출력만 신뢰하지만, *실제 재실행 유일 surface* CLI rebuild-run 이 "
@@ -327,6 +374,22 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
         novel_target=NovelTarget(metric_name="marquez_independent_readback_confirms_run",
                                  direction="higher", threshold=1.0),
         guard_test="test_marquez_positive_roundtrip_independent_readback",
+    ),
+    AuditNode(
+        tag="H10_qual_backed_client_sha", severity="HIGH", parent="H6_novel_sha_client_independence",
+        evidence="judgement_service.py:437 qual_backed=bool(r.novel_sha and ce_novel_corroborated) — raw client novel_sha",
+        story="client-receipt 클래스 슬라이스(H1↔H6 잔여): H1 의 질적-backing 판정이 H6 가 위조가능함을 증명한 raw "
+              "client r.novel_sha 를 그대로 신뢰 — client 가 novel_sha='아무거나'+ce_novel_corroborated=True 로 "
+              "qual_backed=True 를 만들어 self-report 표식을 회피, 영수증 없는 질적 progressive 가 CANONICAL floor 를 연다. "
+              "[PROM] H6 의 서버앵커 novel_server_sha 로 바인딩 — client 문자열로 질적-backing 못 산다. "
+              "(ce_novel_corroborated 자체=construct-validity 라 client 판단으로 남음 — 천장.)",
+        prediction=Prediction(metric_name="qual_backing_trusts_client_novel_sha", direction="lower",
+                              baseline_value=1.0, noise_band=0.0,
+                              novel_prediction="질적-backing 은 서버앵커 novel_server_sha 가 있을 때만 — client novel_sha 문자열 무효",
+                              closes_question="q-h10-qual-backing-anchor"),
+        novel_target=NovelTarget(metric_name="qual_backing_server_anchored",
+                                 direction="higher", threshold=1.0),
+        guard_test="test_client_novel_sha_string_does_not_back_qualitative_claim",
     ),
     AuditNode(
         tag="M12_former_canonical_source", severity="MEDIUM", parent="H5_set_verdict_canonical_toctou",

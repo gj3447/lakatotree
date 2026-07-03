@@ -64,7 +64,7 @@ def render_dashboard(
         m = compute_metrics(td)
         nm = html.escape(t["name"])
         out.append(f"<h2>{nm}</h2><p>{html.escape(td['title'] or '')}</p>")
-        out.append(f"<p><b>정본 경로</b>: {' → '.join(m['canonical_path'])}</p>")
+        out.append(f"<p><b>정본 경로</b>: {' → '.join(html.escape(p) for p in (m['canonical_path'] or []))}</p>")
         prog = m["progress"]
         out.append("<table><tr><th>진보율</th><th>기각률</th><th>퇴행깊이</th><th>frontier</th><th>주석</th></tr>")
         out.append(
