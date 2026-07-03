@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.verdict.spine import reconcile_standing
 from lakatos.verdicts import receipt_content_sha
-from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions
+from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions, is_measurement_owned
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
     CredibilityTier,
@@ -528,7 +528,8 @@ class EvidenceClaimService:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                      RETURN e.verdict AS verdict, e.verdict_source AS vsrc,
                             e.pred_metric AS pm, e.judge_script AS script,
-                            e.judge_script_sha AS sha, e.result_path AS rp""", tree=name, tag=tag)
+                            e.judge_script_sha AS sha, e.result_path AS rp,
+                            e.measurement_grade AS mg, e.metric_value AS mv""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         x = rows[0]
@@ -558,6 +559,15 @@ class EvidenceClaimService:
                                  'lakatos/grounding.py GROUNDED tier registry' if grounded_ok else '',
                                  '시스템 수준 불변식 — 채점 상수 전부 tier 공개(노드별 아님)'
                                  if grounded_ok else 'GROUNDED 레지스트리에 tier 미표기 상수 존재'))
+        # G6 measurement_owned (측정주권 load-bearing, 2026-07-03): client_asserted(무replay·무서명) 측정값은
+        # 인증 불가. 측정값 없는 노드(mv is None: 질적/problem)는 측정소유 무의미 → 자동통과(SCOPED).
+        mg = x['mg']
+        owned = is_measurement_owned(mg, x['mv'] is not None)
+        checks.append(gate_check('measurement_owned', owned,
+                                 f"measurement_grade={mg or 'n/a(측정값 없음)'}" if owned else '',
+                                 '' if owned else
+                                 f"측정값 grade={mg or 'client_asserted'} — 값소유(server_regenerated: "
+                                 'replay 재유도) 또는 attested(allow-list 신원 서명) 필요'))
         cert = certify_claim(f'{name}/{tag}', checks, dict(
             as_of=datetime.now(timezone.utc).isoformat(),
             shas={k: v for k, v in {(x['script'] or ''): (x['sha'] or '')}.items() if k and v}))

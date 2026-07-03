@@ -36,7 +36,8 @@ def test_dogfood_leaderboard_ranks_classical_over_learning():
 def test_dogfood_canonical_not_certified_missing_repro_calib():
     out = run()
     assert out['certified'] is False                               # v8 은 manifest/calib 없음 — 정직
-    assert set(out['missing']) == {'reproducible', 'calibrated'}
+    # +measurement_owned(G6): v8 canonical 은 client_asserted 합성측정(무replay·무서명) → 값 미소유도 정직
+    assert set(out['missing']) == {'reproducible', 'calibrated', 'measurement_owned'}
 
 
 def test_progress_discloses_scope():   # ★dogfood 발견 갭: 진보율이 어느 scope 인지 미공개였음

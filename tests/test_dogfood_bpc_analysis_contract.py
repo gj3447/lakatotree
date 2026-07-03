@@ -35,7 +35,8 @@ def test_dogfood_leaderboard_ranks_hexagonal_over_monolithic():
 def test_dogfood_canonical_not_certified_w4_open_and_uncalibrated():
     out = run()
     assert out['certified'] is False                              # ★ 정직: W4 OPEN + credence 보정 부재
-    assert set(out['missing']) == {'stands', 'calibrated'}        # stands=W4 미해소 / calibrated=Brier 이력 부재
+    # +measurement_owned(G6): client_asserted 합성측정 → 값 미소유(무replay·무서명)
+    assert set(out['missing']) == {'stands', 'calibrated', 'measurement_owned'}
 
 
 def test_dogfood_frontier_open_questions_are_real_remaining_work():
