@@ -1,13 +1,17 @@
 """인증층 — P2: '이 claim 은 어디까지 믿어도 되는가'를 게이트 전수 통과로만 답한다.
 
 인증서(Certificate)는 칭찬이 아니라 **검증가능 계보의 묶음**이다. LLM 의견 0,
-순수함수 체크 5개의 AND — 하나라도 빠지면 인증 거부 + 빠진 게이트와 다음 행동 명시:
+순수함수 체크 6개의 AND — 하나라도 빠지면 인증 거부 + 빠진 게이트와 다음 행동 명시:
 
-  G1 preregistered : 사전등록 예측 + scripted 판결 존재 (judge — 사후 합리화 차단)
-  G2 reproducible  : DatasetManifest 가 G-RebuildFromRaw 통과 (lineage — raw root 서 재생성)
-  G3 stands        : 판결이 Dung grounded extension 에 섬 (argue — 미해소 의문 없음)
-  G4 calibrated    : 트리(발급자) 수준 보정 기록 존재 (calibrate — novel 등록 예측의 Brier/ECE, *노드별 아님*)
-  G5 grounded      : 인용 상수의 tier 공개 (grounding — 문헌값/정책값 구분 동봉)
+  G1 preregistered    : 사전등록 예측 + scripted 판결 존재 (judge — 사후 합리화 차단)
+  G2 reproducible     : DatasetManifest 가 G-RebuildFromRaw 통과 (lineage — raw root 서 재생성)
+  G3 stands           : 판결이 Dung grounded extension 에 섬 (argue — 미해소 의문 없음)
+  G4 calibrated       : 트리(발급자) 수준 보정 기록 존재 (calibrate — novel 등록 예측의 Brier/ECE, *노드별 아님*)
+  G5 grounded         : 인용 상수의 tier 공개 (grounding — 문헌값/정책값 구분 동봉)
+  G6 measurement_owned: 측정값이 client float 봉인이 아님 — 서버 재유도(server_regenerated, 값소유) 또는
+                        attested(allow-list 신원 서명). AG3~5 measurement_grade 사다리에 *이빨*을 준다:
+                        client_asserted(무replay·무서명) 값은 인증 불가. 측정값 없는 노드(질적/problem)는
+                        측정소유가 무의미하므로 자동통과(SCOPED — 측정을 *근거로 든* claim 에만 적용).
 
 인증은 시점 스냅샷이다 — evidence_window 에 박힌 sha/시각 밖에선 효력 주장 안 함
 (CANONICAL 이 '임시 현재 최선'인 것과 동형). 철회는 새 반박 증거가 G3(stands)를 깨면 자동:
@@ -17,7 +21,18 @@ CANONICAL 을 former_canonical 로 강등(verdict_source='engine', valid_until_r
 """
 from dataclasses import dataclass, field
 
-GATES = ('preregistered', 'reproducible', 'stands', 'calibrated', 'grounded')
+GATES = ('preregistered', 'reproducible', 'stands', 'calibrated', 'grounded', 'measurement_owned')
+
+# G6 값소유 등급(AG3~5 measurement_grade 사다리)이 인증을 *지탱*하는 등급.
+OWNED_GRADES = ('server_regenerated', 'attested')
+
+
+def is_measurement_owned(grade, has_metric: bool) -> bool:
+    """G6 술어 (순수) — 측정을 *근거로 든* claim(has_metric)은 값이 소유돼야 인증가능:
+    server_regenerated(서버 replay 재유도=값소유) 또는 attested(allow-list 신원 서명).
+    측정값 없는 노드(질적/problem)는 측정소유가 무의미 → 자동 소유(SCOPED, 무회귀).
+    client_asserted / None grade + 측정근거 → 미소유(무replay·무서명 float 는 인증 못 받음)."""
+    return (not has_metric) or (grade in OWNED_GRADES)
 
 
 @dataclass(frozen=True)
@@ -77,5 +92,7 @@ def next_actions(cert: Certificate) -> list:
         'stands': '미해소 의문 해소 — 반박 제출 또는 판결 재검토 (argue.verdict_stands)',
         'calibrated': '발급자 예측 이력으로 Brier/ECE 산출 (calibrate)',
         'grounded': '인용 상수 tier 공개 (grounding.provenance)',
+        'measurement_owned': '측정값 소유 — replay 재유도 활성화(LAKATOS_REPLAY_EXEC → server_regenerated) '
+                             '또는 write-cert 서명(allow-list 신원 → attested). client float 봉인은 인증 불가.',
     }
     return [{'gate': g, 'action': todo[g]} for g in cert.missing]

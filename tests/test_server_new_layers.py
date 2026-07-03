@@ -244,11 +244,13 @@ def test_paradigm_shift_after_sustained_snapshots(monkeypatch):
     assert out['requires_human_oracle'] is True
 
 
-def test_certificate_assembles_five_gates(monkeypatch):
+def test_certificate_assembles_six_gates(monkeypatch):
     app = load_app()
+    # mg=server_regenerated(값소유)+mv 존재 → G6 measurement_owned 통과 → 6게이트 전수 인증
     monkeypatch.setattr(app, 'kg', lambda q, **kw: [dict(
         verdict='progressive', vsrc='scripted', pm='p95',
-        script='judges/x.py', sha='a' * 64, rp='out/final.json')])
+        script='judges/x.py', sha='a' * 64, rp='out/final.json',
+        mg='server_regenerated', mv=0.9)])
     monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
     monkeypatch.setattr(app, 'standing', lambda n, t: dict(
         stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
@@ -256,14 +258,15 @@ def test_certificate_assembles_five_gates(monkeypatch):
     out = app.node_certificate('T', 'v22')
     assert out['certified'] is True
     assert [c['gate'] for c in out['checks']] == \
-        ['preregistered', 'reproducible', 'stands', 'calibrated', 'grounded']
+        ['preregistered', 'reproducible', 'stands', 'calibrated', 'grounded', 'measurement_owned']
 
 
 def test_certificate_blocks_without_lineage(monkeypatch):
     app = load_app()
     monkeypatch.setattr(app, 'kg', lambda q, **kw: [dict(
         verdict='progressive', vsrc='scripted', pm='p95',
-        script='judges/x.py', sha='a' * 64, rp='')])
+        script='judges/x.py', sha='a' * 64, rp='',
+        mg='server_regenerated', mv=0.9)])
     monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: None)   # 계보 미기록
     monkeypatch.setattr(app, 'standing', lambda n, t: dict(
         stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
@@ -277,7 +280,8 @@ def test_certificate_blocks_without_lineage(monkeypatch):
 def test_certificate_empty_script_does_not_thinly_pass_prereg(monkeypatch):
     app = load_app()
     monkeypatch.setattr(app, 'kg', lambda q, **kw: [dict(
-        verdict='progressive', vsrc='scripted', pm='p95', script='', sha=None, rp='out/x.json')])
+        verdict='progressive', vsrc='scripted', pm='p95', script='', sha=None, rp='out/x.json',
+        mg='server_regenerated', mv=0.9)])
     monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
     monkeypatch.setattr(app, 'standing', lambda n, t: dict(
         stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
