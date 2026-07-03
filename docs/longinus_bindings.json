@@ -130,7 +130,7 @@
       "file": "server/app.py",
       "symbol": "neo4j_constraint_diagnostics",
       "kind": "def",
-      "line_hint": 854,
+      "line_hint": 907,
       "sha256": "d9bb6500b1bfc3d1",
       "layer": "ops-diagnostics",
       "frege_sinn": "compatibility facade delegating Neo4j constraint diagnostics to the tree programme service"
@@ -460,7 +460,7 @@
       "file": "server/contexts/tree/judgement_service.py",
       "symbol": "JudgementService",
       "kind": "class",
-      "line_hint": 74,
+      "line_hint": 106,
       "sha256": "9b598a5a0143116e",
       "layer": "application",
       "frege_sinn": "application service owning verdict, prediction, and scripted test-result judgement mutations"
@@ -2440,7 +2440,7 @@
       "file": "server/contexts/tree/judgement_service.py",
       "symbol": "submit_test_result",
       "kind": "method",
-      "line_hint": 501,
+      "line_hint": 508,
       "sha256": "50301c1d5268dd62",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "측정 제출의 신뢰경계 단일 관문 — sha 서버 재유도·novel 앵커·tier 디스패치·verdict receipt 사슬이 전부 이 안을 통과 (2026-07-03 평가: ~340줄 god-method, 분해 후보)"

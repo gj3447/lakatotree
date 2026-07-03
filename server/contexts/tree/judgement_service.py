@@ -48,6 +48,38 @@ def _allowed_script_roots() -> list[Path]:
                 pass
     return roots
 
+
+# FF4 판정의 단일 출처 — sha 재유도(JudgementService._isolate_script_file)와 AG2 replay 실행(app._replay_run)이
+#   *같은* 격리를 공유한다(보안 로직 이중화 = drift 위험). 통과=(resolved, {}) / 거부=(None, {'reason': ...}).
+SCRIPT_MAX_BYTES = 8 << 20   # FF4: 무제한 read/exec RAM-DoS 차단 (judge 스크립트는 작다)
+
+
+def isolate_script_file(file_str: str, max_bytes: int = SCRIPT_MAX_BYTES) -> tuple[Path | None, dict]:
+    """허용 루트(repo ROOT + OS temp + env) 안, size-cap 이하, 존재하는 정규파일로 격리.
+    상대경로는 ROOT 기준 join 후 traversal 거부, 절대경로는 _allowed_script_roots() 안일 때만 허용."""
+    root = Path(longinus.ROOT).resolve()
+    p = Path(file_str)
+    if p.is_absolute():
+        try:
+            resolved = p.resolve()
+        except OSError:
+            return None, {'reason': 'unresolvable', 'script': file_str}
+        # 절대경로도 허용 루트 안에 있어야 — 임의 파일 sha 오라클 + 무인증 RAM-DoS 차단.
+        if not any(r == resolved or r in resolved.parents for r in _allowed_script_roots()):
+            return None, {'reason': 'out_of_root', 'script': file_str}
+    else:
+        resolved = (root / p).resolve()
+        if root not in resolved.parents and resolved != root:   # ../ 탈출 = traversal 거부
+            return None, {'reason': 'path_traversal', 'script': file_str}
+    if not resolved.is_file():   # 미존재/비정규 = 재계산 불가
+        return None, {'reason': 'not_a_file', 'script': file_str}
+    try:   # unbounded read 차단 — size cap (대용량 파일 RAM-exhaustion 방지)
+        if resolved.stat().st_size > max_bytes:
+            return None, {'reason': 'too_large', 'script': file_str, 'size': resolved.stat().st_size}
+    except OSError:
+        return None, {'reason': 'read_error', 'script': file_str}
+    return resolved, {}
+
 # #H2 (human-attestation): floor 의 human 영수증으로 인정하는 KG Argument 의 kind 토큰.
 #   evidence_claim_service.event_from_argument 와 *동일* 집합(kind∈{evaluation,verdict}→human_verdict action) —
 #   인간 attestation 의 단일 어휘 정본. doubt/comment/rebuttal 등은 human 평가가 아니라 제외.
@@ -76,7 +108,7 @@ class JudgementService:
 
     # KG: seed-lkt-engine-route-judgement-extract-20260616
 
-    _SCRIPT_MAX_BYTES = 8 << 20   # FF4: judge-script sha 재유도 size cap (무제한 read RAM-DoS 차단; judge 스크립트는 작다)
+    _SCRIPT_MAX_BYTES = SCRIPT_MAX_BYTES   # FF4 size cap — 모듈 정본(isolate_script_file 과 공유)
 
     def __init__(
         self,
@@ -159,34 +191,9 @@ class JudgementService:
         return float(eigen) if backed else 0.0
 
     def _isolate_script_file(self, file_str: str) -> tuple[Path | None, dict]:
-        """FF4 경로격리 — 평이경로/`file::symbol` 양 분기 *공용*(나생문 #12: 분기 비대칭 봉합).
-
-        반환 (resolved, {}) = 통과 / (None, {'reason': ...}) = 거부.
-        통과 = 허용 루트(repo ROOT + OS temp + env) 내, size-cap 이하, 존재하는 정규파일.
-        상대경로는 ROOT 기준 join 후 traversal 거부, 절대경로는 _allowed_script_roots() 안일 때만 허용.
-        """
-        root = Path(longinus.ROOT).resolve()
-        p = Path(file_str)
-        if p.is_absolute():
-            try:
-                resolved = p.resolve()
-            except OSError:
-                return None, {'reason': 'unresolvable', 'script': file_str}
-            # 절대경로도 허용 루트 안에 있어야 — 임의 파일 sha 오라클 + 무인증 RAM-DoS 차단.
-            if not any(r == resolved or r in resolved.parents for r in _allowed_script_roots()):
-                return None, {'reason': 'out_of_root', 'script': file_str}
-        else:
-            resolved = (root / p).resolve()
-            if root not in resolved.parents and resolved != root:   # ../ 탈출 = traversal 거부
-                return None, {'reason': 'path_traversal', 'script': file_str}
-        if not resolved.is_file():   # 미존재/비정규 = 재계산 불가
-            return None, {'reason': 'not_a_file', 'script': file_str}
-        try:   # unbounded read 차단 — size cap (대용량 파일 RAM-exhaustion 방지)
-            if resolved.stat().st_size > self._SCRIPT_MAX_BYTES:
-                return None, {'reason': 'too_large', 'script': file_str, 'size': resolved.stat().st_size}
-        except OSError:
-            return None, {'reason': 'read_error', 'script': file_str}
-        return resolved, {}
+        """FF4 경로격리(모듈 정본 isolate_script_file 로 위임) — 평이경로/`file::symbol` 양 분기 *공용*
+        (나생문 #12: 분기 비대칭 봉합). sha 재유도와 AG2 replay 실행이 같은 격리를 쓴다."""
+        return isolate_script_file(file_str, self._SCRIPT_MAX_BYTES)
 
     def _recompute_script_sha(self, script: str) -> tuple[str | None, dict]:
         """#H3 (prom-honesty/receipt-integrity): judge_script_sha 를 *서버가 파일 내용에서 재유도*.
