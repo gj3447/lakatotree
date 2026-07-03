@@ -31,19 +31,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from lakatos.verdict.judge import NovelTarget, Prediction, judge
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# 측정주권 가드가 착륙하는 전용 파일 패턴(비면 전부 pending). AG 슬라이스당 1파일 × 2가드.
-_RECEIPT_GLOB = "tests/fix_harness/test_ag*_rsov*.py"
+# 측정주권 가드가 착륙하는 전용 파일 패턴들(비면 전부 pending). AG 슬라이스당 1파일 × 2가드.
+_RECEIPT_GLOBS = ("tests/fix_harness/test_ag*_rsov*.py", "tests/fix_harness/test_de1_*.py")
 _TREE = "LakatosTree_MeasurementSovereignty_20260703"
 
 
 def receipt() -> dict[str, bool]:
     """외부 측정 = 이 repo .venv pytest 로 캠페인 guard 테스트를 돌려 {test_func: passed} 수집
     (self-report 아님). guard 파일 0개면 빈 dict → 전부 정직 pending."""
-    matches = glob.glob(os.path.join(_ROOT, _RECEIPT_GLOB))
+    matches = [m for g in _RECEIPT_GLOBS for m in glob.glob(os.path.join(_ROOT, g))]
     if not matches:
         return {}
+    globs = " ".join(_RECEIPT_GLOBS)
     cmd = (f"cd {_ROOT} && . .venv/bin/activate 2>/dev/null; "
-           f"python -m pytest {_RECEIPT_GLOB} -v --no-header -p no:cacheprovider 2>&1")
+           f"python -m pytest {globs} -v --no-header -p no:cacheprovider 2>&1")
     out = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True).stdout
     res: dict[str, bool] = {}
     for line in out.splitlines():
@@ -110,6 +111,24 @@ NODES_DEF: tuple[SovNode, ...] = (
         novel_target=NovelTarget(metric_name="ag2_rce_guard_green", direction="higher", threshold=1.0),
         guard_defect="test_rce_vectors_are_rejected",
         guard_mechanism="test_honest_replay_runs_under_finite_rlimits",
+    ),
+    SovNode(
+        tag="de1_godmethod_split", dimension="DE1 godmethod 분해 (판결 seam 추출)", parent="ag2_rsov1_replay_rce",
+        evidence="server/contexts/tree/judgement_policy.py(순수 3함수) · judges/de1_godmethod_split.py · judgement_service.submit_test_result(510, 344줄)",
+        story="submit_test_result 는 344줄 godmethod — load·freshen·sha검증·write-cert·judge·강등체인·"
+              "eureka·state·CAS·prov·fsck·history 를 한 메서드에 결합. AG3(값소유/measurement_grade)·"
+              "AG4(재현성 partial 천장)·AG5(attested grade)가 편집할 *판결 결정 seam* 이 I/O 오케스트레이션에 "
+              "묻혀 있어 착지가 위험. problemshift: 결정 seam 3종(강등체인 apply_verdict_demotes·질적플래그 "
+              "qualitative_flags·receipt 조립 build_receipt_fields)을 순수 함수로 추출 — 거동 불변(1572 회귀 "
+              "green)·hex 계약 유지(import-linter 3/3)·4사분면 특성화 골든 고정. AG3+ 는 이제 순수 seam 을 확장.",
+        prom="server/contexts/tree/judgement_policy.py + judgement_service 위임(3 call-site) + 특성화 골든",
+        prediction=Prediction(metric_name="de1_unextracted_seams", direction="lower",
+                              baseline_value=3.0, noise_band=0.0,
+                              novel_prediction="판결 seam 3종이 순수 함수로 추출되고 4사분면 골든+RECEIPT_FIELDS 1:1 만족(거동 불변)",
+                              closes_question="q-de1-godmethod-split"),
+        novel_target=NovelTarget(metric_name="de1_characterization_golden_green", direction="higher", threshold=1.0),
+        guard_defect="test_demote_chain_golden_is_exact",
+        guard_mechanism="test_receipt_fields_match_sealed_set",
     ),
 )
 
@@ -194,7 +213,7 @@ OPEN_QUESTIONS = [
 if __name__ == "__main__":
     rc = receipt()
     landed = sum(1 for ok in rc.values() if ok)
-    print(f"측정주권 guard receipt: {landed}/{len(rc) or 0} green ({_RECEIPT_GLOB})\n")
+    print(f"측정주권 guard receipt: {landed}/{len(rc) or 0} green ({', '.join(_RECEIPT_GLOBS)})\n")
     rows = run(rc)
     n_open = sum(1 for r in rows if r["status"] == "OPEN")
     n_closed = sum(1 for r in rows if r["status"] == "CLOSED")
