@@ -17,6 +17,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _LKT = Path(__file__).resolve().parents[1]
 _SCRIPT = _LKT / "scripts" / "dev_server_restart.sh"
 
@@ -30,6 +32,10 @@ def test_restart_script_refuses_without_canonical_env(tmp_path):
     assert "canonical env" in r.stderr and "/proc/" in r.stderr, "복구 절차 미안내(fail-loud 불완전)"
 
 
+@pytest.mark.skipif(
+    not Path("<WORKSPACE>/PROJECT/PI").is_dir(),
+    reason="dev 워크스페이스(PI) 부재(hermetic CI) — 정본 env 실재 가드는 :55170 dev box 에서만 실측"
+           " (defect 가드는 tmp_path 로 hermetic — CI 에서도 실행)")
 def test_canonical_env_and_runbook_wiring():
     """mechanism: ① 정본 env 실재+0600+필수 키(NEO4J_URI/PASSWORD, PG) ② 러너가 사고의 세 교훈을
     코드로 봉합 — 죽이기 전 environ 백업 / healthz 3/3 게이트(재시도) / pkill -f 부재(자기쉘 자살 금지)."""

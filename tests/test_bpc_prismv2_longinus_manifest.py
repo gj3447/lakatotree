@@ -93,12 +93,17 @@ def test_20260630_branch_and_measurement_gate_are_longinus_bound() -> None:
         "consumer_b.FeatureLocalMeasurementGate.LakatoTree.20260630",
     } <= set(decisions)
 
+    # clean-clone 가드(아래 workspace_evidence 표준 패턴): 형제 3D workspace 부재 public CI 에선
+    # *파일존재 단언만* skip — 내용 불변식(PIERCED/tree/tag/parent)은 어디서나 실행.
+    evidence_root = ROOT.parents[1] / "3D" / "BPC_ICP_SPEC"
+
     for item in decisions.values():
         assert item["binding_state"] == "PIERCED"
         assert item["tree"] == "LakatosTree_BPC_20View_20260612"
         assert item["tag"] == "feature_local_gate_20260630"
         assert item["parent"] == "consumer_a_port365"
-        assert Path(item["sourcePath"].split(":", 1)[0]).exists(), item
+        if evidence_root.exists():
+            assert Path(item["sourcePath"].split(":", 1)[0]).exists(), item
 
     ids = {item["sourceId"] for item in data["consumer_a_bindings"]}
     assert "PrismV2.DevelopCanonicalBranch.20260630" in ids

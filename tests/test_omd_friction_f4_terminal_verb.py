@@ -15,8 +15,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _OMD = Path("<WORKSPACE>/PROJECT/PI/omd")
 _PY = _OMD / ".venv" / "bin" / "python"
+
+pytestmark = pytest.mark.skipif(
+    not _OMD.is_dir(),
+    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
 
 
 def test_lease_only_task_closable_and_started_protected():
