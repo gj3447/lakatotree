@@ -245,14 +245,20 @@ def delete_tree(name: str, cascade: bool = False) -> str:
 
 @mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
-             comment: str = '', algorithm: str = '', author: str = '') -> str:
+             comment: str = '', algorithm: str = '', author: str = '',
+             result_path: str = '') -> str:
     """나무에 노드 추가(나무가 먼저 있어야 — 없으면 404, create_tree 로 생성). parent/parents_csv 로 DAG 다중 부모.
-    author = 노드 작성자 actor(FF3: CANONICAL floor 의 human attestation 이 actor≠author 일 때만 인정 — self-vouch 봉쇄)."""
+    author = 노드 작성자 actor(FF3: CANONICAL floor 의 human attestation 이 actor≠author 일 때만 인정 — self-vouch 봉쇄).
+    result_path = 이 노드의 산출물(영수증) 경로 — reproducible 게이트(F-CON-1)의 앵커. 계보
+    (record_derivation)의 최종 output 과 일치해야 하고, 그 궁극 root 들은 kind='source' 로 선언된
+    **raw_root 안의 실존 파일**이어야 서버가 sha 를 디스크에서 재계산해 인증서 reproducible 을 준다."""
     parents = [p.strip() for p in parents_csv.split(',') if p.strip()]
     if parent:
         parents.insert(0, parent)
-    return json.dumps(_post(f'/api/tree/{name}/node',
-        dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm, author=author)), ensure_ascii=False)
+    body = dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm, author=author)
+    if result_path:
+        body['result_path'] = result_path
+    return json.dumps(_post(f'/api/tree/{name}/node', body), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -260,9 +266,12 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
                         direction: str = 'lower', noise_band: float = 0.0,
                         novel_metric: str = '', novel_direction: str = '',
                         novel_threshold: float = 0.0, script_sha: str = '',
-                        credence: float | None = None) -> str:
+                        credence: float | None = None, closes_question: str = '') -> str:
     """실행 전 사전등록 예측(의무). 구조적 novel(novel_metric/threshold) 권장 — 텍스트 아닌 실측 대조.
-    credence[0,1]=예측 신뢰도 → calibration/certify G4(calibrated) 입력. 안 주면 인증서 G4 영구 미통과."""
+    credence[0,1]=예측 신뢰도 → calibration/certify G4(calibrated) 입력. 안 주면 인증서 G4 영구 미통과.
+    closes_question = 이 예측이 적중하면 닫히는 frontier 질문 — **여기 선언해야** judgement seam 이
+    채점시점 problem_balance(closed−opened)를 계산해 eureka 가 살아난다('submit 후 close' 관례는
+    balance 0 → 전부 hallucinated 공회전). 사후 closure 소급집계는 없음(false-부양 방지 seam)."""
     body = dict(metric_name=metric, direction=direction, baseline_value=baseline, noise_band=noise_band)
     if novel_metric:
         body.update(novel_metric=novel_metric, novel_direction=novel_direction or 'higher',
@@ -271,6 +280,8 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
         body['judge_script_sha'] = script_sha
     if credence is not None:
         body['credence'] = credence
+    if closes_question:
+        body['closes_question'] = closes_question
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/prediction', body), ensure_ascii=False)
 
 
@@ -317,11 +328,13 @@ def submit_result(name: str, tag: str, value: float, script: str,
                   script_sha: str = '', novel_measured: float = None,
                   novel_script: str = '',
                   data_branch: bool = False, data_replay_passed: bool = True,
-                  human_verdict_required: bool = False,
+                  human_verdict_required: bool = False, result_path: str = '',
                   write_cert_json: str = '') -> str:
     """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected.
     ENG-DU-2: data_branch(데이터 재생성 의존)+data_replay_passed=false → progressive_conditional;
-    human_verdict_required=true → ambiguous(인간 판정 보류)."""
+    human_verdict_required=true → ambiguous(인간 판정 보류).
+    result_path = 산출물(영수증) 경로 — 서버가 노드에 비파괴 병합(coalesce). reproducible 게이트
+    (F-CON-1) 앵커: record_derivation 계보의 최종 output 과 일치, root 는 raw_root 안 실존 source."""
     body = dict(metric_value=value, script=script,
                 data_branch=data_branch, data_replay_passed=data_replay_passed,
                 human_verdict_required=human_verdict_required)
@@ -333,6 +346,8 @@ def submit_result(name: str, tag: str, value: float, script: str,
         body['novel_script'] = novel_script
     if write_cert_json:                  # G10/R5: 서명 write-cert(CLI cert-sign 산출 JSON 그대로)
         body['write_cert'] = json.loads(write_cert_json)
+    if result_path:
+        body['result_path'] = result_path
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/test_result', body), ensure_ascii=False)
 
 

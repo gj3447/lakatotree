@@ -1500,7 +1500,7 @@
       "file": "lakatos/mcp_server.py",
       "symbol": "add_observation",
       "kind": "def",
-      "line_hint": 497,
+      "line_hint": 512,
       "sha256": "f8e1cb6950bb4ea2",
       "layer": "mcp",
       "frege_sinn": "MCP G-Web tool carrying theory/rival/Longinus embedding fields to the HTTP surface"
@@ -2454,6 +2454,36 @@
       "sha256": "212cc99acfd29244",
       "layer": "application",
       "frege_sinn": "read_models 축소 후 잔여 정본 — 투영을 소유하지 않고(정본=repository.load_tree_data) 판독된 원장 위 메트릭 합성만 담당"
+    },
+    {
+      "sourceId": "mcp_server.add_node",
+      "file": "lakatos/mcp_server.py",
+      "symbol": "add_node",
+      "kind": "def",
+      "line_hint": 247,
+      "sha256": "5517f1c6ba5fc3c3",
+      "layer": "mcp",
+      "frege_sinn": "노드 등록 MCP 표면 — result_path(영수증 앵커, F-CON-1 reproducible 게이트 입구)를 REST 로 전달(PR#16)"
+    },
+    {
+      "sourceId": "mcp_server.submit_result",
+      "file": "lakatos/mcp_server.py",
+      "symbol": "submit_result",
+      "kind": "def",
+      "line_hint": 327,
+      "sha256": "dc78234a5122607a",
+      "layer": "mcp",
+      "frege_sinn": "채점 제출 MCP 표면 — result_path 를 judgement coalesce 비파괴 병합으로 전달(PR#16, 인증서 5/5 개통)"
+    },
+    {
+      "sourceId": "mcp_server.register_prediction",
+      "file": "lakatos/mcp_server.py",
+      "symbol": "register_prediction",
+      "kind": "def",
+      "line_hint": 265,
+      "sha256": "a0b7909af61ffd9e",
+      "layer": "mcp",
+      "frege_sinn": "예측 사전등록 MCP 표면 — closes_question 선언 전달(PR#17)로 채점시점 problem_balance 가동(첫 true eureka)"
     }
   ],
   "accepted_grounding_refs": [
@@ -2558,7 +2588,8 @@
     "span_lakatotree_frontier_fix_20260626",
     "span_lakatotree_audit_fix_20260627",
     "span_lakatotree_longinus_ast_resolver",
-    "span_lakatotree_runtime_lean_20260626"
+    "span_lakatotree_runtime_lean_20260626",
+    "selfdev-mcp-surface-gates-20260703"
   ],
   "kg_anchors_note": "코드 # KG: anchor 토큰의 선언 레지스트리(reverse-orphan 가드). 새 # KG: 노드 추가 시 여기 등록 필수 → KG 노드 생성 강제. live-KG 존재확인은 longinus.audit(online)."
 }
