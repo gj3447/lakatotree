@@ -50,6 +50,8 @@ _CORRUPT = {
     "FORCEFUL_SOURCE_WITHOUT_RECEIPT": {"verdict": "progressive", "verdict_source": "scripted",
                                         "pred_registered_at": "2026-07-02",
                                         "assurance_tier_resolved": "legacy"},
+    # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 WARN(다른 check 미발화로 격리).
+    "MEASUREMENT_REFUTED_BUT_STANDING": {"verdict": "progressive", "replay_status": "mismatch"},
 }
 
 
