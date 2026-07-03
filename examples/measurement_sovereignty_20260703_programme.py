@@ -130,6 +130,26 @@ NODES_DEF: tuple[SovNode, ...] = (
         guard_defect="test_demote_chain_golden_is_exact",
         guard_mechanism="test_receipt_fields_match_sealed_set",
     ),
+    SovNode(
+        tag="ag3_value_ownership", dimension="AG3 값소유 keystone (R-SOV V1)", parent="de1_godmethod_split",
+        evidence="lakatos/verdicts.py:RECEIPT_FIELDS(13필드, measurement_grade) · server/contexts/tree/judgement_policy.py:resolve_measurement · server/app.py:_producer_replay_submit · judges/ag3_rsov3_value_ownership.py(RED 실측 gap=2)",
+        story="원장은 client float 를 봉인·운반만 했다 — measurement_grade 부재로 서버-재유도값과 위조 "
+              "float 가 *같은 receipt_sha* 를 들고, replay 는 verified bool 만 남기고 v.regenerated 를 "
+              "폐기했다. 게다가 submit 시 producer_replay_for_node 는 아직 persist 안 된 e.metric_value=None "
+              "을 읽어 신규노드에서 항상 not_attempted(ordering 역전). problemshift: (a) measurement_grade "
+              "(server_regenerated/client_asserted)를 RECEIPT_FIELDS 로 봉인 → 진짜검증≠위조가 다른 sha; "
+              "(b) resolve_measurement 이 verified∧regenerated 부분집합에서만 regenerated 를 SSOT metric_value "
+              "로 SCOPED 치환(외부/반증값 파괴 금지); (c) _producer_replay_submit 로 *들어온* 값을 직접 "
+              "replay(ordering 교정). 라이브 발효는 LAKATOS_REPLAY_EXEC(기본 OFF) → 코드완료·dead-σ, GO1 대기.",
+        prom="lakatos/verdicts.py measurement_grade + judgement_policy.resolve_measurement + judgement_service submit 배선 + app._producer_replay_submit",
+        prediction=Prediction(metric_name="ag3_value_ownership_gaps", direction="lower",
+                              baseline_value=2.0, noise_band=0.0,
+                              novel_prediction="measurement_grade 봉인(sha 를 가름) + verified replay 가 regenerated 를 SSOT 로 치환(값소유 SCOPED, 이중가드 green)",
+                              closes_question="q-rsov3-value-ownership"),
+        novel_target=NovelTarget(metric_name="ag3_value_ownership_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_verified_replay_owns_value_not_client",
+        guard_mechanism="test_measurement_grade_sealed_in_receipt_fields",
+    ),
 )
 
 
@@ -196,17 +216,18 @@ FRONTIER = [
     for n in NODES_DEF if n.prediction is not None
 ]
 
-# 정직 OPEN — 이번 회차(AG1)가 닫지 *못한* 것들. 척추 순서는 PROM 확정(AG2 가 GO1 선행 절대).
+# 정직 OPEN — 이번 회차(AG3)가 닫지 *못한* 것들. 척추 AG1(vocab)·AG2(RCE)·DE1(seam)·AG3(값소유)
+#   착륙 완료 → q-rsov1(AG2 closed)·q-rsov3(AG3 이 닫음)은 목록에서 내림. 남은 척추만 정직 OPEN.
 OPEN_QUESTIONS = [
-    dict(name="q-rsov1-exec-path-rce",
-         body="[AG2] replay exec 경로의 RCE 봉합(_isolate_script_file 미호출·argv 인젝션·setrlimit "
-              "부재) 없이 LAKATOS_REPLAY_EXEC 를 켤 수 있는가 — 어떤 exec 활성화보다 선행 필수."),
-    dict(name="q-rsov3-value-ownership",
-         body="[AG3 keystone] verified=True replay 부분집합에서 서버가 v.regenerated 를 SSOT 로 "
-              "봉인(measurement_grade 포함)할 수 있는가 — AG6/V4 submit-ordering 교정이 전제."),
+    dict(name="q-rsov4-reproducibility-ceiling",
+         body="[AG4] 재현성 미검증 anchored 노드를 partial 천장(하드 409 아님; 불가None≠불일치False)으로 "
+              "분류할 수 있는가 — unverified 는 CANONICAL 을 못 열되 값은 보존."),
     dict(name="q-rsov5-open-write-identity",
          body="[AG5/co-fundamental] 무인증 open-write(LAKATOS_API_TOKEN 미설정=no-op) 상태에서 "
               "비가역 verb(carve/CANONICAL/delete)에 서명을 강제할 수 있는가 — FE5 관측화 선행."),
+    dict(name="q-go1-replay-exec-live",
+         body="[GO1/user] AG3 값소유는 코드완료·dead-σ(LAKATOS_REPLAY_EXEC 기본 OFF). 라이브 σ0→1 은 "
+              "도그푸드(별 프로세스/ephemeral 격리) 실증 후 exec 기본-ON flip — user GO 대기."),
 ]
 
 

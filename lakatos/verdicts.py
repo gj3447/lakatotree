@@ -231,6 +231,9 @@ _RECEIPT_ENCODING_VERSION = 'v1'
 RECEIPT_FIELDS = (
     'tree', 'tag', 'target_id', 'verdict', 'verdict_source', 'metric_name', 'metric_value',
     'novel_confirmed', 'lakatos_status', 'judged_at', 'judge_script_sha', 'prev_receipt_sha',
+    # AG3/R-SOV V1 (측정주권 2026-07-03): 측정값 출처등급을 봉인 sha 에 포함 — 없으면 서버-재유도
+    #   (server_regenerated)와 client-운반(client_asserted) 노드가 같은 receipt_sha 를 든다('운반만' 구멍).
+    'measurement_grade',
 )
 
 

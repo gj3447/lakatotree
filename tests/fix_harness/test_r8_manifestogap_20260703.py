@@ -74,14 +74,19 @@ class _SubmitKg:
 
 
 def _svc(kg, replay):
+    # AG3(측정주권 2026-07-03): submit 경로 replay 는 producer_replay_submit 포트(전체 verdict)로 이동 —
+    #   신규노드도 seal 전 incoming 값 재유도(persisted 노드 조회의 ordering 역전 교정). 여기선 mock 주입.
     return JudgementService(kg=kg, kg_tx=kg.tx, hist=lambda *a, **k: None,
                             foundation=lambda *a, **k: None, reproducible_for_node=lambda *a, **k: None,
-                            producer_replay_for_node=lambda n, t: replay)
+                            producer_replay_submit=lambda *a, **k: replay)
 
 
 def test_p0a_replay_status_persisted_and_disclosed():
-    # replay 미시도(None)/일치(True)/불일치(False) → label persist.
-    for replay, expect in [(None, 'not_attempted'), (True, 'verified'), (False, 'mismatch')]:
+    from lakatos.io.replay import ProducerReplayVerdict
+    ok = ProducerReplayVerdict(verified=True, regenerated=1.0, recorded=1.0, reason='externally_verified')
+    bad = ProducerReplayVerdict(verified=False, regenerated=None, recorded=1.0, reason='mismatch')
+    # replay 미시도(None)/일치(verified verdict)/불일치(mismatch verdict) → label persist.
+    for replay, expect in [(None, 'not_attempted'), (ok, 'verified'), (bad, 'mismatch')]:
         kg = _SubmitKg()
         _svc(kg, replay).submit_test_result('T', 'seam', Result(metric_value=1.0, script='inline'))
         _q, params = kg.captured[0][0]

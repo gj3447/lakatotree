@@ -27,7 +27,7 @@ from lakatos.verdicts import ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdic
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
-                                                   qualitative_flags)
+                                                   qualitative_flags, resolve_measurement)
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
@@ -121,6 +121,7 @@ class JudgementService:
         foundation: FoundationProvider,
         reproducible_for_node: ReproducibleProvider,
         producer_replay_for_node: ReproducibleProvider | None = None,
+        producer_replay_submit=None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
@@ -129,6 +130,9 @@ class JudgementService:
         self.reproducible_for_node = reproducible_for_node
         # 나생문 #1 근본 봉합(live): 채점 스크립트 재실행으로 측정 외부검증(미주입=None 반환 no-op = 거동 불변).
         self.producer_replay_for_node = producer_replay_for_node or (lambda _n, _t: None)
+        # AG3/R-SOV V1 (측정주권 2026-07-03): submit 시 *들어온* 값을 서버가 재유도 → 전체 ProducerReplayVerdict
+        #   (regenerated 포함). 값소유 치환의 원천. 미주입=None 반환 no-op(거동 불변: client 값 그대로 봉인).
+        self.producer_replay_submit = producer_replay_submit or (lambda *_a, **_k: None)
 
     def _node_eigentrust(self, name: str, tag: str) -> tuple[str | None, float | None, bool]:
         """노드의 인터넷 관측 그래프 eigentrust → (src, eigen, backed). src=None: internal 노드
@@ -707,11 +711,19 @@ class JudgementService:
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)
         ts = datetime.now(timezone.utc).isoformat()
+        # AG3/R-SOV V1 값소유(측정주권 2026-07-03): submit 시 *들어온* 값을 서버가 재유도 → 전체 verdict.
+        #   persisted 노드가 아니라 incoming(r.script/result_path/metric_value)을 replay 하므로 신규노드도
+        #   seal 전에 소유(AG6/V4 ordering 역전 교정 — 기존 producer_replay_for_node 는 아직 persist 안 된
+        #   e.metric_value=None 을 읽어 submit 시 항상 not_attempted 로 죽어 있었다). resolve_measurement 이
+        #   verified∧regenerated 부분집합에서만 regenerated 를 SSOT 로 치환(SCOPED — 외부/반증값 파괴 금지).
+        #   여기서 계산해 next_state·receipt·SET·hist 가 *같은* effective_metric/measurement_grade 를 봉인.
+        _vo = self.producer_replay_submit(r.script, r.result_path, r.metric_value)
+        effective_metric, measurement_grade, replay_status = resolve_measurement(_vo, r.metric_value)
         next_state = derive_node_state({
             'verdict': verdict,
             'verdict_source': 'scripted',
             'novel_confirmed': novel_independent,
-            'metric_value': r.metric_value,
+            'metric_value': effective_metric,
             'judged_at': ts,
         })
         _require_state_transition(
@@ -738,15 +750,16 @@ class JudgementService:
         #   시도됐나/일치했나를 label 로 공시(TOUCH_THE_SKY '영수증은 현실이 끊어 준다'의 관측가능화).
         #   not_attempted = LAKATOS_REPLAY_EXEC off(dead-σ 교정: 검증 불가는 부재지 반증 아님) 또는 미주입;
         #   verified = 재실행 측정이 제출값과 일치; mismatch = 불일치(승격 floor 가 이걸로 차단).
-        _replay = self.producer_replay_for_node(name, tag)
-        replay_status = 'not_attempted' if _replay is None else ('verified' if _replay else 'mismatch')
+        #   (replay_status·effective_metric·measurement_grade 는 위 값소유 seam 에서 이미 계산됨.)
         prev_rsha = pr.get('prev_receipt_sha')
         target_id = pr.get('closes')   # q_target_identity_scheme: 선언 의미키(pred_closes)
-        # DE1: G1 receipt 봉인필드 조립을 순수 정책으로 추출 — AG3(measurement_grade) 착지대.
+        # DE1: G1 receipt 봉인필드 조립을 순수 정책으로 추출 — AG3 measurement_grade 봉인(server_regenerated/
+        #   client_asserted). metric_value 도 값소유 결과(effective_metric)를 봉인한다.
         receipt_fields = build_receipt_fields(
             tree=name, tag=tag, target_id=target_id, verdict=verdict, metric_name=pr['m'],
-            metric_value=r.metric_value, novel_confirmed=novel_independent, lakatos_status=lakatos_status,
-            judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha)
+            metric_value=effective_metric, novel_confirmed=novel_independent, lakatos_status=lakatos_status,
+            judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha,
+            measurement_grade=measurement_grade)
         rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
@@ -764,17 +777,20 @@ class JudgementService:
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
-                       e.attested_by_did=$attested_by_did, e.replay_status=$replay_status
+                       e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
+                       e.measurement_grade=$mg
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
                        rec.verdict=$v, rec.verdict_source='scripted', rec.metric_name=$mn,
                        rec.metric_value=$mv, rec.novel_confirmed=$novel, rec.lakatos_status=$lstat,
-                       rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha
+                       rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha,
+                       rec.measurement_grade=$mg
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
                    RETURN e.tag AS claimed""",
-                dict(tree=name, tag=tag, mn=pr['m'], mv=r.metric_value, v=verdict,
+                dict(tree=name, tag=tag, mn=pr['m'], mv=effective_metric, v=verdict,
+                     mg=measurement_grade,   # AG3: 측정 출처등급(server_regenerated/client_asserted) 봉인
                      freshen=freshen_anchor,   # novel-anchor freshen: CAS 탈출은 앵커-데모트 partial 동일값 재제출만
                      script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
@@ -821,7 +837,7 @@ class JudgementService:
         if (isinstance(tx_result, list) and len(tx_result) == len(ops)
                 and isinstance(tx_result[0], list) and not tx_result[0]):
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
-        self.hist(name, 'test_result', tag, dict(value=r.metric_value, baseline=pr['b'],
+        self.hist(name, 'test_result', tag, dict(value=effective_metric, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
                                                  novel=v.novel, script_sha=stored_sha,
                                                  freshen=freshen_anchor))

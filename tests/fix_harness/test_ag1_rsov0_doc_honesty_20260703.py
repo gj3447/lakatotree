@@ -54,16 +54,28 @@ def test_adr_exists_and_pins_code():
 def test_adr_code_anchors_hold():
     """claim↔code 1:1 — ADR 이 서술한 '현 한계선'이 코드에 실재함을 실행으로 검증.
 
-    의도된 tripwire: AG3(measurement_grade 봉인)·AG6(값무결 fsck)가 착륙해 코드가 바뀌면
-    이 테스트가 RED 가 되어 ADR 개정을 기계적으로 강제한다(문서-코드 드리프트 봉쇄)."""
+    AG3(측정주권 2026-07-03) 착륙으로 한계선이 *한 칸 옮겨졌다*: measurement_grade 는 이제 봉인되고
+    (RECEIPT_FIELDS 13필드), 값소유 치환 *코드*(resolve_measurement→server_regenerated)도 착륙했다.
+    그러나 LAKATOS_REPLAY_EXEC 기본 OFF 라 producer_replay_submit 가 None → 라이브는 여전히
+    grade=client_asserted(dead-σ) — 값소유는 *코드완료·라이브미발효*, GO1(exec flip) 대기다.
+    남은 tripwire: GO1 이 exec 를 기본-ON 으로 flip 하면(라이브 σ0→1) 아래 dead-σ 앵커가 RED 로
+    바뀌어 ADR '보류(GO1)'절 개정을 기계 강제한다(문서-코드 드리프트 봉쇄)."""
     from lakatos.verdicts import RECEIPT_FIELDS, fold_receipt_chain
-    assert "measurement_grade" not in RECEIPT_FIELDS
+    # AG3 착륙: 출처등급이 봉인 필드셋에 실재(진짜검증≠위조가 다른 receipt_sha).
+    assert "measurement_grade" in RECEIPT_FIELDS
     assert set(RECEIPT_FIELDS) == {
         "tree", "tag", "target_id", "verdict", "verdict_source", "metric_name", "metric_value",
-        "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha"}
+        "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
+        "measurement_grade"}
+    # 값소유 치환 코드 실재(verified∧regenerated → SSOT 치환).
+    policy = (ROOT / "server" / "contexts" / "tree" / "judgement_policy.py").read_text(encoding="utf-8")
+    assert "def resolve_measurement" in policy and "server_regenerated" in policy
+    # dead-σ 한계선: submit replay 는 exec 게이트 OFF 면 None → client 값 유지(라이브 미발효).
     app = (ROOT / "server" / "app.py").read_text(encoding="utf-8")
-    assert "return v.verified" in app            # replay = verified bool 반환(재유도값 서버경계 폐기)
-    assert "LAKATOS_REPLAY_EXEC" in app          # exec 게이트 실재(기본 OFF)
+    assert "def _producer_replay_submit" in app
+    m = re.search(r"def _producer_replay_submit.*?(?=\ndef )", app, re.S)
+    assert m and "if not _replay_exec_enabled():" in m.group(0) and "return None" in m.group(0), \
+        "submit replay 가 exec 게이트를 잃음 — dead-σ 한계선(GO1 대기) 붕괴, ADR 개정 필요"
     fold_src = inspect.getsource(fold_receipt_chain)
     assert "receipt_content_sha" not in fold_src and "canonical_receipt_blob" not in fold_src, \
         "fold 가 내용해시 재대조를 시작함 — ADR '포인터 워크' 서술 개정 필요"

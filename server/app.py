@@ -309,6 +309,7 @@ def _judgement_service():
         foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
         reproducible_for_node=_reproducible_for_node,
         producer_replay_for_node=_producer_replay_for_node,   # 나생문 #1 live: 채점 스크립트 재실행 검증
+        producer_replay_submit=_producer_replay_submit,        # AG3: submit incoming 값 재유도 → 값소유
     )
 
 
@@ -577,6 +578,23 @@ def _producer_replay_for_node(name: str, tag: str) -> bool | None:
     score_cmd = _replay_command(js, rp or '')   # 'python <script> <result_path>' (provenance 재현형식과 동일)
     v = _producer_replay(score_cmd=score_cmd, recorded_metric=float(mv), run_bash=_replay_run, tolerance=_REPLAY_TOL)
     return v.verified
+
+
+def _producer_replay_submit(script: str, result_path: str, recorded_metric):
+    """AG3/R-SOV V1 값소유(측정주권 2026-07-03): submit 시 *들어온*(incoming) (script, result_path,
+    metric_value)를 서버가 재유도 → ProducerReplayVerdict | None(전체 verdict — regenerated 포함).
+
+    _producer_replay_for_node(persisted 노드 조회)와 달리 여기 값은 아직 KG 에 seal 되지 않았다 — 신규노드는
+    submit 시점 e.metric_value=None 이라 persisted replay 는 항상 not_attempted 로 죽는다(P0a 라이브 dead).
+    incoming 을 직접 replay 해 신규노드도 seal 전에 소유(AG6/V4 ordering 역전 교정). 게이트 OFF/비재현
+    스크립트면 None(비실행, client 값 유지 — 보안·dead-σ 기본)."""
+    if not _replay_exec_enabled():
+        return None   # 게이트 OFF: client judge_script 비실행(보안 기본)
+    if not script or recorded_metric is None or script == 'inline' or '::' in script:
+        return None   # inline/file::symbol(재현명령 불가)·측정 부재 → 증명불가
+    score_cmd = _replay_command(script, result_path or '')
+    return _producer_replay(score_cmd=score_cmd, recorded_metric=float(recorded_metric),
+                            run_bash=_replay_run, tolerance=_REPLAY_TOL)
 
 
 def _foundation_rows(name: str):
