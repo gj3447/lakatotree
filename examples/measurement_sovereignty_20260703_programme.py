@@ -211,6 +211,26 @@ NODES_DEF: tuple[SovNode, ...] = (
         guard_defect="test_open_boot_warns",
         guard_mechanism="test_posture_taxonomy",
     ),
+    SovNode(
+        tag="ag5b_verb_signed_irreversible", dimension="AG5-IDENT 비가역 verb 서명강제 (R-SOV V3)", parent="fe5_auth_posture",
+        evidence="lakatos/write_cert.py:COMMAND_FIELDS(+verb) · lakatos/assurance.py:VERB_GATES[set_verdict_canonical]+GATE_WRITE_CERT · server/contexts/tree/judgement_service.py:set_verdict cert 블록 · judges/ag5b_rsov5_verb_signed_irreversible.py(RED gap=2)",
+        story="AG5-V3 는 attested *grade*(값 provenance)를 닫았다. IDENT 는 *enforcement*: 비가역 verb"
+              "(CANONICAL 승격)이 무인증으로 통과했고, cert 는 verb 에 안 묶여 submit 용 cert 를 canonical 에 "
+              "재생(sign-X-execute-Y)할 여지가 있었다. problemshift: (a) write_cert.COMMAND_FIELDS 에 verb 추가 "
+              "→ cert 를 verb 에 바인딩(submit-cert≠canonical-cert); (b) assurance VERB_GATES[set_verdict_"
+              "canonical]에 GATE_WRITE_CERT 무장 + set_verdict 가 attestor 선언 트리의 CANONICAL 승격에 서명 cert "
+              "강제(verb='set_verdict_canonical' 바인딩). ★dead-σ(FE5 open-but-observable): cert 강제는 트리가 "
+              "attestor 선언 시만 — 무-attestor 트리는 무인증 CANONICAL 유지(무회귀 1610 green). FE5 관측화가 "
+              "선행. VerdictIn.write_cert + CertCommandIn(metric_value/script_sha optional + verb) 스키마 확장.",
+        prom="write_cert.COMMAND_FIELDS verb + assurance set_verdict_canonical GATE_WRITE_CERT + judgement_service.set_verdict cert 검증",
+        prediction=Prediction(metric_name="ag5b_unsigned_irreversible_gaps", direction="lower",
+                              baseline_value=2.0, noise_band=0.0,
+                              novel_prediction="attestor 트리 CANONICAL 승격 서명강제 + cert verb-바인딩(submit-cert 를 canonical 에 재생 거부, 이중가드 green)",
+                              closes_question="q-rsov5-open-write-identity"),
+        novel_target=NovelTarget(metric_name="ag5b_ident_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_canonical_requires_cert_on_attestor_tree",
+        guard_mechanism="test_cert_is_verb_bound_sign_x_execute_y",
+    ),
 )
 
 
@@ -277,13 +297,13 @@ FRONTIER = [
     for n in NODES_DEF if n.prediction is not None
 ]
 
-# 정직 OPEN — 이번 회차(AG5-V3)가 닫지 *못한* 것들. 척추 AG1·AG2·DE1·AG3·AG4·AG5-V3(attested grade)
-#   착륙 완료 → q-rsov1·q-rsov3·q-rsov4·q-rsov5a 는 내림. ★q-rsov5(IDENT 서명강제 enforcement)는 OPEN.
+# 정직 OPEN — 이번 회차(AG5-IDENT)가 닫지 *못한* 것들. 척추 AG1~AG5(V3+IDENT)+FE5 착륙 완료 →
+#   q-rsov1·q-rsov3·q-rsov4·q-rsov5a·q-rsov5(open-write-identity: AG5-IDENT 이 닫음)·q-fe5 는 내림.
+#   ★잔여: CANONICAL 서명강제는 닫혔으나 delete/carve verb 게이팅은 미착륙(후속) + GO 잔여.
 OPEN_QUESTIONS = [
-    dict(name="q-rsov5-open-write-identity",
-         body="[AG5-IDENT/co-fundamental] attested *grade*(q-rsov5a)는 닫혔다. 남은 것: 무인증 open-write "
-              "(LAKATOS_API_TOKEN 미설정=no-op) 상태에서 비가역 verb(carve/CANONICAL/delete)에 서명을 "
-              "*강제*하고 cert 에 verb-판별자로 sign-X-execute-Y 봉인 — FE5 auth_posture 관측화 선행."),
+    dict(name="q-rsov5b-delete-carve-signed",
+         body="[AG5-IDENT 후속] CANONICAL 승격 서명강제는 착륙(q-rsov5). 남은 비가역 verb — delete_tree/"
+              "carve 는 별 call-path(mutations/writer)라 아직 cert-게이팅 미착륙. 같은 verb-바인딩 cert 로 확장 가능."),
     dict(name="q-go1-replay-exec-live",
          body="[GO1/user] AG3 값소유는 코드완료·dead-σ(LAKATOS_REPLAY_EXEC 기본 OFF). 라이브 σ0→1 은 "
               "도그푸드(별 프로세스/ephemeral 격리) 실증 후 exec 기본-ON flip — user GO 대기."),

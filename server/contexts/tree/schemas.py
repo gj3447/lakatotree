@@ -51,6 +51,8 @@ class VerdictIn(BaseModel):
     evidence_window: str = ""
     valid_until_rebutted: bool = True
     human_verdict: bool = False
+    # AG5-IDENT: attestor 선언 트리의 비가역 승격(CANONICAL)은 서명 cert 필수 — 명령은 cert 에서만 파싱.
+    write_cert: WriteCertIn | None = None
 
 
 class QuestionIn(BaseModel):
@@ -111,8 +113,9 @@ class CertCommandIn(BaseModel):
     tree: str
     tag: str
     prev_receipt_sha: str | None = None
-    metric_value: float
-    script_sha: str = ""
+    metric_value: float | None = None   # AG5-IDENT: canonical 승격 cert 는 measurement 없음(null-spec)
+    script_sha: str | None = None        # AG5-IDENT: canonical 은 script 없음(submit 은 sha 실음)
+    verb: str | None = None             # AG5-IDENT: cert 를 verb 에 바인딩(sign-X-execute-Y 봉인)
 
 
 class WriteCertIn(BaseModel):

@@ -34,7 +34,10 @@ CERT_HEADER = b"lakatos-write-cert\x00v1\n"   # 버전드 타입헤더(G1 영수
 CERT_MAX_AGE_SECONDS = 900.0                  # 발급시각 신선도 창(±) — 코드 상수(요청 가변 금지, G9 규율)
 
 # command 의 고정 필드셋 — 서명이 덮는 범위가 곧 명령의 전부(필드 추가 = 인코딩 버전 bump).
-COMMAND_FIELDS = ("tree", "tag", "prev_receipt_sha", "metric_value", "script_sha")
+COMMAND_FIELDS = ("tree", "tag", "prev_receipt_sha", "metric_value", "script_sha", "verb")
+# AG5-IDENT (측정주권 2026-07-03): verb 판별자 — cert 를 특정 verb 에 바인딩해 submit 용 cert 를
+#   canonical 승격에 재생(sign-X-execute-Y)하지 못하게 봉인한다. 옛 verb-없는 cert 는 verb=None 으로
+#   읽혀 verb 를 요구하는 경로(canonical/submit 강제)와 자동 불일치(하위호환은 무-attestor 트리로 성립).
 
 
 class CertError(ValueError):

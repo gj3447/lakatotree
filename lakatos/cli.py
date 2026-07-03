@@ -350,7 +350,8 @@ def main(argv=None):
         from lakatos.write_cert import build_write_cert
         chain = call('GET', f'/api/tree/{a.name}/node/{a.tag}/receipts')   # prev 포인터 회수(CAS 바인딩)
         command = dict(tree=a.name, tag=a.tag, prev_receipt_sha=chain.get('head'),
-                       metric_value=a.metric_value, script_sha=a.script_sha)
+                       metric_value=a.metric_value, script_sha=a.script_sha,
+                       verb=(getattr(a, 'verb', None) or 'submit_test_result'))   # AG5-IDENT: verb 바인딩
         out = build_write_cert(bytes.fromhex(a.secret_hex), command)
     elif a.cmd == 'tree-delete':
         out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))

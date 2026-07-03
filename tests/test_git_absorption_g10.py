@@ -69,7 +69,8 @@ def _svc(tree_props: dict):
 def _cert(sk: bytes, did: str, *, tag='seam', metric_value=1.0, script_sha='',
           prev=None, issued_at=_NOW, tamper_after_sign=None) -> WriteCertIn:
     command = dict(tree='T', tag=tag, prev_receipt_sha=prev,
-                   metric_value=metric_value, script_sha=script_sha)
+                   metric_value=metric_value, script_sha=script_sha,
+                   verb='submit_test_result')   # AG5-IDENT: cert 를 submit verb 에 바인딩
     sig = W.ed25519_sign(sk, W.canonical_cert_blob(command, issued_at))
     if tamper_after_sign:
         command.update(tamper_after_sign)   # 서명 후 명령 변조 = sign-X-execute-Y 시도

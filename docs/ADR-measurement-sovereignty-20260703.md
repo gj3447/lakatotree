@@ -112,6 +112,21 @@ cert 를 받지 않고, verb-게이팅은 `FE5 auth_posture` 관측화(open-but-
 않되*(dead-σ: 키 없는 배포를 409/부팅거부로 잠그지 않음) 관측가능하게 만든다. 이 관측화가 AG5-IDENT
 (비가역 verb 서명강제)의 명시적 선행조건이다.
 
+## 갱신 (AG5-IDENT 비가역 verb 서명강제 — q-rsov5 착륙, 2026-07-03)
+
+FE5 선행조건을 딛고 IDENT 의 *enforcement* 절반이 착륙했다(위 AG5-V3 갱신의 "미착륙" 해소):
+- **verb 판별자.** `write_cert.COMMAND_FIELDS` 에 `verb` 추가 — cert 가 특정 verb 에 바인딩되어 submit 용
+  cert 를 CANONICAL 승격에 재생(sign-X-execute-Y)하지 못한다. `CertCommandIn` 도 verb + metric_value/
+  script_sha optional(canonical 은 null-spec) 로 확장.
+- **CANONICAL 서명강제.** `assurance.VERB_GATES[set_verdict_canonical]` 에 `GATE_WRITE_CERT` 무장 +
+  `set_verdict` 가 attestor 선언 트리의 CANONICAL 승격에 서명 cert 를 강제(verb='set_verdict_canonical'
+  바인딩, fail-fast). `VerdictIn.write_cert` 스키마 추가.
+- ★**dead-σ 무회귀(1610 green):** cert 강제는 트리가 `attestor_dids` 를 선언했을 때만 — 무-attestor 트리
+  (대다수)는 무인증 CANONICAL 유지(FE5 open-but-observable 노선, 키 없는 배포 안 잠금).
+
+**잔여(q-rsov5b, 후속):** delete_tree/carve 는 별 call-path(mutations/writer)라 아직 cert-게이팅 미착륙 —
+같은 verb-바인딩 cert 로 확장 가능.
+
 ## 상태
 
 ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1 + AG4/R-SOV V2 착륙으로 갱신**
