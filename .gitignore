@@ -10,6 +10,10 @@ three_d_detection.html
 three_d_detection.dot
 three_d_detection.svg
 
+# Longinus 바인딩 대시보드 생성물 — 결정적 재생성(`python -m lakatos.longinus_dashboard`),
+# 정본=docs/longinus_bindings.json. 커밋하면 코드 이동 때마다 조용히 드리프트해서 추적 해제(형제 관례).
+longinus_bindings.html
+
 # Claude Code session worktrees/artifacts (not project)
 .claude/
 
