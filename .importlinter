@@ -4,6 +4,7 @@
 ; engine.py 는 이제 순수 foundation(io/quant import 0): LineageReplay* → io/replay.py, trust → root.
 
 [importlinter]
+include_external_packages = True
 root_packages =
     lakatos
     server
@@ -42,3 +43,18 @@ source_modules =
 forbidden_modules =
     server.adapters.mongo
     server.adapters.neo4j
+
+; ── 엔진 ⊥ examples: 도구는 콘텐츠에 의존하지 않는다 (2026-07-03) ────────────────────
+; "가지 늘리는데 왜 엔진 repo 를 건드리냐"의 정신모델을 계약으로 못 박는다: examples/(연구
+; 프로그램·콘텐츠)는 엔진(lakatos/·server/)을 *쓰지만*, 엔진은 examples 를 절대 import 하지
+; 않는다 = 방향성 경계. 위반 시 pip-설치 엔진(examples 없음)에서 크래시(cli.py:longinus
+; --dashboard 가 실제로 그랬다 → longinus_dashboard 를 엔진으로 이관해 봉합). include_external_
+; packages=True 라 examples 가 root 밖이어도 이 forbidden edge 를 grimp 이 본다(revert 로 검증).
+[importlinter:contract:engine-independent-of-examples]
+name = engine (lakatos, server) must not import examples (tool ⊥ content, directional boundary)
+type = forbidden
+source_modules =
+    lakatos
+    server
+forbidden_modules =
+    examples
