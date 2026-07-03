@@ -4,7 +4,9 @@
 ; engine.py 는 이제 순수 foundation(io/quant import 0): LineageReplay* → io/replay.py, trust → root.
 
 [importlinter]
-root_package = lakatos
+root_packages =
+    lakatos
+    server
 
 [importlinter:contract:engine-layers]
 name = engine layers: programme > verdict > quant > io (no upward import)
@@ -14,10 +16,29 @@ layers =
     lakatos.verdict
     lakatos.quant
     lakatos.io
-; foundation 예외(문서화된 설계): eureka 는 root 공유 detector 로, 설계상 verdict/quant 의
-; primitive 를 *합성*한다(eureka.py docstring: "composes ... promote.promotion_gate (fail-closed)").
-; 이 한 edge 만 면제 — 이것이 위 header 가 명시한 "eureka 는 foundation, 계약 대상 아님"의 인코딩이다.
-; (※ quant.metrics→eureka→verdict.promote 의 상향 체인은 이 edge 면제로 끊긴다. 다른 상향 import 는
-;  여전히 전수 차단된다. 더 순수한 대안=eureka 의 promotion_gate 의존성 주입은 후속 frontier.)
-ignore_imports =
-    lakatos.eureka -> lakatos.verdict.promote
+; (구 eureka 면제 제거: 아키텍처 감사 2026-06-26, finding D3/eureka) — eureka 가 promotion_gate 를 *주입*으로
+; 받게 바뀌어(verdict.promote module-level import 제거) quant.metrics→eureka→verdict.promote 상향 체인이
+; 소멸했다. 이제 layers 계약은 *예외-제로*다(ignore_imports 불필요). dead-weight carve-out 1줄 삭제.
+
+; ── 서버 구조도 도구로 동결 (아키텍처 감사 2026-06-26, finding D6/F2) ──────────────────
+; 엔진 계층은 위에서 기계검증되는데 더 크고 churn 많은 server/(DDD 바운디드 컨텍스트 + 헥사고날)는
+; 여태 *규율로만* 유지됐다(import-linter 계약 0). 두 계약으로 오늘의 구조를 회귀로부터 못 박는다:
+;  (1) tree ⊥ lineage  : 두 바운디드 컨텍스트는 서로 import 금지(공유 커널=lakatos.Derivation 으로만 통합).
+;  (2) contexts ↛ adapters : 컨텍스트 서비스는 concrete 드라이버(mongo/neo4j) import 금지 —
+;      adapters 는 합성 루트(app.py/container.py)만 만진다(DIP: 안쪽은 추상에만 의존).
+[importlinter:contract:server-context-independence]
+name = server bounded contexts: tree ⊥ lineage (no cross-context import)
+type = independence
+modules =
+    server.contexts.tree
+    server.contexts.lineage
+
+[importlinter:contract:server-contexts-no-adapters]
+name = server contexts must not import concrete adapters (only the composition root may)
+type = forbidden
+source_modules =
+    server.contexts.tree
+    server.contexts.lineage
+forbidden_modules =
+    server.adapters.mongo
+    server.adapters.neo4j

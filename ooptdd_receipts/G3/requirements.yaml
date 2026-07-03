@@ -1,0 +1,41 @@
+# git-흡수 G3(봉인 1-verb 정직 사이클) — ooptdd 정식 영수증 (LTDD 측정층 × judge 판정층 이중).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=g3_receipt.verify 가 *실제*
+# ProgrammeService.run_cycle(재구현 금지)을 fake 세계 위에서 구동해 봉인/롤백/경제학/incore 오라클을
+# 구조화 이벤트로 ship. 음성 오라클(롤백 무력화→debris 검출)로 vacuous green 차단.
+name: lakatotree-git-absorption-g3-one-verb-honest-cycle
+target:
+  mode: in_process
+  callable: g3_receipt:verify              # verify(backend, cid)
+  backend: memory
+  root: "."   # 러너가 절대 root 로 오버라이드
+
+requirements:
+  - id: G3-1
+    description: 정직경로 봉인 — client 1 verb(run_cycle)가 노드+사전등록+판결영수증 전 파이프라인 완수
+    gate:
+      - {event: cycle_one_verb_full_receipt, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:G3:cycle_one_verb_full_receipt
+      source: g3_receipt.py
+      symbol: verify
+      must_emit: cycle_one_verb_full_receipt
+  - id: G3-2
+    description: porcelain 경제학 역전 — 정직경로 호출수(1) < note 경로(2), 기계적 카운트
+    gate:
+      - {event: cycle_call_economics_inverted, op: ">=", count: 1}
+  - id: G3-3
+    description: 봉인 트랜잭션 롤백 — pre-receipt 실패(predict/submit) 각각 신규노드 0 (stage 2종 = 이벤트 2)
+    gate:
+      - {event: cycle_rollback_zero_nodes, op: ">=", count: 2}
+  - id: G3-4
+    description: 영수증 내구점 — 판결 영수증 착륙 후 실패는 롤백 금지(G1 불변영수증·G9 증거불멸 존중)
+    gate:
+      - {event: cycle_receipt_durable_after_submit, op: ">=", count: 1}
+  - id: G3-5
+    description: incore trial — dry_run 은 판정 미리보기만, 쓰기 0 (git commit --dry-run/merge-ort incore)
+    gate:
+      - {event: cycle_dry_run_zero_writes, op: ">=", count: 1}
+  - id: G3-6
+    description: 음성 오라클 — 롤백 무력화 시 debris 가 검출됨(오라클 이빨 증명, no-fake-green)
+    gate:
+      - {event: cycle_rollback_negative_oracle, op: ">=", count: 1}

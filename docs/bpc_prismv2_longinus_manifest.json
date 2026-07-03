@@ -10,7 +10,10 @@
     "PLAN_BPC_PrismV2_EarlyAckRGBA_V16Barcode_AI_Fallback_20260611_IMPL",
     "CT_BPC_V16Label_To_Lot_20260609",
     "CT_PrismV2_To_BpcIcpSpec_AIPipeline_20260529",
-    "PLAN_PrismV2_TrueCustomPipeline_20260527"
+    "PLAN_PrismV2_TrueCustomPipeline_20260527",
+    "PrismV2.DevelopCanonicalBranch.20260630",
+    "consumer_b.FeatureLocalMeasurementGate.LakatoTree.20260630",
+    "consumer_b.TabBoltZCapabilityGate"
   ],
   "longinus": {
     "sourceId": "LakatoTree.BpcPrismV2SegKnowledgePack",
@@ -19,6 +22,26 @@
     "manifestSourcePath": "docs/bpc_consumer_a_longinus_manifest.json:1",
     "binding_state": "PIERCED"
   },
+  "longinus_decisions_20260630": [
+    {
+      "sourceId": "PrismV2.DevelopCanonicalBranch.20260630",
+      "sourcePath": "<WORKSPACE>/PROJECT/3D/BPC_ICP_SPEC/evidence/prom_consumer_a_develop_branch_policy_longinus_20260630.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "tag": "feature_local_gate_20260630",
+      "parent": "consumer_a_port365",
+      "binding_state": "PIERCED",
+      "claim": "PrismV2 multi-agent development source of truth is origin/develop; stale user/feature worktrees must merge or rebase origin/develop before integration."
+    },
+    {
+      "sourceId": "consumer_b.FeatureLocalMeasurementGate.LakatoTree.20260630",
+      "sourcePath": "<WORKSPACE>/PROJECT/3D/BPC_ICP_SPEC/evidence/prom_bpc_feature_local_measurement_gate_lakatotree_20260630.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "tag": "feature_local_gate_20260630",
+      "parent": "consumer_a_port365",
+      "binding_state": "PIERCED",
+      "claim": "Global registration is frozen/gated view_health; product verdicts use feature-id local geometry and measurement capability."
+    }
+  ],
   "hard_core": [
     "2d_segmentation_is_location_and_coarse_decision_only",
     "3d_geometry_is_measurement_truth",
@@ -27,6 +50,8 @@
     "cup_uses_cad_prior_bore_edge_delta_and_nadir_z",
     "big_02_big_09_are_defects_not_calibration_anchors",
     "tab_bolt_preserves_base_tab_washer_top_head_top",
+    "tab_bolt_weak_view_or_high_zspread_is_capability_not_product_truth",
+    "global_registration_health_is_not_product_verdict_truth",
     "label_segmentation_is_roi_helper_not_lot_truth"
   ],
   "segmentation_classes": [
@@ -175,6 +200,21 @@
   ],
   "consumer_a_bindings": [
     {
+      "sourceId": "PrismV2.DevelopCanonicalBranch.20260630",
+      "sourcePath": "../consumer_a/docs/AGENT_BRANCH_POLICY_20260630.md:1",
+      "purpose": "multi_agent_develop_branch_policy"
+    },
+    {
+      "sourceId": "consumer_a.part_375.measure_lot.view_health",
+      "sourcePath": "../consumer_a/consumer_a_core/domain/bpc_inspection/dc375_lot_pipeline.py:2714",
+      "purpose": "frozen_global_registration_health_report_not_product_truth"
+    },
+    {
+      "sourceId": "consumer_a.part_375.TabBoltStepPolicy.zspread_suspect_mm",
+      "sourcePath": "../consumer_a/consumer_a_core/domain/bpc_inspection/dc375_lot_pipeline.py:177",
+      "purpose": "tab_bolt_high_z_layer_spread_capability_gate"
+    },
+    {
       "sourceId": "bpc_feature_contract.BPC_2DMASKEDBASE_CLASSES",
       "sourcePath": "../consumer_a/services/inspection/src/adapters/bpc/bpc_feature_contract.py:10",
       "purpose": "production_measurement_class_contract"
@@ -289,7 +329,8 @@
   ],
   "recommended_lakatotree_node": {
     "tree": "LakatosTree_BPC_20View_20260612",
-    "tag": "seg_v3_consumer_a_contract",
+    "tag": "feature_local_gate_20260630",
+    "parent": "consumer_a_port365",
     "metric": "contract_missing_count",
     "direction": "lower",
     "novel_metric": "seg_contract_missing_count",
@@ -402,5 +443,34 @@
       "gate_rule": "lot capture_date > 2026-06-16 AND calib=group-A → 측정거부 (CALIB_GEOMETRY_GATE_PATCH_20260624.md)",
       "fix": "GROUP_B_CALIB_BOARD_RECAPTURE_SPEC_20260624.md — ★SUPERSEDED 2026-06-25: 재촬영 불필요(기존 VFQZ0016~0024 보드로 재솔브). evidence c3_groupB_calib_solved_20260625.md"
     }
-  }
+  },
+  "session_consolidations_20260630": [
+    {
+      "sourceId": "consumer_b.StepDisplay.NormalizerKeyMiss.20260630",
+      "kg_node": "impl-jgbpc-step-normalizer-keymiss-fix-20260630",
+      "sourcePath": "<WORKSPACE>/.claude/projects/-data-user-PROJECT-3D/memory/bpc-ui-render-verified-tabbolt-gabz-miskey.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "binding_state": "PIERCED",
+      "session": "fa7996a3_20260630",
+      "claim": "탭볼트 단차 빈칸 진범=hole_result_normalizer.py:123 deviation_washer_z_mm→dev_washer_z_mm 리네임, mapper feature_info_mapper.py:156 미스(라이브+리플레이 둘다 '-'). fix=노멀라이저 원래이름 보존+local_zdf_replay gated washer편차 emit. 90 PASS+e2e PASS."
+    },
+    {
+      "sourceId": "consumer_b.Laptop.DtRunAndCodeSync.20260630",
+      "kg_node": "proc-jgbpc-laptop-app-dt-run-and-codesync-20260630",
+      "sourcePath": "<WORKSPACE>/.claude/projects/-data-user-PROJECT-3D/memory/bpc-laptop-app-run-dt-fix-codesync-20260630.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "binding_state": "PIERCED",
+      "session": "fa7996a3_20260630",
+      "claim": "노트북 consumer_b 풀앱+좌측 실GL DT. 진범=런처bat ACP파이썬·.env.local없어 db_agent크래시·SSH세션0 + 옛 DT블록 import raise→2D폴백; origin/user 2커밋뒤→머지 e1e921d(충돌0) 복구. fix=run_app_laptop.bat+schtasks /it. 진단 py-spy."
+    },
+    {
+      "sourceId": "consumer_b.Docs.StructureMermaidAndRunbook.20260630",
+      "kg_node": "doc-bpc-structure-mermaid-and-test-runbook-20260630",
+      "sourcePath": "<WORKSPACE>/PROJECT/3D/COMMENTS/RUNBOOK_테스트_정상동작.md:1",
+      "tree": "LakatosTree_BPC_20View_20260612",
+      "binding_state": "PIERCED",
+      "session": "fa7996a3_20260630",
+      "claim": "두 프로그램 구조 mermaid 13장(COMMENTS/mermaid/, mmdc 통과)+테스트·정상동작 런북(5축). 시간병목=persist/IO지 추론 아님."
+    }
+  ]
 }

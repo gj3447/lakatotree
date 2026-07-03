@@ -10,8 +10,11 @@ env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB,
      (선택) LAKATOS_API_TOKEN (run.sh 가 .env 에서 주입)  # OPS-HON-4: LAKATOS_PG_DSN 은 미존재였음
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
-import json, logging, os, secrets, sys
-from contextlib import asynccontextmanager, contextmanager
+import logging
+import os
+import secrets
+import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -21,6 +24,7 @@ from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
 from lakatos.programme.kuhn import assess_paradigm, propose_supersession
 from lakatos.programme.explore import rank_questions
+from lakatos.verdicts import receipt_content_sha
 from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
@@ -30,7 +34,6 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import TypeAdapter
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
-import psycopg2.pool
 from psycopg2 import OperationalError as PgOperationalError
 from server.adapters.mongo import LazyMongoDatabase
 from server.adapters.neo4j import LazyNeo4jDriver
@@ -44,7 +47,7 @@ from server.api_schemas import (
     ElementIn,
     ElementUseIn,
     FoundationRequirementIn,
-    LonginusRefIn,
+    LonginusRefIn,   # noqa: F401 — re-export(테스트/외부: server.app.LonginusRefIn)
     NodeIn,
     ObservationIn,
     ParentEdgeIn,
@@ -68,7 +71,9 @@ from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
-from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha
+from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha   # noqa: F401 — _file_sha re-export(테스트/외부)
+from lakatos.io.replay import producer_replay as _producer_replay   # 나생문 #1 live: 채점 스크립트 재실행 판정
+from lakatos.io.prov import replay_command as _replay_command       # judge_script(경로)+result_path → 재현명령
 from server.container import AppContainer
 from server.settings import ServerSettings
 
@@ -177,6 +182,47 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
+@app.get('/version')
+def version():
+    """서빙 코드 신원 + stale 자기보고(G2, S5 봉합). 배포 프로브가 boot_git_sha vs disk_head_sha 로 stale 탐지.
+
+    이전엔 /version 이 없어 프로세스가 어느 커밋에서 부팅했는지 알 수 없었다(6커밋 stale 서빙이 감지 불가였음)."""
+    from server.version import served_version
+    return served_version()
+
+
+@app.get('/api/ops/fsck')
+def ops_fsck(tree: str = '', emit_skiplist: bool = False):
+    """R6 전수감사 verb(비변이) — fsck_node *같은 callable* 로 전 트리 노드 record 스캔(재구현 금지 —
+    가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/fsck_skiplist.json, record
+    content-sha)는 감사·경계 동일 주입. ?emit_skiplist=1 = 면제 후보 방출(사람 검토→git 커밋 파이프라인).
+    projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도)."""
+    from server.contexts.audit import fsck as _fsck
+    names = [tree] if tree else [r['name'] for r in kg('MATCH (t:LakatosTree) RETURN t.name AS name ORDER BY t.name')]
+    skip = _fsck.load_skiplist()
+    findings, candidates, total = [], [], 0
+    for n in names:
+        td = tree_data(n)
+        for row in td.get('nodes', []):
+            total += 1
+            fs = _fsck.fsck_node(row, skiplist=skip)
+            for f in fs:
+                findings.append(dict(tree=n, tag=row.get('tag'), check_id=f.check_id,
+                                     severity=f.severity, detail=f.detail))
+            if emit_skiplist and fs:
+                candidates.append(dict(tree=n, tag=row.get('tag'), sha=_fsck.record_content_sha(row),
+                                       checks=sorted({f.check_id for f in fs})))
+    counts: dict = {}
+    for f in findings:
+        counts[f['check_id']] = counts.get(f['check_id'], 0) + 1
+    out = dict(trees=len(names), total_records=total, findings_count=len(findings),
+               counts=counts, skiplist_size=len(skip),
+               findings=findings[:500], findings_truncated=max(0, len(findings) - 500))
+    if emit_skiplist:
+        out['skiplist_candidates'] = candidates
+    return out
+
+
 @app.post('/api/ops/reconcile-outbox')
 def reconcile_outbox_op():
     """B1 복구 운영 트리거(#4) — pending OutboxEntry(KG 정본)를 PG history 에 *멱등* 재적용.
@@ -262,6 +308,7 @@ def _judgement_service():
         hist=hist,
         foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
         reproducible_for_node=_reproducible_for_node,
+        producer_replay_for_node=_producer_replay_for_node,   # 나생문 #1 live: 채점 스크립트 재실행 검증
     )
 
 
@@ -418,6 +465,67 @@ def _reproducible_for_node(name: str, tag: str) -> bool | None:
     return True
 
 
+# 나생문 #1 live producer replay — 채점 스크립트 재실행 검증. 보안: opt-in(LAKATOS_REPLAY_EXEC), 기본 OFF.
+_REPLAY_TOL = 1e-9          # 서버 *고정* 허용오차 — 결정론적 재실행이라 client noise_band 로 넓히지 않는다(review #3)
+_replay_exec_warned = False
+
+
+def _replay_exec_enabled() -> bool:
+    """LAKATOS_REPLAY_EXEC 을 *명시적 boolean* 으로 — '0'/'false'/'off' 도 truthy 라 켜지던 footgun 차단(review #2).
+    켜질 때 한 번 loud warning(서버가 client judge_script 를 재실행한다는 경고)."""
+    global _replay_exec_warned
+    on = os.environ.get('LAKATOS_REPLAY_EXEC', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    if on and not _replay_exec_warned:
+        logging.warning('LAKATOS_REPLAY_EXEC 활성 — 서버가 producer replay 로 client judge_script 를 재실행한다. '
+                        'sandbox 격리(컨테이너/seccomp/rlimit)를 운영자가 보장할 것.')
+        _replay_exec_warned = True
+    return on
+
+
+def _replay_run(score_cmd: str) -> tuple[str, int]:
+    """채점 *재현명령*('python <script> <result_path>') sandbox 재실행 — 게이트 하에서만 호출됨(가드).
+
+    timeout 으로 행 차단, shell=False(shlex.split)로 shell 주입 차단. 더 강한 격리(컨테이너/seccomp/rlimit)는
+    운영자 책임/후속 — live exec 은 opt-in 이며 기본 OFF. hermetic 테스트선 monkeypatch 됨.
+    """
+    import shlex
+    import subprocess
+    try:
+        argv = shlex.split(score_cmd or '')
+        if not argv:
+            return ('replay_error:empty_cmd', 1)
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+    except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+        return (f'replay_error:{type(exc).__name__}', 1)   # 비정상 → producer_replay 가 verified=False 로 처리
+    return (p.stdout, p.returncode)
+
+
+def _producer_replay_for_node(name: str, tag: str) -> bool | None:
+    """나생문 #1 근본 봉합(live): 노드의 채점 스크립트를 *실제 재실행*해 recorded metric_value 검증(위조 적발).
+
+    보안 기본: LAKATOS_REPLAY_EXEC 게이트 OFF 면 client 스크립트를 *실행하지 않고* None(증명불가, 비차단).
+    게이트 ON 이면 judge_script(경로) + result_path 로 prov.replay_command('python <script> <result_path>')를 만들어
+    (review #1: judge_script 는 *경로*지 명령이 아니다 — 그대로 exec 하면 모든 실노드서 실패) _replay_run 으로 재실행,
+    io.replay.producer_replay 로 recorded 와 *서버 고정 tol* 대조 → True/False/None. judge_script 가 'inline'/
+    'file::symbol'(재현명령으로 만들 수 없는 형태)이면 None(증명불가).
+    set_verdict 가 synthesize_promotion(producer_replay_verified=)로 흘려 measurement_externally_anchored 세 번째 앵커.
+    """
+    if not _replay_exec_enabled():
+        return None   # 게이트 OFF: client 스크립트 비실행(보안 기본)
+    rows = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                 RETURN e.judge_script AS judge_script, e.metric_value AS metric_value,
+                        e.result_path AS result_path''', tree=name, tag=tag)
+    if not rows:
+        return None
+    r = rows[0]
+    js, mv, rp = r.get('judge_script'), r.get('metric_value'), r.get('result_path')
+    if not js or mv is None or js == 'inline' or '::' in js:
+        return None   # inline/file::symbol(재현명령 불가)·측정 부재 → 증명불가
+    score_cmd = _replay_command(js, rp or '')   # 'python <script> <result_path>' (provenance 재현형식과 동일)
+    v = _producer_replay(score_cmd=score_cmd, recorded_metric=float(mv), run_bash=_replay_run, tolerance=_REPLAY_TOL)
+    return v.verified
+
+
 def _foundation_rows(name: str):
     return kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_FOUNDATION]->(fr:FoundationRequirement)
                  RETURN fr.short_name AS name, fr.kind AS kind, fr.question AS question,
@@ -512,6 +620,10 @@ def leaderboard_view(trees: str, snapshot: bool = False):
     if len(names) < 2:
         raise HTTPException(422, '비교는 트리 ≥2 (trees=a,b,...)')
     lb = build_leaderboard([_competitor_for_tree(n) for n in names])
+    # G6: 리더보드 행에 보증 tier 공시 — 점수 비교의 전제(어느 tier 게이트를 지난 점수인가)를 점수 옆에.
+    tiers = {n: (tree_data(n).get('assurance_tier') or 'legacy') for n in names}
+    for row in lb.get('rows', []):
+        row['assurance_tier'] = tiers.get(row.get('name'), 'legacy')
     if snapshot:
         MONGO['leaderboard_snapshots'].insert_one(dict(
             key=','.join(sorted(names)), at=datetime.now(timezone.utc).isoformat(), board=lb))
@@ -560,7 +672,10 @@ def _belief(b: BeliefIn) -> Belief:
 
 def _load_belief_base(tree: str) -> list:
     """A4: 트리의 영속 belief base 를 KG 에서 로드 (HAS_BELIEF). 없으면 빈 base."""
+    # G9(git-흡수 2026-07-02): active base = 포인터가 살아있는(abandoned=false) belief 만. 폐기된 belief 는
+    #   물리 삭제가 아니라 abandoned=true 로 표식(git prune: 도달가능 객체는 불멸, 포인터만 죽는다) — 증거 불멸.
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(b:Belief)
+                 WHERE coalesce(b.abandoned, false) = false
                  RETURN b.belief_id AS belief_id, b.statement AS statement, b.kind AS kind,
                         b.credence AS credence, b.problem_balance AS problem_balance,
                         b.connectivity AS connectivity, b.depends_on AS depends_on
@@ -585,24 +700,71 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                MERGE (bel:Belief {belief_id: b.belief_id})
                SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
                    bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
-                   bel.depends_on=b.depends_on, bel.updated_at=$ts
+                   bel.depends_on=b.depends_on, bel.updated_at=$ts,
+                   bel.abandoned=false, bel.was_credence=null, bel.was_kind=null
                MERGE (t)-[:HAS_BELIEF]->(bel)""", dict(tree=tree, beliefs=beliefs, ts=ts))]
+    # G9 TRAP1: r.base(결과 base)에 재등장한 belief 는 abandoned=false 로 *부활*(git branch-revive). removed
+    #   에만 있는 belief 는 아래에서 abandoned=true 표식. 두 op 가 한 tx 라 revive/abandon 이 원자적으로 갈린다.
     demote = list(r.removed) + ([old_canonical_id] if op == 'demote_canonical' and old_canonical_id else [])
     if r.removed:
+        # G9: 폐기=포인터 죽음(비파괴) — DETACH DELETE 대신 abandoned 표식 + was_* 복구영수증(branch.c '(was oid)').
+        #   belief 노드·엣지·의존 증거는 도달가능하게 잔존. 물리 소거는 도달성 스윕의 prunable 게이트만 소유.
         ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(bel:Belief)
-                       WHERE bel.belief_id IN $removed DETACH DELETE bel""",
-                    dict(tree=tree, removed=list(r.removed))))
+                       WHERE bel.belief_id IN $removed
+                       SET bel.abandoned=true, bel.was_credence=bel.credence,
+                           bel.was_kind=bel.kind, bel.abandoned_at=$ts""",
+                    dict(tree=tree, removed=list(r.removed), ts=ts)))
     if demote:
         # auto-rejudge: belief 가 사라진/강등된 같은 tag 의 CANONICAL 노드를 엔진이 강등(수동 재채점 0).
         # A4-richer: spine.reconcile_standing 정책 적용 — CANONICAL ∧ valid_until_rebutted=True 만
         # 자동 강등. 인간이 '반박-자동무효'를 끈 노드(valid_until_rebutted=False=human_locked)는 belief
         # contraction 으로도 자동 강등 금지(인간경계 존중). 전엔 blanket SET 이 이 lock 을 무시했음(버그).
-        ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
-                       WHERE e.tag IN $demote AND e.verdict='CANONICAL'
-                             AND coalesce(e.valid_until_rebutted, true) = true
-                       SET e.verdict='former_canonical', e.verdict_source='engine',
-                           e.current_best_pointer=false, e.demoted_at=$ts""",
-                    dict(tree=tree, demote=demote, ts=ts)))
+        # R4(후속 PROM): blanket → per-tag 가드 op — 각 강등이 v1 null-스펙 :VerdictReceipt 를 동반한다.
+        #   per-tag prev 포인터는 pre-read(fail-safe: KG-less 환경/조회실패 시 기존 blanket 무영수증 경로
+        #   유지 — 회귀 0, 영수증 공백은 fsck FORCEFUL_SOURCE_WITHOUT_RECEIPT 가 후행 감사). CAS 미스
+        #   (동시 재채점/head 전진)는 그 태그만 no-op(skip) — critique-side H7 skip 의미론과 동형.
+        _prevs = None
+        try:
+            _prevs = {r['tag']: r.get('prev') for r in kg(
+                """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                   WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                         AND coalesce(e.valid_until_rebutted, true) = true
+                   RETURN e.tag AS tag, e.current_receipt_sha AS prev""",
+                tree=tree, demote=demote)}
+        except Exception:
+            _prevs = None   # fail-safe: 불확실하면 기존 경로(강등은 하되 영수증 없이 — 파괴적 아님)
+        if not _prevs:
+            # 빈 pre-read 도 blanket 폴백 — (a) KG-less/fake 환경 (b) read→tx 사이 canonical 등장(TOCTOU)
+            #   모두에서 강등 의미론(blanket WHERE 재검사)이 보존된다. per-tag 영수증은 pre-read 가 실제
+            #   canonical 을 본 경우에만(원장 공백은 fsck 가 후행 감사 — R6).
+            _prevs = None
+        if _prevs is None:
+            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
+                           WHERE e.tag IN $demote AND e.verdict='CANONICAL'
+                                 AND coalesce(e.valid_until_rebutted, true) = true
+                           SET e.verdict='former_canonical', e.verdict_source='engine',
+                               e.current_best_pointer=false, e.demoted_at=$ts""",
+                        dict(tree=tree, demote=demote, ts=ts)))
+        else:
+            for _tag, _prev in _prevs.items():
+                _rsha = receipt_content_sha(dict(
+                    tree=tree, tag=_tag, target_id=None, verdict='former_canonical',
+                    verdict_source='engine', metric_name=None, metric_value=None,
+                    novel_confirmed=None, lakatos_status=None, judged_at=ts,
+                    judge_script_sha=None, prev_receipt_sha=_prev))
+                ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                               WHERE e.verdict='CANONICAL'
+                                     AND coalesce(e.valid_until_rebutted, true) = true
+                                     AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                               SET e.verdict='former_canonical', e.verdict_source='engine',
+                                   e.current_best_pointer=false, e.demoted_at=$ts
+                               MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                                 ON CREATE SET rec.tree=$tree, rec.tag=$tag,
+                                   rec.verdict='former_canonical', rec.verdict_source='engine',
+                                   rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                               MERGE (e)-[:HAS_RECEIPT]->(rec)
+                               SET e.current_receipt_sha=$rsha""",
+                            dict(tree=tree, tag=_tag, ts=ts, prev_rsha=_prev, rsha=_rsha)))
     kg_tx(ops)
     hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
                                   'programme_shift_candidate': r.programme_shift_candidate,
@@ -626,7 +788,7 @@ def agm_revise(req: AgmReviseIn):
         if req.op == 'expansion':
             if not req.new:
                 raise HTTPException(422, 'expansion 은 new 필수')
-            r = expansion(base, _belief(req.new))
+            r = expansion(base, _belief(req.new), allow_hard_core=req.allow_hard_core)
         elif req.op == 'contraction':
             if not req.target_id:
                 raise HTTPException(422, 'contraction 은 target_id 필수')

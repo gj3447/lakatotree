@@ -16,6 +16,7 @@ from lakatos.quant.laudan import (branch_problem_balance_windowed, problem_balan
 from lakatos.quant.bayes import branch_credence, should_abandon_bayes
 from lakatos.quant.fertility import predictive_fertility, nobel_grade
 from lakatos.eureka import eureka_over_tree
+from lakatos.verdicts import FORCEFUL_SOURCES
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
 from lakatos.verdicts import (PROGRESS_VERDICTS, CONFIRMED_NOVEL_PROGRESS,
@@ -276,7 +277,9 @@ def _fertility_layer(tv: '_TreeView | list', by: dict | None = None,
     """이론 발전성 — 정본경로 novel 예측 적중 track record (과학=예측력). nobel_grade 동봉."""
     if not isinstance(tv, _TreeView):
         tv = _tv(nodes=nodes, by=by, path=tv)
-    fert = predictive_fertility([tv.by[t] for t in tv.path]) if tv.path else predictive_fertility(tv.nodes)
+    # G5: 스코프 명시 — tree_metrics 는 정본경로(canonical_path) 발전성. path 없으면 all_nodes 로 폴백(라벨도 그렇게).
+    fert = (predictive_fertility([tv.by[t] for t in tv.path], scope='canonical_path')
+            if tv.path else predictive_fertility(tv.nodes, scope='all_nodes'))
     fert['nobel_grade'] = nobel_grade(fert)
     fert['note'] = '진보=새 사실을 미리 맞히는 것. nobel_grade=예측 수 충분∧적중률≥0.7'
     return fert
@@ -289,6 +292,18 @@ def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
     if not isinstance(tv, _TreeView):
         tv = _tv(nodes=nodes, by=by, path=tv)
     return eureka_over_tree([tv.by[t] for t in tv.path]) if tv.path else eureka_over_tree(tv.nodes)
+
+
+def _anchored_ratio(nodes: list) -> dict:
+    """P0b(ManifestoGap R8): cross-metric novel 판결(novel_server_anchored 필드 보유) 중 *서버앵커*
+    비율 — FF1 이 default-ON(신규 anchored 트리)인지, 아니면 novel 이 client float 한 줄로 서는지의
+    단일 관측. 분모 = novel_server_anchored 가 판정된 노드(True/False), 분자 = True. G5 단일 프로젝터."""
+    judged = [r for r in nodes if r.get('novel_server_anchored') is not None]
+    anchored = sum(1 for r in judged if r.get('novel_server_anchored'))
+    return dict(scope='all_nodes', novel_measured=len(judged), server_anchored=anchored,
+                anchored_ratio=round(anchored / len(judged), 3) if judged else None,
+                note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
+                     'None=novel 판정 노드 없음.')
 
 
 def _multiplicity_screen(nodes: list) -> dict:
@@ -362,6 +377,13 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     rejected = [r['tag'] for r in nodes if r['verdict'] == 'rejected']
     open_q = sum(1 for q in frontier if q['status'] == 'OPEN')
     closed_q = sum(1 for q in frontier if q['status'] == 'CLOSED')
+    # R7: receipted close — closed_by 노드가 영수증(FORCEFUL) 판결을 실제로 보유한 close 만 분자.
+    #   무채점(draft/미존재) closer 의 close 는 unreceipted 로 세분(기존 close_ratio 는 불변 병행).
+    _by_tag = {r.get('tag'): r for r in nodes}
+    receipted_closed_q = sum(
+        1 for q in frontier if q['status'] == 'CLOSED'
+        and any((_by_tag.get(cb) or {}).get('verdict_source') in FORCEFUL_SOURCES
+                for cb in (q.get('closed_by') or [])))
     annotated = sum(1 for r in nodes
                     if r.get('algorithm') and r.get('comment') and r.get('limitation'))
     # 공유 트리 구조 1회 계산 → 각 지표 함수는 tv 하나만 받는다(결합을 1급 객체로).
@@ -377,6 +399,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                          trust_coverage_mode=cfg.get('trust_coverage_mode'))
     fert = _fertility_layer(tv)
     eureka = _eureka_layer(tv)
+    anchored = _anchored_ratio(nodes)   # P0b(MG R8): cross-metric novel 중 서버앵커 비율
     multiplicity = _multiplicity_screen(nodes)
     coverage = _coverage(cfg)
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
@@ -388,13 +411,27 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
                else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
 
+    if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
+        _drift = anchored['novel_measured'] - anchored['server_anchored']
+        alerts = [*alerts, f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
+                           f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). anchored_ratio="
+                           f"{anchored['anchored_ratio']}"]
+    if closed_q - receipted_closed_q > 0:
+        alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 무채점 "
+                           f"노드(close_ratio 는 유지, close_ratio_receipted 로 세분 공시; 재귀속은 ADR+GO)"]
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
                 rejected=rejected, max_degeneration_depth=stalled,
                 frontier=dict(open=open_q, closed=closed_q,
-                              close_ratio=round(closed_q / max(1, open_q + closed_q), 2)),
+                              close_ratio=round(closed_q / max(1, open_q + closed_q), 2),
+                              # R7: 병행 공시(기존 close_ratio 비파괴) — 분자 = CLOSED 중 closed_by
+                              # 노드가 영수증(FORCEFUL) 판결 보유. 무채점 close 가 Pareto/close_ratio 를
+                              # 떠받치는 왜곡을 사실로 노출한다(재귀속은 ADR+user GO 별도).
+                              close_ratio_receipted=round(
+                                  receipted_closed_q / max(1, open_q + closed_q), 2),
+                              unreceipted_closes=closed_q - receipted_closed_q),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
-                eureka=eureka, multiplicity=multiplicity, alerts=alerts,
+                eureka=eureka, anchored=anchored, multiplicity=multiplicity, alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
                                 mode=('lenient-counted' if lenient else 'inconclusive-excluded')))

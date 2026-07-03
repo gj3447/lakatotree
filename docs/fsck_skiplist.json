@@ -1,0 +1,5521 @@
+{
+ "_doc": "fsck per-record 면제(git per-OID skiplist 이식). 기준: 캠페인 기계가 :55170 에서 실제 서빙되기 시작한 2026-07-02T13:41Z 이전 judged/recorded 레코드(구기계 경유 = 체제 이전 유물) + judged_at 타입부패(dict) 세대. 내용 1글자 변경 = sha 이탈 = 면제 자동 소멸. 신규: /api/ops/fsck?emit_skiplist=1 → 사람 검토 → 커밋. hot 잔여 2건(서빙 체제 이후 SOURCE_TRUST_NULL)은 의도적 미면제 — None-source_trust 쓰기 경로가 살아있다는 신호(R7 재료).",
+ "reviewed_at": "2026-07-03T01:4x+09:00",
+ "reviewed_by": "fable-r6 (기준=서빙 체제 경계 13:41Z)",
+ "entries": [
+  {
+   "sha": "974b95745983e07b8681ceffe0236a6426e75c9b04f6b164fcfc9994c779bc23",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "billing",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0dd9cdc992e34f7c71477601d012707407b1928f4b23784f4295a5883b3afaa1",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "consensus",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "899650bb98122620498d56506f97cdb716a1c6d9ba32b6db42965cce176d2918",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "crdt",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9cbdbbcd3a68602be19a8a18d6f2fc98df6ea8e7490ee47893bd721b8532b38b",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "discovery",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "64df378bd2a44e05ae6d60ce7eba98a98f8ebb73c4303056ec1d74f32457bfe0",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "identity",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1bf1b036d3827b05f4eecc8dc8f0d57d79ffa38bd968bc228ca1621c8f616319",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "ltdd",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7cfdb971766adec1df113bf5e18ae7fb41e7272cfe49c715f9fa706bcefe307a",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "metering",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "546351d4d62ef80aaf5dbf33ac073fa974cef85c5a667765450ff0c3fb6cab07",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "relay",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3f79f0fc5500463e2cd5a3e9bad0a3e166ab4210bdef5fdb846c566d7e751d5f",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "relay-client-wasm",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "83750ede301de04038b2a21d3c1e6e9bdeab5c46fa3583d14bb77206476dfc65",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "replay",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ddb994e737b410f6491224dfcb7b76a16bc5eba507cee0bd9e7cadcd8792422b",
+   "tree": "LakatosTree_333v2_substrate_20260624",
+   "tag": "root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ea3726f36b7a3691655988177374d2319a4950d58b843c4ce2b97cec80370953",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:58:15 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5c6eca99be5ab1c626adea3b320719eecf7ca822df22ea94cf51288b4e5f4e60",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-a-phase-reconcile",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:59:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4bd1985348dceb69848a1135dd0ff638b81edd6cfeac25854f5e984deb46c134",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-a-reconcile-receipt",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T02:12:03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e1467d42286cc1e8db43507fb58aa3b6ac44b6d3f70f85ca801acc8531f90f7d",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-b-legion-wiring",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T02:11:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2ec366681109cad480e7a895d5d9494e926d9d9cb7ee0c3e36fd2f6439b34ca4",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-c-onboarding",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T02:11:40 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "32b0d3beaf66afd483173253739c1dbfa3eddd05390dd98135a7a843759ab7b7",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-d-gate-override",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T04:49:18 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "44247116c638c2729dee8455a22c7f8ae0fd347acc3914177405a0fa73e7a45b",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-e-mcp-frontend",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T04:49:23 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b198bba5cc485c32fe7658b681e0847dcf85895ff53a43e82ee9a3e6f6508b17",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-f-kg-dedup",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T04:49:28 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ac27a3b68fd1502bc81d356c1c22c5d340478f4a0ea0482229bce18a246e2a5e",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-g-resolver-port",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:02:37 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "490faed519f3674d8afeda16db8d23bc2c9e9708c9b294e97fd0e96ed181dc9e",
+   "tree": "LakatosTree_AptEngine_20260626",
+   "tag": "thesis-h-opa-gate",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:02:42 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1872481ec35a91df69fa3a195b522fe23c8ca44838e664f74a4fbd86540c2d56",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX12_script_symbol_escape",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "dcdf8e221b6d7cae5a23dabd04a7c82beac95c2ed8a16a18381d24e315d2df5d",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX13_add_critique_404",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0f1e87b17f608a20f8bb057cfc24339e4809b345de83433e4b3a7390999d691c",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX14_dashboard_xss",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2e8da117fc79f749905084e208891677f3d01d19a5f7be3143b6de67f2a80ead",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX15_fs_walk_escape",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d1cd9ed70682f8f29e7b71e96a08885ebbb111a1adfa40b8d05cfc34f8195133",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX16_17_nonatomic_cas",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "471f1aa617e7b139fb9428ae91d1a7ddf484b3692496d2bf31a2103b2fa1aa4a",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX22_cli_colon_crash",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a71835d759204ed1a98b6606ba79422e0a2d28efbab7ae0939b9b44ae6185aff",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX23_oo_strict_fail_open",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d7d90d025474e2484a2cff700364d0e53845390cd1bde6faa0f4f20e391c118d",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX6_agm_expansion_consent",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "962b606e2bba2f70a66ce1ec189db6d7b0be75646f06f1f94efcbfaedc992988",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FIX7_ontology_minmax",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d4473d3481d94f48d0dac153dffaa124151570219818448790fd6465fbbed4ab",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FRONTIER_producer_replay",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6343f423b8621f5a8031158a8ace8a0b767c64d002ed7281b4fe16fe5d727ab9",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "FRONTIER_producer_replay_live",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "538a246d607f680a45b921a44bf957d0ca63e894fdaac9b6d036727a562949f1",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN10_marquez_presence_only",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "352bf8201fbeef005b445569cdd77416b9ee58661624bee85bc3ef89857fc874",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN18_pydantic_unpinned",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "18ede820bb7f33ebe11cbf3ecd3ff542a2d65cef4ea329f44583261b298b2c4c",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN1_canonical_floor_externality",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7e888f469b0e4d86edfa32ad8598deba8c0a9609bd86a6a465a779f9c26526dc",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN21_cli_observation_fields",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1da8f56d3debb3bcae63c44316b675f7dcc7fc2f562a7213fb2f7c6af06ea455",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN24_measure_drops_exit_code",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7772f20329a1518dd039295a42c2a236ef5b910860283c7f3c50076733003b49",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN2_promotion_decision_no_floor",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0fedd19af9498c18372c1356f963c8490e6a037fe67355a786491708f79a8a00",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN3_noise_band_maxes_bayes",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "342eb6950a177a6c357e2ed99d152b7c3ae7c927a463c2ff1b444e100c61e8fd",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN4_branch_credence_nan",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d25ca92131e190f6035f202b38686be2765f53ea178ae1d31ec24d858c623061",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN5_heuristic_probe_deadwired",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d2cd540c2e7e60dfb7a5da70705c6b6f1afa5d537340e350a4693ba5315f9d6a",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN8_research_import_substring",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "49b9ef7b503903eb6d1179bca453630ba674036baf8ef8619c34872babd00ca2",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "OPEN9_rebuild_no_measurer",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "293b5f08f6211d9e27fe59df416147ead34eecaf631054f52bfbb3e693b7866c",
+   "tree": "LakatosTree_AuditFix_20260627",
+   "tag": "audit_20260627_root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:35:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "006f0a8cacab2c177f2185ee845a3cb5c3daddfd5f6469912873cc1b1ce53732",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a10_boss_multiz",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8202a3edfb9faffe33d063fb0c4615fbfc36447102991e79273ec743067d0d6f",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a1_path_choice",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "35c66dd10f1365bbe4f791bde8fca175b7c25fb5ac329855172350d1e94a0a10",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a2_stage_separation",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "dca98c56aaca5f85e51a7ba6fa5b4155fd38c0bcb90b53ce3c872b192f4a1a0b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a3_between_rootcause",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "df1059b3569e2db1744bc7b4fa6d627fdb5bb029577b20f217438b26b67580cd",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a4_honest_certification",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ddd4460777fc3982392b6e6e92fe7f887e9dce1c2671ba4207b8ae593fa3b459",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a5_layer_ambiguity",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fad50e0ed22c522051103450d754bbe801914c2e759c56709a56bb794ecf6354",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a6_frame_recovery_rejected",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1f4bb6453ce6d8c3f7cc5dec19a91573f62e0f2216cbed310c2503d11b5714f4",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a7_pose_bias_redteam",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "493bd6a33e60dca335f970a564b232b963d8ee1d1f2259d310195b574720e83c",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a8_ai_floor_dead",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fff72c7c42466c838919802cba2ef509230e53a9dacb9af1a8ae82d6d3dd5836",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "a9_spec_sanity",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6bf2c0822834678b3b53fc6e3f284aee25bd3925a97f7db0aa16a42535da8e4b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "attrib354_ev_crossimpl",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d7a0b19cb55b0fac73c8ddc1f69b2a2ddfa4e0022a2075fa636927d0764e2b60",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "audit324_v16_metric",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8e42ccaacbe6f6446e7f17aaa794b334cd6dc0fddf3e8d10997799452320ad7a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "aux375",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "19353b21bb3150b44a37f2df579560f9f10c2db0bdc3b63b42c85307326a9f40",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b1_datum_anchor_decision",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4882c8c864df05330429ab50b30f1f7646bb915767c637df769a0a785cf8e2ae",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b2_rawzdf_dir10",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "11dec68604bed1559c54858ff30c18f2f6d967efe5fbbdf3439b6960084704fe",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b3_dir10_hardening_rejected",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a6321f64c28f31e46802f18d0c72344b5bcaf02996f9fe63fda3117f63d0b7dc",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b4_sw_levers_exhausted",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d92e9ade94c0cf73c03de0cae4fb2d04707c2c862501753a76b46da09b34201b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b5_plausibility_gate",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3c2bed13003e0ded95fa25707d48f6082c66f94dc6d743a701abf48fe6809e24",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b6_reflectance_lever",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a95da934a5309e8139f6ba787df184252e7dad894f8d24cba4efcdc860f25dbb",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b7_view_decision_20at650",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e41fe0ee7e266e435c077ed4d6e823935f9f2d19255abe76edc7c00e62910e61",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b8_perview_cadicp_rejected",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c739744d5dd471edac9a7e9a8d58b0e3ab8fd0c38c5ad48538f881cd12814f7b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "b9_attribution_control_plane",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1dddd6e5cc6938ed178e9b44d6010dc4b1c5d90c888d6015dad550c35ab7ee47",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "betweensession_is_perfeature_detection_p2thermal_refuted_20260629",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T21:39:44 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2e438cace9c740f61e77b3bf07c24ea590fda225d1f3534c83d67d2030314927",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "betweensession_penalty_is_nonrigid_p1_refuted_20260629",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T21:29:18 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bb64665287cde60d5986351896b7811d49a888cc907fdd72fb04a616ee69a04d",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "bpc_0p1mm_honesty_fixes_landed_20260629",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T16:48:49 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "41b14b2d9937dbd2dda2caea202706f3a5b795ea98e1d8dd3649f413be78726a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "bpc_ng_find_okng_separation",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T08:10:45 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0313fdd3689fdafff2a51eafd5a1df2237d7b8b1946022cd6bca8264c36ca53b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "bpc_normal_block_onset",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T02:48:07 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4e347112d9a73a8221c4c65cae2e6a2e3176747f988e8c46cc043d3a4782d3d0",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "calib_geometry_mismatch",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T02:18:26 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "dd57434a2334280cc67793ef3e5fccdcc59ac4994f584eb60cbf371eafe52544",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "cup321_wide_patch_masks",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "08bdd91334382c92d0c287d3849221cf7bf50ca489c912ce408a8074519c3fc5",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "datum_bestfit_conceal_real_lx3",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T00:29:43 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ebd5edc8c4d5257d95fd1d3e64acad2a828ca4889625cbc40b708b63351358ce",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "datum_partspecific_absorption_lx3",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T00:45:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3644e1281e7aba279ddcbd49d5b482fa57ac0823c5ebf1f2817cd36fd7cda786",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "datum_pointtarget_repro_worse_lx3",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T00:35:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "87e370be3328530930f41f42a18d9c046abe5f53643577d1a4f897c71c1075a9",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e0_xl250_feasibility",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ed378cfb141e22c9f5360993b42c246d7b89c97dce6cc78523d48cc0cb6fe017",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e1_washer80_anchor",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "dd033677f6f15f120b07dc0ed7e4d03834efd46d092760b55ac3717abc4734bc",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e2_literature_floor",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "50f81dbc703317c504ddca826aa4c4da296a445f07556847d4f7903558482628",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e3_capture_engineering",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2defad081f42038feea3004e537bc4b2a0c9a5983ce3ee56aae86589a291df84",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e4_inplane_vs_gedi",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e6b63de8b8077c48ab652f18b9f6d43668a4eb55150ca7e0e6145bec36f46c2b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e5_washer_4measurand",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "491d7c48f8daed811ba7ada697b6b600df35880a3df6c7ca2965316365c5d4fb",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "e6_mr60_capture_plan",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "372de54acb0e55af959d569acc3b900921826f082f16e824b07566ba63842713",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "envelope371_374",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1278ce0a80c6d5f8def26a5c0628d205a8b159381c773ced148f8d0a78792bfc",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "ev360_v25_pershape",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0a4d3fe6967773ac49141d167642c6de1c07883c5c64b7aa11b77487899adff6",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "exp_appearance_fusion_refuted_20260701",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:37:12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2f25d8e5f0d5395856c43ed7478c9b5ccc65c13d6c98c6ab91e8b174aefa2830",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "ext322_forensics",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "653bb69e105507fb5683b0831016796b62fbebe282d1bb596bf868de9057c696",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "ext323_precise_rims",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a22f993697da95d9f0c7f87831863e6fafef4b2cec6791ea8b9ea1b6ac458783",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "ext327_snr_weight",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "54c2bd591c3ab8f2792625f203fd44507bdbe84182a0d7eb1a4e8ef27affafaa",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "ext327_zref_recipe",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "da13121a8fd045c04c9a513ccc3fbec2a05958a8366809881e311bd1b31d6392",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "feature_local_gate_20260630",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T03:18:36 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5c4e9bcfb960343901e304c086d33db8c78a838fafce3aeceddb53b9e696249e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "field_deploy_hitech_20260629",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-29T02:13:34 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7456ac93387ee98b9d5297d172065a43a4a21c23d3180d28e9d6b5e4dee503e9",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "field_deploy_hitech_20260629_capture_port_preflight",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-29T05:03:03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9e31b4a07395b7ffc7deb1980cd69569a4857fb08e0df439bd85fc211d5b1f42",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "field_deploy_hitech_20260629_lotid_fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-29T02:29:40 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b63938a5ac1b8a36b8f4cce952bf4cc995afb118bd0b2bd535b1038725ffb440",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "forensics352_extp_nodata",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b2d0b8c335690be22566297e9f913b95fc24ef8454edec4de344668da909f65e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "forensics355_chamfer_burr",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b16e7928559934fff389dd683066578075cfc99f57569c2d886ffa60ea833b1a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "gen356_nonstripe_ev",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "66f6bc00c1a42834e6fc7d628b8236edf9ed8518c43239ea7d7f786b379d3b0e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "group_b_calib_resolve",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T02:18:26 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5806aab5b290b454f32d4b1456838a5ddc92cdfd3991ff2d936795f118b4deea",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h0_freeicp_multiview",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c46109a9fa6a12357e8b4061bc0808b7d4bd6aec7851351172d78806f239fe35",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h1_grid_backbone",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "57a491ea7bfe971a8e78546ebab7acfcbe847f29885693075e3e22d14c447c7c",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h2_aruco_metric",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "38d21ac5901d1c1e0e06a943243c53807a8c11b0f1ae82e2c987d26773fc7de0",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h3_chain_disconnect_fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "35cd56177e5107524769a7826b04596c6bd5703ebaeef06dbbf129ab1eed9213",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h4_translation_only",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c9bf45ca31100d28c6fcafbb9d58a946d2c1499b218049a28383e8b6ac61525f",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h5_puzzle_v4_frozen",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2c79c5c68288412b89c8516ab120964e012b9b94d64a0b8100ba245ee3b9f091",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h6_colfix_constellation",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0041291a00001fa088672443a21db2746af3b9da5e6de9f57309f8559111e359",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h7_optimal_reg_v1",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6b0f58626e74390366d38bf61eae3ed731d1e869a89ea4b505dad64a55aae349",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "h8_2dmaskedbase_v8",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-11 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "43f3d27b1cf4101a6c332378d8088ed1c417a2cb4243ce6e518771d5b641d483",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "invariance367_368",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0b3d81a0c57c96f8940357db9f2d45f7083881d2b6d7462d845d40b0e2881c2b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_angarc_clean_reg",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:06:32 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "34ec12bbcd3457fbc5761d530b88ecc2c64aea299bb246077e21a87dc54e68b6",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_cad_accuracy_attempt",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T04:51:55 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b7b0b5b00199dffef2365fc2f5f47f66bcdc8378f387ce619b445d474c9d0175",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_knownaxis_precision",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T04:49:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f3c7ca97a0cc73bc3097aafc0ce3e5535b95d04e27ad227fb7a0d8b1a2b3e9c6",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_mvc_clean_reg",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T04:57:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "77b0ce9d08980bff13344b45062b2be4dcfe48021cb5c25601c7f7bd89dab222",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_perview_cad_reg",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:16:34 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4c342852c0be76c541a07b3f828be00217f8276a40fb9527ca4c6594ceb79d47",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_radial_axial_reg",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:11:58 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fe62ff9e76e8e3c4ee8e3097a291f300034ffc0bcb798028b5d4990eaaa060a3",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_recon_fidelity_thin",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T06:14:54 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e0400f3c233c0b7c170051975b3ee05eb30761ba601499df0f9ae91061aa84d0",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "lx3_aruco_recovery_clean_reg",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T06:09:49 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c0e40a2546dca4f9c863e1e9bb8db6a01b0619139bbfcec39a2c7ccc589583e7",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "measure_lot_nondeterminism_is_inplace_mutation_20260629",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T21:39:56 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b2830663aff37db2c38c2beb7c4bbc3ac11f602b78387cfb222417cf2812eb3a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "mech351_plate_void_bias",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f95d5e1684b255557ef4ad908ce12ea7913d732756c0f919fb82d1decfcaa36a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "oracle_compare_vfez0061_plate_diverges_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:57:47 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a31d69f07b3931a05ee2853cc672408b7be85e7c72dbf6a616ebad53cc57fe79",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "oracle_tabbolt_washer_rootcause_version_skew_20260626",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T06:05:51 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fb2a95f3b76b181e21df4698a89b87f2aa4d892249ae99a44be72e3103d911f2",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "outer343_pershape",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "724b388f9d175998b584469e3ff8bec2654ef17da1a11d482db114f33d5f81ab",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "panel320_assembly_gap",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "335d865a902119ed5856572e385ed0ad1ab97cbac13094fae54a57eb5778b26a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "patch_preserves_ng100_v22_vfqz_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T08:25:21 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "83ddb5dc0880570af4f355abaff251f2e591c1d40849ca3e71be0352fa31b9d2",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "port_washer_plane_misselect_confirmed_20260626",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T06:13:18 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bf82e76736b9b0702f319191efe9fbd59a98d0d63f41597fd2d2a2ad8239169c",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "consumer_a_port365",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bbc37947112bd3d74583ed428f0451217a15692100afc71dde3526c0e16d68c4",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "q_bpc_lot_state_4state_and_proto_gate-try1",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T13:48:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "99f75cfb517111dd6e6c87dab1a44ca3dff03adc2a0bc1b9636e6df6e3f34576",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "q_bpc_ng_find_out_of_sample-try1",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T10:56:50 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f8ed96aa5aa2c810c0afbc817e824aadca9658b3bea2b46075c03d9da6acd38c",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "q_bpc_ng_find_out_of_sample-try2",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T11:42:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "36b101b108dc556f0641c16c6f09ef5248a9d71e0dbc4867ae0bc2735c4d0dfc",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "q_bpc_ooptdd_hardening-try1",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T14:45:18 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7b68b8eb8d1214d487b27015513321be9fd9d4c3d36c77e98089df90b2b07d9b",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "q_bpc_tab_bolt_presence_state_machine-try1",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T13:17:58 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b6a4627eb54f56cbd4761d667770eaed09c803be0f28e4dcb1af3e228b7f1dc0",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "reg350_dedup_registry",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "10341a966412706e543c1a83f120e69d4955c4452d045dba1eb422f3ffc25872",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "relocalize376",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3755f41b225de8df64113beb3759822b46c1e739fd572eeaf08b329de597a844",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "rgb361_multimodal",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fe23614113a99dec403be693852f396e6d8312603203849cc1a5f343d69e3def",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "robustness,part_drift,constellation_seed,jig_drift_report,seg2d_coarse",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1d3cde06871a89cec06245b178006370ea6df483b81f8dd02cb4d3d07f80c64d",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s1_icp_pathology_proof",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ec321f963e00838dade25aa5918e6225ab10eaaa757adbec1cc98c0267787206",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s2_metric_v2_aliasing",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "95150d48ca680c93bad76a9378e25c28e02145de11f3c08c94cc52da72ae256d",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s312_viewcalib_bundle",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "639f3a4d44a9c7cf658d2423932e0d110c5b57ac6492035f926b20297e0cf708",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s3_oos_validate",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "cbffd331867be20b8e039865bfe7a3887e4187bc3c2f029a3a559fd27566d466",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s4_mr60_gsd",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4c75cb024878d774e7d72feba8625718a602955924f4aacd9770743d9a41e832",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s5_capture_engine_sweep",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-11 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "55d2fd5c5e5afa35ba095d62268eca0a6fcacccd49bb0c0dcb8128903f8f814a",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s6_seg_coco_3dfusion",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-11 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8d8f7ea1c86978ac48a7b22629f2ff86b9308243bd107ef3edd8454b738b1fec",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "s7_cup_peel_detection",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-11 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "19d5c4d66c4dfa10cdd2558e9ef40a4bccb5af777ab1b1e9465b976a663df5cf",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "samepart_repeatability_40cap_20260629",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T16:36:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5073164a0dec1d2eede992e036fe9097a5367f77e04d604a691f07e6208e749d",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "samepart_within_vs_between_session_20260629",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T16:37:13 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9689cd843d1719b7f3bd89d059993cfb27a3fb700b23c73e8df3da56c72f8efd",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "seg377_sem_vs_instance_label",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T00:15:02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f20ba502775550968646334fa0d5a2901a675287c403158b3a4de8594e61c255",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "serve_ai_gpu_triple_gate_verify_20260626",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:03:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1c34304175a07bbf3fdea268f9228dfad7e86252c844292d05311abc8106bfb6",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "serve_branch_dispatch_live_observed_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:20:43 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ad03525ffcf208419367679b03d1047e496a74db9569b16d2c2f78e10865c5e8",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "serve_measure_lot_live_real_vfez0061_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:42:53 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b923112b6719b8d8570701ae355d57779013a711f187b6acab8827afd304bd0e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "shake369_370",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7400fc8ad073aebac7816894f1bc2647837a259497537340eb12f15998a8e13e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "surgery362_studmask",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d5f397dae73c16a5795cd6113dfae9250622855fce080709eaec1a9ce0d4da00",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "tabbolt_inference_improvement_program_20260701",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:14:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "dafab97dd7d3bfff0310e2a8df3c609edb489c2a71cf26ed41428a35f2ed170f",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "tabbolt_inference_limitations_20260701",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:14:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0759eb79c2742a2febae0a413acc54aab700f3eea77a9839c12c644e98b67259",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "tabbolt_viewspread_centerblind_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:26:26 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "734ef5677e238cdf7ad0554985997d6659e3af4af581f034db78c15e3a35f06d",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "trueness_lengthscale_bound_cmm_free_20260629",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T22:05:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "46ebfcc2f5198acd059f81ad0b97b8d6ea9961c8589e93f04db6a161aa0b9c2e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "truth340_allpanel",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "654c5f0f6e6105349afcb004f16d4622cb8b3b736b6c0b9159479731b654a1a2",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v10full",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "cef3818d232785b1a46d54a7100883f3ac76aee2ee753231444b49b21b4c3cd9",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v13_rimba_freer",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9e38c3aad2e0419f2d1cd6c20f4de29ad32f6825bed2a8cf5d3fc362b2e41ea9",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v14_scipy",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7eb14b991d208e1dc2318347c46f7d511f7de4526e00e40b9527c754ce4cd20c",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v15_gn_perlot",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a10bcbf3f1e0425e460d2a345512efc7ad1c4bfed7bcc3e7cba5452d96ca8604",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v16_6lot",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "aadd036ccb24d08854fa7002907982b7ab4328192dbadf7a6d79904051efc960",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v16_joint3",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "22a1d7cfed67ff6af0adad13e6f6c77fb2055a3cf164ba828d51fdea1867fd81",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v17_affine",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "957abe1e24689af1f93254d2fafa675a212669e33d87b836bfef77518fd73610",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v18_outerR",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "75f1144d5e1a10255bc42cf521e072f046a254916fac5bccc341bd4529a155f1",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v19_outerRfix",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3f59f4eece638b18dfc8f0c1624f3dffa37f08a69883db0ce604a8f0e020ba61",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v20_hyb2",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2f768c0fd7839ee58d254730c499f7ef56d0004e9a225335ff5960539ab37537",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v21_extanchor",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0e72d0b2baebd096f070e94a21ebe502a7c3261f9ebcd540c081195726c0a429",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v21b_gated",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bd6f09d038dfae507c102cb9082ff7c472b4757eba49329579ddfb083c5586c3",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v22_0p5mm_proud_0p1mm_precision_met_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T09:14:56 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2b199d5af0f7e2f84c2ed2d3ebf4382ac34b883d501409e05ae880250d96ccee",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v22_hyb3",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6b0e52ed6802699839e6646bf96494dc2bbcb9eee0e6a1dffc871d689d7991ba",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v23_snrw",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8decb1dad885f851e0b254f14418dc4c83ed37653ea46b955951158c30547dca",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v24a_fovmap",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a07501d692090452d5eb3ef466f08a7cd57dfa66f5090a102eb383d8df85fb4f",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v24b_fviewbias",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ca5fd8cded73ca3d8c822ca1aeec48ef756a478b5aa2aad9ece645cb1c99030e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v26_beta_guardv2",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "29d60c5492e1171cdb2318eac8ddbfb9e83ae5a00d807e5d6fd39b242eb8ea08",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "v27_variantD",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "49e8e77c06b0d53270a0282ee8bcbe7c036155f9206d50a0aa98c959004b6540",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "washer_estimator_topcoherent_validated_20260626",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T06:25:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ec9b1b8650a2ea7b7f56a986d1d7bcb753f5c46bb12b518c384ba26c460102e9",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "washer_fix_landed_verified_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T06:57:11 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "072412893736f46490e39bcca44208c6ca0a03f2d6f5afb06167653093fc82c5",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "washer_repeatability_measured_7lot_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T07:15:12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8237da4891193622eccac9bde0cece53c9ba0c30abca38adec9e27fac770cd8e",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "washer_tail_fullres_no_help_capture_bound_20260626",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T07:35:21 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "96fbe9172f77e9ecfc287f8a225d969567e69fc0ac6536579f31a0f1303b8ce5",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "washer_tail_not_finalizer_fixable_20260626",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T07:29:19 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e8e5bdd052b0d4d9abfb0f018606be779065880b9ab992bd8588280cf0f798d2",
+   "tree": "LakatosTree_BPC_20View_20260612",
+   "tag": "xy_0p1mm_lever_is_perfeature_viewcoverage_20260629",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-28T21:43:53 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "16905d612ecd03046969e22a88c3d2891be8051e894e1fcd11ab8dc1715adc9b",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "barcode",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f114720af0243309ef7aa8dbad350109c92fa4050b9f08a3f6b4b8d9caca7590",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "cup_tab_z",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "74bca8cb3108b0b6d5409f12c9f3f435753d065bda58083b5d9f9f89dd115a33",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "dt_render",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1e3b1b3e9d7f3ab324f90a7746638410d7212e80cfb32691847272a3f2b3e24b",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "feature_rel",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6b66d057607ba7034d037a4e340e7554200ac13100e907a84f0f93118c0533a2",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "field_dc375_128_deploy",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "843409985529e700e2170456b1b8091ade4aaf4aadeeb19d3d81e2bdcf04236c",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "ltdd_verdict_source_obs",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0d17fd8168b939b9b95152483c1304dfde43e7a894f118de86015b1e9c667470",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "merged_dt",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "48342b39baa64f61fba64f088f8dc849020964fc9abac156f93b4f12c90efce0",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "minio_presigned_browser",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "81218ef65f00b9eb0e5258bd0f66c8bbf738ba9958150ad32958702c7fc229f9",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "mono_block",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ec794930830177cd03f3fc2012e13c212c0e604ac10661aeec374750882204b9",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "mono_ci_block",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f13f19b1898ad2c7312df32579e6b7f59f51081708c39683a80d9d34339b78f4",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "mono_root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b7b90e5f1fdf1d987e229c2cd6e5198b9e1f8dda42ee02a966acd81d5a6874cf",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "mono_tight",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "56f5972d2cdc6292bbff01f703ff97765c7bdd2527a983fd72cdd90edb511e3b",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "panel_geom",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f4e9083e8e6d0a42e22115a89d54fac9a221edb06ecee75112b3dce77eae3fa4",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "prob_statement",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6e144f132b338dfc8b2ac1785b50f5858c86549571c3b775a7da792ea63e7021",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "proto_bytes_bulk",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e35fedfff2e176a755e9d9353172ac43349083fc3a4561d979ec01d9bcc8be77",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "safety_forced_ng",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ea01ff7e8e6a716c58b5b9fd0e56d1ae0942b64fc1f868db30ddcb9bf48fe77c",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "sync_rpc_blocking",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ef328f05dc505538c5c661636b15ff94f598f8aecac7b7d5cec5cb265fcc8c25",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "washer_ev_wired_verified",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2657dc7cde33f2475ea68ecff5cc1c59efe809551b6449fe1fb1576b9452f8e5",
+   "tree": "LakatosTree_BPC_AnalysisContract_20260615",
+   "tag": "washer_roi_clean",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "540ccd53a83a0c7a2ff6129e6116e05165f4d96a8d40151acad134be1117bd00",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "BELT_abstain_implausible_dev_deployed",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:41:41 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bc5668d33de5298dafa25cc158c1b4bfafa0cd3546122db15dafdf4225602a5a",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "BREAKTHROUGH_localization_confirmed",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T20:00:50 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f0a8a30511233e3afce5aeb293b5c618d743fee8a4893acd87a0c40fdf23ddd1",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "CONVERGE_root_is_localization",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:37:28 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b564cb5efafab3a73c65d480fdf89e9088006cf797550c7e3a7720a6f9101e95",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "EXP_perview_and_zradius",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:17:29 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f81ef591d1de6bee4b7cb7ef72ce334ca7da7363d01d545e2ea5fa6b97f289eb",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "EXP_stride1_persists_not_downsample",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:41:21 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3b4a594c56d5e05e46927082475fd59f3d190baba2b59267d8bb2adc160b212f",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "FIX_direction_port_robust",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:17:57 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "aa55e847aaf1a629184b96f4a0e9368f77fc062d5c084cba00492a4d8b5c83b4",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "H1_outer_panel_contam",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:12:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a89057969fa9413941793395ac7ae2ae36462e9d6bacd49253e6688aaedab63d",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "H2_nadir_by_camd_not_lowz",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:13:03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b7acd5f619fdcbc9cb2e5e7cc7fa02b8d0f6c6b276ac49e51298ade861cd976e",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "OPEN_activation_blockers_20260701",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:41:53 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e58c50fc40bfbeb6c8b2a67b6d6de5bbec9c99da54b13601161e4ec6f862549c",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "PRED_lowmode_within_annulus",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:28:31 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d1238cc36055bfc76a371e9b3171d588a7e41f31828f2e728b736e868cb2e269",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "RESULT_gate_e2e_validation_falseNG",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:41:26 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0cbf824c937104245f2f28d5ca8f6351018e3b6818cb39ac84b52fab59e9e7a5",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "RESULT_naive_lowmode_partial_refute",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:30:25 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1f9d03ed306963b7bd2a55c81bf6be093fad7a355187e0264bcd645d334ca02a",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "RESULT_within_annulus_insufficient",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:34:35 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "94dd3a625f6bdd447e5477279db05d849e638ca0c379f5dd2568fb4f46702e00",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "REVISE_recenter_is_neighbor_lock",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T20:03:03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c3318d06d513008d9b9c483f645f1b0ddc4d62d28c9981b88819657ecde952e5",
+   "tree": "LakatosTree_BPC_CupBaseRim_20260701",
+   "tag": "STATE_current_problem_20260701",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T19:39:56 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3d579ee0abf175f75e2c202cbf0cb25cd61dfee9772690c17c5809dcce01265a",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "ARCH-JGBPC",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:49:48 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "970516894caa33fbd8fbcf8fba5f7d097dab8b8a644558745eabb1ac5b2d22f8",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "ARCH-consumer_c",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:50:43 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d7ab8b46a7e76c023b1f8f81f9f21d2101d4498035e661625054712b83896bef",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "BENCH-E57-21V",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:49:13 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5dd01704fe65a688113c5deb9268fde080a2a18c9e428d3f61cc101e32d12f53",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "DECOUPLE-CAP-INFER",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T03:32:02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7705f534d504d205bcc277cc1c0239c0efce25732e5ca33c72932d7267ecf72e",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "OPTIONS-CATALOG",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:55:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "412bfd8a5cbc196d9153874a1e0f875e0df010c299b054aaef9a167cabd8981a",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "RESEARCH-FORMATS",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:49:22 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "cfff1d45cbf10a2aa662a3c7cf84d0b2a8be75a7c19a4418f8667391595c59d2",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "ROADMAP-3PHASE",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T03:32:13 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "21c356febb7e56b72d680b63fc191969e645064502a9e3fcbe50a21048b41f32",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "ROOT",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:48:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "10b2c216ce786fd45c71b1019325d8307fe2d5ef9d6fd3729d903f931c2347f1",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "SEQ-EDITOR",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T03:31:54 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4872a0ce150f4d8f918829e29abbe9f3ab51faf278f9d610d6520500f422a0ce",
+   "tree": "LakatosTree_BPC_DataArchive_20260702",
+   "tag": "WAKU-V1",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T01:51:12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8d76522cae22b96ff58a8ae27351883fb9f36315ea775bae3597c06f0b8ab324",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-all-ng-cup-peel",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "613c7d3d7c242df3b54d01ab7669bb8852837ec398ad82a98efc4171766bcc86",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-ct-demo-mock-leak",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "382d114bd57aa853a1cc85d3a5b0a9ffc2b6edbbbc171c8f9f78d3e5d91bf69a",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-cupz-drift-doublelock",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:44 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b6928ed62d72bc4bc19c5289a8dbbe36bc91b542451284904bbf5a4fd8620032",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-deploy-code-vs-live",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:32 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f93f2543a7e607355b42003c648e213d6f869165837e392f24195981f7023bf8",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-dt-command-mode-migration",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:05:20 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9152a37325ac3f7638d1e28cfbaf61ab5e0bd3009a0dd5c8c04ee38982c77524",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-dt-dual-render-occam",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:56 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bab49e55d95bc87b1b906b26c5c91256ff2b52303115c1c5e49a37f1c16287b4",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-dt-reconstruct-obb-ring",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "781ec59598131c7c280b938a7344e9cf4c21cede96a1a004e643337b8597b667",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-feature-image-realcrop",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:05:08 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "69f189cc66578b3f64bf76488fc2e30cc5c786bd1271146cc95f60a699e0c16a",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-inference-timing-mislabel",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:26 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9c1f4efe7045b0863f48a43c7bb893a6fab6a9ced9e67b7fdacf44fd1dec753a",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-plc-bypass-toggle",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:15 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a429633f5f95da80e87c543debda780ce7e615c04aa68651bd78fc79f3dfa938",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-reason-null",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2b0361e298c9b861c7ffa159cd0b62f792b507ee8a24ea6f2027c773f48c05ab",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-result-storage",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:21 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ae856eac330b049bac7546cf935d8a6056f9fc3b56e9c95877660071b3482da9",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-step-display-blank",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:25 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "61f0b1e6c2d7e184ab794a3eca288b74a27f59f399b560c4bb26b0c5b6b175d5",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-tabbolt-failopen",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:34 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0dc61b7d9a356acbbb479e905c80f0972c778a4897fc4a6d5a26352cb410df93",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-tabbolt-head-only-ng",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:51 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8714e26e2f45f9ea244fc2e3e18ee7d7d4cbabbb086767f6759285c9d81ab574",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-triview-bool-crash",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "51270daf7f670d7cd4929ed1b0a520bdce69e693f9a170c74213bbe1b3540000",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-v0-field-session-20260630",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bac7380969d7424e269fbc59814e65a0df53bccda1172c0fbdba5b9c802e7bf1",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-verdict-ordering",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:05:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f42b3d3776ac5a0b31e545a326b6e1956ca449de0ebfcaddae9ff4adf84c5cdb",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-verdict-white-pointcloud",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:03:48 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "49edd785dc0f8c53d7061b48281de52a706d49e0fc058557c26d6b36a0260017",
+   "tree": "LakatosTree_BPC_FieldOpsUI_20260630",
+   "tag": "fo-zivid-singleton-zdf-replay",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:04:37 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5544f2ce0520babb22bcff9d234e8c5a364a3045c738e61287ba9671109c4a4b",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-field-env-verification-20260616",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c45bbd605cafee8a968177c20452bf1503b0c7c18893de405b447e0793aaf4dd",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq3-c1-result-null-guard",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2edbd5275699b70b9752f0c0de06a20ef7458e096fbc9ccf696c2e434356c229",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq3-c2-stale-safe-fallback",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "63b2567f4793909649755955df84af3d0fa7b094e1399ebcdb95292be093ed12",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq3-c3-chunk-split",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d5e635ddef4f9c75b32888fc3d7dfa7d474bc334d4a70e542fd65ffdaa4b8835",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq3-rca-stale-fallback",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a470393222f437d6d11a70ef61ff9db4d2cc28ceb202942340a33e9fccd355d4",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq4-c1-filterconfig-default-global",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "33a757d1e9d751ff8410a9420d9943a9625f176c0017200524db035d79847bf0",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq4-c1b-for-engine-guard-tested",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "658e7c173c7e6e72c9713c4083c73d57166e4bbbc59ec19d10c7c38d8a0bc023",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq4-c2-deadline-raise",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "82f4e9279c02c0396531530f77ab09fdf424f8f41a0809b216da50f016fe0556",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq4-c4-yaml-preset",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "86bc28a5e52d81caac0e47b7fefad92446815b247e933637511317a36e7832e5",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-oq4-rca-capture",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "387ce8e61693a837482f206c46da3f409ade483b9f1912de7e0d1f89885f2227",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-v0-manual-trigger",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c237c5958942298126776ca57e6c0ac1f03c80138b7b8de4a5ef2c9f426e3a28",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-v1-ackfirst-pose-mismatch",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "61b0b22cb429d80aaf23650f28a1e197e16b64ab42fb2ae1b5626d51fc86b6be",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-v2-capturefirst-vfdz0015",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "139aa2ac7a41e508c0249fcd6e71a708eea8f50512c847212c2811e3a89ef34a",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-v3-soak-bypass-100cycle",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f1f50e71b633124b908644315509ba35048c7ecf627f6b9908a77956b681f200",
+   "tree": "LakatosTree_BPC_PLC_Handshake_20260616",
+   "tag": "plc-v4-poll-100ms",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5053929bfa95389810faba76675f19da10e57884ef312de79615b6552d8c2d80",
+   "tree": "LakatosTree_BPC_TabBolt_Inference_20260701",
+   "tag": "conjecture",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-30T16:17:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9b5fcf9f4e0b11acf7d88f1d3eafaf8d6806be77f87ad07339563d678985ec85",
+   "tree": "LakatosTree_BeadScan_JG_TRT_20260621",
+   "tag": "fieldpc-onboard",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-21T08:23:42 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f05bb0507f884ead1750d138c145045fb7d69cc95b389b8c3d16c9243e81a7d6",
+   "tree": "LakatosTree_BeadScan_JG_TRT_20260621",
+   "tag": "root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-21T08:23:40 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ac8067c2d76060a485009ae1e5368cee937f9086a8e30510242dd1a095d19653",
+   "tree": "LakatosTree_BeadScan_JG_TRT_20260621",
+   "tag": "superseded-20260702",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:17:15 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1d6c76ab76b8dc2a241efa5c12acc29819d5306dd4d43c746508c2944332d395",
+   "tree": "LakatosTree_BeadScan_JG_TRT_20260621",
+   "tag": "trt-accel",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-21T08:23:41 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a275436e89d2cfab215a97527045fc0baa4cb69d9980340db95e8391d4867761",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "accuracy-calib",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:22 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0220052a097c1650d77315748ecebc7504e37d8265fe88d479eb5edce1573d49",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "barcode-restore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "dccd90eb6eb38fdf0dbd141c2969f20efb82a220b7756dc71f5640c374bb9c7d",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "bc4b-bead1-curve",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:12:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0a8af8d5ace0a183cf6b9ff82de6c3589680c97db7b110e4efb49602472e63ee",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "bc4b-bead2-recenter",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:12:10 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1600eaefafec20c192259c68390454072be1f146c3c5af8860b2a60a2e55224c",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "bc4b-centerline",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:11:12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ec056cdf802dd265e38cd13c842c9d2de7bfe7207c1b7ce12e4253203187e395",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "bc4b-mock",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:12:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "559e45d8088c189c1af50fe353e3ebadc21fc9efdd76b9cc54dc0e5fd879fa6a",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "cloud-pipeline",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "580090fbbdef5170d2b3b45ee5af0d4d956e472f2cd7a5bc822d331a619c3299",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "exp-target-rereg-try1",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:44:00 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bee24616cc16e5f3844c35360ec18a06e1415b77e61758326371cd3b27fc3c25",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "fieldops",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:14 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f6e114c6fecdd0cb7df8ac43ee303ba750dd3304e83f0658a291f0c78fe43fea",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "id-consistency",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:11:45 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9028c185478a3a49ff7141b6116149ffe57b8fbf3d44ada1b8fef35f49e8238d",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "jg1-0701-anomaly",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:11:57 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c9cacca1ec7afcaf01cfd9a02fbad08eb71a82dae7baed856e15357768729b12",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "lmerge-display",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:37 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8cffa733cee2ca8ac172417c6d3081a028525f37c5d763b21d500dd5674b611d",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "modbus-sim",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6e48afdf632f630cde49b517abf6d92d7ca6fe81b93699acedd7eb69a31bee65",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "ref-currency",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:11:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "75067758abcc29acb56d08055a4d55bd6786c5f9121eeea04da011eeedd0bacb",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "replication",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:11:23 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ea54812c2a6448c47b68c79856daf22e678db1286680aa57fd8f92b8a526a1bd",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:09:47 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1c8be66eb4e5798d1509f56ce43f79e35f06515ac883633203848385c4d27616",
+   "tree": "LakatosTree_BeadScan_Programme_20260702",
+   "tag": "trt-accel",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:10:45 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "087aac91035e65fa8803656fb0712ed83b5a9cf5acae45a3dd65ca4231ba76d7",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "eureka_induction",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:25:29 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ee7199e49b3758cd921b4a85ba55c8b1925ffda82a838c0fbb76f1f50cec9bd0",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "hades_realize",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:25:37 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "91cfa377e44b62168cb0169c00d3ca8a99d524ebdf015ffdf4412f9bd4621f9c",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "hard_core",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:24:08 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f3b959f871b762fc4258fef46b75a1b11e02a62970e135f19e6dcac062e2c619",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "longinus_connect",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:25:26 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5902ddde613e314a9adb73a602925350359450b1248ddfd8f1446cf987437d9a",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "naesengmoon_verdict",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:25:35 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c67d07521190671b325e24ba3f537db3c8213777335b7a7e50a4a69ded411b3f",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "occam_hygiene",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:25:32 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b84c927c55417829cc88144b460ae49790fa48df0ec6fa5b953621a0930787b0",
+   "tree": "LakatosTree_Bhgman6CommanderOoptdd_20260624",
+   "tag": "prometheus_acquire",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T16:25:23 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6379d3069c3e71aa28ec343f0e5f301d02e9484c1fa36d645bb8114505adee93",
+   "tree": "LakatosTree_BhgmanGovernance_20260624",
+   "tag": "drift_governance",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "413d93505135252f313e239ea2ba5fc2905484c0b9c77f0da2b6b40cc6ed574e",
+   "tree": "LakatosTree_BhgmanGovernance_20260624",
+   "tag": "hard_core",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5c667d4080cc07d4aa7c6126f09375a79046cc8614dac96c4faed12ba9678fad",
+   "tree": "LakatosTree_BhgmanGovernance_20260624",
+   "tag": "lean_proof_gate",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "87a881523c114f49656474a1d78fde0859e20f0efc5b20a381060f7e536fda95",
+   "tree": "LakatosTree_CreateTreeOnboarding_20260625",
+   "tag": "create_tree_surface",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T13:15:32 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c1256485d7da578a3b3967a936d333fcd092517986430889c37ceeeb7a53687d",
+   "tree": "LakatosTree_CreateTreeOnboarding_20260625",
+   "tag": "hc_create_tree",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T13:15:31 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "83b2d4d289d23c0687ea9232131f92a8308bdbcee9b8a3dd718727ccfc44a014",
+   "tree": "LakatosTree_DurableAgentLoop_20260628",
+   "tag": "durable_hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:20:56 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7db6b38b3aa84cdc2312814d4b071463b86621d9cc0cbd62b520d630c08fbb12",
+   "tree": "LakatosTree_DurableAgentLoop_20260628",
+   "tag": "focal_pi_legion_durable",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:21:23 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "448af71f93904666c07bae83f21f479bd4cb62146004e6eeb818b2b08a61683e",
+   "tree": "LakatosTree_DurableAgentLoop_20260628",
+   "tag": "paradigm_a_replay",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:21:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a65f5ea1068e8079d06c0952ce99b41ee29438b6e2225e251999de4b0c0b98bf",
+   "tree": "LakatosTree_DurableAgentLoop_20260628",
+   "tag": "paradigm_b_journal",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:21:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6a8caac7839e0d2fd0399d1a5b19dc44a9db144a6e45052b1be10af4bf9b001c",
+   "tree": "LakatosTree_DurableAgentLoop_20260628",
+   "tag": "paradigm_c_db_checkpoint",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-27T16:21:12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fe0060e682028057997672c4853de3b8a692d598f6e1c898a9c736259c681dee",
+   "tree": "LakatosTree_EngineMastery_Absorption_20260618",
+   "tag": "grounding-wretchedness-baseline",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "a8c79452893f815006d44072cb8cc27b6659a2bfe16d5a3b9a2bbc6c3326dc28",
+   "tree": "LakatosTree_EngineMastery_Absorption_20260618",
+   "tag": "vllm-absorption-hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T08:49:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "21b8efdf0547bca579caaa9e8ffe78ab06aa434c5c603764519e8efbe00ff07c",
+   "tree": "LakatosTree_EngineMastery_Absorption_20260618",
+   "tag": "vllm-continuous-batching-saturation",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T08:49:31 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "67feffa204ddc8ecfc93381d731bea2663018ec92c8f2e597114d89b2b0765c1",
+   "tree": "LakatosTree_EngineMastery_Absorption_20260618",
+   "tag": "vllm-lb-backlog-ceiling",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T08:49:31 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0db7b7f8d0dcf3ba5ba95e7c63f9683fcf8df44db243fb7b7b5ccfe4da29a49b",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF1_cross_metric_novel_client_float",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:21:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d7f283c2c5f4eaaa9229de1d270d6fe8a110f0c4ddad26ca318e698ee4104861",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF2_h1_qual_backed_client_hatch",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:43:49 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "85a980fddfa09d8884665e0e4659405bb87c5012ff1dd0e58dc9ba942749da17",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF2b_h10_revert_proof",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:43:58 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b668a5037ead8a64488688b68eb8780e4e749d1f2cb919a3f2ac9ad6708eb4e3",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF3_h2_human_attestation_client_authored",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:38:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a7e97351030530b24ce4b69cb7147df46683a0c262a91f7ab2bd4c1eee2aff75",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF4_script_sha_arbitrary_absolute_read",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:21:41 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "95bd7b071d44050ffee97fc9cf441ce9bf2683f2253400301180e09b9b2ac62b",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF5_eigentrust_dead_failopen_trust",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:43:53 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4eda5e272c7355746889b867f3e8b4e37cea6a3c5c9fc70392bf4acbf1cd1632",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF5b_trust_failopen_default",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:44:02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e9445684e74652ee8c56f3e296bcef13d7b88e9e10975b6a9189c8ec7e39c620",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "FF6_dogfood_discriminates",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:38:36 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "419fad608fd68453845fe32cd378b3fc2a6b49f59d994b706f00d78470038a61",
+   "tree": "LakatosTree_FrontierFix_20260626",
+   "tag": "receipt_binding_v2_hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:20:54 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "caafc3c84246255099159895307628c2ec51da129a6604b95dec2e33a1f095db",
+   "tree": "LakatosTree_GitAbsorption_20260702",
+   "tag": "thesis",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T04:17:07 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0e3e1aba774d6e9ef57f89ac15b5eedb73d09f766ed80783569e84ea6101e973",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_01mm_feasibility_cmm_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:16:02 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e79997da78f0db91679bd5e02c3e69612385c3a64f6169d6642f904741c7c929",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_4bush_cmm_within1mm_20260624",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T09:25:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "de982987fe89463664ca96422cc20158d615400795fb5b2bb1e118ccb67f4edf",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_aruco_dict4x4",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f4b2692c6c636946638634360838546511b665d5fdc6a647c9d4936f68bd1b2c",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_aruco_knownaxis_precision",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6ed399e0a942ee3a9280c52a876168f6e15f329df1a6a726523f507c2c3dec1f",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_aruco_turntable",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "acf4cbba482fd5df2e26ad340747df0363a436850fa56890f67640906f142ce9",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_auto_path_ceiling",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:18 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2e82ef3791dfad7c1be4f165c14c780cd2bd7a307043981529f4b2c0ac8d1fa5",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_bpoint_datum_definition_20260625",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T02:09:23 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23d3c166f9f8c6a5f3a894b515cc30a66a42cd98b4b4a9bc6626e7262f0e824a",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_bpoint_datum_spec_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:04:15 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c20efb12b74a0a794f79c146abe0aafbce98350285a02cf007875b102614879c",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_bush_accuracy_turntable_refuted",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T04:59:34 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "85a463f06dd9bf82f4162fa0e748253ef33a36298a134f04041c73df14059941",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_bush_boss_frame_measure_20260624",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T07:27:14 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d4c9120a104fd24477e577e42ae399fa6db6b61fa4159526a28f1eed13da9307",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_cad_bush_identity",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:57:08 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "559164ec5d7fbd2f577075754be33a5a79cd212244c1038fea224846c132673d",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_cad_bush_nominal",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T04:12:47 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "603e6253a8bef29e3fe769b0601b0044f5da7437890986b362caa7245e3e88e8",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_clean_then_fit_snr_icp_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:47:40 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b4b8020129692af066a66df8b6012fbb613e7c168a5fd441a114252f533662e8",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_cmm_oracle_resolved_20260625",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T02:07:33 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "81db616083fbadb1d5750d62a68650dd2ce3749b902eb7b48ca13773463058da",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_cylinder_fit",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fe876f6e01bf67c02f31634b9436fb4d451d6a93ab713118933d729fb8b7190b",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_detector_upgrade_research_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:30:19 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "408dd22c9b461177c7279e1512651418c3540d9afbf7e518755b25a318d55c04",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_full_surface_anchor_posegraph_20260624",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T09:57:58 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1acdfc2eac38d812891a81c811b7cad69cec3ba2c0d6cd5c7aa2e12ba281492c",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_gauge_discrimination_singlestation_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:11:21 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7c43d7ef6e637f57efb5ccf877246c495a9fe7eb24484bd6cfd0ee1443de176a",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_groundtruth_oracle",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f2cbc157f42ac2e6e64b08bb9036d83a45cde733712b83275c2954841d9422e9",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_h3_registered_multiview_accuracy_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:14:03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "cc764f01e73bd74b67c4e4dddde8c244fb9a4eb05f4f75ff808aa39fcc78136b",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_halcon_cylinder_bore_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:41:35 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d28dadb59d606004b9b3166d0e663395e8290a950c5637c4b59d51ac9880ea1d",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_halcon_pairwise_reg_20260624",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T12:12:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6e789102d2d4c492caf8dd20d3264cf7295df42ac421946767e2ec71dcdb78ae",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_identity_basin",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T03:56:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "68e7a44afddf1518ceeaee7d384e9eb537bc07e1b3439616ea988d0ed74711ee",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_markerpose_registration",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:21:44 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "26c690d6814350ac0e9ba93cfe453b06f0e9d66d9b0b1f57da043549b37f778a",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_multiview_taubin_culmination_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T02:18:41 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a506797307377de20fdce1674e7f5d2edd2e8e37ecef76c57513a42d02dbd612",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_prob",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T02:13:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2eeb06ebd7d19b067cac2e4fde891e4805df48fb3e0b8d622858be5f5ff78908",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_q2_snr_bore_segmentation_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:59:07 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "de48a8564cc6971b0c573db88c3422173ea9c7bdb481cb78b9cde0092dab0ae4",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_recon_vs_cmm_singleview_20260624",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T09:14:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "aead9d63bc3f5d4acb678fc4f14b46e20c04fdc595b1c8795746bbdc414a2c65",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_registration_foundation_harness_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T04:37:17 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4b9a52b1783bbe60e51cb5a9be723f8583b450d66d2badd429306331e85235f6",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_repeatability_6x10_20260625",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:46:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "851ba91e80ac74a6fb2f1fe34716a395f7e6dd71032eedae0c9db8ad52e1fd90",
+   "tree": "LakatosTree_LX3_PLACEHOLDER",
+   "tag": "lx3_scanmethod_reconcile_20260626",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:01:57 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0072a5dd3a618d2f7f579d6a9f123571f04ed025f62a50029d43eb3986347c28",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "H1_qualitative_self_report",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "e3f3fea855bb56a8b5421cdf0440c7739172d87e860ab9acedf9a55e1185490f",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "H2_human_verdict_floor_bypass",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "7a941d6d984cd2022a241f1f20d31ba5218a07c4e6abda5b604496e0f876dac1",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "H3_judge_script_sha_client",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "810c366fe8d31d2a979bf8def193f64705d7f1a095dc361f8887200e29e78d0d",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "H4_demote_hardcore_unguarded",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "1ace99d66b853ceed7d5f4d2033acf149cf91d9335671db2e74cc7fafe99eb91",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M1_rebuild_self_report_measure",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "3b52bcb92d0c3d91f7b4c268c95362f4941af45b880650626ee66afbbb30c368",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M2_harness_silent_swallow",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "dbb89909f9fb31d17ad85f90067f6de4fa3c7d4130a6d3a50ad9cbaa095d55e6",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M3_unconfirmed_counted_as_hit",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "73655d9a795069bb291a1be7b92a16d6efc415725f4c395eb99e30467e73c9d2",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M4_raises_question_unmaterialized",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "df5dfec69455346e15a0d8e08499c8e965ccee89fea04a0167011d0df9a3d3e1",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M5_rescore_toctou",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "2d047ae134b2e5c4251fa9278fccf133e6bcd530993b911a1e73513850efe025",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M6_posthoc_prediction",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "24bbe43a43f56113c59016f34eb1672db6e3a627cf1584e3e6e723148f47b0a4",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M7_ci_no_sorry_unenforced",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "955eb41ca5e15cfa97c4d5f6ab3f2f4514d6030b5878ec1f3adf55efb1f36987",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M8_doubt_resolution_actor",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "e51fdf1ccfc91062c3e6607229cf4eed94b065aa80367a0a55d4b9ca1ff357a7",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "M9_external_readback_off",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "60c3601fac83e3b39dfbc8d8b3274e995cf73d45a66caef838cc790bba7cd4af",
+   "tree": "LakatosTree_LakatoTree_DesignAudit_20260625",
+   "tag": "receipt_binding_hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "1c788bc2a5c72f4029a4f86434de1e6fe521b32a4cff8694886af2451702786b",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "gate_doubt_adcf",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T07:46:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "77bad8394ac026fa9f4be3252688e313154373cf014e936972654a756b628a5c",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "gate_rej_adcf",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T07:46:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1970fba7a9c397a5c46d9a80c5c78e2e10aedeb76274ba4e551168220485b0f5",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_good_0dd5",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:45 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "debccce10245e0e0374e21638e9990b42b9ad87c1824c687996d04cfc6d6fdba",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_good_6a7c",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f0ef4d028eca26166b6b5e225f939b6d594f4e2cc8394cb5afef7a35b2a200e9",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_good_e1ac",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:08 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5a13f81aed837fa497ad2298cd08ef78342c93ca1e2cef78997b810be13c138c",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_unv_0dd5",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:46 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a56af9ea59b091e5720b6829c2a452ee395eae15e5b04fcf2b9518476a61f3a1",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_unv_6a7c",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "050045c0fab129774f19533a982ee1eb982fd7801f281c8e32d779bf61cbc702",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_viol_0dd5",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:46 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "befc46254b949b1701800a40ae8ec103f0a330bdfb7090e9bf55c42090f51098",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "sp_viol_6a7c",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T08:14:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5c9b78406e2ea0dce3b33c9c83e7d75754150dfb31dc91a3d88e2bbe00b32eaa",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v0_prototype",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e3d53eff0fc4b58b5f29f230805af5b05dbbf2a8ab21a7568ac85218d5863902",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v10_rebuild_oo",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "72cdb4b14422040e7a6b11a330a56c1acb8c4ba75e3cd024107ca1f68befe896",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v11_writepath_enforce",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c57b5629a7f76e85a83defc2c9f894a510b428153771c67511fc4fc41da03fc9",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v12_engine_spine",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c129ddb332a9a3668491fe381a051210c91ff6f32bad0bae76786d2b34af3ee7",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v13_engine_synthesis",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "003a929c7d11d79979e9978d7ef19cbbf176a6793c710002d3c754400c2dd956",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v14_fcon1_marquez",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "eac9b2e41326770913b738c572594e7910681d6d30af44cccebd42f7aca4826f",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v15_quantitative_grounding",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8c1942f875434c588f7cf2c74ec6cd9cdcdf33ec737a1638aa284e0747ab68c8",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v16_pnr_dialectic",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "22c1b4397ae2014e58b5c05f63524f996d11ee9aa83af822f0e183c578961bb1",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v17_create_tree_surface",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T12:58:37 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1414e982c7d90de192bf2dab98d4d4099718fbd19feb896aee13099fead3e563",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v18_delete_tree_surface",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T13:27:18 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0d83512673c03f1ba85ffa0406a42386db680354a5398c9592bb979e7990c5fa",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v1_apt_laudan",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5cdba28992d73e295f46037c6350eabc337243ef0384e4b4cc853f5843e2fdf1",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v2_adversarial_fixed",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f863f997957db32643dbac7f0549a01279de040d223777813307681ad4e29add",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v3_bayes_stack",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e0bef7e8f4cf366f1e121206683204fa11195d8633a0cd23d2a2a87939d4e790",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v4_theory_thick",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T01:39:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1e13bddd6bc6aa564e257a88a6bd70fe0f5737fc37a0e906099963c12cb55755",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v5_cli_mcp_fertility",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12T01:51:43 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "25130d16065825f4b296746761d6d67509c307d70f20c357fe30b693c718d858",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v6_internet_weaving",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3342439bb6329bd4f3579026520970237fcba4aea7e405f25fcf01d2ee4a99b8",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v8_data_lineage",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "49fc63f814f129b6317c686ca2485f876cfb7393a0cab85e462ec6642648918d",
+   "tree": "LakatosTree_LakatoTree_SelfDev_20260612",
+   "tag": "v9_engine_env",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-12 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5ee2c3748b5dd5acd492ea67a3aa684fd68055a977bbc6b87407593232d832ff",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "P0a_replay_status_label",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:07:42 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c53d9f91448c55bdabaad5f7df9817c7829e85473adc15e8afaa45226b24175a",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "P0b_anchored_ratio_badge",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:07:46 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fa55701a0943650b87c8de753d6ea5ff6c1ea5af70c445e293782e8576f38335",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "P0c_line19_footnote",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:07:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "336e1d17460f54356f18743e2eabd5bb8f092b09e2ed893400ffffc51febea14",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "P2_replay_at_scoring",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:08:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "047236ec061ac45237f6de483f657cd3f0017077656bb1674bc14c20382a3c4b",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "P3a_prediction_wizard",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:08:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "08df82a2ac5cf1624b8d622799cffae13d2feea15907b54ef714003bd11d59a5",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "P3b_coverage_kpi",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:08:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c9f4dd2fd676c2b3f0ed5677eaa797b3ea5bbb48e590c57aee71da1eb66eba57",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "S1_baseline_lineage_anchor",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:53:48 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d9dbab7c4e3ef49f6154532ab2d2a20ef103369cc343085096b023c67dfdf9bd",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "S2_surrender_laundering_valve",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:53:54 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "59e9e821b65b6e61922dc1b389315b670d104b86f6b3bccd38e495fa42bae729",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "S3_writer_verdict_erasure_hatch",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:54:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "561bf2a47ed03cd6fdca80bc7f43e324037825d0035989992a4e8cb4227ef3f8",
+   "tree": "LakatosTree_ManifestoGap_20260702",
+   "tag": "thesis",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T02:07:28 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2d66470c789d4a79175e00ef3e7d606ee8baac6e8efcec586e9635843546303b",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "assert-strength-ladder",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "fc3f5d617a0a8ef0813947c6a84b4758fa29ca040a99c85eb7043e3b145ecbc1",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "backend-abstraction-port",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c1d10a07478461a70922fd12a6dfe1d13c39f7e3d98ed282fa718b4a17d4b0a7",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c1d10a07478461a70922fd12a6dfe1d13c39f7e3d98ed282fa718b4a17d4b0a7",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c1d10a07478461a70922fd12a6dfe1d13c39f7e3d98ed282fa718b4a17d4b0a7",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c1d10a07478461a70922fd12a6dfe1d13c39f7e3d98ed282fa718b4a17d4b0a7",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c1d10a07478461a70922fd12a6dfe1d13c39f7e3d98ed282fa718b4a17d4b0a7",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c1d10a07478461a70922fd12a6dfe1d13c39f7e3d98ed282fa718b4a17d4b0a7",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-fix",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "81966fa51d8bdd4ee55b1367f4726bc2fcd70a7a4918359906104288f6eefede",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "impl-verification",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "6cfcf04454472d60eff8c6a6069c66cfe623d745ac2413a3f99299c132824a6a",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "lakatotree-full-ooptdd-green",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c132c2c85f3230e1f33aafee66911056b71194eea4e960946de9202d7f9b0d96",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "lakatotree-oo-conftest-entry",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "a1f3379f9cb4bc99ad8176fa4e3d24125a25c2504a9f19b1953bbbebd614c30e",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "lakatotree-oo-sink-wire",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "af8027f4b7555838ef44d2e5046fa3b5d9909dc19c621c253f34bf5df2bac395",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "oo-ai-devloop-prom16",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "c6b570b1cf4be3671e9621bdd0f0292f79788263cce378a6bb87444eec2e4145",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "ooptdd-ltdd-v1",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "e2c6b6d852bf8c32cb5256739b8fe96d8e2aab3f13837bce8559d8901031d1ac",
+   "tree": "LakatosTree_OOPTDD_20260616",
+   "tag": "productize-standalone-roadmap",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "4b483de2ef7d21e2f6d7489b03f8694a072f18b9f42d0ba3ee526e532d204767",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "adoption_hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T12:51:01 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "807d97a8b6d733c4ad71ee7d65f6ef40dcd4b9658945d9e7aec483b191c672a1",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "p1_bypass_failloud",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T12:53:03 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9a6b501c6184ae3431e79c832aa3dc6f4cc931b803a2ba7bc8411dd75f846ea2",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "p2_hotfile_diagnosis",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T12:53:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "31ed9adc3a86a551bd3925f1e7836827b3e95299f290358d0063a9e8a61a236a",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "p2_shared_lane_3way",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T13:14:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "884eb0e6e2e735228aed2e98cbfa93d4f07d9215c5739e02126acad7cddb34af",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "p4_idem_gc",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T12:53:09 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ce375964d212b3e5a73d27473bcfe5adcc727021f0274730f20c2efe6318176e",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "p5_complete_task_oneshot",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T12:53:13 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "66ece745bf1aa62a950c9815f7e81ea6d4a7468b5d0319017b530ec0b02ec696",
+   "tree": "LakatosTree_OmdEngine_20260702",
+   "tag": "p5_strict_writeset_gate",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-07-02T12:53:15 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ebe82e472f9dcf07bad6cb4fa114fd428efed60cf7ed0d3e8e78370bbf96797a",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "barrier_crash_safe",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2b1140ee44f56740411086b09d7b631a15585970a82cd0d34a9269d9aa4fa7b4",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "deadlock_freedom_dag",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8f6a3080277d0ad2eafd5ec1fc4a76e3a41769bfb6bbe3ece63ceb4e82049dae",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "exactly_once_idempotency",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8df4aecff099c5efcf7e5e212a0f97d14f175b3ae6f0fb2995cb50a41abe41e0",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "fencing_token_vs_ttl",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2f12d0eb82248639a71d12154eb2c6f51493428a2c73c5704c99804f070c1eef",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "flag_crash_safe",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b3c4b41c99f94a64acc563d903c573e6558365e2738f2448f96048c2b81fe0f2",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "lease_reclamation_liveness",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "805d602895ed39ee68979c8fd4214b6ef28e22ec2164f7822861a8cbbc775787",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "mutex_disjoint_orbits",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "53c692f1b6c23d0e8415358bc41c5ce63f91d8f7d30a6da55d2f4cb73451d0fb",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "phantom_read_coherence",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c4efdb8a77024ca235d1ce1acc162cef4356273452db298dd4fe97ca4d8f21e6",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "semaphore_crash_safe",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2f1eee732f8ee2b99b8165f02e691d8a4f699de045ce66ebc24c50ba492d4e5d",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "single_leader_epoch",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3e8e1649032d9d49a1163077d2a5ea96355e312cad6c7c498a2bf24fed266cef",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "singulon_hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7f1538bb58b41b1f65521c0bbda5a2b205e52aaabfcbf152a601f659d7f54957",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "starvation_freedom_fifo",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "83a93bf9ea2245bd108f116ff511b4a7f820ab12c9eb1eef6c9e6a3b676053f3",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "two_phase_commit_split",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "396621ecaeb7e71d0a7bc28ce576196a100cab0783b65b643a9be0a9877a1900",
+   "tree": "LakatosTree_OmdParallel_20260627",
+   "tag": "writeset_fs_soundness",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0266a8c4fdf67edc73f4f7ef653e60fb069b0f57bc4858651e543e34fcd6bfca",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_async_structured",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "67228617ba5c68a0689d05dd3716e17cf6991a761b2e6fd5cc5e7493dc8d0d2d",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_data_parallel",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7bdf78c2743648ffb8b879ca79e73c80126319f6afbe7b23e6c148097ad24057",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_dataflow_streaming",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e6905fcd3c2673e69e201cc5ca220a75386b8335e6e26ae435ce5a4986813b51",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_distributed_coordination",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3e8143a35fe3c96da4b6a9cb5c462eb05750cfb427aa1e1a771597a971e1e8da",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_message_passing",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f67b188bcb0da03f667b3d026ee0bdbabce90aea981da3ec93b2f61d46c38bd5",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_parallel_agent_coding",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "93478aa7922b3161709770175016478b375f5937e09f74761a10323984addb25",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "donor_shared_memory",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d58041fc605ccbcd451852a96446ffc9bdb53434cd80ac51d9b9b7e3ac33f3ae",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "field_hardcore",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "228267d0aae05b392deaac14fac3b4bc0a7dc0c4055f0f59b8b9404992122f5e",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "focal_beats_optimistic_merge",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5af1970ff47928f31446e9ab65f15845d221fe017c10b3477ef950df6c291482",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "focal_semantic_correctness",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "808bd96d1294b39835402552f829d1cf9338d053b906d2124b3aca91aa11dffa",
+   "tree": "LakatosTree_ParallelAgentCodingField_20260627",
+   "tag": "focal_singulon_conflict_free_by_construction",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8b4979b6a17625fac3661e9b71755107b56f69496a8afc2cf3dc3b1da65bcab0",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "canonical_floor",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "cdbc20ff2c03a957b7e3f183394f3735a8d7fea65bb3cfac94b2299d4d7d3552",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "credibility_provenance",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-22 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9793bd37e104b8367a39ab0af6720f137fb5e0317c621131e0e303f79d6e0d80",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "db_boundary",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-22 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e7e64772cf36878308c36b2f4cac9de8aba5c10dbc164ee2de73c1487b34ac47",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "hard_core",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "1604313126e445d9296c65cceec5983cf875ec4413b1f86d31bf8062988129c5",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "longinus_grounding",
+   "checks": [
+    "MIXED_JUDGED_AT_TYPE",
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "948580bd04a2290eadc071a934d6132dccc53c379a5736e2ba38641b16afef79",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "metrics_provenance",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "3ff011f813547f3a80ccd3f7f123b67349a92bd3540dade6211ed2509879efe2",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "promA_node_gating",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "fea923b5626c6d9ec37e98bd0583e5b9e92c130ad15f37cebed9f1230ee75571",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "promB_novel_independence",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "8481f04b7879a2129a0d5c84c6f21b7dee8860f3cdb7ed6b711e2a3a826ef1dd",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "promC_oo_roundtrip",
+   "checks": [
+    "MIXED_JUDGED_AT_TYPE",
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "f58a2d219c4d4a9715cae9b2b490e7ac71c1ff77d55372f853014aff321e2d78",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "promD_doc_honesty",
+   "checks": [
+    "MIXED_JUDGED_AT_TYPE",
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "631dbb69998893f45bdd55a8a4c29103ace6768c7818f20426ef287884823ee2",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "provenance_reality_derived",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "b2910230cb31b5be2096431891832e7f88525a5ca503419b758ee3db094566f8",
+   "tree": "LakatosTree_PromHonesty_20260620",
+   "tag": "sha_provenance",
+   "checks": [
+    "MIXED_JUDGED_AT_TYPE",
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "judged_at 타입부패(dict) — MIXED 세대 유물"
+  },
+  {
+   "sha": "dd1046ef1ecb489349954dd7345dd4398f186bf297d057013b8bc5cf0ab19d13",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c1_marker_detect",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b08feaccf2188b1840ad58e9c24a465bc6552d5beda91357594c9f9830606630",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c2_aruco_assembly",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4bc1ad8f3e5880d2a6306f4494d58f95b7a658afd053a3a06dd36d802cdf7470",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c2_full_view_assembly",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "183fae46492a9ebdf163e860c41a36526705b4c2313e2e5e81efa2a043f26df2",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c2_register_to_cad",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7a7bb5b325380f97049f0b6db88d31245a8f06b220c3f45d5f68ab3ed97ab11e",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c2b_assembly_to_cad",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3939d655deac4bc4e2599beb32a1e0b1bdf391d24472a3b1ae344286b4b5781d",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c3_markerless_instrument",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e1c8ed01951cad40411a8b46b5e402fc8ed2d594140cfab08c4657fa9f6adf9e",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "c3_markerless_real",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e700d6ab0d5e88b4c804dfc706d312c61298e3d948886ff9b90bf35f15bb7d25",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "misdiag_reader_frame",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b4e35d03fd06899be0212f341bc51c3debd3bf4ff1a7f38422d56f8b4acbbf19",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "reader_frame_provenance_fix",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a7661baf5803cf9ecdd54b4c6925f219973b11a983c8f846b6e0ebc94ad4d9a7",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_cad_anchor_factor_solve",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:41:56 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d5ebe4c1101ab54d61e23e85cbd9abbe826990f679b744d27bf475b3d39515f3",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_cad_anchor_pose_prior",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:04:22 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bcdc83899953c62d7a66a03c465fce591bc90b882d36cfcc02bb472059631497",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_cad_frame_merge",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:28:22 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "66dce1c954b089f05ede5a03694ed4155f466d857d34bf493e79c463aaa50965",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_corner_bias_separation",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:13:06 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c60266504744895265be3ea54d798b8a5d12c7f5ec0b6a2fb5348ad0bc29430b",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_halcon_cad_lock",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:11:13 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2702c0f52998f1ba9edba0b488b47aaf0b18469c33d2015f4dfe0003cc39e253",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_icp_refine",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:43:42 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "91e2084ddf9d5687ff29665e58341cf42b66b2948f81707a1205359e11c3eefe",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_joint_solver",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T06:39:41 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2db2658d447f441efa0ccc7c54f8abd11de80979897867856b10da917e9abfb4",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_marker_pair_pose_graph",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:03:33 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "254af97f0a7ca86fe1bd0086d1a366b8facd7077197be240f1fe71fa4fa069cb",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_marker_seeded_cad_anchor",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T06:12:23 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b6741521a7982a9267f4dd0c88f6806a24f973890bfdc99ce1d2f1648011b88a",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_marker_side_trueness",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:08:08 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4d43fa8dd90f42dc09bf89f03654c67d8de2be34dd476b9239f38b3991e6aad4",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_markerless_posenet",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T07:38:24 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a905f05c73e8393ba7776b1d7f02f07654bc544a497f24b72d528f7e32ea6556",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_overlap_inadequate_capture_limited",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T04:34:55 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "16f5f87484ac13b7fad91ec851edf7cc07c28342046bb076a8dfb7e5d5ba2170",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_planarity_baseline",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23c86928044a6ef6cad9ffac4b9c993dde917ec186cf80f06b0cb97d702c7081",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_posegraph_merge",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:56:57 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1deea1011ee5937e021ca1c4132d2133fc2292764a43df690de1991b596cc3b7",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_precision_floor_marker",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d4312392bde1b9fce1fcc880f1bf0a7110d8cbb7c05c5b8ebc2617a6978bd40d",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_prob",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "5003ff244ae879aaab4a5916d6f7c6f77be64218b5da22d8d2b1575e89b78e1b",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_real_cad_icp_merge",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ebf8e52b15493b6220c67bf0435d327bbb9551194c1463fa38b63b5a58e64d8c",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_real_cad_maxcover_rgb_trash",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a267421863e1a2162f2591b11258b2e6f6c4f87d099b3cc7da4c900618be45a8",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_real_cad_perview_acceptance",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "11b794880350946e915941c16dc3abe5f7e692c329c56dff16eadefc5bff3acc",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_real_cad_quality_filtered_rgb",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "476965121d030ae63779f3d4dcf3cf027212b46ff1c24a44c93186e305c24677",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_real_cad_symmetry",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "90e545d67f9a59500e17da93ddab08a46535844a9f4bc661c86f5bc29f0e87a5",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_sam_halcon_match",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T05:33:05 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8b975e818e0f924b6236e5a9891b8c854cba74ee7f99e95c73e3ac4a9daaad97",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_scale_corrected_length_trueness",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:24:51 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "41b7940e01f767be158d92475906583b461f2b9ebca10c36ef8dac9859588a27",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_scale_correction",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T01:23:46 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e1e6f71afa99013f63f0d1130b1c056e213e51e7ab4a53773069cee375f421aa",
+   "tree": "LakatosTree_SX3i_ICP_Spec_20260623",
+   "tag": "consumer_d_snr_filter_assembly",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:31:04 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "71c90f026bfd2f0f227dd6113d664ec5efefa4e3c5f1dfef9316bbd0d1862bd2",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2_aruco_assembly",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:13:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c96f110644efa6ca3758bdda23f462a14235b1e96a14573e95d4ec7ac0ea1fc7",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2_register_to_cad",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T04:29:30 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9027abddaacefebbca46fa774337b65efef6d4fd5e392d67f3e60d7e86a95508",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2b_assembly_to_cad",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:13:38 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f1c829fda7be7f298df1a9950465b173d60833afb23b8a711ffc51e70a352609",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2c_panel_segment_roi",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:23:45 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ea4ad5af7ad07d73148777b9af08430372777676fa575a74f7fd03e30113eab9",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2d_full_coverage",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T05:57:07 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "90eeed21163cea3b811b9cc43362d95c7bb21ca47105a88b8cdfd3337aea0c35",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2e_full_views",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T06:17:14 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0ba03d32258379f2aab7f6afb0061a0e4c6cff368f008b2fa732fb879de1c14d",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2f_color_seg_perview_merge",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T06:49:31 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0714de76279a07ad8c5a13c4f75a453829aad5466bf7b98611a3527d4ef5a05b",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2g_phase1_global_solve",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-24T07:13:54 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d5fb9fc7c9f5c7d0f4839ac3a75fea90db2bb7d634ffad910cd8030b14b510f5",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2h_multiseed_registration",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T00:24:52 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "96d94a939c08b9a902c2c247317214d02ce49d67bcb8fa58c45e8fd5958d4024",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2i_b_asbuilt_nominal_corroboration",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T01:06:14 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d7ad3a213fe706e457e06205a416a0d3e244b7a281d829c4eeef89f2f1fd0b41",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2i_real_cad_register",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T01:05:42 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2255ae2b5652dbdeb2cea3bc1ce1d6bbd02d66f0ca46093d1cf7e166390ab86a",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2j_b_smacof_consistency",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T04:10:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "ded5ec518961767e194e5de7001a8ab511b86cafca3681aa0efa9b63d0617165",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2j_c_3method_corroboration",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T04:10:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "0978a3738c6c6264cb7a3954e394ae7b9459daf306d339cad26cba651568f538",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "c2j_clean_floodfill_smacof",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-25T04:10:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e5c023c8c12879a000dfbeb000f2aea590bd950bffc7a21ecc18787bc0c9d59f",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e5c023c8c12879a000dfbeb000f2aea590bd950bffc7a21ecc18787bc0c9d59f",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e5c023c8c12879a000dfbeb000f2aea590bd950bffc7a21ecc18787bc0c9d59f",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e5c023c8c12879a000dfbeb000f2aea590bd950bffc7a21ecc18787bc0c9d59f",
+   "tree": "LakatosTree_SX3i_PanelReg_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8a02f9fa89fda5a14aa9b178454e6246c44a3ad8baa3cb1f164e1b8b69625552",
+   "tree": "LakatosTree_VerdictProvenanceGate_20260620",
+   "tag": "asymmetric_ceiling",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-20T14:04:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2facb0be6758f3c7f1614db02f49b921c8886168483eb9c53332cb75fd37e1eb",
+   "tree": "LakatosTree_VerdictProvenanceGate_20260620",
+   "tag": "hard_core",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-20T14:04:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3dc98ea033e6cc3589d651d86e6f6cca25b9152535f6c9d60a3dfb899c940b5e",
+   "tree": "LakatosTree_VerdictProvenanceGate_20260620",
+   "tag": "hardened_symmetric",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-20T14:04:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "3c97584583782381c0c230f9b3f349354acebf7d6a25d5826e05653c38de7f3c",
+   "tree": "LakatosTree_VerdictProvenanceGate_20260620",
+   "tag": "persistent_ledger",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-20T14:04:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "81d6ba55b7668adf170732e71c29dbca49328c8322e6738ba8a241eedb74bf9a",
+   "tree": "LakatosTree_VerdictProvenanceGate_20260620",
+   "tag": "selection_signing",
+   "checks": [
+    "SCRIPTED_WITHOUT_SOURCE",
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-20T14:04:16 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9f800e499acc5ccc97e7330debea20b6d1764795ad1953083eade0dd61d511b2",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "V0-kg-substrate",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6873e192a729e781042d3b72d0b8ec9c6e8e7a89960db8bf22e7b376658cc32b",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "V1-ontology-typed-gate",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6d320c631111a3255e2affb14a78a5fa56dd6872a5ba27145e2147e2151296bd",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "V2-kg-native-loop-io",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d1f3c3213ec6f11e73ae2e1ccf9f97d3e2c796dd5ddb595d6486c4ad06400676",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "V3-ai-native-mcp",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23e91e8a7c03178c40371bfc7036787edcc1f2049e7020e719f1459b367d9266",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23e91e8a7c03178c40371bfc7036787edcc1f2049e7020e719f1459b367d9266",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23e91e8a7c03178c40371bfc7036787edcc1f2049e7020e719f1459b367d9266",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23e91e8a7c03178c40371bfc7036787edcc1f2049e7020e719f1459b367d9266",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "23e91e8a7c03178c40371bfc7036787edcc1f2049e7020e719f1459b367d9266",
+   "tree": "LakatosTree_ooptdd_ontology_20260616",
+   "tag": "",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(timestamp 부재 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a2f6ce153790a023dc52ce597fb79cc92f6f931c4d03eed680ad80dd8b7b3e50",
+   "tree": "ice-orca-dragon",
+   "tag": "asymmetric_lakatos_fiber_theorem",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f152a560772aee7d2fcbef596f03c9a942d4533f74997ea5f6da8df124fd72c4",
+   "tree": "ice-orca-dragon",
+   "tag": "b2_zd_boundary_mass_scale",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "4e32de0bb33ac00a53b9392873b9699514095c5103eaa6334e6ac7339cfc2447",
+   "tree": "ice-orca-dragon",
+   "tag": "cabibbo_angle_sqrt_1_20",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "a6073ca0c2458bc6d79b62e712e1cb21985811b3f9c09ab787452c0fb708ede8",
+   "tree": "ice-orca-dragon",
+   "tag": "cd_final_quick_no_verdict",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9bba45654a2fc95a17d190e24d2679fc0af145127c7f6309f5ab8e10246a24ef",
+   "tree": "ice-orca-dragon",
+   "tag": "conv_invariance_s3_automorphism",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "728878d3426352e33c47e12c4de896b2a3b6afbeab6c117dad857edf0ce92883",
+   "tree": "ice-orca-dragon",
+   "tag": "derive_mass_ratios_self_refuted",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "007dfadf20701b0ce904a3c12ba556a5d7c9e1862ef69ae9f489976c035ce2df",
+   "tree": "ice-orca-dragon",
+   "tag": "epsilon_adelberger_screening",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "f84fe9565b65f98cedcaa4c74a13ef00009926183fd28726c27d4e1a4c16d739",
+   "tree": "ice-orca-dragon",
+   "tag": "g2_aut_octonion_recovery_caveated",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "2ea5ec261657b5395e7261950a67f53f4561a77478cc062877b4530fc01e5c37",
+   "tree": "ice-orca-dragon",
+   "tag": "g2_octonion_inner_derivation_artifact",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1746041adf0f63098a9ed41d611382a0d8362d1a42871f49d07cfd3b0aebfaed",
+   "tree": "ice-orca-dragon",
+   "tag": "hidden_scan_v2_target_family_coverage",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "7323f842d91bb9d23b67fbbc41d38a5e1d79f921fe3adb769baa01ce570de028",
+   "tree": "ice-orca-dragon",
+   "tag": "higgs_zd_doublet_42",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6927576fa715cb7467ff1b273fda6327f6363b850337f9fbac3a79b38baccc77",
+   "tree": "ice-orca-dragon",
+   "tag": "hypercomplex_sm_50yr_stagnation",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d95befcce4aab43c48624e354e3b70a3bcc62b223950e2611e7156d0bc345b97",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_004_meta_bayes_non_numerology",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "6590fb657b1483dcfaf9d06ed40d49dc17349027f4688b4e2e354892496df4a0",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_coleman_weinberg_ssb",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "9200123a172201529b6ee50b49f5d3186a2fd06993123461bfce7e43d9dda85f",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_cooperative_vacuum_selection",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "fa8a7705e45bf0051c9da0c45b7c1a86e4c72114917d8f97a3ba62477d5c11df",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_dimensionless_observables",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "d80ff2fb6d56a5e3f61f253cf759059d1f3db565c455c427fd87737f6dfaa6de",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_l2l3_e1_e5_full_verdict",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "71b1fab022feb6fd9b16857d978e93c2c51cbf0ae445a1e96b45c4210be83098",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_lstar_derivation",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "532e6cba511857236b833ba0de2b2c8d647705090fc132702a5a1577e22cbbcb",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_orbit_z6_substructure",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1c4c65e681bc29fa9b9c81991766086801f35c90553518556f9b9af044fde2fd",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_root",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "99fedab6c6b696b3c6f016ae5665fd0af45fcac107be7d2c3782779758a9befb",
+   "tree": "ice-orca-dragon",
+   "tag": "ice_workbench_reframe_permanent",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "536e099936c1a82185dcaa3d43d608dd0f2ce27c6755830143b90078a173d6b1",
+   "tree": "ice-orca-dragon",
+   "tag": "koide_q_2_over_3",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b270aecf0f981d3a8f60f02abf192d6bb59daf8e2238365f26c7626d93a0a101",
+   "tree": "ice-orca-dragon",
+   "tag": "moreno_1998_center_s_g2",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bbbf600ca6fdb2c4239d32049bff1bd2c6669d9b9303ed6a12e384c4ecd6fe4b",
+   "tree": "ice-orca-dragon",
+   "tag": "mp_mw_3_256_literal",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "bc14f7c9b757566e447d741ddb1e3c04cf1c84331260131d71703d064802f206",
+   "tree": "ice-orca-dragon",
+   "tag": "mp_mw_a2n_layer3_fit",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1342e0174b37f2bc64d96b8c621934a7758683e9819785e46cdc1ba35039eca6",
+   "tree": "ice-orca-dragon",
+   "tag": "mu_e_mass_ratio_206_77",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "27adb8cd74b08c81e10ab875c407dcb312215cd46d5347c5a92fc334e7e6b13a",
+   "tree": "ice-orca-dragon",
+   "tag": "oq2_n_eff_11_pullback",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "166509d268681203080f90644275304bf828f5747aa8692535ef230aa047959a",
+   "tree": "ice-orca-dragon",
+   "tag": "orbit_42_zd_count_match",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8cf1303b32ab430c4e27c46b7e79a4771114b1153f8be19568dc17ab544e648c",
+   "tree": "ice-orca-dragon",
+   "tag": "p2_zd_filtration_lean_escape_lane",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "95b02c6e917caa24da54f3b810c094479198acd8ae86cb6871845922ac23ce37",
+   "tree": "ice-orca-dragon",
+   "tag": "prereg_check_lakatos_fail",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "29bf51c051034df3644f65dafe67c43a92261d696fd9027f1cb8ca22252a378f",
+   "tree": "ice-orca-dragon",
+   "tag": "prove_s3_jacobi_associator_fda",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "34f12df593a8940281c94ccb1ca5412ce82e13c3a1a6380e28463e14c80b081a",
+   "tree": "ice-orca-dragon",
+   "tag": "prove_s5_bv_master_hochschild",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "897323340ed4ba636453572b4a81eb70e4e89d7419d29d0d026948a4b1c56f9f",
+   "tree": "ice-orca-dragon",
+   "tag": "queue_01_orbit_42",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "22e80f15f6961e5795ead0ca6e1e68e440bb15caa238b50c9592159ae7099645",
+   "tree": "ice-orca-dragon",
+   "tag": "queue_02_4condition_closure_diagnostic",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c34402798f34962b842491bee0620480e318587d5cb55d2f6a82034ba2e54b6a",
+   "tree": "ice-orca-dragon",
+   "tag": "queue_02_custodial_fail",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "14cda9ad48a23c20f1d03f3382d814e4d040c2b1d842405fab923c49c9a54f44",
+   "tree": "ice-orca-dragon",
+   "tag": "queue_03_custodial_threshold_scan",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "1e7956f653224a1c3e6e332b5e8d07597b79ecde09218d90a601c865a91e2078",
+   "tree": "ice-orca-dragon",
+   "tag": "queue_03_rep_casimir_075",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b42eafb32a30e38a10030e838b9ce3deac1937a5ddfc99a3e49b92bc10725479",
+   "tree": "ice-orca-dragon",
+   "tag": "queue_11_xor_105_invariant",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "8a6e17af7f59e223648d48cf8fed5cddce96168ef8c8d6b9dc5328e60b458938",
+   "tree": "ice-orca-dragon",
+   "tag": "registry_expansion_structural_incapacity",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "97f5059e9920faa1cfff9ab740373c0520033c008e81bb224152eb94ad8e12a9",
+   "tree": "ice-orca-dragon",
+   "tag": "rep_casimir_075_regularity_reading",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "b89c276ea54c79b831dd3229512b2ef47dc874ec4cfd52b77817c5c2ae8c9f83",
+   "tree": "ice-orca-dragon",
+   "tag": "singh_delta_sq_3_8",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "75b840f2d6d6c75fd2b669e9698150e4d17ca8b8c0f2386d63dd6a866ab80527",
+   "tree": "ice-orca-dragon",
+   "tag": "ss3tg_aut_sedenion_g2_x_s3",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "c91d47373433631559f18db3f52c3a1d3675fc42cf93b95c18ecdd2ca1bf0e6f",
+   "tree": "ice-orca-dragon",
+   "tag": "ss3tg_prior_inconclusive_s6_720",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "11ae4ba4ed32e472bc4c593fbbbbc59fd434f3e1fba897f87b91cf3cf24da740",
+   "tree": "ice-orca-dragon",
+   "tag": "tau_mu_mass_ratio_16_818",
+   "checks": [
+    "SOURCE_TRUST_NULL",
+    "VERDICT_WITHOUT_PREREG",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "83dc3dc631630af1b1d51adbeb89bf78cbd294028b9a44649715698b1b35c718",
+   "tree": "ice-orca-dragon",
+   "tag": "weinberg_sin2_theta_w_3_8",
+   "checks": [
+    "SOURCE_TRUST_NULL"
+   ],
+   "reason": "pre-campaign-serving(2026-06-14T10:12:59 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "66b2b2d6e55270b81085515c7d5f8ad3be759221d81210ab0a414cf60e92b5ef",
+   "tree": "metalheart_detector",
+   "tag": "ikkj_seg_v1_maskmap",
+   "checks": [
+    "FORCEFUL_SOURCE_WITHOUT_RECEIPT",
+    "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
+   ],
+   "reason": "pre-campaign-serving(2026-06-26T08:08:27 < 2026-07-02T13:41Z)"
+  }
+ ]
+}

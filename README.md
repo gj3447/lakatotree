@@ -146,11 +146,11 @@ drift-guarded contract**: `tests/test_readme_longinus.py` checks every module re
 layer (and that the set of layers matches `.importlinter`) — this map cannot silently lie.
 
 ### Foundation — `lakatos/` (root; shared, importable by any layer)
-`engine` `verdicts` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology`
+`engine` `verdicts` `node_state` `grounding` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert`
 - `engine` sparse research frame — enums / `GateResult` / gates / possibilities / event log / credence promotion / `SourceCredibilityScore`
-- `verdicts` verdict-vocabulary single source of truth · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
+- `verdicts` verdict-vocabulary single source of truth · `node_state` explicit KG node lifecycle FSM · `grounding` all constants with tier honesty (literature / policy-in-scale / policy)
 - `trust` TrustRank/EigenTrust source-scoring primitive (shared by `engine` + `quant.bayes`) · `claim` ClaimStanding (upper/lower-realm confidence + blockers)
-- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates) · `provenance_backfill` classifies pre-receipt-regime NULL-source nodes (explicit `pre_receipt` marker vs re-verify) without fabricating provenance · `ontology` opt-in domain-ontology gate — a tree declares entity types (required attrs + enum/type/min/max constraints + closed-world), and the engine fail-closed-rejects (422) non-conforming node registrations (JSON-Schema-2020-12 subset, mirrors ooptdd, gives the `domain-ontology` foundation requirement teeth)
+- `world_gates` G-Web/G-WorldAction · `longinus` code↔KG binding drift audit · `semantic_surface` meaning↔code owner gate · `harness`/`harness_run` ports & adapters · `cli`/`mcp_server` surfaces · `eureka` felt-vs-true detector · `facts` declarative fact-query evaluator · `research_import` internet-search → research-tree import adapter (composes G-Web + credibility gates) · `provenance_backfill` classifies pre-receipt-regime NULL-source nodes (explicit `pre_receipt` marker vs re-verify) without fabricating provenance · `ontology` opt-in domain-ontology gate — a tree declares entity types (required attrs + enum/type/min/max constraints + closed-world), and the engine fail-closed-rejects (422) non-conforming node registrations (JSON-Schema-2020-12 subset, mirrors ooptdd, gives the `domain-ontology` foundation requirement teeth) · `assurance` tree assurance-tier × verb gate dispatch table (git-absorption G6: `notebook < receipted < anchored`, new trees default `anchored`, monotone ratchet, structural core outside the tier vocabulary = cannot be switched off) · `write_cert` [git push-cert] signed write certificates (git-absorption G10) — pure-stdlib RFC-8032 Ed25519 + `did:key` (ed25519-only, secp256k1 rejected), the signed blob *is* the command ({tree, tag, prev_receipt_sha, metric_value, script_sha} — replay dies on the receipt-chain CAS binding), authorship derived from the signature not a client string; enforcement arms only when an anchored-tier tree declares an attestor allow-list (no key material = never locked out)
 
 ### `verdict/` — judgment kernel (the scorer; modeled in `formal/Pidna.lean`)
 `judge` `pnr` `spine` `promote` `certify` `argue` `compose` `industrial` `kusari` `z_height`
@@ -168,12 +168,13 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
 ### `programme/` — programme-level / comparative / meta-policy
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience`
 - `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
 - `flip` per-layer verdict-flip metric — counterfactual pivotality: how often each rigor layer (Popper/Bayes/Laudan) actually *changed* the `stack` decision (composes `quant.metrics.branch_inputs` + `stack`; surfaced in server `read_models` as `m["layer_flips"]` → dashboard)
 - `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
 - `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
 - `tradition` [Laudan] research tradition (revisable ontology/methodology/exemplars) — same_tradition_revision / tradition_drift / different_programme_candidate, `diagnostic_only` (hard-core identity still routes through `LakatosGate`)
+- `consilience` [git merge-ort] branch re-join operator (PIDNA §3.3) — 3-way per-target merge with recursive standing-inert virtual ancestor (criss-cross), conflict-as-data (`clean=False` still completes), merged credence = union-fold through `quant.bayes.branch_credence` (same-target confirmations dedup, negatives accumulate — never `max(c1,c2)`), `verdict_mutation=False` (incore report; canonical adoption stays behind human/admin gates)
 
 ### `io/` — evidence, provenance, persistence, observability
 `lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`
@@ -224,6 +225,12 @@ CONSUMER_LOGS_E2E=1 OO_PASS=*** python -m pytest tests/ -q   # ship traces (gate
 - `BRANCHED_FROM` supports a multi-parent DAG; edges record `inferred/relation_kind/evidence_ref`.
 - Closing a question is an append-only `QuestionClosure` event, not a `closed_by` overwrite.
 - Verdict vocabulary has a single source of truth: `lakatos.verdicts`.
+- Node lifecycle state has a single source of truth: `lakatos.node_state`.
+  KG writes persist `LakatosNode.node_state`, and legacy rows derive the same value from
+  `verdict` / `verdict_source` / `pred_registered_at` / `judged_at` / `novel_confirmed`.
+  Closed states: `DRAFT → PREDICTED → MEASURED → JUDGED_SCRIPTED | INCONCLUSIVE |
+  CANONICAL_CANDIDATE | REJECTED | DIFFERENT_PROGRAMME → CANONICAL → FORMER_CANONICAL`.
+  `ADMINISTRATIVE` is reserved for manual non-scoring labels such as `proof`/`superseded`.
 - `CANONICAL` is not an absolute truth but a temporary current-best with a `current_best_pointer` and a scope/assumption/evidence window.
 - `metrics` force-exposes `coverage_backlog` to prevent overstating completeness.
 - `ClaimStanding` separates upper-realm (internet/human/kg) from lower-realm (bash/data/git/agent) evidence and reports confidence + blocking reasons; `ResearchEvent` is append-only evidence that never changes a verdict.

@@ -30,7 +30,11 @@ from dataclasses import dataclass
 
 from lakatos.quant.bayes import bayes_factor
 from lakatos.quant.laudan import problem_balance
-from lakatos.verdict.promote import promotion_gate
+# NOTE(아키텍처 감사 2026-06-26, finding D3/eureka): verdict.promote 를 *주입*으로 받는다(아래 classify).
+# 전엔 module-level import 라 quant.metrics → eureka → verdict.promote 상향 체인이 생겨 .importlinter 에
+# carve-out(ignore_imports) 1줄로만 green 이었다 — 게다가 그 게이트는 모든 프로덕션 경로가 require_promotion=
+# False 라 *dead weight* 였다. import 를 제거하면 eureka 는 순수 측정 코어(quant 만 의존)가 되고 계약은
+# 예외-제로가 된다. promotion 이 필요한 호출자(현재 test_eureka 뿐)만 promotion_gate 를 주입한다.
 
 # Jeffreys 'substantial' evidence band (10**0.5). Below this a confirmation is marginal —
 # a felt aha riding weak evidence is not a true eureka.
@@ -48,7 +52,7 @@ class EurekaVerdict:
 
 
 def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
-             require_promotion: bool = True) -> EurekaVerdict:
+             require_promotion: bool = True, promotion_gate=None) -> EurekaVerdict:
     """Classify a research node as felt / true / hallucinated eureka.
 
     Node keys (all optional, conservative defaults): ``novel_registered``,
@@ -64,6 +68,12 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     eureka scan asserts only the *measurement* gates (confirmed + substantial BF + net
     problem closure) and leaves promotion-standing to the layer that owns it, rather than
     hallucinating a veto from a field the node never carried. See :func:`eureka_over_tree`.
+
+    ``require_promotion=True`` (default) additionally applies the promotion gate, which must
+    be supplied via the ``promotion_gate`` parameter (dependency injection) — eureka itself
+    stays a measurement core that does *not* import ``verdict.promote`` (finding D3/eureka),
+    so the ``.importlinter`` layers contract holds with zero exceptions. All production tree
+    paths call with ``require_promotion=False`` and need no injection.
     """
     felt = bool(node.get("novel_registered"))  # 🔵 blue flash — does NOT imply correctness
     if not felt:
@@ -82,6 +92,11 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     if balance <= 0:
         reasons.append(f"problem_balance:{balance}<=0")
     if require_promotion:
+        if promotion_gate is None:
+            raise ValueError(
+                "require_promotion=True requires an injected promotion_gate (DI: eureka 는 verdict.promote 를 "
+                "import 하지 않는 측정 코어 — finding D3/eureka). 프로덕션 트리 경로는 require_promotion=False "
+                "라 이 분기를 타지 않는다; promotion 이 필요한 호출자가 lakatos.verdict.promote.promotion_gate 를 주입할 것.")
         ok, gate_reasons = promotion_gate(scripted_verdict=node.get("verdict", ""),
                                           stands=bool(node.get("stands", False)),
                                           reproducible=node.get("reproducible"))
@@ -91,6 +106,19 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     true = not reasons
     return EurekaVerdict(felt=True, true=true, hallucinated=not true,
                          bf=bf, balance=balance, reasons=tuple(reasons))
+
+
+def closed_count(value) -> int:
+    """'닫는 질문 수'의 단일 정본(R7, G5 단일 프로젝터 장르) — str(질문명)=1·빈str=0, list=원소수,
+    int=그대로, None=0. 봉합한 버그: len(pred_closes)가 질문명 *글자수*(len('q_lx3_enabler')=13)를
+    닫은 질문 수로 계산해 problem_balance 를 거짓 부양했다. judgement seam(1 if closes else 0)과 동형."""
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return 1 if value.strip() else 0
+    if isinstance(value, (list, tuple, set)):
+        return len([v for v in value if v])
+    return int(value)
 
 
 def _node_to_eureka_input(node: dict) -> dict:
@@ -115,7 +143,7 @@ def _node_to_eureka_input(node: dict) -> dict:
         "delta": delta,
         "noise_band": node.get("pred_noise_band") or 0.0,
         "source_trust": node.get("source_trust", 1.0),
-        "closed": len(node.get("pred_closes") or []),
+        "closed": closed_count(node.get("pred_closes")),   # R7: 글자수 버그 봉합(str 질문명=1)
         "opened": len(node.get("questions") or []),
     }
 
@@ -131,19 +159,28 @@ def eureka_over_tree(nodes: list) -> dict:
     is a separate, higher gate. Returns the same shape as :func:`eureka_rate` plus
     ``measurement_grade=True`` so a caller never mistakes it for the full (promotion) verdict.
     """
-    verdicts = [classify(_node_to_eureka_input(n), require_promotion=False) for n in nodes]
+    inputs = [_node_to_eureka_input(n) for n in nodes]
+    verdicts = [classify(i, require_promotion=False) for i in inputs]
     felt = sum(1 for v in verdicts if v.felt)
     true = sum(1 for v in verdicts if v.true)
     hallucinated = sum(1 for v in verdicts if v.hallucinated)
+    # R7 사실 세분(true 정의·hallucination_rate 헤드라인 *불변* — 지표 마사지 아님): 장부 자체가
+    # 없는(closed==0∧opened==0) felt-실패는 '측정 실패'가 아니라 '문제 장부 부재'라는 별개 사실 —
+    # OmdEngine 7/7(확증+BF 완전체인데 pred_closes 미선언) 장르를 실패 사유와 구분해 공시만 한다.
+    ledger_absent = sum(1 for i, v in zip(inputs, verdicts)
+                        if v.hallucinated and i["closed"] == 0 and i["opened"] == 0)
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
         "true_rate": round(true / felt, 3) if felt else 0.0,
         "hallucination_rate": round(hallucinated / felt, 3) if felt else 0.0,
+        "problem_ledger_absent": ledger_absent,
+        "hallucinated_reason_split": {"problem_ledger_absent": ledger_absent,
+                                      "measurement_failed": hallucinated - ledger_absent},
         "measurement_grade": True,
     }
 
 
-def eureka_rate(nodes: list) -> dict:
+def eureka_rate(nodes: list, *, promotion_gate=None) -> dict:
     """True-eureka rate over a node set = true / felt = 1 − hallucination rate.
 
     The headline reliability metric: of all felt ahas, how many survived external red?
@@ -154,8 +191,12 @@ def eureka_rate(nodes: list) -> dict:
     delta/noise_band/closed/opened 를 신뢰한다(BF·문제수지 red 게이트를 그 값으로 통과). 신뢰 불가 입력엔
     eureka_over_tree(metric_value/pred_baseline 에서 *재유도*하는 measurement-grade 경로)를 쓸 것 — 현재
     eureka_rate 는 untrusted entrypoint 에 미연결(잠재 비대칭; 헤드라인 집계는 over_tree 가 받침).
+
+    promotion 게이트를 쓰는 full 경로이므로(require_promotion 기본 True) 호출자가 ``promotion_gate`` 를
+    주입한다(eureka 는 verdict.promote 를 import 안 하는 측정 코어, D3/eureka). 미주입 시 felt 노드에서
+    classify 가 명시적으로 raise — 측정-grade 집계가 필요하면 :func:`eureka_over_tree` 를 쓸 것.
     """
-    verdicts = [classify(n) for n in nodes]
+    verdicts = [classify(n, promotion_gate=promotion_gate) for n in nodes]
     felt = sum(1 for v in verdicts if v.felt)
     true = sum(1 for v in verdicts if v.true)
     hallucinated = sum(1 for v in verdicts if v.hallucinated)

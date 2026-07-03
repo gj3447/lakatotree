@@ -24,6 +24,8 @@
   question-close <name> <qname> [--by B]                질문 닫기(append-only closure)
   agm <spec.json>                AGM 신념개정 — hard core revision/contraction(P1)
   cycle <spec.json>              하네스 한 사이클 — 상계read→하계build/judge→critique→standing
+  cycle-dry <name> <spec.json>   run_cycle 미리보기(REST dry_run=true 직행, 쓰기 0) — verdict_preview
+                                 + would_demote_to_partial(FF1 novel-anchor 강등 사전 예고, R2-NOVEL)
   tree-create <name> [--title T --hard-core H --frontier-rule F]  새 나무 생성/메타 upsert (add_node 전 필수)
   tree-delete <name> [--cascade]  나무 삭제(파괴적; 노드 있으면 --cascade 필수)
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
@@ -101,6 +103,11 @@ def _build_parser() -> argparse.ArgumentParser:
                                              '비-노드면 문제수지 미집계=metrics.unattributed_closed)')
     sp = sub.add_parser('agm'); sp.add_argument('spec', help='AgmReviseIn JSON 파일(신념개정)')
     sp = sub.add_parser('cycle'); sp.add_argument('spec', help='CycleSpec JSON 파일(하네스 한 사이클)')
+    # R2-NOVEL: 서버 run_cycle dry_run 미리보기 — harness_run(CycleSpec bash 실행기) 경유 금지, REST 직행.
+    sp = sub.add_parser('cycle-dry')
+    sp.add_argument('name')
+    sp.add_argument('spec', help='CycleIn JSON 파일 — dry_run=true 로 POST /api/tree/{name}/cycle '
+                                 '(쓰기 0 미리보기: verdict_preview + would_demote_to_partial)')
     # P6-2: CLI↔MCP 비대칭 해소 — verdict(행정판결)/critique(Dung 의문)/standing(정당성) 추가
     sp = sub.add_parser('verdict'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('verdict')
     sp.add_argument('--note', default=''); sp.add_argument('--scope', default='')
@@ -128,9 +135,21 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--coverage-statement', default='')
     sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
     sp.add_argument('--ontology', default='', help='도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)')
+    sp.add_argument('--assurance-tier', default='', choices=['', 'notebook', 'receipted', 'anchored'],
+                    help='G6 보증 tier — 생략 시 신규=anchored 기본/기존=유지, 하향 선언은 409(단조 ratchet)')
+    sp.add_argument('--attestor-did', action='append', default=[],
+                    help='(반복) G10 서명자 allow-list(did:key) — 선언 시 anchored 판결쓰기에 write-cert 강제')
+    sp = sub.add_parser('cert-keygen', help='G10 열쇠공: Ed25519 키쌍 생성 → {secret_hex, did} (secret 은 보관 책임 사용자)')
+    sp = sub.add_parser('cert-sign', help='G10 열쇠공: 판결쓰기 명령 서명 → WriteCertIn JSON(stdout). prev 는 서버 receipts 에서 회수')
+    sp.add_argument('name')
+    sp.add_argument('tag')
+    sp.add_argument('--secret-hex', required=True, help='cert-keygen 의 secret_hex')
+    sp.add_argument('--metric-value', type=float, required=True)
+    sp.add_argument('--script-sha', default='', help='채점 스크립트 sha256(서버 재계산과 일치해야)')
     sp = sub.add_parser('tree-delete'); sp.add_argument('name')
     sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
+    sp.add_argument('--author', default='', help='노드 작성자 actor (FF3: CANONICAL floor human attestation actor≠author 강제)')
     sp.add_argument('--parent', action='append', default=[])
     sp.add_argument('--inferred-parent', action='append', default=[], help='tag[:relation_kind[:evidence_ref]]')
     sp.add_argument('--comment', default=''); sp.add_argument('--algorithm', default='')
@@ -144,6 +163,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('result'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
+    sp.add_argument('--novel-script', default='',
+                    help='서버앵커 novel 측정 스크립트(file 또는 file::symbol) — cross-metric novel 독립성 영수증(FF1)')
     sp.add_argument('--data-branch', action='store_true', help='데이터 재생성 의존 분기(ENG-DU-2)')
     sp.add_argument('--no-data-replay', action='store_true', help='데이터 재현 미통과 → progressive_conditional')
     sp.add_argument('--human-verdict', action='store_true', help='인간 판정 보류 → ambiguous')
@@ -191,6 +212,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--source-class', type=float); sp.add_argument('--primary-source', type=float)
     sp.add_argument('--provenance', type=float); sp.add_argument('--corroboration', type=float)
     sp.add_argument('--recency', type=float); sp.add_argument('--supply-chain', type=float, help='F04 supply-chain 축')
+    # 나생문 #21: rival/theory/longinus 증거 필드 — MCP/REST add_observation 패리티(관측을 이론좌표·경쟁프로그램 증거로 임베딩)
+    sp.add_argument('--theory-basis', default=''); sp.add_argument('--foundation-refs', default='', help='CSV')
+    sp.add_argument('--rival-name', default=''); sp.add_argument('--rival-relation', default='')
+    sp.add_argument('--rival-node', default=''); sp.add_argument('--comparison-axes', default='', help='CSV')
+    sp.add_argument('--longinus-refs', default='', help='JSON list')
     sp = sub.add_parser('world-action'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('event_id')
     sp.add_argument('--command', default=''); sp.add_argument('--cwd', default='')
     sp.add_argument('--exit-code', type=int); sp.add_argument('--stdout', default=''); sp.add_argument('--stderr', default='')
@@ -287,6 +313,12 @@ def main(argv=None):
         from lakatos.harness_run import main as run_cycle
         run_cycle(a.spec)   # 하네스가 직접 prov JSON 출력 (bash 실행은 client-side, server RCE 회피)
         return
+    elif a.cmd == 'cycle-dry':
+        # R2-NOVEL: REST run_cycle dry_run 직행(harness_run/CycleSpec 의 bash 실행기 의미론과 무관).
+        #   서버 incore trial(쓰기 0) + would_demote_to_partial(FF1 novel-anchor 강등 사전 예고) 반환.
+        spec = json.loads(open(a.spec).read())
+        spec['dry_run'] = True   # 이 verb 의 계약: 항상 미리보기(스펙의 dry_run=false 를 덮어씀)
+        out = call('POST', f'/api/tree/{a.name}/cycle', spec)
     elif a.cmd == 'claim-standing':
         suffix = '?require_replay=false' if a.no_replay else ''
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/claim-standing{suffix}')
@@ -306,7 +338,20 @@ def main(argv=None):
         out = call('POST', f'/api/tree/{a.name}',
                    dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
                         doc=a.doc, coverage_statement=a.coverage_statement,
-                        coverage_backlog=a.coverage_backlog, ontology=a.ontology))
+                        coverage_backlog=a.coverage_backlog, ontology=a.ontology,
+                        assurance_tier=(a.assurance_tier or None),
+                        attestor_dids=(a.attestor_did or None)))
+    elif a.cmd == 'cert-keygen':
+        from lakatos.write_cert import keygen
+        secret_hex, did = keygen()
+        out = dict(secret_hex=secret_hex, did=did,
+                   note='secret 은 출력물 밖에 저장하지 말 것 — 트리 attestor_dids 에 did 를 등록하면 강제 발동')
+    elif a.cmd == 'cert-sign':
+        from lakatos.write_cert import build_write_cert
+        chain = call('GET', f'/api/tree/{a.name}/node/{a.tag}/receipts')   # prev 포인터 회수(CAS 바인딩)
+        command = dict(tree=a.name, tag=a.tag, prev_receipt_sha=chain.get('head'),
+                       metric_value=a.metric_value, script_sha=a.script_sha)
+        out = build_write_cert(bytes.fromhex(a.secret_hex), command)
     elif a.cmd == 'tree-delete':
         out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
     elif a.cmd == 'node':
@@ -318,7 +363,7 @@ def main(argv=None):
                                      evidence_ref=(parts[2] if len(parts) > 2 else '')))
         out = call('POST', f'/api/tree/{a.name}/node',
                    dict(tag=a.tag, parents=a.parent, parent_edges=parent_edges,
-                        comment=a.comment, algorithm=a.algorithm))
+                        comment=a.comment, algorithm=a.algorithm, author=a.author))
     elif a.cmd == 'predict':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/prediction',
                    dict(metric_name=a.metric, direction=a.dir, baseline_value=a.baseline,
@@ -328,6 +373,7 @@ def main(argv=None):
     elif a.cmd == 'result':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result',
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured,
+                        novel_script=a.novel_script,
                         data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
                         human_verdict_required=a.human_verdict))
     elif a.cmd == 'provenance':
@@ -387,11 +433,17 @@ def main(argv=None):
                    measurer_separated=res.measurer_separated,   # 측정자≠생산자 영수증(붕괴 숨김 금지)
                    trace_events=[r['event'] for r in recs], oo_shipped=oo_sink.enabled())
     elif a.cmd == 'lineage-record':
-        inputs = [[p.rsplit(':',1)[0], p.rsplit(':',1)[1]] for p in a.input]
+        for p in a.input:   # 나생문 #22: ':' 없는 입력에 IndexError 크래시 방지 — MCP 가드와 동형
+            if ':' not in p:
+                sys.exit(f'lineage-record --input 형식 오류: {p!r} (path:sha 형식 필요)')
+        inputs = [[*p.rsplit(':', 1)] for p in a.input]
         out = call('POST', '/api/lineage/derivation', dict(output=a.output, output_sha=a.sha,
                    producer=a.producer, producer_sha=a.producer_sha, inputs=inputs, kind=a.kind))
     elif a.cmd == 'manifest-verify':
         from lakatos.io.lineage import load_dataset_manifest, verify_dataset_manifest
+        for p in a.current_sha:   # 나생문 #22: ':' 없는 입력에 IndexError 크래시 방지 — MCP 가드와 동형
+            if ':' not in p:
+                sys.exit(f'manifest-verify --current-sha 형식 오류: {p!r} (path:sha 형식 필요)')
         current_shas = {p.rsplit(':', 1)[0]: p.rsplit(':', 1)[1] for p in a.current_sha}
         out = verify_dataset_manifest(
             load_dataset_manifest(a.manifest),
@@ -408,6 +460,17 @@ def main(argv=None):
                          supply_chain_score=a.supply_chain).items():
             if v is not None:
                 body[k] = v
+        # 나생문 #21: rival/theory 증거 forward (MCP add_observation 미러)
+        for k, v in dict(theory_basis=a.theory_basis, rival_name=a.rival_name,
+                         rival_relation=a.rival_relation, rival_node=a.rival_node).items():
+            if v:
+                body[k] = v
+        if a.foundation_refs:
+            body['foundation_refs'] = [x.strip() for x in a.foundation_refs.split(',') if x.strip()]
+        if a.comparison_axes:
+            body['comparison_axes'] = [x.strip() for x in a.comparison_axes.split(',') if x.strip()]
+        if a.longinus_refs:
+            body['longinus_refs'] = json.loads(a.longinus_refs)
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/observation', body)
     elif a.cmd == 'world-action':
         body = dict(event_id=a.event_id, command=a.command, cwd=a.cwd, stdout_summary=a.stdout,

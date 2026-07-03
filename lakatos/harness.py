@@ -153,7 +153,11 @@ class LakatoHarness:
         """하계(execute, measure) — 채점 스크립트 실행 → metric."""
         if not s.judge_cmd:
             return None
-        out, _ = self._bash(s.judge_cmd)
+        out, code = self._bash(s.judge_cmd)
+        # 나생문 #24: 채점 스크립트 종료코드 검사(_build_gate 와 대칭) — 비정상 종료한 judge 가 'metric=' 한 줄
+        #   출력했다고 유효 외부측정으로 수용하면 측정 신뢰경계가 샌다. exit≠0 = 측정 거부(fail-loud).
+        if code != 0:
+            raise BuildFailed(f'채점 스크립트 비정상 종료(exit {code}) — metric 수용 거부. {out[-120:]}')
         return _parse_metric(out)
 
     def _submit_and_judge(self, s: CycleSpec, metric, sha, trust) -> dict:

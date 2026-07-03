@@ -415,7 +415,8 @@ def test_api_schemas_facade_stays_thin():
     assert len(lines) <= 120
 
 
-def test_directory_path_sha_detects_same_size_content_change(tmp_path):
+def test_directory_path_sha_detects_same_size_content_change(tmp_path, monkeypatch):
+    monkeypatch.setenv("LAKATOS_RAW_ROOT", str(tmp_path))   # #15: path_sha confinement — tmp 를 raw root 로 선언
     d = tmp_path / "lot"
     d.mkdir()
     f = d / "a.zdf"

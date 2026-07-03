@@ -175,7 +175,13 @@ def agm_revise(spec_json: str) -> str:
 def run_cycle(name: str, spec_json: str) -> str:
     """한 연구 사이클 오케스트레이션(서버 in-process, **bash 미실행**) — spec_json=CycleIn 필드:
     tag/metric_name/baseline/measured 필수 + 선택 parent/novel_*/credence/source_trust/critiques[].
-    build/judge(bash)가 필요하면 CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
+    R2-NOVEL: cross-metric novel(novel_metric≠metric_name)은 `novel_script`(서버가 읽을 실파일 경로
+    또는 file::symbol)를 동봉해야 서버앵커 성립 — require_novel_anchor/receipted+ 트리에서 미동봉이면
+    200-partial 강등(응답 lakatos='novel_not_server_anchored' + advice 동봉). 미지 필드는 422(forbid —
+    오타 무음드롭 없음). G3 봉인 1-verb: 이 한 호출이 노드+사전등록+판결영수증까지(실패 시 신규노드 0
+    롤백, 4xx 에 advice 동봉). `dry_run:true` = incore 판정 미리보기(쓰기 0, 영수증 아님) +
+    `would_demote_to_partial` 로 novel-anchor 강등 사전 예고. build/judge(bash)가 필요하면
+    CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
     try:
         spec = json.loads(spec_json or '{}')
     except json.JSONDecodeError as e:
@@ -210,16 +216,23 @@ def close_question(name: str, qname: str, closed_by: str = '') -> str:
 @mcp.tool()
 def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: str = '',
                 doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
-                ontology: str = '') -> str:
+                ontology: str = '', require_novel_anchor: bool = False,
+                assurance_tier: str = '', attestor_dids_csv: str = '') -> str:
     """새 라카토스 나무 생성/메타 upsert — MERGE (t:LakatosTree {name}). add_node 전에 먼저 호출(없는 나무에
     add_node 는 404 '나무 없음'). 멱등이되 last-write-wins: 같은 name 재호출은 보낸 title/hard_core/
     frontier_rule 로 덮어씀(생략 필드 = 빈값으로 초기화). hard_core/frontier_rule 비우면 policy_warnings
-    (hard_core_required 등) 경고만 — 차단 아님. coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티)."""
+    (hard_core_required 등) 경고만 — 차단 아님. coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티).
+    assurance_tier(G6) = notebook|receipted|anchored — 생략 시 신규 트리는 anchored 기본(구조코어는 모든
+    tier 무조건), 기존 트리는 무변경. 하향 선언은 409(단조 ratchet). attestor_dids_csv(G10) = 쉼표구분
+    did:key allow-list — 선언하면 anchored tier 판결 쓰기에 write-cert(서명 명령) 강제, 생략=불변."""
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
              doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog,
-             ontology=ontology)), ensure_ascii=False)
+             ontology=ontology, require_novel_anchor=require_novel_anchor,
+             assurance_tier=(assurance_tier.strip() or None),
+             attestor_dids=([d.strip() for d in attestor_dids_csv.split(',') if d.strip()]
+                            if attestor_dids_csv.strip() else None))), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -232,15 +245,17 @@ def delete_tree(name: str, cascade: bool = False) -> str:
 
 @mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
-             comment: str = '', algorithm: str = '', result_path: str = '') -> str:
+             comment: str = '', algorithm: str = '', author: str = '',
+             result_path: str = '') -> str:
     """나무에 노드 추가(나무가 먼저 있어야 — 없으면 404, create_tree 로 생성). parent/parents_csv 로 DAG 다중 부모.
+    author = 노드 작성자 actor(FF3: CANONICAL floor 의 human attestation 이 actor≠author 일 때만 인정 — self-vouch 봉쇄).
     result_path = 이 노드의 산출물(영수증) 경로 — reproducible 게이트(F-CON-1)의 앵커. 계보
     (record_derivation)의 최종 output 과 일치해야 하고, 그 궁극 root 들은 kind='source' 로 선언된
     **raw_root 안의 실존 파일**이어야 서버가 sha 를 디스크에서 재계산해 인증서 reproducible 을 준다."""
     parents = [p.strip() for p in parents_csv.split(',') if p.strip()]
     if parent:
         parents.insert(0, parent)
-    body = dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm)
+    body = dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm, author=author)
     if result_path:
         body['result_path'] = result_path
     return json.dumps(_post(f'/api/tree/{name}/node', body), ensure_ascii=False)
@@ -271,10 +286,50 @@ def register_prediction(name: str, tag: str, metric: str, baseline: float,
 
 
 @mcp.tool()
+def fsck(tree: str = '', emit_skiplist: bool = False) -> str:
+    """R6 전수감사(비변이) — 전 트리(또는 tree 지정) 노드 record 를 fsck 단일 체커로 스캔.
+    counts 로 부패 분포, emit_skiplist=True 로 면제 후보(record content-sha) 방출(사람 검토→git 커밋)."""
+    import urllib.parse as up
+    q = up.urlencode({k: v for k, v in dict(tree=tree, emit_skiplist=emit_skiplist and '1' or '').items() if v})
+    return json.dumps(_get(f'/api/ops/fsck' + (f'?{q}' if q else '')), ensure_ascii=False)
+
+
+@mcp.tool()
+def consilience(name: str, leaf1: str, leaf2: str, credence: bool = False) -> str:
+    """G7 재합류 연산자(R9) — 두 가지 leaf 의 incore 3-way 병합 리포트(무변이 GET, verdict_mutation
+    =False — canonical 화는 기존 human/admin 게이트로). criss-cross(NCA 2+)는 가상조상(standing-불활성),
+    비양립은 conflict *데이터*{target,base,side1,side2}(clean=false 여도 병합 완료). credence=True 는
+    union_credence(같은타깃 확증 dedup·음의증거 양측누적) 동봉 — BF>1 무타깃 확증은 422 fail-closed
+    (레거시 트리는 pred_closes 빈값이 흔해 기본 False). report_sha=canonical JSON sha256 16자."""
+    import urllib.parse as up
+    q = up.urlencode({'leaf1': leaf1, 'leaf2': leaf2, 'credence': str(credence).lower()})
+    r = httpx.get(f'{BASE}/api/tree/{name}/consilience?{q}', headers=_headers(), timeout=30)
+    if r.status_code >= 400:   # 422(fail-closed)/404 를 예외 아닌 구조화 오류로 — MCP 소비자 친화
+        return json.dumps({'error': r.status_code, 'detail': r.text[:300]}, ensure_ascii=False)
+    return json.dumps(r.json(), ensure_ascii=False)
+
+
+@mcp.tool()
+def node_receipts(name: str, tag: str) -> str:
+    """G1 :VerdictReceipt 체인 + 현 포인터(head) 조회 — R5 공개 읽기표면. lineage rebuild_verify(동명이인,
+    데이터 계보용)와 다른 물건."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/receipts'), ensure_ascii=False)
+
+
+@mcp.tool()
+def verify_verdict(name: str, tag: str) -> str:
+    """체인 fold 재유도 vs 캐시 대조(캐시 신뢰 금지, 재유도가 판관). 부패는 500 아닌 열거 finding
+    (RECEIPT_CHAIN_MISMATCH). ok:false = 변조/드리프트 — 즉시 조사 대상."""
+    return json.dumps(_get(f'/api/tree/{name}/node/{tag}/receipts/verify'), ensure_ascii=False)
+
+
+@mcp.tool()
 def submit_result(name: str, tag: str, value: float, script: str,
                   script_sha: str = '', novel_measured: float = None,
+                  novel_script: str = '',
                   data_branch: bool = False, data_replay_passed: bool = True,
-                  human_verdict_required: bool = False, result_path: str = '') -> str:
+                  human_verdict_required: bool = False, result_path: str = '',
+                  write_cert_json: str = '') -> str:
     """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected.
     ENG-DU-2: data_branch(데이터 재생성 의존)+data_replay_passed=false → progressive_conditional;
     human_verdict_required=true → ambiguous(인간 판정 보류).
@@ -287,6 +342,10 @@ def submit_result(name: str, tag: str, value: float, script: str,
         body['script_sha'] = script_sha
     if novel_measured is not None:
         body['novel_measured'] = novel_measured
+    if novel_script:                     # FF1: 서버앵커 novel 측정 영수증(cross-metric 독립성)
+        body['novel_script'] = novel_script
+    if write_cert_json:                  # G10/R5: 서명 write-cert(CLI cert-sign 산출 JSON 그대로)
+        body['write_cert'] = json.loads(write_cert_json)
     if result_path:
         body['result_path'] = result_path
     return json.dumps(_post(f'/api/tree/{name}/node/{tag}/test_result', body), ensure_ascii=False)

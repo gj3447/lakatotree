@@ -15,8 +15,8 @@ def _service(node_verdict: str, vur: bool):
 
     def fake_kg(query: str, **params):
         calls.append((query, params))
-        if 'MERGE (a:Argument' in query:                      # 비판(공격) 등재
-            return []
+        if 'MERGE (a:Argument' in query:                      # 비판(공격) 등재 — 노드 존재(RETURN e.tag) 모델(#13 fail-loud)
+            return [{'tag': params.get('tag')}]
         if 'coalesce(e.valid_until_rebutted' in query:        # standing 재계산용 노드+args 조회
             # 새 비판 q-doubt 가 노드(tag)를 직접 공격 → verdict 가 막아낼 방어자 없음 → stands=False
             return [{'verdict': node_verdict, 'vur': vur,
