@@ -32,7 +32,8 @@ from lakatos.verdict.judge import NovelTarget, Prediction, judge
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 측정주권 가드가 착륙하는 전용 파일 패턴들(비면 전부 pending). AG 슬라이스당 1파일 × 2가드.
-_RECEIPT_GLOBS = ("tests/fix_harness/test_ag*_rsov*.py", "tests/fix_harness/test_de1_*.py")
+_RECEIPT_GLOBS = ("tests/fix_harness/test_ag*_rsov*.py", "tests/fix_harness/test_de1_*.py",
+                  "tests/fix_harness/test_fe*_*.py")   # FERMENT(병렬 독립) 슬라이스 가드
 _TREE = "LakatosTree_MeasurementSovereignty_20260703"
 
 
@@ -190,6 +191,25 @@ NODES_DEF: tuple[SovNode, ...] = (
         novel_target=NovelTarget(metric_name="ag5_attested_guard_green", direction="higher", threshold=1.0),
         guard_defect="test_attested_cert_yields_attested_grade",
         guard_mechanism="test_grade_ladder_truth_table",
+    ),
+    SovNode(
+        tag="fe5_auth_posture", dimension="FE5 auth_posture 관측화 (FERMENT)", parent="ag5_attested_grade",
+        evidence="server/auth_posture.py:classify+open_posture_warning · server/app.py:_current_auth_posture(/version 공시)+_lifespan(open WARN) · judges/fe5_auth_posture.py(RED gap=2)",
+        story="비평 #1: 무인증 DEFAULT(LAKATOS_API_TOKEN 미설정 → _bearer_auth no-op → 모든 mutating 요청 "
+              "무인증)는 blast-radius=전 연구그래프인데 *보이지 않았다* — 신원(open-write)이 co-fundamental "
+              "A-blocker인데 관측 불가. problemshift: 쓰기 인증 자세를 3값 사다리(token_required>"
+              "irreversible_attested>open)로 분류(server/auth_posture.py 순수 모듈)하고 /version 이 공시 + open "
+              "부팅은 loud WARN. ★확정결정 open-but-observable: 무토큰 부팅거부 NO(부팅 안 막고 경고로 공시). "
+              "★irreversible_attested 는 AG5-IDENT(비가역 verb 서명강제) 착륙 시 live — 현재 taxonomy 슬롯만. "
+              "이 관측화가 AG5-IDENT 의 명시적 선행조건(FE5→AG5-IDENT).",
+        prom="server/auth_posture.py(순수 분류+경고) + app.py /version 공시 + _lifespan open WARN",
+        prediction=Prediction(metric_name="fe5_auth_invisibility_gaps", direction="lower",
+                              baseline_value=2.0, noise_band=0.0,
+                              novel_prediction="3값 사다리 분류 + open 자세 loud WARN(token_required 무경보) — 무인증 open-write 가 /version·부팅로그로 관측가능(이중가드 green)",
+                              closes_question="q-fe5-auth-posture-observable"),
+        novel_target=NovelTarget(metric_name="fe5_auth_posture_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_open_boot_warns",
+        guard_mechanism="test_posture_taxonomy",
     ),
 )
 
