@@ -685,12 +685,18 @@ class JudgementService:
                                      else (r.lakatos_hardcore if r.lakatos_hardcore is not None else True)),
                 counterexample_type=ce_type, proof_generated_concept=pgc)
         decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
-        # DE1: 구조적 강등 체인(#H1-hardcore + FF1 novel-anchor)을 순수 정책으로 추출 — 거동 불변,
-        #   AG3/AG4 착지대(judgement_policy.apply_verdict_demotes). precedence·novel_independent 원본 보존.
+        # AG4/R-SOV V2 재현성 천장(측정주권 2026-07-03): tier 게이트(assurance SSOT)가 무장하고 노드
+        #   재현성이 *구조적으로 반증*(reproducible is False: lineage dangling/비-source root)이면
+        #   apply_verdict_demotes 가 progressive→partial 천장. ★불가 None(result_path 없음/미검증)은
+        #   천장 안 함(부재≠반증, dead-σ) — 라이브 노드(result_path='')는 None → 무회귀.
+        _repro = self.reproducible_for_node(name, tag)
+        _repro_ceiling = assurance.GATE_REPRODUCIBILITY_CEILING in assurance.gates_for('submit_test_result', tier)
+        # DE1: 구조적 강등 체인(#H1-hardcore + AG4 재현성천장 + FF1 novel-anchor)을 순수 정책으로 추출.
         _dec = apply_verdict_demotes(
             decided['verdict'], decided['lakatos'], hc_derived=hc_derived,
             require_novel_anchor=require_novel_anchor, novel=bool(v.novel),
-            cross_metric_novel=cross_metric_novel, novel_server_anchored=novel_server_anchored)
+            cross_metric_novel=cross_metric_novel, novel_server_anchored=novel_server_anchored,
+            reproducible=_repro, reproducibility_ceiling=_repro_ceiling)
         verdict, lakatos_status, novel_independent = _dec.verdict, _dec.lakatos_status, _dec.novel_independent
         # #H1/#H10 질적 backing(서버앵커 독립 novel + ce_novel_corroborated) — DE1 순수 추출.
         qual_backed, qual_self_report = qualitative_flags(

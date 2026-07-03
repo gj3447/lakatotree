@@ -60,6 +60,31 @@ def test_demote_chain_golden_is_exact():
                               novel=True, cross_metric_novel=True, novel_server_anchored=False)
     assert d.verdict == 'partial'
 
+    # AG4 재현성 천장(측정주권 2026-07-03): reproducibility_ceiling(anchored 게이트) ∧ reproducible is False
+    #   ∧ progressive → partial(reproducibility_refuted). ★불가 None/True 는 무천장(dead-σ).
+    d = apply_verdict_demotes('progressive', 'ok', hc_derived=None, require_novel_anchor=False, novel=False,
+                              cross_metric_novel=False, novel_server_anchored=False,
+                              reproducible=False, reproducibility_ceiling=True)
+    assert d == VerdictDecision('partial', 'reproducibility_refuted', False)
+    for repro in (None, True):   # 불가/재현 → 무천장
+        assert apply_verdict_demotes('progressive', 'ok', hc_derived=None, require_novel_anchor=False,
+                                     novel=False, cross_metric_novel=False, novel_server_anchored=False,
+                                     reproducible=repro, reproducibility_ceiling=True).verdict == 'progressive'
+    # 게이트 off(비-anchored) → reproducible False 라도 무천장.
+    assert apply_verdict_demotes('progressive', 'ok', hc_derived=None, require_novel_anchor=False, novel=False,
+                                 cross_metric_novel=False, novel_server_anchored=False,
+                                 reproducible=False, reproducibility_ceiling=False).verdict == 'progressive'
+    # precedence: hardcore(①) > 재현성천장(②) > FF1(③). 셋 다 조건 충족 → different_programme.
+    d = apply_verdict_demotes('progressive', 'ok', hc_derived=False, require_novel_anchor=True, novel=True,
+                              cross_metric_novel=True, novel_server_anchored=False,
+                              reproducible=False, reproducibility_ceiling=True)
+    assert d.verdict == 'different_programme'
+    # ② > ③: 재현성천장 ∧ FF1 둘 다 충족 → reproducibility_refuted(② label 우선).
+    d = apply_verdict_demotes('progressive', 'ok', hc_derived=None, require_novel_anchor=True, novel=True,
+                              cross_metric_novel=True, novel_server_anchored=False,
+                              reproducible=False, reproducibility_ceiling=True)
+    assert d == VerdictDecision('partial', 'reproducibility_refuted', False)
+
 
 def test_qualitative_flags_truth_table():
     """qualitative_flags 진리표 고정(godmethod L705-707 거동)."""

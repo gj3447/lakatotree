@@ -150,6 +150,26 @@ NODES_DEF: tuple[SovNode, ...] = (
         guard_defect="test_verified_replay_owns_value_not_client",
         guard_mechanism="test_measurement_grade_sealed_in_receipt_fields",
     ),
+    SovNode(
+        tag="ag4_reproducibility_ceiling", dimension="AG4 재현성 천장 (R-SOV V2)", parent="ag3_value_ownership",
+        evidence="lakatos/assurance.py:GATE_REPRODUCIBILITY_CEILING(anchored×submit) · server/contexts/tree/judgement_policy.py:apply_verdict_demotes(재현성 천장 branch) · server/app.py:_reproducible_for_node(False=구조반증/None=불가) · judges/ag4_rsov4_reproducibility_ceiling.py(RED gap=2)",
+        story="AG3 값소유는 서버가 값을 재유도한 부분집합만 소유한다. 그런데 재현성이 *구조적으로 반증*"
+              "(lineage dangling/비-source root → _reproducible_for_node=False)된 anchored 노드도 여전히 "
+              "progressive 로 봉인돼 CANONICAL 로 오를 수 있었다 — 재현불가 측정이 최강 주장 후보가 되는 구멍. "
+              "problemshift: anchored tier 게이트(assurance SSOT GATE_REPRODUCIBILITY_CEILING)를 무장하고 "
+              "apply_verdict_demotes 가 (게이트 ∧ reproducible is False ∧ progressive)를 partial"
+              "(reproducibility_refuted)로 **천장**(하드 409 아님, 값 보존, CANONICAL 은 못 열되). ★핵심 dead-σ: "
+              "불가 None(result_path 없음/sha 미검증)은 천장 안 함(부재≠반증) — 라이브 노드(result_path='')는 "
+              "전부 None → **무회귀**(1582 green). 천장≠거부, 불가None≠불일치False.",
+        prom="lakatos/assurance.py 게이트 비트 + judgement_policy.apply_verdict_demotes 천장 branch + judgement_service submit 배선(reproducible+gate)",
+        prediction=Prediction(metric_name="ag4_reproducibility_ceiling_gaps", direction="lower",
+                              baseline_value=2.0, noise_band=0.0,
+                              novel_prediction="anchored 게이트 무장 + 구조반증(False)만 partial 천장하고 불가(None)/재현(True)은 progressive 보존(이중가드 green)",
+                              closes_question="q-rsov4-reproducibility-ceiling"),
+        novel_target=NovelTarget(metric_name="ag4_ceiling_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_reproducibility_refuted_caps_at_partial",
+        guard_mechanism="test_ceiling_is_anchored_gate_and_none_never_caps",
+    ),
 )
 
 
@@ -216,12 +236,9 @@ FRONTIER = [
     for n in NODES_DEF if n.prediction is not None
 ]
 
-# 정직 OPEN — 이번 회차(AG3)가 닫지 *못한* 것들. 척추 AG1(vocab)·AG2(RCE)·DE1(seam)·AG3(값소유)
-#   착륙 완료 → q-rsov1(AG2 closed)·q-rsov3(AG3 이 닫음)은 목록에서 내림. 남은 척추만 정직 OPEN.
+# 정직 OPEN — 이번 회차(AG4)가 닫지 *못한* 것들. 척추 AG1(vocab)·AG2(RCE)·DE1(seam)·AG3(값소유)·
+#   AG4(재현성 천장) 착륙 완료 → q-rsov1·q-rsov3·q-rsov4 는 목록에서 내림. 남은 척추만 정직 OPEN.
 OPEN_QUESTIONS = [
-    dict(name="q-rsov4-reproducibility-ceiling",
-         body="[AG4] 재현성 미검증 anchored 노드를 partial 천장(하드 409 아님; 불가None≠불일치False)으로 "
-              "분류할 수 있는가 — unverified 는 CANONICAL 을 못 열되 값은 보존."),
     dict(name="q-rsov5-open-write-identity",
          body="[AG5/co-fundamental] 무인증 open-write(LAKATOS_API_TOKEN 미설정=no-op) 상태에서 "
               "비가역 verb(carve/CANONICAL/delete)에 서명을 강제할 수 있는가 — FE5 관측화 선행."),
