@@ -231,6 +231,26 @@ NODES_DEF: tuple[SovNode, ...] = (
         guard_defect="test_canonical_requires_cert_on_attestor_tree",
         guard_mechanism="test_cert_is_verb_bound_sign_x_execute_y",
     ),
+    SovNode(
+        tag="ag6_value_integrity_fsck", dimension="AG6 값무결 fsck 차원 (R-SOV V4)", parent="ag5b_verb_signed_irreversible",
+        evidence="server/contexts/audit/fsck.py:_check_measurement_refuted(WARN) · judges/ag6_rsov6_value_integrity_fsck.py(RED gap=2)",
+        story="AG3 이 submit-ordering 을 흡수(incoming replay)하고 replay_status(not_attempted/verified/"
+              "mismatch)를 노드에 persist 했다. 그러나 producer replay 가 *실행되어 측정을 반증*(mismatch)한 "
+              "노드가 progressive/partial 로 서있어도 조용했다 — 승격 floor(G6)는 CANONICAL 만 막는다. "
+              "problemshift: fsck 에 값무결 차원(MEASUREMENT_REFUTED_BUT_STANDING, WARN)을 더해, replay_status="
+              "'mismatch' ∧ standing verdict 를 관측화(재실험/분기 권고). ★WARN(비차단): boundary_fsck(min "
+              "ERROR)를 안 건드려 write 를 막지 않는다 — 값무결은 *관측*이지 거부가 아니다. ★dead-σ: "
+              "not_attempted(exec OFF)/verified/비-standing 은 무발화(검증 불가·일치·이미 부정 ≠ 반증). "
+              "(submit-ordering 절반은 AG3 이 이미 흡수 — 본 노드는 fsck WARN 차원.)",
+        prom="server/contexts/audit/fsck.py _check_measurement_refuted + _SEVERITY(WARN) + _CHECKS 등재",
+        prediction=Prediction(metric_name="ag6_value_integrity_gaps", direction="lower",
+                              baseline_value=2.0, noise_band=0.0,
+                              novel_prediction="반증-서있음 노드가 fsck WARN 으로 관측화되고 WARN(비차단)+dead-σ(not_attempted 무발화) 보존(이중가드 green)",
+                              closes_question="q-rsov6-value-integrity-fsck"),
+        novel_target=NovelTarget(metric_name="ag6_value_integrity_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_refuted_standing_node_is_flagged",
+        guard_mechanism="test_warn_nonblocking_and_dead_sigma",
+    ),
 )
 
 

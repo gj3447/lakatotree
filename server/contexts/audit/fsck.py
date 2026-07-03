@@ -34,7 +34,11 @@ _SEVERITY = {
     "VERDICT_WRITE_WITHOUT_TIER_RESOLVE": ERROR,   # G6: 판결 write 에 tier resolve 흔적 없음 = 디스패치 우회/G6 이전
     "RECEIPT_CHAIN_MISMATCH": ERROR,    # R5: current_receipt_sha 가 동봉 체인 밖(dangling — 변조/부패). verify 라우트와 공용 어휘
     "FORCEFUL_SOURCE_WITHOUT_RECEIPT": ERROR,   # R6: FORCEFUL 판결인데 원장 포인터 없음(G1 이전/우회 write — skiplist 로만 면제)
+    "MEASUREMENT_REFUTED_BUT_STANDING": WARN,   # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 관측(비차단)
 }
+
+# AG6 값무결: 반증(mismatch)이 걸릴 때 '서있음'으로 보는 verdict 집합(positive claim).
+_STANDING_VERDICTS = frozenset({"progressive", "progressive_conditional", "partial", "CANONICAL"})
 
 
 @dataclass(frozen=True)
@@ -106,8 +110,25 @@ def _check_forceful_receipt(rec: dict) -> Finding | None:
     return None
 
 
+def _check_measurement_refuted(rec: dict) -> Finding | None:
+    """AG6/R-SOV V4 값무결 (측정주권 2026-07-03): producer replay 가 *실행되어 측정을 반증*
+    (replay_status='mismatch')했는데 노드가 여전히 standing verdict 를 든다 → 값무결 WARN(비차단).
+
+    승격 floor(G6)는 CANONICAL 만 막는다 — progressive/partial 로 선 반증된 측정은 조용했다. 이 차원이
+    관측화(WARN)해 재실험/분기를 권고하되 write 를 막지 않는다(boundary min ERROR). ★dead-σ:
+    not_attempted(exec OFF)/verified(일치)/비-standing verdict 은 무발화(검증 불가·일치·이미 부정 ≠ 반증)."""
+    if rec.get("replay_status") != "mismatch":
+        return None
+    if rec.get("verdict") in _STANDING_VERDICTS:
+        return Finding("MEASUREMENT_REFUTED_BUT_STANDING", _SEVERITY["MEASUREMENT_REFUTED_BUT_STANDING"],
+                       f"replay_status='mismatch'(측정 재실행이 값을 반증)인데 verdict='{rec.get('verdict')}' "
+                       f"로 서있음 — 값무결 경고(비차단; 재실험 또는 새 노드로 분기 권고)")
+    return None
+
+
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
-           _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt)
+           _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt,
+           _check_measurement_refuted)
 
 
 def record_content_sha(rec: dict) -> str:

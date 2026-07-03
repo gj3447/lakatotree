@@ -127,6 +127,16 @@ FE5 선행조건을 딛고 IDENT 의 *enforcement* 절반이 착륙했다(위 AG
 **잔여(q-rsov5b, 후속):** delete_tree/carve 는 별 call-path(mutations/writer)라 아직 cert-게이팅 미착륙 —
 같은 verb-바인딩 cert 로 확장 가능.
 
+## 갱신 (AG6/R-SOV V4 값무결 fsck 차원, 2026-07-03)
+
+AG3 이 submit-ordering 을 흡수(incoming replay)하고 `replay_status` 를 노드에 persist 했으나, producer
+replay 가 *실행되어 측정을 반증*(`mismatch`)한 노드가 progressive/partial 로 서있어도 조용했다(승격
+floor 는 CANONICAL 만 막음). AG6 은 fsck 에 **값무결 차원** `MEASUREMENT_REFUTED_BUT_STANDING`(WARN)을
+더해 `replay_status='mismatch' ∧ standing verdict` 를 관측화한다. ★**WARN(비차단):** `boundary_fsck`
+(min ERROR)를 안 건드려 write 를 막지 않는다 — 값무결은 *관측*이지 거부가 아니다. ★**dead-σ:**
+not_attempted(exec OFF)/verified/비-standing 은 무발화(검증 불가·일치·이미 부정 ≠ 반증). AG6 의
+submit-ordering 절반은 AG3 이 이미 흡수했으므로 본 차원은 fsck WARN 만 추가한다.
+
 ## 상태
 
 ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1 + AG4/R-SOV V2 착륙으로 갱신**
