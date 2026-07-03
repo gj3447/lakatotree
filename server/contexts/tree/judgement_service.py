@@ -724,7 +724,10 @@ class JudgementService:
         #   verified∧regenerated 부분집합에서만 regenerated 를 SSOT 로 치환(SCOPED — 외부/반증값 파괴 금지).
         #   여기서 계산해 next_state·receipt·SET·hist 가 *같은* effective_metric/measurement_grade 를 봉인.
         _vo = self.producer_replay_submit(r.script, r.result_path, r.metric_value)
-        effective_metric, measurement_grade, replay_status = resolve_measurement(_vo, r.metric_value)
+        # AG5/R-SOV V3: 유효 write-cert(allow-list 신원 서명)면 값이 익명 아님 → attested 등급(값소유<attested<client).
+        #   attested_by_did 는 위 G10 cert 검증에서 유도됨. 무-attestor/무서명 → None → client_asserted(무회귀).
+        effective_metric, measurement_grade, replay_status = resolve_measurement(
+            _vo, r.metric_value, attested=attested_by_did is not None)
         next_state = derive_node_state({
             'verdict': verdict,
             'verdict_source': 'scripted',

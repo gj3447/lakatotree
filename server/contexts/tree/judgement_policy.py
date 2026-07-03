@@ -84,27 +84,28 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                 measurement_grade=measurement_grade)
 
 
-def resolve_measurement(replay, client_metric):
-    """AG3/R-SOV V1 값소유(value-ownership) 결정 seam — I/O-free 순수 (측정주권 2026-07-03).
+def resolve_measurement(replay, client_metric, *, attested: bool = False):
+    """AG3 값소유 + AG5 attested 등급 결정 seam — I/O-free 순수 (측정주권 2026-07-03).
 
     replay = ProducerReplayVerdict | None. submit 시 *들어온*(incoming) 값을 서버가 재유도한 결과이지
-    persisted 노드가 아니다(AG6/V4 ordering 역전 교정 — 신규노드도 seal 전 소유). 반환:
-        (effective_metric, measurement_grade, replay_status)
+    persisted 노드가 아니다(AG6/V4 ordering 역전 교정 — 신규노드도 seal 전 소유). attested = 유효
+    write-cert(allow-list 신원 서명)가 붙었나. 반환: (effective_metric, measurement_grade, replay_status)
 
-      replay is None            → 서버 미실행(exec OFF/비재현 스크립트): client 값 유지,
-                                    grade=client_asserted, status=not_attempted (dead-σ: 부재≠반증).
-      replay.verified is True    → 서버가 값을 재유도·일치: regenerated 를 SSOT 로 *치환*(값소유),
-        ∧ regenerated 존재         grade=server_regenerated, status=verified.
-      그 외(mismatch / regen None)→ SCOPED 치환만 — client 값 유지(반증값·외부 null 값 소유 안 함),
-                                    grade=client_asserted, status=verified|mismatch(replay.verified 반영).
+    ★measurement_grade 3단 provenance 사다리(AG5/R-SOV V3):
+        server_regenerated  (서버가 값 재유도 — 최상, 값소유)
+      > attested            (allow-list 신원 서명 — 값은 client 지만 익명 아님·비부인)
+      > client_asserted     (무서명 client float — 최하)
 
-    SCOPED 원칙(확정결정): 값소유는 verified∧regenerated 부분집합에 국한 — '항상치환'은 외부/비재현값
-    (regenerated=None)을 파괴한다. 치환값은 client 와 tol(1e-9) 내이므로 verdict 는 불변, 바뀌는 건 *출처*
-    (서버가 자기 bits 를 소유)다.
+      replay.verified ∧ regenerated 존재 → server_regenerated(regenerated 를 SSOT 로 *SCOPED 치환*).
+      그 외(None / mismatch / regen None) → client 값 유지, grade = attested(서명 시) | client_asserted.
+                                            status = not_attempted(None) | verified | mismatch.
+
+    SCOPED 원칙(확정결정): 값소유는 verified∧regenerated 부분집합에 국한(외부/비재현값 파괴 금지).
+    ★dead-σ 안전: attested 는 서명이 실제 붙을 때만 — 무-attestor 트리는 그대로 client_asserted(무회귀).
+    server_regenerated 가 attested 를 이긴다(재유도가 서명보다 강한 값 주장).
     """
-    if replay is None:
-        return client_metric, 'client_asserted', 'not_attempted'
-    status = 'verified' if replay.verified else 'mismatch'
-    if replay.verified and replay.regenerated is not None:
-        return replay.regenerated, 'server_regenerated', status
-    return client_metric, 'client_asserted', status
+    if replay is not None and replay.verified and replay.regenerated is not None:
+        return replay.regenerated, 'server_regenerated', 'verified'
+    status = 'not_attempted' if replay is None else ('verified' if replay.verified else 'mismatch')
+    grade = 'attested' if attested else 'client_asserted'
+    return client_metric, grade, status

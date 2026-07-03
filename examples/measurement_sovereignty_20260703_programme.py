@@ -170,6 +170,27 @@ NODES_DEF: tuple[SovNode, ...] = (
         guard_defect="test_reproducibility_refuted_caps_at_partial",
         guard_mechanism="test_ceiling_is_anchored_gate_and_none_never_caps",
     ),
+    SovNode(
+        tag="ag5_attested_grade", dimension="AG5 attested 측정등급 (R-SOV V3)", parent="ag4_reproducibility_ceiling",
+        evidence="server/contexts/tree/judgement_policy.py:resolve_measurement(attested=) · server/contexts/tree/judgement_service.py:attested_by_did→resolve · lakatos/write_cert.py(G10 인프라 재사용) · judges/ag5_rsov5_attested_grade.py(RED gap=2)",
+        story="AG3 는 measurement_grade 를 server_regenerated vs client_asserted 2단으로 봉인했으나, 비평 "
+              "재프레이밍이 지목한 *신원(open-write)이 co-fundamental* — allow-list 서명(write-cert)으로 "
+              "신원에 묶인 값은 익명 client float 보다 강한데 AG3 는 둘을 같은 client_asserted 로 뭉갰다. "
+              "problemshift: 3단 provenance 사다리 server_regenerated > **attested** > client_asserted — "
+              "유효 write-cert(G10 인프라, attested_by_did)가 붙으면 grade='attested'(값은 client 지만 "
+              "비부인·신원바인딩)로 봉인. ★dead-σ: attested 는 서명 실재 시만 → 무-attestor 트리는 그대로 "
+              "client_asserted(무회귀 1586 green). server_regenerated 가 attested 를 이긴다(재유도>서명). "
+              "★스코프 정직: IDENT 의 '비가역 verb(canonical/delete) 서명강제'+cert verb-판별자는 미착륙 — "
+              "FE5 auth_posture 관측화 선행(q-rsov5 open). 본 노드는 attested *grade* 사다리만 닫는다.",
+        prom="judgement_policy.resolve_measurement(attested 3단 사다리) + judgement_service attested_by_did 배선",
+        prediction=Prediction(metric_name="ag5_attested_grade_gaps", direction="lower",
+                              baseline_value=2.0, noise_band=0.0,
+                              novel_prediction="서명값이 attested 로 봉인되고(무서명=client_asserted 무회귀) server_regenerated>attested 순서 유지(이중가드 green)",
+                              closes_question="q-rsov5a-attested-grade"),
+        novel_target=NovelTarget(metric_name="ag5_attested_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_attested_cert_yields_attested_grade",
+        guard_mechanism="test_grade_ladder_truth_table",
+    ),
 )
 
 
@@ -236,12 +257,13 @@ FRONTIER = [
     for n in NODES_DEF if n.prediction is not None
 ]
 
-# 정직 OPEN — 이번 회차(AG4)가 닫지 *못한* 것들. 척추 AG1(vocab)·AG2(RCE)·DE1(seam)·AG3(값소유)·
-#   AG4(재현성 천장) 착륙 완료 → q-rsov1·q-rsov3·q-rsov4 는 목록에서 내림. 남은 척추만 정직 OPEN.
+# 정직 OPEN — 이번 회차(AG5-V3)가 닫지 *못한* 것들. 척추 AG1·AG2·DE1·AG3·AG4·AG5-V3(attested grade)
+#   착륙 완료 → q-rsov1·q-rsov3·q-rsov4·q-rsov5a 는 내림. ★q-rsov5(IDENT 서명강제 enforcement)는 OPEN.
 OPEN_QUESTIONS = [
     dict(name="q-rsov5-open-write-identity",
-         body="[AG5/co-fundamental] 무인증 open-write(LAKATOS_API_TOKEN 미설정=no-op) 상태에서 "
-              "비가역 verb(carve/CANONICAL/delete)에 서명을 강제할 수 있는가 — FE5 관측화 선행."),
+         body="[AG5-IDENT/co-fundamental] attested *grade*(q-rsov5a)는 닫혔다. 남은 것: 무인증 open-write "
+              "(LAKATOS_API_TOKEN 미설정=no-op) 상태에서 비가역 verb(carve/CANONICAL/delete)에 서명을 "
+              "*강제*하고 cert 에 verb-판별자로 sign-X-execute-Y 봉인 — FE5 auth_posture 관측화 선행."),
     dict(name="q-go1-replay-exec-live",
          body="[GO1/user] AG3 값소유는 코드완료·dead-σ(LAKATOS_REPLAY_EXEC 기본 OFF). 라이브 σ0→1 은 "
               "도그푸드(별 프로세스/ephemeral 격리) 실증 후 exec 기본-ON flip — user GO 대기."),
