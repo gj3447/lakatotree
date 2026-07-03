@@ -89,7 +89,7 @@ def test_receipt_fields_match_sealed_set():
     fields = build_receipt_fields(
         tree='T', tag='n', target_id='q1', verdict='progressive', metric_name='m',
         metric_value=0.5, novel_confirmed=True, lakatos_status='ok', judged_at='2026-07-03T00:00:00Z',
-        judge_script_sha='deadbeef', prev_receipt_sha=None)
+        judge_script_sha='deadbeef', prev_receipt_sha=None, measurement_grade='client_asserted')  # AG3: 봉인 등급
     assert set(fields.keys()) == set(RECEIPT_FIELDS), (set(fields) ^ set(RECEIPT_FIELDS))
     assert fields['verdict_source'] == 'scripted'   # 스크립트 판결 고정(수동판결 어휘 아님)
     assert fields['metric_value'] == 0.5 and fields['verdict'] == 'progressive'

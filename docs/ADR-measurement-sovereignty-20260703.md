@@ -55,8 +55,32 @@
 - GO2 legacy 라이브 스탬프 + resolve_tier flip / GO4 token_required posture(무인증 open-write
   37그루는 co-fundamental A-blocker — FE5 관측화가 선행).
 
+## 갱신 (AG3/R-SOV V1 값소유 착륙 — 한계선 한 칸 이동, 2026-07-03)
+
+척추(결정 5)대로 AG3 가 착륙하며 위 맥락의 두 한계선이 옮겨졌다:
+
+- **measurement_grade 봉인 완료.** `RECEIPT_FIELDS` 는 이제 **13필드**(measurement_grade 추가,
+  lakatos/verdicts.py) — 서버-재유도값(`server_regenerated`)과 client-운반값(`client_asserted`)이
+  *다른* receipt_sha 를 든다. 진짜검증≠위조가 형식으로 갈린다.
+- **값소유 치환 코드 착륙(SCOPED).** `server.contexts.tree.judgement_policy.resolve_measurement`
+  가 submit 시 서버 replay 가 `verified ∧ regenerated 존재`인 부분집합에서만 `v.regenerated` 를
+  SSOT `metric_value` 로 치환한다(SCOPED — 외부/반증값[regenerated=None] 파괴 금지). 치환값은 client
+  와 tol(1e-9) 내라 verdict 는 불변, 바뀌는 건 값의 *출처*다(서버가 자기 bits 소유).
+- **ordering 역전 교정(AG6/V4 선행분 흡수).** 신규노드는 submit 시점 `e.metric_value=None` 이라
+  persisted 조회 replay(`_producer_replay_for_node`)가 항상 not_attempted 로 죽었다. AG3 는
+  `_producer_replay_submit` 로 *들어온*(incoming) script/result_path/metric_value 를 직접 replay 해
+  seal 전에 소유한다 — replay_status·값소유가 신규노드에서 라이브가 됐다.
+
+**여전한 한계선(새 tripwire 대상):** `LAKATOS_REPLAY_EXEC` 기본 **OFF** 라 `_producer_replay_submit`
+는 None 을 돌려주고 라이브 grade 는 여전히 `client_asserted` — **값소유는 코드완료·라이브미발효**
+(dead-σ)다. `return v.verified`(canonical 승격 floor 의 bool replay)와 fold 포인터 워크는 불변.
+라이브 값소유(σ0→1)는 **GO1**(exec 기본-ON, AG2 RCE 봉합 선행+도그푸드 실증 후 user GO) 대기.
+
 ## 상태
 
-ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). 가드:
+ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1 착륙으로 갱신**(2026-07-03:
+measurement_grade 봉인 + 값소유 치환 코드, dead-σ). 가드:
 `tests/fix_harness/test_ag1_rsov0_doc_honesty_20260703.py` (채점기
-`judges/ag1_rsov0_doc_honesty.py`, metric=잔존 과대표현 수 3→0).
+`judges/ag1_rsov0_doc_honesty.py`, metric=잔존 과대표현 수 3→0; claim↔code tripwire 는 AG3 한계선으로
+재조준). AG3 가드: `tests/fix_harness/test_ag3_rsov3_value_ownership_20260703.py`
+(채점기 `judges/ag3_rsov3_value_ownership.py`).

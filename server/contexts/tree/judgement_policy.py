@@ -59,14 +59,43 @@ def qualitative_flags(*, have_qual: bool, verdict: str, novel_server_anchored: b
 
 def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric_name,
                          metric_value: float, novel_confirmed: bool, lakatos_status: str,
-                         judged_at: str, judge_script_sha: str, prev_receipt_sha) -> dict:
+                         judged_at: str, judge_script_sha: str, prev_receipt_sha,
+                         measurement_grade: str) -> dict:
     """G1 :VerdictReceipt 봉인 필드 조립(godmethod L758-761 거동 불변 추출).
 
     lakatos.verdicts.RECEIPT_FIELDS 와 *정확히 1:1*(특성화 골든이 키 집합 동일성 고정). verdict_source
-    는 scripted 고정(수동판결 어휘는 별도 경로). AG3 착지대: measurement_grade(측정 출처등급)를 여기에
-    추가하고 RECEIPT_FIELDS 도 동시 확장한다(둘 다 안 하면 골든 RED).
+    는 scripted 고정(수동판결 어휘는 별도 경로). AG3 착지(2026-07-03): measurement_grade(측정 출처등급 —
+    server_regenerated/client_asserted)를 봉인 필드로 추가 → RECEIPT_FIELDS 도 동시 확장(둘 다 안 하면
+    골든 RED). grade 가 payload 에 들어가 진짜검증≠위조가 다른 receipt_sha 를 든다.
     """
     return dict(tree=tree, tag=tag, target_id=target_id, verdict=verdict,
                 verdict_source='scripted', metric_name=metric_name, metric_value=metric_value,
                 novel_confirmed=novel_confirmed, lakatos_status=lakatos_status,
-                judged_at=judged_at, judge_script_sha=judge_script_sha, prev_receipt_sha=prev_receipt_sha)
+                judged_at=judged_at, judge_script_sha=judge_script_sha, prev_receipt_sha=prev_receipt_sha,
+                measurement_grade=measurement_grade)
+
+
+def resolve_measurement(replay, client_metric):
+    """AG3/R-SOV V1 값소유(value-ownership) 결정 seam — I/O-free 순수 (측정주권 2026-07-03).
+
+    replay = ProducerReplayVerdict | None. submit 시 *들어온*(incoming) 값을 서버가 재유도한 결과이지
+    persisted 노드가 아니다(AG6/V4 ordering 역전 교정 — 신규노드도 seal 전 소유). 반환:
+        (effective_metric, measurement_grade, replay_status)
+
+      replay is None            → 서버 미실행(exec OFF/비재현 스크립트): client 값 유지,
+                                    grade=client_asserted, status=not_attempted (dead-σ: 부재≠반증).
+      replay.verified is True    → 서버가 값을 재유도·일치: regenerated 를 SSOT 로 *치환*(값소유),
+        ∧ regenerated 존재         grade=server_regenerated, status=verified.
+      그 외(mismatch / regen None)→ SCOPED 치환만 — client 값 유지(반증값·외부 null 값 소유 안 함),
+                                    grade=client_asserted, status=verified|mismatch(replay.verified 반영).
+
+    SCOPED 원칙(확정결정): 값소유는 verified∧regenerated 부분집합에 국한 — '항상치환'은 외부/비재현값
+    (regenerated=None)을 파괴한다. 치환값은 client 와 tol(1e-9) 내이므로 verdict 는 불변, 바뀌는 건 *출처*
+    (서버가 자기 bits 를 소유)다.
+    """
+    if replay is None:
+        return client_metric, 'client_asserted', 'not_attempted'
+    status = 'verified' if replay.verified else 'mismatch'
+    if replay.verified and replay.regenerated is not None:
+        return replay.regenerated, 'server_regenerated', status
+    return client_metric, 'client_asserted', status
