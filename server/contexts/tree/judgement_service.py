@@ -26,6 +26,8 @@ from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, s
 from lakatos.verdicts import ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict, receipt_content_sha
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.audit import fsck as audit_fsck
+from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
+                                                   qualitative_flags)
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
@@ -679,32 +681,17 @@ class JudgementService:
                                      else (r.lakatos_hardcore if r.lakatos_hardcore is not None else True)),
                 counterexample_type=ce_type, proof_generated_concept=pgc)
         decided = dialectical_verdict(v.verdict, pnr_appraisal=pnr_appraisal, lakatos_result=lak_result)
-        verdict = decided['verdict']
-        lakatos_status = decided['lakatos']
-        # #H1-hardcore: 구조적 hard_core 위반(touched ∩ core ≠ ∅)이면 메트릭/질적 주장과 무관하게
-        #   different_programme 로 강등 — '음의 휴리스틱을 떠남 = 다른 프로그램'(AXIS-CORR). bool 로 못 숨김.
-        if hc_derived is False and verdict in ('progressive', 'progressive_conditional'):
-            verdict, lakatos_status = 'different_programme', 'hard_core_violated_structural'
-        # FF1 (설계감사 2026-06-26, phase2 — opt-in tree policy require_novel_anchor): cross-metric novel 은
-        #   *서버앵커 영수증*(novel_script 서버 재유도) 없이 progressive 를 못 빚는다 — 없으면 'partial'(개선이나
-        #   독립 초과경험내용 미입증). client float 한 줄이 thesis 머리(progressive)를 사는 구멍을 닫는다.
-        #   judge() 는 순수 유지, 이 데모트는 *server 경계* 에서만(run() 도그푸드/직접 judge 무영향). 기본 off=비파괴.
-        novel_independent = bool(v.novel)
-        if (require_novel_anchor and v.novel and cross_metric_novel and not novel_server_anchored
-                and verdict in ('progressive', 'progressive_conditional')):
-            verdict, lakatos_status = 'partial', 'novel_not_server_anchored'
-            novel_independent = False
-        # #H1 (설계감사): 질적 verdict 가 영수증 없는 self-report bool 로 progressive 를 떠받쳤는가.
-        #   메트릭 개선은 실 영수증이나 '하드코어 보존·초과경험내용'(lakatos_*/ce_*)은 자기보고다. 독립
-        #   영수증(독립 novel 측정 sha + ce_novel_corroborated) 없이 질적 bool 이 progressive(_conditional)를
-        #   유지하면 표식 → CANONICAL floor 가 메트릭 단독으론 안 연다(set_verdict 가 이 표식을 floor 에 넘김).
-        # #H10 (설계감사 2026-06-26): 질적-backing 의 '독립 novel 영수증'을 raw client r.novel_sha 가 아니라
-        #   H6 의 *서버앵커* novel_server_sha 로 판정 — client 문자열 한 줄로 질적 claim 을 backed 처리해
-        #   self-report 표식을 회피하던 H1↔H6 잔여 봉합. (ce_novel_corroborated 자체=이 측정이 초과내용을
-        #   corroborate 하는가=construct-validity 라 client 판단으로 남음 — 천장.)
-        qual_backed = bool(novel_server_sha and r.ce_novel_corroborated)   # 서버앵커 독립 novel 측정 영수증
-        qual_self_report = bool(have_qual and verdict in ('progressive', 'progressive_conditional')
-                                and not qual_backed)
+        # DE1: 구조적 강등 체인(#H1-hardcore + FF1 novel-anchor)을 순수 정책으로 추출 — 거동 불변,
+        #   AG3/AG4 착지대(judgement_policy.apply_verdict_demotes). precedence·novel_independent 원본 보존.
+        _dec = apply_verdict_demotes(
+            decided['verdict'], decided['lakatos'], hc_derived=hc_derived,
+            require_novel_anchor=require_novel_anchor, novel=bool(v.novel),
+            cross_metric_novel=cross_metric_novel, novel_server_anchored=novel_server_anchored)
+        verdict, lakatos_status, novel_independent = _dec.verdict, _dec.lakatos_status, _dec.novel_independent
+        # #H1/#H10 질적 backing(서버앵커 독립 novel + ce_novel_corroborated) — DE1 순수 추출.
+        qual_backed, qual_self_report = qualitative_flags(
+            have_qual=have_qual, verdict=verdict, novel_server_anchored=novel_server_anchored,
+            ce_novel_corroborated=bool(r.ce_novel_corroborated))
         # A1: measurement-grade eureka at the judgement seam — felt(novel registered) vs
         # true(confirmed + substantial BF + net problem closure). Built from the just-scored fields
         # (require_promotion=False: standing lives in the standing layer, not on a node) and persisted
@@ -755,10 +742,11 @@ class JudgementService:
         replay_status = 'not_attempted' if _replay is None else ('verified' if _replay else 'mismatch')
         prev_rsha = pr.get('prev_receipt_sha')
         target_id = pr.get('closes')   # q_target_identity_scheme: 선언 의미키(pred_closes)
-        receipt_fields = dict(tree=name, tag=tag, target_id=target_id, verdict=verdict,
-                              verdict_source='scripted', metric_name=pr['m'], metric_value=r.metric_value,
-                              novel_confirmed=novel_independent, lakatos_status=lakatos_status,
-                              judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha)
+        # DE1: G1 receipt 봉인필드 조립을 순수 정책으로 추출 — AG3(measurement_grade) 착지대.
+        receipt_fields = build_receipt_fields(
+            tree=name, tag=tag, target_id=target_id, verdict=verdict, metric_name=pr['m'],
+            metric_value=r.metric_value, novel_confirmed=novel_independent, lakatos_status=lakatos_status,
+            judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha)
         rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
