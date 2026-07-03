@@ -11,7 +11,7 @@ three_d_dashboard.py 와 동일 철학(오프라인·재생성가능·결정적)
 NEO4J_* 환경이 있을 때만 KG 미러(ReferenceSite:Longinus)·deprecated(PrismLonginusBinding) 통계
 1줄을 헤더에 보강(없으면 조용히 skip).
 
-실행: python -m examples.longinus_dashboard   → longinus_bindings.html
+실행: python -m lakatos.longinus_dashboard   → longinus_bindings.html
 """
 from __future__ import annotations
 
@@ -128,7 +128,7 @@ def build_html(audit_result: dict, bindings: list[dict],
  .hdr.kg{{background:#eff6ff}}
 </style></head><body>
 <h1>🔗 Longinus 바인딩 — 코드↔KG 관통</h1>
-<small>의존성0·오프라인·재생성 — <code>python -m examples.longinus_dashboard</code>. 정본=docs/longinus_bindings.json (symbol-resolved, 매 커밋 drift 가드).</small>
+<small>의존성0·오프라인·재생성 — <code>python -m lakatos.longinus_dashboard</code>. 정본=docs/longinus_bindings.json (symbol-resolved, 매 커밋 drift 가드).</small>
 {_summary_header(audit_result, len(layers), kg_line)}
 <h2>code-symbol bindings (layer 별)</h2>
 {body}

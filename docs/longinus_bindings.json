@@ -2027,7 +2027,7 @@
     },
     {
       "sourceId": "longinus_dashboard.run",
-      "file": "examples/longinus_dashboard.py",
+      "file": "lakatos/longinus_dashboard.py",
       "symbol": "run",
       "kind": "function",
       "line_hint": 139,
@@ -2037,7 +2037,7 @@
     },
     {
       "sourceId": "longinus_dashboard.build_html",
-      "file": "examples/longinus_dashboard.py",
+      "file": "lakatos/longinus_dashboard.py",
       "symbol": "build_html",
       "kind": "function",
       "line_hint": 109,
