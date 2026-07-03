@@ -2,9 +2,12 @@
 
 > A research programme is scored by a **pure scoring function over pre-registered predictions**,
 > not by an LLM's self-assessment. A verdict is admissible only if it is the scorer's output for a
-> registered prediction and an external measurement — **self-reported verdicts are rejected by
-> construction** (formally *modeled* in Lean 4, runtime-enforced by tests — see
-> [Formal foundation](#formal-foundation)).
+> registered prediction and a measurement lodged against it — **self-reported verdicts are rejected
+> by construction** (formally *modeled* in Lean 4, runtime-enforced by tests — see
+> [Formal foundation](#formal-foundation)). Verdict *derivation* is deterministic; the measured
+> *value* is today a client-submitted float that the receipt layer seals and carries
+> (**reproduction-confirmation, not value-ownership** — the value-ownership campaign is
+> `docs/ADR-measurement-sovereignty-20260703.md`).
 > Lakatos's "vague appraisal criterion" is closed by a quantified **Laudan problem-solving layer**
 > (problem balance · PSR · comparative score · explicit abandonment rules).
 
@@ -50,7 +53,7 @@ cd formal && lake build      # 12 theorems, sorry=0
 
 | theorem | guarantee | code it pins |
 |---|---|---|
-| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the **kernel** verdict rule (caveat, prom-honesty/D: the *persisted* verdict is `dialectical_verdict(judge…)`, which can wrap/override the kernel output, and `novel`'s provenance is enforced at the Python boundary, not Lean-proven — `Rung.derived` pins the kernel, not the whole runtime) |
+| `Rung.derived` (field) | a verdict is **unforgeable**: a `Rung` cannot exist unless `verdict = judge …`. Self-report is *uninhabitable*. | the **kernel** verdict rule (caveat, prom-honesty/D: the *persisted* verdict is `dialectical_verdict(judge…)`, which can wrap/override the kernel output, and `novel`'s provenance is enforced at the Python boundary, not Lean-proven — `Rung.derived` pins the kernel, not the whole runtime; and *derivation*-unforgeable ≠ *measurement*-unforgeable — the `measured` input is a client-submitted float, see `docs/ADR-measurement-sovereignty-20260703.md`) |
 | `progressive_requires_novel` | progressive ⟹ a corroborated **novel** prediction | `judge.py` (F-CON-3: text alone ≠ novel) |
 | `progressive_requires_improved` | progressive ⟹ real improvement past the noise band | `judge.py` |
 | `no_novel_no_progressive` | improvement *without* novelty caps at `partial` (Lakatos's ad-hoc patch) | `judge.py` |
