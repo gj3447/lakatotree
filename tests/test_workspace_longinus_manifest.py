@@ -84,6 +84,10 @@ def test_prismv2_develop_and_feature_gate_are_pierced() -> None:
     data = _load()
     by_id = {item["sourceId"]: item for item in data["bindings"]}
 
+    # clean-clone 가드(상단 표준 패턴): 형제 repo 부재 CI 에선 *파일존재 단언만* skip —
+    # 내용 불변식(EXTRACTED/PIERCED/claim)은 어디서나 실행.
+    roots_present = all(Path(p).exists() for p in data["roots"].values())
+
     for source_id in (
         "PrismV2.DevelopCanonicalBranch.20260630",
         "BPC.FeatureLocalMeasurementGate.LakatoTree.20260630",
@@ -92,8 +96,9 @@ def test_prismv2_develop_and_feature_gate_are_pierced() -> None:
         item = by_id[source_id]
         assert item["confidence"] == "EXTRACTED"
         assert item["binding_state"] == "PIERCED"
-        path = item["sourcePath"].split(":", 1)[0]
-        assert (_repo_root(data, item["repo"]) / path).exists(), item
+        if roots_present:
+            path = item["sourcePath"].split(":", 1)[0]
+            assert (_repo_root(data, item["repo"]) / path).exists(), item
 
     assert "origin/develop" in by_id["PrismV2.DevelopCanonicalBranch.20260630"]["claim"]
     assert "suspect/ABSTAIN" in by_id["BPC.FeatureLocalMeasurementGate.LakatoTree.20260630"]["claim"]
