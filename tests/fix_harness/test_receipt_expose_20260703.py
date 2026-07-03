@@ -93,7 +93,7 @@ def test_keysmith_builds_verifiable_cert():
     secret_hex, did = W.keygen()
     assert did.startswith('did:key:z') and len(bytes.fromhex(secret_hex)) == 32
     command = dict(tree='T', tag='n', prev_receipt_sha='aa' * 32,
-                   metric_value=1.5, script_sha='s1' * 32)
+                   metric_value=1.5, script_sha='s1' * 32, verb='submit_test_result')  # AG5-IDENT verb 바인딩
     cert = W.build_write_cert(bytes.fromhex(secret_hex), command)
     assert cert['signer_did'] == did and cert['command'] == command
     # 왕복: 서버측 검증 통과(allow-list 에 서명자 실재).

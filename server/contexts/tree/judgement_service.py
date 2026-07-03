@@ -261,6 +261,7 @@ class JudgementService:
                                cur.qualitative_self_report AS qualitative_self_report,
                                cur.author AS author,
                                t.assurance_tier AS assurance_tier,
+                               t.attestor_dids AS attestor_dids,
                                cur.current_receipt_sha AS prev_receipt_sha,
                                oldrec.tag AS old_tag, oldrec.prev AS old_prev,
                                args AS args''',
@@ -268,6 +269,27 @@ class JudgementService:
             if not pre:
                 raise HTTPException(404, f'노드 없음: {tag}')
             cand = pre[0]
+            # AG5-IDENT (측정주권 2026-07-03): 비가역 verb(CANONICAL 승격) 서명강제 + verb-바인딩 cert.
+            #   dead-σ(FE5 open-but-observable): cert 강제는 트리가 attestor 를 선언(attestor_dids)했을 때만 —
+            #   무-attestor 트리는 무인증 CANONICAL 유지(키 없는 배포 안 잠금). cert 명령이 verb 를 실어
+            #   submit 용 cert 를 canonical 승격에 재생(sign-X-execute-Y)하지 못하게 봉인한다.
+            tier = assurance.resolve_tier(cand.get('assurance_tier'))
+            attestors = [str(d).strip() for d in (cand.get('attestor_dids') or []) if d and str(d).strip()]
+            canonical_cert_required = (assurance.GATE_WRITE_CERT
+                                       in assurance.gates_for('set_verdict_canonical', tier) and bool(attestors))
+            if canonical_cert_required or v.write_cert is not None:
+                if v.write_cert is None:
+                    raise HTTPException(403, f'write-cert 필수 — attestor 선언 {tier} 트리의 CANONICAL 승격은 '
+                                             f'서명 명령만 인정(allow-list {len(attestors)}명). 비가역 verb '
+                                             f'서명강제(AG5-IDENT).')
+                expected_command = dict(tree=name, tag=tag, prev_receipt_sha=cand.get('prev_receipt_sha'),
+                                        metric_value=None, script_sha=None, verb='set_verdict_canonical')
+                try:
+                    verify_write_cert(v.write_cert.model_dump(), expected_command=expected_command,
+                                      allowlist=attestors if attestors else [v.write_cert.signer_did])
+                except CertError as _ce:
+                    raise HTTPException(403, f'write-cert 검증 실패(CANONICAL 승격, sign-X-execute-Y 봉인): '
+                                             f'{type(_ce).__name__} — {_ce}')
             _require_state_transition(derive_node_state(cand), NodeState.CANONICAL)
             # #H5 (설계감사 2026-06-26): floor 판정의 스냅샷 지문 — verdict/source/qsr + 논증집합.
             #   write 가 이 지문을 원자 CAS 로 재검증해, read→write 사이 동시변경 시 0행 → 409(stale 승격 차단).
@@ -298,7 +320,7 @@ class JudgementService:
             #   (False)했으면 CANONICAL 승격 차단. 재실행이 측정을 반증한 노드를 최강 주장으로 못 올린다.
             #   dead-σ 교정(관통위험 ④): LAKATOS_REPLAY_EXEC off 면 replay=None(검증 불가)로 *비차단* —
             #   floor 를 exec-트리거로 오설정하면 exec-OFF 배포가 anchored 승격 전부 409 lock 이 된다.
-            tier = assurance.resolve_tier(cand.get('assurance_tier'))
+            #   (tier 는 위 AG5-IDENT cert 게이트에서 이미 resolve 됨 — 재계산 안 함.)
             replay_v = self.producer_replay_for_node(name, tag)
             if (assurance.GATE_REPLAY_FLOOR in assurance.gates_for('set_verdict_canonical', tier)
                     and replay_v is False):
@@ -589,7 +611,8 @@ class JudgementService:
                                          f'명령만 인정(allow-list {len(attestors)}명). client author 문자열은 '
                                          f'authorship 이 아니다(G10 Sybil 봉합)')
             expected_command = dict(tree=name, tag=tag, prev_receipt_sha=pr.get('prev_receipt_sha'),
-                                    metric_value=r.metric_value, script_sha=stored_sha)
+                                    metric_value=r.metric_value, script_sha=stored_sha,
+                                    verb='submit_test_result')   # AG5-IDENT: cert 를 이 verb 에 바인딩
             try:
                 attestation = verify_write_cert(
                     r.write_cert.model_dump(),

@@ -93,7 +93,8 @@ def _svc(tree_props):
 
 
 def _cert(metric_value=1.0):
-    command = dict(tree="T", tag="seam", prev_receipt_sha=None, metric_value=metric_value, script_sha="")
+    command = dict(tree="T", tag="seam", prev_receipt_sha=None, metric_value=metric_value, script_sha="",
+                   verb="submit_test_result")   # AG5-IDENT: submit cert 는 verb 바인딩 필수
     sig = W.ed25519_sign(_SK_A, W.canonical_cert_blob(command, _NOW))
     return WriteCertIn(signer_did=_DID_A, signature=sig.hex(), issued_at=_NOW,
                        command=CertCommandIn(**command))

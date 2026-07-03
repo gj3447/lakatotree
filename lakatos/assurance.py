@@ -48,7 +48,7 @@ STRUCTURAL_CORE: frozenset[str] = frozenset({"receipt_cas", "prereg_409", "first
 # verb → 이 verb 에 적용될 수 있는 tier 게이트 비트(적용 여부는 tier 가 결정 — 아래 TIER_GATES 와 AND).
 VERB_GATES: dict[str, frozenset[str]] = {
     "submit_test_result": frozenset({GATE_NOVEL_ANCHOR, GATE_WRITE_CERT, GATE_REPRODUCIBILITY_CEILING}),
-    "set_verdict_canonical": frozenset({GATE_REPLAY_FLOOR}),
+    "set_verdict_canonical": frozenset({GATE_REPLAY_FLOOR, GATE_WRITE_CERT}),   # AG5-IDENT: 비가역 승격 서명강제
 }
 
 # tier → 무장된 게이트 비트. 서열에 단조증가(상위 ⊇ 하위 — 가드 테스트가 강제).
