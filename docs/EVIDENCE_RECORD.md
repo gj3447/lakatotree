@@ -1,7 +1,8 @@
 # evidence-record 계약 (`lakato-evidence-record/v1`)
 
 > 측정 하네스 → **grounded record(json)** → LakatoTree `source_record` grounding 의 표준 포맷.
-> 로더/검증 = `examples/_evidence.py`. longinus-data-binding(데이터 provenance)을 *측정*으로 확장.
+> 로더/검증 = `lakatos.programme.evidence` (공개 저작 API; 구 `examples/_evidence.py` 는 back-compat shim).
+> longinus-data-binding(데이터 provenance)을 *측정*으로 확장.
 > 방법론 = `3D/THREE_D_RESEARCH_METHOD.md`.
 
 ## 불변식 (validate_record 강제)
@@ -86,7 +87,7 @@
 ## 판결측 사용 (programme)
 
 ```python
-from examples._evidence import load_record, summarize, is_grounded
+from lakatos.programme.evidence import load_record, summarize, is_grounded
 rec = load_record(EVIDENCE_PATH)          # 파일 없으면 FileNotFoundError → frontier OPEN 유지
 s = summarize(rec)                         # measured/predicted/grounded/findings/errors
 if is_grounded(rec):

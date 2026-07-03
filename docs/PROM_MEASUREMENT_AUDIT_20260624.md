@@ -99,9 +99,9 @@ Assessment:
 Existing safeguards:
 
 - `docs/EVIDENCE_RECORD.md` defines `lakato-evidence-record/v1`.
-- `examples/_evidence.py` rejects records that contain a verdict.
+- `lakatos.programme.evidence` (formerly `examples/_evidence.py`) rejects records that contain a verdict.
 - Evidence records require provenance and pre-registration.
-- `examples/record_judge.py` lets the engine produce the verdict from measured
+- `lakatos.programme.record_judge` (formerly `examples/record_judge.py`) lets the engine produce the verdict from measured
   values instead of accepting hand-entered judgement.
 - Tests cover invalid records, metric mismatch abstention, and real-record audit
   behavior.
