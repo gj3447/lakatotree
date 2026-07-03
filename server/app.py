@@ -29,6 +29,7 @@ from lakatos.programme.agm import (Belief, expansion, contraction, revision, dem
                          HardCoreProtected)
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
 from lakatos.io.lineage import by_output, roots as lin_roots
+from server.auth_posture import classify as _classify_posture, open_posture_warning   # FE5 auth 자세 관측화
 from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -109,6 +110,9 @@ def _startup_reconcile():
 
 @asynccontextmanager
 async def _lifespan(app):
+    _warn = open_posture_warning(_current_auth_posture())   # FE5: open 자세면 loud WARN(부팅 안 막음)
+    if _warn:
+        logger.warning(_warn)
     _startup_reconcile()                     # startup: outbox 자동복구(best-effort, #③)
     yield
     for e in _close_resources():             # shutdown: 커넥션 누수 차단
@@ -182,13 +186,20 @@ def healthz():
                         content={'status': 'ok' if healthy else 'degraded', 'services': svc})
 
 
+def _current_auth_posture() -> str:
+    """FE5 (측정주권 2026-07-03): 현 서버 쓰기 인증 자세. irreversible_attested 는 AG5-IDENT(비가역 verb
+    서명강제) 미착륙이라 현재 항상 False(dead until 착륙) — 무토큰 = open(현 기본, 무인증 쓰기)."""
+    return _classify_posture(bool(os.environ.get('LAKATOS_API_TOKEN')))
+
+
 @app.get('/version')
 def version():
-    """서빙 코드 신원 + stale 자기보고(G2, S5 봉합). 배포 프로브가 boot_git_sha vs disk_head_sha 로 stale 탐지.
+    """서빙 코드 신원 + stale 자기보고(G2, S5 봉합) + 쓰기 인증 자세(FE5). 배포 프로브가 boot_git_sha vs
+    disk_head_sha 로 stale 을, auth_posture 로 무인증 open-write 를 탐지한다(open-but-observable).
 
     이전엔 /version 이 없어 프로세스가 어느 커밋에서 부팅했는지 알 수 없었다(6커밋 stale 서빙이 감지 불가였음)."""
     from server.version import served_version
-    return served_version()
+    return {**served_version(), 'auth_posture': _current_auth_posture()}
 
 
 @app.get('/api/ops/fsck')

@@ -102,6 +102,16 @@ cert 를 받지 않고, verb-게이팅은 `FE5 auth_posture` 관측화(open-but-
 둔다. 본 슬라이스는 attested *grade* 사다리만 닫는다(q-rsov5a). YAGNI: cert `verb` 필드는 소비 verb
 (canonical 게이트)가 착륙할 때 함께 — 소비자 없는 서명-blob 확장은 하지 않는다.
 
+## 갱신 (FE5 auth_posture 관측화 — AG5-IDENT 선행, 2026-07-03)
+
+비평 #1(무인증 open-write=co-fundamental A-blocker)이 지목한 *보이지 않던* 자세를 관측화했다.
+`server/auth_posture.py`(순수·무 DB)가 쓰기 인증 자세를 **3값 사다리**로 분류: `token_required`
+(LAKATOS_API_TOKEN 설정) > `irreversible_attested`(AG5-IDENT 착륙 시 live, 현재 dead 슬롯) > `open`
+(무토큰=무인증 mutating, 현 기본). `/version` 이 `auth_posture` 를 공시하고(G2 stale 공시와 동일 표면),
+`_lifespan` 이 open 부팅에 loud WARN 한다. ★확정결정 **open-but-observable**: 무토큰 부팅을 *거부하지
+않되*(dead-σ: 키 없는 배포를 409/부팅거부로 잠그지 않음) 관측가능하게 만든다. 이 관측화가 AG5-IDENT
+(비가역 verb 서명강제)의 명시적 선행조건이다.
+
 ## 상태
 
 ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1 + AG4/R-SOV V2 착륙으로 갱신**
