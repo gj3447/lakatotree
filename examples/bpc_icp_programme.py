@@ -19,20 +19,11 @@ from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions
 from lakatos.quant.fertility import predictive_fertility
+from lakatos.programme.authoring import node
 
-
-def _n(tag, verdict, parent, *, m=None, base=None, scope='registration',
-       direction='lower', nr=False, nc=False, q=None, comment='', limitation='', algo='', mn=None):
-    # mn = metric_name. gap8 다중비교 family 키 = (metric_name, scope). 같은 물리량끼리만 묶이도록
-    # 노드마다 진짜 측정 구성(seam mm / 마커 count / σ mm / synthetic max_dev …)을 명시한다 —
-    # 누락 시 None 으로 뭉쳐 이질 metric(거리·개수·무차원)이 한 family 가 되어 BH/FDR 통제가 미정의가
-    # 된다(multiplicity.py 스스로 "다른 측정 한 family 로 묶지 말라" 경고를 코드가 위반하던 버그).
-    return dict(tag=tag, verdict=verdict, parent=parent,
-                metric_value=m, metric_scope=scope, metric_name=mn, pred_baseline=base,
-                pred_noise_band=0.05, pred_direction=direction,
-                novel_registered=nr, novel_confirmed=nc,
-                algorithm=algo or 'classical', comment=comment, limitation=limitation,
-                questions=q or [])
+# `_n`(노드 빌더) 정본은 lakatos.programme.authoring.node 로 승격(2026-07-03, 공개 저작 API) —
+# 하위호환 별칭 유지: 다른 프로그램들이 `from examples.bpc_icp_programme import _n` 로 계속 쓴다.
+_n = node
 
 
 # ── BPC/ICP 프로그램 트리 (실제 연구사) ──────────────────────────────────────
