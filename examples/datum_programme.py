@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from lakatos.quant.metrics import tree_metrics
 from examples.bpc_icp_programme import _n, NODES as BPC_NODES, FRONTIER as BPC_FRONTIER
-from examples._evidence import load_record, is_grounded, summarize
-from examples.record_judge import judge_record
+from lakatos.programme.evidence import load_record, is_grounded, summarize
+from lakatos.programme.record_judge import judge_record
 
 # 이 가지가 BPC 줄기의 어느 마디에서 피어나는가 = 정합 프레임 결정점.
 BLOOM_AT = 'aruco_metric'
