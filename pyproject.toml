@@ -1,0 +1,69 @@
+# LakatoTree 패키징 — friction 1 해소: `lakatos` 엔진을 pip-설치 가능한 패키지로.
+#
+# 왜: 지금까지 엔진은 repo 루트에서 `python -m ...` 로만 굴러가, 모든 엔진-사용자가
+# 이 한 개 체크아웃에 묶였다("엔진 하나"처럼 보이던 원인). 패키지로 만들면 임의의 외부
+# repo/서비스가 `pip install`로 *각자 자기 엔진 인스턴스*를 돌린다(각자 KG든 공유 KG든).
+# = 병렬 다중-엔진의 활성화 스위치.
+#
+# 계층 설계: 라이브러리 코어(lakatos.quant / lakatos.verdict)는 **stdlib-only** 로 실측됨
+# (bare venv import OK) → base install 은 의존성 0. 서버/DB/MCP/PROV 는 optional-dependencies
+# 로만 끌어온다(경량 소비자는 `pip install lakatotree`, 서버 배포는 `lakatotree[all]`).
+# 핀 버전은 requirements.txt(2026-06-18 green 기준)와 패리티 — 재현성 정본은 여전히 그쪽.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lakatotree"
+version = "0.1.0"
+description = "LakatoTree — a Lakatosian research-programme engine (measurement-grounded progress adjudication)."
+readme = "README.md"
+requires-python = ">=3.10"
+# 라이브러리 코어는 서드파티 의존 0 (lakatos.quant.metrics / lakatos.verdict.judge = 순수 stdlib, 실측).
+dependencies = []
+
+[project.optional-dependencies]
+# --- web/MCP 표면 (서버 배포용) ---
+server = [
+  "fastapi==0.137.2",
+  "starlette==1.3.1",
+  "uvicorn==0.49.0",
+  "httpx==0.28.1",
+  "pydantic==2.13.4",
+  "mcp==1.28.0",
+]
+# --- datastores (공유 KG/원장) ---
+db = [
+  "psycopg2-binary==2.9.12",
+  "pymongo==4.17.0",
+  "neo4j==6.2.0",
+]
+# --- provenance (W3C PROV-O) ---
+prov = [
+  "prov==2.1.1",
+  "lxml==6.1.1",
+  "rdflib==7.6.0",
+]
+# --- 영수증 로더 (ooptdd receipts) ---
+receipts = ["PyYAML==6.0.3"]
+# --- 개발/아키텍처 게이트 ---
+dev = [
+  "pytest==9.1.0",
+  "import-linter==2.11",
+  "PyYAML==6.0.3",
+]
+# --- D 통합티어 (실 Neo4j+PG testcontainers) ---
+integration = ["testcontainers[neo4j,postgres]>=4.0"]
+# --- 전체 (현 requirements.txt 재현 = server+db+prov+dev) ---
+all = [
+  "fastapi==0.137.2", "starlette==1.3.1", "uvicorn==0.49.0", "httpx==0.28.1",
+  "pydantic==2.13.4", "mcp==1.28.0",
+  "psycopg2-binary==2.9.12", "pymongo==4.17.0", "neo4j==6.2.0",
+  "prov==2.1.1", "lxml==6.1.1", "rdflib==7.6.0",
+  "pytest==9.1.0", "import-linter==2.11", "PyYAML==6.0.3",
+]
+
+[tool.setuptools.packages.find]
+# 엔진(lakatos) + 서버(server)만 배포 — examples/tests/scripts/judges/formal 은 응용·테스트 층이라 제외.
+include = ["lakatos*", "server*"]

@@ -12,3 +12,8 @@ three_d_detection.svg
 
 # Claude Code session worktrees/artifacts (not project)
 .claude/
+
+# Python packaging build artifacts (pyproject.toml: `pip install -e .`)
+*.egg-info/
+build/
+dist/
