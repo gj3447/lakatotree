@@ -76,11 +76,23 @@
 (dead-σ)다. `return v.verified`(canonical 승격 floor 의 bool replay)와 fold 포인터 워크는 불변.
 라이브 값소유(σ0→1)는 **GO1**(exec 기본-ON, AG2 RCE 봉합 선행+도그푸드 실증 후 user GO) 대기.
 
+## 갱신 (AG4/R-SOV V2 재현성 천장, 2026-07-03)
+
+anchored tier 게이트(`assurance.GATE_REPRODUCIBILITY_CEILING`, submit_test_result×anchored)를 무장하고
+`judgement_policy.apply_verdict_demotes` 가 **재현성이 구조적으로 반증**(`_reproducible_for_node` is
+**False**: lineage dangling / 비-source root)된 progressive 노드를 **partial(reproducibility_refuted)로
+천장**한다 — 하드 409 아님(값 보존), CANONICAL 은 못 열되. ★핵심 dead-σ 규율 **불가 None ≠ 불일치
+False**: 재현성이 *불가*(None: result_path 없음/sha 미검증=증명불가)면 **천장 안 함**(부재≠반증) — 현
+라이브 노드는 전부 result_path='' → None → **무회귀**(1582 green). 천장≠거부. 이 천장은 AG3 값소유가
+소유하지 *못한* 값(외부/비재현)의 CANONICAL 진입을 구조적으로 막아 측정 정직 표면을 넓힌다.
+
 ## 상태
 
-ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1 착륙으로 갱신**(2026-07-03:
-measurement_grade 봉인 + 값소유 치환 코드, dead-σ). 가드:
-`tests/fix_harness/test_ag1_rsov0_doc_honesty_20260703.py` (채점기
+ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1 + AG4/R-SOV V2 착륙으로 갱신**
+(2026-07-03: measurement_grade 봉인 + 값소유 치환 코드[dead-σ] + 재현성 천장[구조반증 False→partial,
+불가 None 무회귀]). 가드: `tests/fix_harness/test_ag1_rsov0_doc_honesty_20260703.py` (채점기
 `judges/ag1_rsov0_doc_honesty.py`, metric=잔존 과대표현 수 3→0; claim↔code tripwire 는 AG3 한계선으로
 재조준). AG3 가드: `tests/fix_harness/test_ag3_rsov3_value_ownership_20260703.py`
-(채점기 `judges/ag3_rsov3_value_ownership.py`).
+(채점기 `judges/ag3_rsov3_value_ownership.py`). AG4 가드:
+`tests/fix_harness/test_ag4_rsov4_reproducibility_ceiling_20260703.py`
+(채점기 `judges/ag4_rsov4_reproducibility_ceiling.py`).

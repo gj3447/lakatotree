@@ -34,6 +34,11 @@ GATE_REPLAY_FLOOR = "replay_floor"     # producer replay 실행-후-실패 → C
 GATE_WRITE_CERT = "write_cert"         # G10: 판결 쓰기는 서명 cert 만 명령원 — 발동 = 무장 ∧ 트리
                                        #   attestor allow-list(키 실물) 선언. 키 없는 배포는 잠기지
                                        #   않는다(dead-σ 안전); advisory cert(P1 실패)는 반전 이식.
+GATE_REPRODUCIBILITY_CEILING = "reproducibility_ceiling"   # AG4/R-SOV V2(측정주권 2026-07-03):
+                                       #   재현성이 *구조적으로 반증*(reproducible is False: lineage
+                                       #   dangling/비-source root)된 노드를 submit 에서 progressive 밖
+                                       #   partial 로 천장(하드 409 아님, 값 보존). ★불가 None(증명불가)은
+                                       #   천장 안 함(부재≠반증, dead-σ) — 라이브 무회귀의 뿌리.
 
 # 구조 코어 — G1 receipt CAS · prereg 409 · writer first-write-wins. *의도적으로* 위 게이트 어휘와
 # 분리된 집합: TIER_GATES/VERB_GATES 에 이 토큰이 등장할 수 없어(가드 테스트가 교집합 ∅ 강제),
@@ -42,7 +47,7 @@ STRUCTURAL_CORE: frozenset[str] = frozenset({"receipt_cas", "prereg_409", "first
 
 # verb → 이 verb 에 적용될 수 있는 tier 게이트 비트(적용 여부는 tier 가 결정 — 아래 TIER_GATES 와 AND).
 VERB_GATES: dict[str, frozenset[str]] = {
-    "submit_test_result": frozenset({GATE_NOVEL_ANCHOR, GATE_WRITE_CERT}),
+    "submit_test_result": frozenset({GATE_NOVEL_ANCHOR, GATE_WRITE_CERT, GATE_REPRODUCIBILITY_CEILING}),
     "set_verdict_canonical": frozenset({GATE_REPLAY_FLOOR}),
 }
 
@@ -50,7 +55,8 @@ VERB_GATES: dict[str, frozenset[str]] = {
 TIER_GATES: dict[str, frozenset[str]] = {
     "notebook": frozenset(),
     "receipted": frozenset({GATE_NOVEL_ANCHOR}),
-    "anchored": frozenset({GATE_NOVEL_ANCHOR, GATE_REPLAY_FLOOR, GATE_WRITE_CERT}),
+    "anchored": frozenset({GATE_NOVEL_ANCHOR, GATE_REPLAY_FLOOR, GATE_WRITE_CERT,
+                           GATE_REPRODUCIBILITY_CEILING}),
     LEGACY: frozenset(),   # legacy 는 tier 게이트 없음 — opt-in 플래그로만(거동 불변)
 }
 

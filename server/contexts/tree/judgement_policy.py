@@ -25,19 +25,28 @@ class VerdictDecision:
 
 def apply_verdict_demotes(verdict: str, lakatos_status: str, *, hc_derived: bool | None,
                           require_novel_anchor: bool, novel: bool, cross_metric_novel: bool,
-                          novel_server_anchored: bool) -> VerdictDecision:
-    """dialectical_verdict 이후의 *구조적* 강등 체인(godmethod L686-696 의 거동 불변 추출).
+                          novel_server_anchored: bool,
+                          reproducible: bool | None = None,
+                          reproducibility_ceiling: bool = False) -> VerdictDecision:
+    """dialectical_verdict 이후의 *구조적* 강등 체인(godmethod L686-696 의 거동 불변 추출 + AG4 확장).
 
       ① #H1-hardcore: hard_core 구조 위반(touched ∩ core ≠ ∅ → hc_derived is False)이면 메트릭/질적
          주장과 무관하게 different_programme 로 강등('음의 휴리스틱을 떠남 = 다른 프로그램', AXIS-CORR).
-      ② FF1: require_novel_anchor 트리에서 cross-metric novel 이 서버앵커 없이 progressive 면
+      ② AG4/R-SOV V2 재현성 천장(측정주권 2026-07-03): anchored tier 게이트(reproducibility_ceiling)가
+         무장되고 재현성이 *구조적으로 반증*(reproducible is False: lineage dangling/비-source root)이면
+         progressive→partial 천장(reproducibility_refuted). 하드 409 아님(값 보존), CANONICAL 은 못 열되.
+         ★불가 None(result_path 없음/sha 미검증=증명불가)은 **천장 안 함**(부재≠반증, dead-σ) — 라이브
+         무회귀의 뿌리. reproducible is True 도 물론 통과.
+      ③ FF1: require_novel_anchor 트리에서 cross-metric novel 이 서버앵커 없이 progressive 면
          partial(novel_not_server_anchored) — client float 한 줄이 thesis 머리를 사는 구멍 봉합.
-    precedence: ①이 verdict 를 progressive 밖으로 빼면 ②는 발화하지 않는다(원본 순서 보존).
-    AG4 착지대: 여기에 '재현성 미검증 anchored → partial 천장'(하드 409 아님)을 추가한다.
+    precedence: ①→②→③. 상위가 verdict 를 progressive 밖으로 빼면 하위는 발화하지 않는다. ②가 ③보다
+    우선(재현성 구조반증이 novel 앵커 갭보다 근본적) — 둘 다 partial 이나 label 이 reproducibility_refuted.
     """
     novel_independent = bool(novel)
     if hc_derived is False and verdict in _PROGRESSIVE:
         return VerdictDecision('different_programme', 'hard_core_violated_structural', novel_independent)
+    if reproducibility_ceiling and reproducible is False and verdict in _PROGRESSIVE:
+        return VerdictDecision('partial', 'reproducibility_refuted', False)
     if (require_novel_anchor and novel and cross_metric_novel and not novel_server_anchored
             and verdict in _PROGRESSIVE):
         return VerdictDecision('partial', 'novel_not_server_anchored', False)
