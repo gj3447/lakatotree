@@ -41,3 +41,6 @@
   0600) 없으면 기동 거부(무-creds 무음 degraded 사고 재발 방지), healthz 3/3 수렴 게이트 내장
   (version 200 ≠ 건강). 손 재시작(pkill -f 자기쉘 자살·environ 단일사본) 금지.
 - 이벤트 리터럴은 emit-adapter 에만 — 엔진 코드에 절대 금지(ooptdd 규율).
+- dev-box 자원 결합 테스트(형제 repo <WORKSPACE>/PROJECT/PI/omd·정본 env·3D workspace 절대경로)는
+  hosted CI 에서 죽는다(PR#19 에서 9건 실측) — `pytestmark = pytest.mark.skipif(경로부재)` 관례
+  (test_omd_engine_p* 참조)로 hermetic-skip, manifest 류는 *경로존재 단언만* 조건화(내용 불변식은 전역 실행).
