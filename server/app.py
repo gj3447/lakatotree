@@ -65,7 +65,7 @@ from server.contexts.tree.api import create_tree_router
 from server.contexts.tree.evidence_claim import create_evidence_claim_router
 from server.contexts.tree.evidence_claim_service import EvidenceClaimService
 from server.contexts.tree.judgement import create_judgement_router
-from server.contexts.tree.judgement_service import JudgementService
+from server.contexts.tree.judgement_service import JudgementService, isolate_script_file as _isolate_script_file
 from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
@@ -482,19 +482,72 @@ def _replay_exec_enabled() -> bool:
     return on
 
 
+# AG2/R-SOV-1 (측정주권 2026-07-03): replay exec 경로의 RCE 봉합용 자원 상한. 값은 env 로 조정 가능하되
+#   기본이 *유한*(RLIM_INFINITY 금지)이어야 fork/mem/disk-DoS 가 timeout 만으로 새지 않는다.
+def _replay_rlimits() -> list[tuple[int, int]]:
+    import resource
+    as_mb = int(os.environ.get('LAKATOS_REPLAY_AS_MB', '2048') or '2048')       # 가상메모리 상한
+    fsize_mb = int(os.environ.get('LAKATOS_REPLAY_FSIZE_MB', '512') or '512')   # 출력파일 크기 상한
+    cpu_s = int(os.environ.get('LAKATOS_REPLAY_CPU_S', '300') or '300')         # CPU 초(wall timeout 600 하위)
+    return [
+        (resource.RLIMIT_CPU, cpu_s),
+        (resource.RLIMIT_AS, as_mb * 1024 * 1024),
+        (resource.RLIMIT_FSIZE, fsize_mb * 1024 * 1024),
+        (resource.RLIMIT_CORE, 0),   # 코어덤프 금지
+    ]
+
+
+def _apply_replay_rlimits() -> None:   # preexec_fn — fork 직후·exec 직전 자식에서 실행
+    import resource
+    for res, cap in _replay_rlimits():
+        try:
+            resource.setrlimit(res, (cap, cap))
+        except (ValueError, OSError):
+            pass   # 일부 플랫폼 미지원 리소스는 skip(다른 상한은 계속 적용)
+
+
+def _safe_replay_argv(score_cmd: str) -> list[str] | None:
+    """재현명령 문자열을 *실행 가능한 안전 argv* 로만 변환 — RCE 벡터 봉쇄(AG2). 안전하지 않으면 None.
+
+    봉쇄: ① 인터프리터는 python 계열만(임의 실행파일 금지) ② 스크립트 인자는 FF4 격리(허용 루트 내 실존
+    정규파일)를 통과해야 — '-c'/'-m' 등 flag 는 파일이 아니므로 거부(argv 인젝션 봉쇄) ③ 이후 인자(result_path)는
+    '-' 로 시작 못 함(python flag 로 재해석되는 인젝션 봉쇄). shlex.split(shell=False)라 셸 치환은 애초에 없다.
+    """
+    import shlex
+    import sys as _sys
+    try:
+        argv = shlex.split(score_cmd or '')
+    except ValueError:
+        return None
+    if len(argv) < 2:
+        return None
+    interp = os.path.basename(argv[0]).lower()
+    if interp not in ('python', 'python3', os.path.basename(_sys.executable).lower()):
+        return None
+    resolved, _info = _isolate_script_file(argv[1])   # sha 재유도와 동일한 FF4 격리(단일 출처)
+    if resolved is None:
+        return None
+    rest = argv[2:]
+    if any(a.startswith('-') for a in rest):   # result_path 가 flag 로 위장 → 거부
+        return None
+    return [_sys.executable, str(resolved), *rest]
+
+
 def _replay_run(score_cmd: str) -> tuple[str, int]:
     """채점 *재현명령*('python <script> <result_path>') sandbox 재실행 — 게이트 하에서만 호출됨(가드).
 
-    timeout 으로 행 차단, shell=False(shlex.split)로 shell 주입 차단. 더 강한 격리(컨테이너/seccomp/rlimit)는
-    운영자 책임/후속 — live exec 은 opt-in 이며 기본 OFF. hermetic 테스트선 monkeypatch 됨.
+    AG2/R-SOV-1 보안: shell=False + FF4 격리(_safe_replay_argv: python 계열만·스크립트=허용루트 실존파일·
+    result_path flag 거부 → argv/traversal 인젝션 봉쇄) + setrlimit(CPU/AS/FSIZE/CORE 유한 상한, fork/mem/disk
+    -DoS 차단) + timeout(wall 행 차단). fork-bomb 완전차단(NPROC)·seccomp 는 컨테이너/cgroup=운영자 책임.
+    hermetic 테스트선 monkeypatch 됨.
     """
-    import shlex
     import subprocess
+    argv = _safe_replay_argv(score_cmd)
+    if argv is None:
+        return ('replay_error:unsafe_command', 1)   # RCE 벡터 → 실행 안 함, producer_replay 가 verified=False
     try:
-        argv = shlex.split(score_cmd or '')
-        if not argv:
-            return ('replay_error:empty_cmd', 1)
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=600,
+                           preexec_fn=_apply_replay_rlimits)
     except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
         return (f'replay_error:{type(exc).__name__}', 1)   # 비정상 → producer_replay 가 verified=False 로 처리
     return (p.stdout, p.returncode)

@@ -92,6 +92,25 @@ NODES_DEF: tuple[SovNode, ...] = (
         guard_defect="test_confirmed_overclaims_are_dead",
         guard_mechanism="test_adr_exists_and_pins_code",
     ),
+    SovNode(
+        tag="ag2_rsov1_replay_rce", dimension="AG2 replay RCE 봉합 (R-SOV-1)", parent="ag1_rsov0_doc_honesty",
+        evidence="server/app.py:_safe_replay_argv+_apply_replay_rlimits · judges/ag2_rsov1_replay_rce.py(RED 실측 4벡터) · 정찰 wf_48a54c6b",
+        story="replay 실행 경로가 submit 의 FF4 격리를 우회했다 — replay_command 가 client judge_script/"
+              "result_path 를 f-string 결합하고 _replay_run 이 그대로 subprocess. 3벡터: 스크립트 격리부재"
+              "(임의 절대경로/traversal)·judge_script='-c' argv 인젝션(python -c <rp>)·setrlimit 부재"
+              "(fork/mem/disk-DoS). LAKATOS_REPLAY_EXEC 기본 OFF=dead path 라 실피해 0 이나 GO1(exec 기본-ON)의 "
+              "절대 선행조건. problemshift: 실행 경로가 sha 재유도와 *같은* 격리(isolate_script_file 단일 출처)를 "
+              "쓰게 하고 — python 계열만·스크립트=허용루트 실존파일·result_path flag 거부 → argv/traversal 봉쇄 — "
+              "+ preexec_fn setrlimit(CPU/AS/FSIZE/CORE 유한 상한). fork-bomb 완전차단·seccomp=컨테이너/운영자.",
+        prom="server/app.py _safe_replay_argv + _apply_replay_rlimits + judgement_service.isolate_script_file(모듈 정본)",
+        prediction=Prediction(metric_name="ag2_open_rce_vectors", direction="lower",
+                              baseline_value=4.0, noise_band=0.0,
+                              novel_prediction="4 RCE 벡터가 side-effect 없이 거부되고 정직 스크립트는 유한 rlimit 하에 실행(이중가드 green)",
+                              closes_question="q-rsov1-exec-path-rce"),
+        novel_target=NovelTarget(metric_name="ag2_rce_guard_green", direction="higher", threshold=1.0),
+        guard_defect="test_rce_vectors_are_rejected",
+        guard_mechanism="test_honest_replay_runs_under_finite_rlimits",
+    ),
 )
 
 
