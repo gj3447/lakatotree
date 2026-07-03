@@ -2484,6 +2484,76 @@
       "sha256": "a0b7909af61ffd9e",
       "layer": "mcp",
       "frege_sinn": "예측 사전등록 MCP 표면 — closes_question 선언 전달(PR#17)로 채점시점 problem_balance 가동(첫 true eureka)"
+    },
+    {
+      "sourceId": "app._safe_replay_argv",
+      "file": "server/app.py",
+      "symbol": "_safe_replay_argv",
+      "kind": "def",
+      "line_hint": 509,
+      "sha256": "8aeadc8e5d8c7d5f",
+      "layer": "infrastructure",
+      "frege_sinn": "AG2 replay RCE 봉쇄 — 재현명령 문자열을 안전 argv 로만 변환(python계열만·스크립트=FF4 허용루트 실존파일·result_path flag 거부). 안전 아니면 None → 미실행."
+    },
+    {
+      "sourceId": "app._apply_replay_rlimits",
+      "file": "server/app.py",
+      "symbol": "_apply_replay_rlimits",
+      "kind": "def",
+      "line_hint": 500,
+      "sha256": "bceaef26c352b2fd",
+      "layer": "infrastructure",
+      "frege_sinn": "AG2 preexec_fn — fork 직후·exec 직전 자식에 CPU/AS/FSIZE/CORE 유한 상한 적용(fork/mem/disk-DoS 차단)."
+    },
+    {
+      "sourceId": "app._replay_rlimits",
+      "file": "server/app.py",
+      "symbol": "_replay_rlimits",
+      "kind": "def",
+      "line_hint": 487,
+      "sha256": "e61d3254f5311691",
+      "layer": "infrastructure",
+      "frege_sinn": "AG2 replay 자원 상한표(env 조정 가능, 기본 유한=RLIM_INFINITY 금지)."
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement_service.isolate_script_file",
+      "file": "server/contexts/tree/judgement_service.py",
+      "symbol": "isolate_script_file",
+      "kind": "def",
+      "line_hint": 59,
+      "sha256": "9242fb5cc5dba5e4",
+      "layer": "infrastructure",
+      "frege_sinn": "FF4 경로격리 단일 정본 — sha 재유도(_isolate_script_file)와 AG2 replay 실행(app._safe_replay_argv)이 공유. 허용루트·size-cap·traversal 거부."
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement_policy.apply_verdict_demotes",
+      "file": "server/contexts/tree/judgement_policy.py",
+      "symbol": "apply_verdict_demotes",
+      "kind": "def",
+      "line_hint": 26,
+      "sha256": "be619e8580b377a0",
+      "layer": "verdict-authority",
+      "frege_sinn": "DE1 순수 강등 체인 — #H1-hardcore(different_programme) precedence + FF1 novel-anchor(partial). AG4 재현성 partial 천장 착지대."
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement_policy.qualitative_flags",
+      "file": "server/contexts/tree/judgement_policy.py",
+      "symbol": "qualitative_flags",
+      "kind": "def",
+      "line_hint": 47,
+      "sha256": "b91585763086994e",
+      "layer": "verdict-authority",
+      "frege_sinn": "DE1 순수 질적 backing 판정(#H1/#H10) — 서버앵커 독립 novel + ce_corroborated 여야 backed, 아니면 self_report 표식(CANONICAL floor 차단)."
+    },
+    {
+      "sourceId": "server.contexts.tree.judgement_policy.build_receipt_fields",
+      "file": "server/contexts/tree/judgement_policy.py",
+      "symbol": "build_receipt_fields",
+      "kind": "def",
+      "line_hint": 60,
+      "sha256": "3435f634e89e3d41",
+      "layer": "verdict-authority",
+      "frege_sinn": "DE1 순수 G1 receipt 봉인필드 조립 — RECEIPT_FIELDS 1:1. AG3 measurement_grade 봉인 착지대."
     }
   ],
   "accepted_grounding_refs": [
