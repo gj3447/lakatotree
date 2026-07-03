@@ -171,13 +171,14 @@ layer (and that the set of layers matches `.importlinter`) — this map cannot s
 - `fertility` novel-prediction hit record (`nobel_grade`) · `calibrate` Brier/log/ECE proper scoring
 
 ### `programme/` — programme-level / comparative / meta-policy
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge`
 - `explore` bandit UCB + VoI (which branch next) · `heuristic` [MSRP] negative (hard-core protection) + positive (`generate_moves`)
 - `flip` per-layer verdict-flip metric — counterfactual pivotality: how often each rigor layer (Popper/Bayes/Laudan) actually *changed* the `stack` decision (composes `quant.metrics.branch_inputs` + `stack`; surfaced in server `read_models` as `m["layer_flips"]` → dashboard)
 - `kuhn` Lakatos–Zahar supersession · `agm` AGM/Levi hard-core revision (PROTECTED default) · `leaderboard` Pareto+Borda rival ranking
 - `stack` inter-layer vote + 2/3 quorum · `lifecycle` harvest/diverge/extinct · `series` path-level diagnostic over programme time-series
 - `tradition` [Laudan] research tradition (revisable ontology/methodology/exemplars) — same_tradition_revision / tradition_drift / different_programme_candidate, `diagnostic_only` (hard-core identity still routes through `LakatosGate`)
 - `consilience` [git merge-ort] branch re-join operator (PIDNA §3.3) — 3-way per-target merge with recursive standing-inert virtual ancestor (criss-cross), conflict-as-data (`clean=False` still completes), merged credence = union-fold through `quant.bayes.branch_credence` (same-target confirmations dedup, negatives accumulate — never `max(c1,c2)`), `verdict_mutation=False` (incore report; canonical adoption stays behind human/admin gates)
+- **public authoring API** (so external programme authors `pip install lakatotree` and touch no engine repo): `authoring` `node()` tree-node dict builder (multiple-comparison family key `(metric_name, scope)`) · `evidence` evidence-record loader/validator (honesty invariants: no verdict in record, grounded provenance, pre-registration) · `record_judge` grounded record → engine-generated verdict (self-scoring blocked; metric-mismatch → ABSTAIN). Promoted from `examples/` 2026-07-03; `examples/_evidence.py` + `examples/record_judge.py` remain back-compat re-export shims
 
 ### `io/` — evidence, provenance, persistence, observability
 `lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`

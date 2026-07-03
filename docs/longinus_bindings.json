@@ -1847,7 +1847,7 @@
     },
     {
       "sourceId": "record_judge.judge_record",
-      "file": "examples/record_judge.py",
+      "file": "lakatos/programme/record_judge.py",
       "symbol": "judge_record",
       "kind": "function",
       "line_hint": 52,
@@ -1857,7 +1857,7 @@
     },
     {
       "sourceId": "record_judge.audit_dir",
-      "file": "examples/record_judge.py",
+      "file": "lakatos/programme/record_judge.py",
       "symbol": "audit_dir",
       "kind": "function",
       "line_hint": 90,
@@ -1867,7 +1867,7 @@
     },
     {
       "sourceId": "record_judge._measured_for",
-      "file": "examples/record_judge.py",
+      "file": "lakatos/programme/record_judge.py",
       "symbol": "_measured_for",
       "kind": "function",
       "line_hint": 41,
@@ -1877,7 +1877,7 @@
     },
     {
       "sourceId": "record_judge._baseline",
-      "file": "examples/record_judge.py",
+      "file": "lakatos/programme/record_judge.py",
       "symbol": "_baseline",
       "kind": "function",
       "line_hint": 32,
@@ -2087,7 +2087,7 @@
     },
     {
       "sourceId": "_evidence.validate_record",
-      "file": "examples/_evidence.py",
+      "file": "lakatos/programme/evidence.py",
       "symbol": "validate_record",
       "kind": "function",
       "line_hint": 24,
@@ -2097,7 +2097,7 @@
     },
     {
       "sourceId": "_evidence.load_record",
-      "file": "examples/_evidence.py",
+      "file": "lakatos/programme/evidence.py",
       "symbol": "load_record",
       "kind": "function",
       "line_hint": 19,
@@ -2107,7 +2107,7 @@
     },
     {
       "sourceId": "_evidence.is_grounded",
-      "file": "examples/_evidence.py",
+      "file": "lakatos/programme/evidence.py",
       "symbol": "is_grounded",
       "kind": "function",
       "line_hint": 49,
