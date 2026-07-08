@@ -1,0 +1,51 @@
+# C1 S0 — c1verify fail-closed skeleton + engine-independence, as an ooptdd receipt (P0 / P0b).
+# hermetic: in_process + memory backend. emit-adapter=c1_skeleton_receipt.verify drives the REAL
+# c1verify.verify (re-implementation forbidden); negative oracle (injected unconditional ACCEPT
+# caught + revert restores fail-closed) blocks vacuous green.
+name: c1-external-verifier-s0-skeleton-failclosed
+target:
+  mode: in_process
+  callable: c1_skeleton_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py overrides with the absolute receipt dir
+
+requirements:
+  - id: C1S0-1
+    description: fail-closed totality — every bundle in the corpus (garbage AND well-formed) REJECTs every gate and never certifies; garbage_bundle_reject_rate == 1.0 (P0 novel target)
+    gate:
+      - {event: c1_skeleton_all_reject, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S0:all_reject
+      source: c1_skeleton_receipt.py
+      symbol: verify
+      must_emit: c1_skeleton_all_reject
+
+  - id: C1S0-2
+    description: strict envelope — unknown-top-field / non-canonical bytes / duplicate keys are rejected AT PARSE (fail-closed), not silently accepted as an unknown gate
+    gate:
+      - {event: c1_skeleton_strict_envelope, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S0:strict_envelope
+      source: c1_skeleton_receipt.py
+      symbol: verify
+      must_emit: c1_skeleton_strict_envelope
+
+  - id: C1S0-3
+    description: engine-independence — after verify() runs in a fresh subprocess, zero lakatos/server modules are loaded (engine_symbols_in_sys_modules_after_verify == 0, P0b novel target)
+    gate:
+      - {event: c1_skeleton_zero_engine_symbols, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S0:zero_engine_symbols
+      source: c1_skeleton_receipt.py
+      symbol: verify
+      must_emit: c1_skeleton_zero_engine_symbols
+
+  - id: C1S0-4
+    description: negative oracle (no fake green) — injecting an unconditional-ACCEPT reverifier into the real gate dispatch is DETECTED by the all-REJECT guard, and removing it restores fail-closed (revert-proof)
+    gate:
+      - {event: c1_skeleton_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S0:negative_oracle
+      source: c1_skeleton_receipt.py
+      symbol: verify
+      must_emit: c1_skeleton_negative_oracle

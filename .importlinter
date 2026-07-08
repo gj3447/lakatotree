@@ -8,6 +8,7 @@ include_external_packages = True
 root_packages =
     lakatos
     server
+    c1verify
 
 [importlinter:contract:engine-layers]
 name = engine layers: programme > verdict > quant > io (no upward import)
@@ -58,3 +59,18 @@ source_modules =
     server
 forbidden_modules =
     examples
+
+; ── c1verify ⊥ 엔진: 외부 검증자 독립 (campaign C1, S0/P0b) ─────────────────────────────
+; c1verify 는 엔진을 전혀 신뢰하지 않는 외부인의 검증자다 — lakatos/server 를 절대 import 하지
+; 않는다(신뢰기반 = sha256+Ed25519 재구현, stdlib only). 이 forbidden edge 는 엔진-독립을 *구성
+; 사실*로 못 박는 세 축 중 하나(나머지: clean-venv CI 잡 c1verify-standalone, subprocess sys.modules
+; 가드). 엔진 순수함수의 copy-fidelity 는 engine-repo CI 의 out-of-band 골든 교차검증이 담당(패키지
+; 밖). 위반(어디서든 import lakatos)하면 lint-imports 가 RED + clean-venv 잡이 ImportError.
+[importlinter:contract:c1verify-standalone]
+name = c1verify (external certificate verifier) must not import the engine (lakatos, server)
+type = forbidden
+source_modules =
+    c1verify
+forbidden_modules =
+    lakatos
+    server
