@@ -1,0 +1,61 @@
+# C1 S1 — grounded gate sha-pin reverifier (P1). hermetic: in_process + memory backend.
+# emit-adapter=c1_grounded_receipt.verify drives the REAL c1verify grounded reverifier over bundles
+# assembled from the engine GROUNDED registry. Two independent tamper classes (snapshot swap, bogus
+# tier) both fully rejected; negative oracle proves the sha-pin is load-bearing (revert-proof).
+name: c1-external-verifier-s1-grounded-sha-pin
+target:
+  mode: in_process
+  callable: c1_grounded_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py overrides with the absolute receipt dir
+
+requirements:
+  - id: C1S1-1
+    description: honest — the bundle sealing the real GROUNDED registry ACCEPTs and NAMES its residual trust surface (tier correctness is out-of-band, never discharged as 'trust')
+    gate:
+      - {event: c1_grounded_honest_accept, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S1:honest_accept
+      source: c1_grounded_receipt.py
+      symbol: verify
+      must_emit: c1_grounded_honest_accept
+
+  - id: C1S1-2
+    description: snapshot substitution — swapping the sealed registry for a different one (pin left on the original) is REJECTed every time (snapshot_substitution_reject_rate == 1.0, P1 primary)
+    gate:
+      - {event: c1_grounded_snapshot_reject, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S1:snapshot_reject
+      source: c1_grounded_receipt.py
+      symbol: verify
+      must_emit: c1_grounded_snapshot_reject
+
+  - id: C1S1-3
+    description: bogus tier — a re-sealed registry (matching pin) carrying a non-allowlisted tier is REJECTed (bogus_tier_reject_rate == 1.0, P1 novel — distinct tamper class from snapshot swap)
+    gate:
+      - {event: c1_grounded_bogustier_reject, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S1:bogustier_reject
+      source: c1_grounded_receipt.py
+      symbol: verify
+      must_emit: c1_grounded_bogustier_reject
+
+  - id: C1S1-4
+    description: negative oracle (no fake green) — a grounded variant WITHOUT the sha-pin check ACCEPTs the snapshot swap, proving the pin is load-bearing; the real reverifier rejects it (revert-proof)
+    gate:
+      - {event: c1_grounded_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S1:negative_oracle
+      source: c1_grounded_receipt.py
+      symbol: verify
+      must_emit: c1_grounded_negative_oracle
+
+  - id: C1S1-5
+    description: golden cross-check — c1verify's re-implemented VALID_TIERS agrees with the engine's tiers and the honest real-GROUNDED bundle ACCEPTs (copy-fidelity, engine-side)
+    gate:
+      - {event: c1_grounded_golden_tiers, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S1:golden_tiers
+      source: c1_grounded_receipt.py
+      symbol: verify
+      must_emit: c1_grounded_golden_tiers

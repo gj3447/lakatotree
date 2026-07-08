@@ -11,6 +11,7 @@ is a REJECT, never a silent pass. This is the honesty keystone the whole campaig
 """
 from __future__ import annotations
 
+from ._decision import ACCEPT, REJECT, gate_decision
 from .jcs import JcsError, parse_canonical
 
 C1_BUNDLE_VERSION = 1
@@ -18,27 +19,24 @@ C1_BUNDLE_VERSION = 1
 #: The five certificate gates plus the cryptographic substrate. certified = AND over all of them.
 GATES = ("preregistered", "reproducible", "stands", "calibrated", "grounded", "substrate")
 
-ACCEPT = "ACCEPT"
-REJECT = "REJECT"
+#: Top-level bundle fields. evidence_window carries the {as_of, shas:{...}} pins that content-seal
+#: each gate's payload (a gate recomputes its sha over the sealed bytes and matches it here).
+_ALLOWED_TOP = frozenset(("c1_bundle_version", "evidence_window", "gates"))
 
-_ALLOWED_TOP = frozenset(("c1_bundle_version", "gates"))
-
-#: Slices S1.. replace entries here with real fail-closed reverifiers gate -> (bundle -> decision dict).
-#: Empty in S0 => every gate takes the default REJECT branch (the empty ACCEPT set).
+#: gate -> reverifier(payload, ctx) -> decision dict. A gate absent here takes the default REJECT
+#: (empty ACCEPT set). Slices S1.. register real fail-closed reverifiers (wired at the bottom).
 _GATE_REVERIFIERS: dict = {}
 
 
 def _reject_all(reason: str) -> dict:
     """A whole-bundle rejection: every gate REJECTs with the same parse/envelope reason."""
-    per_gate = [{"gate": g, "decision": REJECT, "reason": reason, "residual_trust_surface": None}
-                for g in GATES]
+    per_gate = [gate_decision(g, REJECT, reason) for g in GATES]
     return {"per_gate": per_gate, "certified": False, "missing": list(GATES), "residuals": []}
 
 
 def _default_gate_decision(gate: str) -> dict:
-    return {"gate": gate, "decision": REJECT,
-            "reason": "gate reverification not implemented (fail-closed skeleton default)",
-            "residual_trust_surface": None}
+    return gate_decision(gate, REJECT,
+                         "gate reverification not implemented (fail-closed skeleton default)")
 
 
 def verify(data: bytes) -> dict:
@@ -62,15 +60,23 @@ def verify(data: bytes) -> dict:
     if not isinstance(gates, dict):
         return _reject_all("'gates' missing or not a JSON object")
 
+    ctx = {"evidence_window": bundle.get("evidence_window")}
     per_gate = []
     for gate in GATES:
         reverifier = _GATE_REVERIFIERS.get(gate)
         if reverifier is None:
             per_gate.append(_default_gate_decision(gate))
-        else:  # slices S1.. — a real fail-closed reverifier; still REJECTs unless it proves ACCEPT
-            per_gate.append(reverifier(gates.get(gate)))
+        else:  # a real fail-closed reverifier; still REJECTs unless it PROVES ACCEPT from sealed bytes
+            per_gate.append(reverifier(gates.get(gate), ctx))
 
     accepted = [g for g in per_gate if g["decision"] == ACCEPT]
     certified = len(GATES) > 0 and len(accepted) == len(GATES)
     missing = [g["gate"] for g in per_gate if g["decision"] != ACCEPT]
     return {"per_gate": per_gate, "certified": certified, "missing": missing, "residuals": []}
+
+
+# ── gate reverifiers (registered after verify() is defined; each gate module imports only
+#    _decision + jcs, never core, so there is no import cycle) ──────────────────────────────────
+from .gates.grounded import verify_grounded  # noqa: E402
+
+_GATE_REVERIFIERS["grounded"] = verify_grounded

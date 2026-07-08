@@ -59,11 +59,18 @@ def test_reject_rate_over_corpus_is_total():
     assert rejected == len(GARBAGE)  # garbage_bundle_reject_rate == 1.0
 
 
-def test_zero_engine_symbols_loaded_by_verify():
-    """After importing c1verify and running verify(), no lakatos/server module is loaded.
-    In the clean venv the engine is not even installed, so this is trivially 0 — which is the point."""
+def _engine_modules():
+    return {m for m in sys.modules
+            if m == "lakatos" or m.startswith("lakatos.")
+            or m == "server" or m.startswith("server.")}
+
+
+def test_verify_imports_no_engine_module():
+    """verify() ADDS no lakatos/server module to sys.modules. Measured as a DELTA (before vs after)
+    so it is honest in BOTH the clean venv (engine absent: delta and absolute are both empty) AND the
+    engine venv (where a co-running assembler may have loaded lakatos — verify still adds nothing).
+    In the clean venv the engine is not even installed, so the absolute set is also empty."""
+    before = _engine_modules()
     c1verify.verify(_canonical_bundle())
-    engine = [m for m in sys.modules
-              if m == "lakatos" or m.startswith("lakatos.")
-              or m == "server" or m.startswith("server.")]
-    assert engine == [], f"engine symbols loaded during verify(): {engine}"
+    added = _engine_modules() - before
+    assert added == set(), f"verify() imported engine module(s): {sorted(added)}"
