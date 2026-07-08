@@ -113,18 +113,27 @@ def engine_import_statements_in_source() -> int:
 
 # ── negative oracle: an injected unconditional ACCEPT is caught, and revert restores fail-closed ─
 def negative_oracle_detects_injected_accept() -> bool:
-    well = jcs({"c1_bundle_version": 1, "gates": {"grounded": {}}})
+    # inject into a gate that is NOT yet implemented so we never clobber a real reverifier (grounded
+    # is real from S1); save/restore keeps this robust as more gates land. Reverifier signature is
+    # (payload, ctx) — must match the real dispatch, else the injection would crash instead of leak.
+    target = next((g for g in c1verify.GATES if g not in _cv._GATE_REVERIFIERS), None)
+    assert target is not None, "no unimplemented gate to host the injection"
+    well = jcs({"c1_bundle_version": 1, "gates": {target: {}}})
     assert _all_reject(c1verify.verify(well)), "skeleton did not REJECT a well-formed bundle"
-    _cv._GATE_REVERIFIERS["grounded"] = lambda _payload: {
-        "gate": "grounded", "decision": c1verify.ACCEPT,
+    saved = _cv._GATE_REVERIFIERS.get(target)
+    _cv._GATE_REVERIFIERS[target] = lambda _payload, _ctx: {
+        "gate": target, "decision": c1verify.ACCEPT,
         "reason": "FORGED unconditional ACCEPT", "residual_trust_surface": None}
     try:
         forged = c1verify.verify(well)
-        leaked = any(g["gate"] == "grounded" and g["decision"] == c1verify.ACCEPT
+        leaked = any(g["gate"] == target and g["decision"] == c1verify.ACCEPT
                      for g in forged["per_gate"])
         detected = not _all_reject(forged)  # the all-REJECT guard must now fire
     finally:
-        _cv._GATE_REVERIFIERS.pop("grounded", None)  # revert the injection
+        if saved is None:
+            _cv._GATE_REVERIFIERS.pop(target, None)   # revert the injection
+        else:
+            _cv._GATE_REVERIFIERS[target] = saved
     restored = _all_reject(c1verify.verify(well))
     assert leaked and detected, "injected unconditional ACCEPT slipped past the guard (vacuous green)"
     assert restored, "removing the injection did not restore fail-closed (not revert-proof)"

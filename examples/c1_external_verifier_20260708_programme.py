@@ -20,14 +20,17 @@ import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
-_RECEIPT_DIR = _REPO / "ooptdd_receipts" / "c1_skeleton_failclosed"
-for _p in (_REPO.as_posix(), _RECEIPT_DIR.as_posix()):
+_RECEIPTS = _REPO / "ooptdd_receipts"
+for _p in (_REPO.as_posix(),
+           (_RECEIPTS / "c1_skeleton_failclosed").as_posix(),
+           (_RECEIPTS / "c1_grounded_shapin").as_posix()):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 from lakatos.verdict.judge import NovelTarget, Prediction, judge  # noqa: E402
 
 import c1_skeleton_receipt as receipt  # noqa: E402 — the real S0 measurement (drive, don't reimplement)
+import c1_grounded_receipt as grounded  # noqa: E402 — the real S1 grounded measurement
 
 
 # Two GENUINELY DISTINCT axes per node (independence, not the same number twice): an improvement
@@ -64,8 +67,24 @@ def _p0b_engine_independence():
                 verdict=verdict)
 
 
+def _p1_grounded_sha_pin():
+    """P1 — grounded gate is re-derived from the sealed registry, not a pointer.
+    primary (swap tamper):  snapshot_substitution_reject_rate >= 1.0 (registry swap caught by sha-pin).
+    novel  (tier tamper):   bogus_tier_reject_rate           >= 1.0 (off-allowlist tier caught).
+    Two genuinely distinct tamper classes — one defeats content-substitution, the other tier-forgery."""
+    snapshot_reject = grounded.snapshot_substitution_reject_rate()   # 1.0
+    bogus_tier_reject = grounded.bogus_tier_reject_rate()            # 1.0
+    pred = Prediction(metric_name="snapshot_substitution_reject_rate", direction="higher",
+                      baseline_value=0.0, noise_band=0.0, novel_prediction=True,
+                      closes_question="q_grounded_f2_snapshot")
+    novel = NovelTarget(metric_name="bogus_tier_reject_rate", direction="higher", threshold=1.0)
+    verdict = judge(pred, snapshot_reject, novel_target=novel, novel_measured=bogus_tier_reject)
+    return dict(tag="s1-grounded-sha-pin", measured=snapshot_reject, novel_measured=bogus_tier_reject,
+                verdict=verdict)
+
+
 def results() -> list:
-    return [_p0_skeleton_failclosed(), _p0b_engine_independence()]
+    return [_p0_skeleton_failclosed(), _p0b_engine_independence(), _p1_grounded_sha_pin()]
 
 
 def main() -> int:

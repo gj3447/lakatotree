@@ -16,5 +16,5 @@ requires-python = ">=3.10"
 dependencies = []   # stdlib ONLY — a third-party dep here is a trust-base regression
 
 [tool.setuptools]
-packages = ["c1verify", "c1verify.tests"]   # tests ship so `pytest --pyargs c1verify.tests` runs in the clean venv
+packages = ["c1verify", "c1verify.gates", "c1verify.tests"]   # gates = reverifiers; tests ship so `pytest --pyargs c1verify.tests` runs in the clean venv
 package-dir = {"c1verify" = "."}
