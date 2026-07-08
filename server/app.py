@@ -28,6 +28,7 @@ from lakatos.verdicts import receipt_content_sha
 from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
+from lakatos.verdict.cert_gate import certified_foundation
 from lakatos.io.lineage import by_output, roots as lin_roots
 from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
 from fastapi import HTTPException, Request
@@ -270,7 +271,7 @@ def _evidence_claim_service(*, store_research_event=None):
         kg=kg,
         kg_tx=kg_tx,   # B1-step1: bind_embedded_observation 의 다중 KG write 를 단일 트랜잭션으로
         hist=hist,
-        foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
+        foundation=_certified_foundation_provider,
         load_lineage=_load_lineage,
         reproducible_for_node=_reproducible_for_node,
         standing=standing,
@@ -306,7 +307,7 @@ def _judgement_service():
         kg=kg,
         kg_tx=kg_tx,
         hist=hist,
-        foundation=lambda name: _foundation_from_rows(_foundation_rows(name)),
+        foundation=_certified_foundation_provider,
         reproducible_for_node=_reproducible_for_node,
         producer_replay_for_node=_producer_replay_for_node,   # 나생문 #1 live: 채점 스크립트 재실행 검증
         producer_replay_submit=_producer_replay_submit,        # AG3: submit incoming 값 재유도 → 값소유
@@ -605,6 +606,54 @@ def _foundation_rows(name: str):
                         fr.optional AS optional, fr.owner AS owner,
                         fr.risk_if_missing AS risk_if_missing, fr.satisfied AS satisfied
                  ORDER BY fr.kind, fr.short_name""", tree=name)
+
+
+def _tree_requires_cert(name: str) -> bool:
+    """opt-in — 이 트리가 근거의 인증서 확인을 요구하는가. 기본 off·fail-safe=off(비파괴; 조회 실패=미요구)."""
+    try:
+        rows = kg("MATCH (t:LakatosTree {name:$tree}) RETURN t.require_certified_evidence AS f", tree=name)
+        return bool(rows and rows[0].get('f'))
+    except Exception:   # noqa: BLE001 — 조회 실패는 안전측(미요구)으로. KG-less 경로도 여기서 off.
+        return False
+
+
+def _parse_evidence_ref(tree: str, ref: str) -> tuple[str, str]:
+    """근거 ref → (tree, tag). '<tree>/<tag>' | 바로 '<tag>'(같은 트리). 관례 밖이면 해소 실패 → fail-closed."""
+    ref = (ref or "").strip()
+    if "/" in ref:
+        t, tag = ref.split("/", 1)
+        return t.strip(), tag.strip()
+    return tree, ref
+
+
+def _evidence_ok(tree: str, ref: str) -> bool:
+    """근거 ref 가 실제 certified(+영수증 체인 무결) 노드로 해소되는가 — fail-safe(불확실=False=fail-closed).
+
+    node_certificate(단일 재유도 출처)로 certified 확인 + verify_verdict_chain 으로 tamper 축(cache≠재유도)까지.
+    5게이트 유도를 재구현하지 않는다(drift 회피) — 기존 검증기 두 개를 AND 로 소비만 한다.
+    """
+    try:
+        t, tag = _parse_evidence_ref(tree, ref)
+        if not tag:
+            return False
+        cert = _evidence_claim_service().node_certificate(t, tag)
+        if not (cert and cert.get("certified") is True):
+            return False
+        chain = _judgement_service().verify_verdict_chain(t, tag)
+        return bool(chain and chain.get("ok") is True)
+    except Exception:   # noqa: BLE001 — 해소 불가/조회 오류 = 미인증 = fail-closed(안전측)
+        return False
+
+
+def _certified_foundation_provider(name: str):
+    """foundation provider — opt-in 트리에서 근거 미인증 requirement 를 needed 로 강등(fail-closed).
+
+    기본 off 트리(대다수)는 base 를 그대로 반환 = 바이트 동일(비파괴). 단방향 안전: satisfied→gap 만.
+    """
+    base = _foundation_from_rows(_foundation_rows(name))
+    if base is None or not _tree_requires_cert(name):
+        return base
+    return certified_foundation(base, evidence_ok=lambda ref: _evidence_ok(name, ref))
 
 
 def research_events(name: str, tag: str):

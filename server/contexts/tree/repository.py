@@ -130,7 +130,8 @@ class TreeKgRepository:
             "t.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement, "
             "t.ontology AS ontology, t.assurance_tier AS assurance_tier, "
             # R1(후속 PROM): 게이트 정책의 사전 공시 — 제출자가 403/partial 을 맞기 *전에* 알 수 있어야.
-            "t.require_novel_anchor AS require_novel_anchor, t.attestor_dids AS attestor_dids, "
+            "t.require_novel_anchor AS require_novel_anchor, "
+            "t.require_certified_evidence AS require_certified_evidence, t.attestor_dids AS attestor_dids, "
             "t.updated_at AS updated_at",
             n=name,
         )

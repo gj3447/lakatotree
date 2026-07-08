@@ -115,6 +115,7 @@ class TreeService:
             coverage_backlog=tuple(spec.coverage_backlog),
             ontology=spec.ontology,
             require_novel_anchor=spec.require_novel_anchor,
+            require_certified_evidence=spec.require_certified_evidence,
             assurance_tier=spec.assurance_tier,
             attestor_dids=(None if spec.attestor_dids is None else tuple(spec.attestor_dids)),
         ))
