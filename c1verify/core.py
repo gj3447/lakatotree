@@ -76,7 +76,11 @@ def verify(data: bytes) -> dict:
 
 
 # ── gate reverifiers (registered after verify() is defined; each gate module imports only
-#    _decision + jcs, never core, so there is no import cycle) ──────────────────────────────────
+#    _decision + jcs + receipts + judge, never core, so there is no import cycle) ────────────────
 from .gates.grounded import verify_grounded  # noqa: E402
+from .gates.preregistered import verify_preregistered  # noqa: E402
+from .gates.substrate import verify_substrate  # noqa: E402
 
 _GATE_REVERIFIERS["grounded"] = verify_grounded
+_GATE_REVERIFIERS["substrate"] = verify_substrate
+_GATE_REVERIFIERS["preregistered"] = verify_preregistered

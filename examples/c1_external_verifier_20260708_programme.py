@@ -23,7 +23,8 @@ _REPO = Path(__file__).resolve().parents[1]
 _RECEIPTS = _REPO / "ooptdd_receipts"
 for _p in (_REPO.as_posix(),
            (_RECEIPTS / "c1_skeleton_failclosed").as_posix(),
-           (_RECEIPTS / "c1_grounded_shapin").as_posix()):
+           (_RECEIPTS / "c1_grounded_shapin").as_posix(),
+           (_RECEIPTS / "c1_receipt_kernel").as_posix()):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -31,6 +32,7 @@ from lakatos.verdict.judge import NovelTarget, Prediction, judge  # noqa: E402
 
 import c1_skeleton_receipt as receipt  # noqa: E402 — the real S0 measurement (drive, don't reimplement)
 import c1_grounded_receipt as grounded  # noqa: E402 — the real S1 grounded measurement
+import c1_kernel_receipt as kernel  # noqa: E402 — the real S3 receipt-kernel + judge measurement
 
 
 # Two GENUINELY DISTINCT axes per node (independence, not the same number twice): an improvement
@@ -83,8 +85,40 @@ def _p1_grounded_sha_pin():
                 verdict=verdict)
 
 
+def _p6_substrate_integrity():
+    """S3 substrate — receipt content-addressing re-derived from sealed bytes.
+    primary (tamper):   receipt_tamper_reject_rate       >= 1.0 (single-field tamper caught by sha).
+    novel  (fidelity):  golden_content_sha_agreement_rate >= 1.0 (c1verify sha == engine sha)."""
+    tamper_reject = kernel.receipt_tamper_reject_rate()             # 1.0
+    golden = kernel.golden_content_sha_agreement_rate()            # 1.0
+    pred = Prediction(metric_name="receipt_tamper_reject_rate", direction="higher",
+                      baseline_value=0.0, noise_band=0.0, novel_prediction=True,
+                      closes_question="q_substrate_content_addressing")
+    novel = NovelTarget(metric_name="golden_content_sha_agreement_rate", direction="higher",
+                        threshold=1.0)
+    verdict = judge(pred, tamper_reject, novel_target=novel, novel_measured=golden)
+    return dict(tag="s3-substrate-integrity", measured=tamper_reject, novel_measured=golden,
+                verdict=verdict)
+
+
+def _p5_preregistered_recompute():
+    """S3 preregistered-A — verdict re-derived from the sealed spec by a re-implemented judge().
+    primary (forgery):  forged_verdict_reject_rate    >= 1.0 (hand-typed/inconsistent verdict caught).
+    novel  (fidelity):  golden_judge_agreement_rate    >= 1.0 (c1verify.judge == engine judge)."""
+    forged_reject = kernel.forged_verdict_reject_rate()            # 1.0
+    golden = kernel.golden_judge_agreement_rate()                 # 1.0
+    pred = Prediction(metric_name="forged_verdict_reject_rate", direction="higher",
+                      baseline_value=0.0, noise_band=0.0, novel_prediction=True,
+                      closes_question="q_prereg_verdict_recompute")
+    novel = NovelTarget(metric_name="golden_judge_agreement_rate", direction="higher", threshold=1.0)
+    verdict = judge(pred, forged_reject, novel_target=novel, novel_measured=golden)
+    return dict(tag="s3-preregistered-recompute", measured=forged_reject, novel_measured=golden,
+                verdict=verdict)
+
+
 def results() -> list:
-    return [_p0_skeleton_failclosed(), _p0b_engine_independence(), _p1_grounded_sha_pin()]
+    return [_p0_skeleton_failclosed(), _p0b_engine_independence(), _p1_grounded_sha_pin(),
+            _p6_substrate_integrity(), _p5_preregistered_recompute()]
 
 
 def main() -> int:

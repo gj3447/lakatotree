@@ -1,0 +1,60 @@
+# C1 S3 — receipt kernel (content-sha + fold) + judge() re-implementation (substrate + preregistered-A).
+# hermetic: in_process + memory backend. emit-adapter=c1_kernel_receipt.verify drives the REAL c1verify
+# gates over receipt chains minted with the REAL engine primitives; golden cross-checks pin copy-fidelity.
+name: c1-external-verifier-s3-receipt-kernel
+target:
+  mode: in_process
+  callable: c1_kernel_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py overrides with the absolute receipt dir
+
+requirements:
+  - id: C1S3-1
+    description: golden cross-check — c1verify.receipt_content_sha agrees with lakatos.verdicts.receipt_content_sha byte-for-byte over a corpus (kernel copy-fidelity == 1.0)
+    gate:
+      - {event: c1_kernel_golden_content_sha, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S3:golden_content_sha
+      source: c1_kernel_receipt.py
+      symbol: verify
+      must_emit: c1_kernel_golden_content_sha
+
+  - id: C1S3-2
+    description: golden cross-check — c1verify.judge agrees with lakatos.verdict.judge verdict-for-verdict over a corpus exercising improved/novel/independence/noise_band (scoring copy-fidelity == 1.0)
+    gate:
+      - {event: c1_kernel_golden_judge, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S3:golden_judge
+      source: c1_kernel_receipt.py
+      symbol: verify
+      must_emit: c1_kernel_golden_judge
+
+  - id: C1S3-3
+    description: substrate — an honest engine-minted receipt chain ACCEPTs (with authenticity residual) and every single-field tamper is REJECTed by content-sha recompute (receipt_tamper_reject_rate == 1.0)
+    gate:
+      - {event: c1_kernel_substrate, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S3:substrate
+      source: c1_kernel_receipt.py
+      symbol: verify
+      must_emit: c1_kernel_substrate
+
+  - id: C1S3-4
+    description: preregistered-A — an honest scripted verdict (== engine judge) ACCEPTs (with back-fit residual); a hand-typed verdict_source and a spec-inconsistent verdict are REJECTed by judge-recompute (forged_verdict_reject_rate == 1.0)
+    gate:
+      - {event: c1_kernel_preregistered, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S3:preregistered
+      source: c1_kernel_receipt.py
+      symbol: verify
+      must_emit: c1_kernel_preregistered
+
+  - id: C1S3-5
+    description: negative oracle (no fake green) — the content-sha recompute (substrate) and the judge-recompute (preregistered) are load-bearing; dropping them lets the forgery slip
+    gate:
+      - {event: c1_kernel_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S3:negative_oracle
+      source: c1_kernel_receipt.py
+      symbol: verify
+      must_emit: c1_kernel_negative_oracle
