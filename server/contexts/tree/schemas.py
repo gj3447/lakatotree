@@ -76,6 +76,10 @@ class CreateTreeIn(BaseModel):
     # FF1(설계감사 2026-06-26): opt-in 정책 — True 면 cross-metric novel 이 서버앵커 영수증(novel_script
     #   서버 재유도) 없이 progressive 를 못 빚는다(없으면 partial 강등). 기본 False=비파괴.
     require_novel_anchor: bool = False
+    # cert-consumer(deep-think 2026-07-08): True 면 근거-기반 satisfied foundation requirement 가 그 evidence_refs
+    #   가 실제 certified 노드(node_certificate=true ∧ 영수증 체인 무결)로 해소돼야 satisfied 유지 → CANONICAL 승격
+    #   게이트를 fail-closed 로. 기본 False=비파괴(첫 적대적 인증서 소비자, GO게이트 빈 슬롯 봉합).
+    require_certified_evidence: bool = False
     # G6(git-흡수): 보증 tier 선언 — notebook|receipted|anchored (닫힌 어휘, 오타 422). 생략(None)이면
     #   신규 트리는 anchored 기본(ON CREATE), 기존 트리는 무변경(legacy 소급 스탬프 금지). 하향 선언 409.
     assurance_tier: str | None = None

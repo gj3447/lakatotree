@@ -28,6 +28,7 @@ class TreeSpec:
     coverage_statement: str = ""
     ontology: str = ""   # 도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)
     require_novel_anchor: bool = False   # FF1: cross-metric novel 서버앵커 강제(opt-in, 기본 off)
+    require_certified_evidence: bool = False   # cert-consumer(2026-07-08): 근거 노드 인증서 강제(opt-in, 기본 off)
     # G6: 보증 tier 선언(notebook/receipted/anchored). None=미선언 — 신규 트리는 writer 의 ON CREATE 가
     #   기본 anchored 스탬프, 기존 트리는 tier 무변경(legacy 소급 스탬프 금지). 선언은 단조 ratchet(하향 409).
     assurance_tier: str | None = None
@@ -99,6 +100,7 @@ class TreeMutationService:
                     coverage_statement=spec.coverage_statement,
                     ontology=spec.ontology,
                     require_novel_anchor=spec.require_novel_anchor,
+                    require_certified_evidence=spec.require_certified_evidence,
                     assurance_tier=spec.assurance_tier,
                     attestor_dids=spec.attestor_dids,
                 )
