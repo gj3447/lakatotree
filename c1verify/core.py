@@ -67,7 +67,12 @@ def verify(data: bytes) -> dict:
         if reverifier is None:
             per_gate.append(_default_gate_decision(gate))
         else:  # a real fail-closed reverifier; still REJECTs unless it PROVES ACCEPT from sealed bytes
-            per_gate.append(reverifier(gates.get(gate), ctx))
+            try:
+                per_gate.append(reverifier(gates.get(gate), ctx))
+            except Exception as exc:  # noqa: BLE001 — TOTALITY: a reverifier bug on attacker-controlled
+                # bytes must degrade to REJECT, never escape verify() as a crash (fail-closed keystone).
+                per_gate.append(gate_decision(
+                    gate, REJECT, f"reverifier raised on the bundle (fail-closed): {type(exc).__name__}"))
 
     accepted = [g for g in per_gate if g["decision"] == ACCEPT]
     certified = len(GATES) > 0 and len(accepted) == len(GATES)
@@ -79,8 +84,10 @@ def verify(data: bytes) -> dict:
 #    _decision + jcs + receipts + judge, never core, so there is no import cycle) ────────────────
 from .gates.grounded import verify_grounded  # noqa: E402
 from .gates.preregistered import verify_preregistered  # noqa: E402
+from .gates.reproducible import verify_reproducible  # noqa: E402
 from .gates.substrate import verify_substrate  # noqa: E402
 
 _GATE_REVERIFIERS["grounded"] = verify_grounded
 _GATE_REVERIFIERS["substrate"] = verify_substrate
 _GATE_REVERIFIERS["preregistered"] = verify_preregistered
+_GATE_REVERIFIERS["reproducible"] = verify_reproducible

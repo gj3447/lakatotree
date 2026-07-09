@@ -24,7 +24,8 @@ _RECEIPTS = _REPO / "ooptdd_receipts"
 for _p in (_REPO.as_posix(),
            (_RECEIPTS / "c1_skeleton_failclosed").as_posix(),
            (_RECEIPTS / "c1_grounded_shapin").as_posix(),
-           (_RECEIPTS / "c1_receipt_kernel").as_posix()):
+           (_RECEIPTS / "c1_receipt_kernel").as_posix(),
+           (_RECEIPTS / "c1_reproducible").as_posix()):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -33,6 +34,7 @@ from lakatos.verdict.judge import NovelTarget, Prediction, judge  # noqa: E402
 import c1_skeleton_receipt as receipt  # noqa: E402 — the real S0 measurement (drive, don't reimplement)
 import c1_grounded_receipt as grounded  # noqa: E402 — the real S1 grounded measurement
 import c1_kernel_receipt as kernel  # noqa: E402 — the real S3 receipt-kernel + judge measurement
+import c1_reproducible_receipt as reproducible  # noqa: E402 — the real S2 reproducible measurement
 
 
 # Two GENUINELY DISTINCT axes per node (independence, not the same number twice): an improvement
@@ -116,9 +118,26 @@ def _p5_preregistered_recompute():
                 verdict=verdict)
 
 
+def _p2_reproducible():
+    """S2 reproducible — rebuild-from-raw re-derived from the sealed manifest, not a pointer.
+    primary (swap tamper):   manifest_substitution_reject_rate >= 1.0 (manifest swap caught by sha-pin).
+    novel  (lineage tamper): broken_lineage_reject_rate        >= 1.0 (a manifest that doesn't rebuild
+                             from raw — gap/wrong-root/missing-env/unrecorded/cycle — caught by the
+                             re-derived verify_dataset_manifest). Two genuinely distinct tamper classes."""
+    swap_reject = reproducible.manifest_substitution_reject_rate()   # 1.0
+    lineage_reject = reproducible.broken_lineage_reject_rate()       # 1.0
+    pred = Prediction(metric_name="manifest_substitution_reject_rate", direction="higher",
+                      baseline_value=0.0, noise_band=0.0, novel_prediction=True,
+                      closes_question="q_reproducible_rebuild")
+    novel = NovelTarget(metric_name="broken_lineage_reject_rate", direction="higher", threshold=1.0)
+    verdict = judge(pred, swap_reject, novel_target=novel, novel_measured=lineage_reject)
+    return dict(tag="s2-reproducible-rebuild", measured=swap_reject, novel_measured=lineage_reject,
+                verdict=verdict)
+
+
 def results() -> list:
     return [_p0_skeleton_failclosed(), _p0b_engine_independence(), _p1_grounded_sha_pin(),
-            _p6_substrate_integrity(), _p5_preregistered_recompute()]
+            _p6_substrate_integrity(), _p5_preregistered_recompute(), _p2_reproducible()]
 
 
 def main() -> int:

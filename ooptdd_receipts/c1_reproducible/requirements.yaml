@@ -1,0 +1,73 @@
+# C1 S2 — reproducible gate rebuild-from-raw reverifier (P2). hermetic: in_process + memory backend.
+# emit-adapter=c1_reproducible_receipt.verify drives the REAL c1verify reproducible reverifier over
+# bundles sealing a REAL engine DatasetManifest (lakatos.io.lineage). Two independent tamper classes
+# (manifest swap via sha-pin, broken lineage via re-derived rebuild-from-raw) both fully rejected;
+# negative oracle proves BOTH guards are load-bearing (revert-proof); golden cross-check anchors the
+# re-derivation to lakatos.io.lineage.verify_dataset_manifest.
+name: c1-external-verifier-s2-reproducible-rebuild
+target:
+  mode: in_process
+  callable: c1_reproducible_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all.py / run_all.py override with the absolute receipt dir
+
+requirements:
+  - id: C1S2-1
+    description: honest — the bundle sealing a REAL engine manifest (raw-rooted, gapless, acyclic, env present) ACCEPTs and NAMES its residual trust surface (live input-sha staleness is out-of-band, never discharged as 'trust')
+    gate:
+      - {event: c1_reproducible_honest_accept, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S2:honest_accept
+      source: c1_reproducible_receipt.py
+      symbol: verify
+      must_emit: c1_reproducible_honest_accept
+
+  - id: C1S2-2
+    description: manifest substitution — swapping the sealed manifest for a different one (pin left on the original) is REJECTed every time (manifest_substitution_reject_rate == 1.0, P2 primary)
+    gate:
+      - {event: c1_reproducible_manifest_substitution_reject, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S2:manifest_substitution_reject
+      source: c1_reproducible_receipt.py
+      symbol: verify
+      must_emit: c1_reproducible_manifest_substitution_reject
+
+  - id: C1S2-3
+    description: broken lineage — a re-sealed manifest (matching pin) that does NOT rebuild from raw (gap / wrong declared root / missing env / unrecorded final / cycle) is REJECTed (broken_lineage_reject_rate == 1.0, P2 novel — distinct tamper class from the sha swap)
+    gate:
+      - {event: c1_reproducible_broken_lineage_reject, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S2:broken_lineage_reject
+      source: c1_reproducible_receipt.py
+      symbol: verify
+      must_emit: c1_reproducible_broken_lineage_reject
+
+  - id: C1S2-4
+    description: negative oracle (no fake green) — dropping the sha-pin ACCEPTs a manifest swap AND dropping the lineage check ACCEPTs a broken manifest, proving BOTH guards are load-bearing; the real reverifier rejects both (revert-proof)
+    gate:
+      - {event: c1_reproducible_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S2:negative_oracle
+      source: c1_reproducible_receipt.py
+      symbol: verify
+      must_emit: c1_reproducible_negative_oracle
+
+  - id: C1S2-5
+    description: golden cross-check — c1verify's reproducible decision agrees with lakatos.io.lineage.verify_dataset_manifest(...).passed over a corpus and the honest real-manifest bundle ACCEPTs (copy-fidelity, engine-side)
+    gate:
+      - {event: c1_reproducible_golden, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S2:golden
+      source: c1_reproducible_receipt.py
+      symbol: verify
+      must_emit: c1_reproducible_golden
+
+  - id: C1S2-6
+    description: fail-closed totality — every malformed / attacker-controlled manifest (keyless derivation, non-string root, junk-typed environment) yields a REJECT decision and verify() NEVER raises (totality_reject_rate_on_malformed == 1.0; adversarial-verification 2026-07-09 hardening)
+    gate:
+      - {event: c1_reproducible_totality, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1S2:totality
+      source: c1_reproducible_receipt.py
+      symbol: verify
+      must_emit: c1_reproducible_totality
