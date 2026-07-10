@@ -205,20 +205,36 @@ def version():
 
 
 @app.get('/api/ops/fsck')
-def ops_fsck(tree: str = '', emit_skiplist: bool = False):
+def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool = False):
     """R6 전수감사 verb(비변이) — fsck_node *같은 callable* 로 전 트리 노드 record 스캔(재구현 금지 —
     가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/fsck_skiplist.json, record
     content-sha)는 감사·경계 동일 주입. ?emit_skiplist=1 = 면제 후보 방출(사람 검토→git 커밋 파이프라인).
-    projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도)."""
+    projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도).
+
+    jp3 ?include_receipts=1 (opt-in, 기본 off=현행 바이트동일): 트리당 1회 배치 collect 로 노드별
+    :VerdictReceipt 체인을 동봉해 recompute 체커(RECEIPT_SHA_CONTENT_MISMATCH/ENCODING_STALE)를
+    표면화. skiplist 면제·emit 후보 sha 는 *비동봉 base row* 기준(동봉이 sha 를 바꿔 기존 면제를
+    전멸시키는 함정 회피 — 면제는 '레코드 열거' 의미론, 체인 성장과 무관하게 안정)."""
     from server.contexts.audit import fsck as _fsck
     names = [tree] if tree else [r['name'] for r in kg('MATCH (t:LakatosTree) RETURN t.name AS name ORDER BY t.name')]
     skip = _fsck.load_skiplist()
     findings, candidates, total = [], [], 0
     for n in names:
         td = tree_data(n)
+        recs_by_tag: dict = {}
+        if include_receipts:
+            for rr in kg('''MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(e)-[:HAS_RECEIPT]->(r:VerdictReceipt)
+                            RETURN e.tag AS tag, collect(r {.*}) AS receipts''', n=n):
+                recs_by_tag[rr['tag']] = rr['receipts']
         for row in td.get('nodes', []):
             total += 1
-            fs = _fsck.fsck_node(row, skiplist=skip)
+            if include_receipts:
+                if skip and _fsck.record_content_sha(row) in skip:
+                    continue   # base-sha 선-단락(면제 의미 보존) — total 집계엔 이미 포함
+                checked = dict(row, receipts=recs_by_tag.get(row.get('tag')) or [])
+                fs = _fsck.fsck_node(checked)
+            else:
+                fs = _fsck.fsck_node(row, skiplist=skip)
             for f in fs:
                 findings.append(dict(tree=n, tag=row.get('tag'), check_id=f.check_id,
                                      severity=f.severity, detail=f.detail))

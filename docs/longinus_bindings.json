@@ -2170,10 +2170,10 @@
       "file": "lakatos/verdicts.py",
       "symbol": "receipt_content_sha",
       "kind": "function",
-      "line_hint": 270,
-      "sha256": "47f62705203bf780",
+      "line_hint": 293,
+      "sha256": "4cf594ca410adc0b",
       "layer": "hard_core",
-      "frege_sinn": "판결 영수증의 내용주소(버전드 헤더+JCS canonical blob sha256) — 이름=내용(git 이식)"
+      "frege_sinn": "판결 영수증의 내용주소(버전드 헤더+JCS canonical blob sha256; jp3 fieldset= 계보 재유도 seam) — 이름=내용(git 이식)"
     },
     {
       "sourceId": "verdicts.fold_receipt_chain",

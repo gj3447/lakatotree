@@ -19,7 +19,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from lakatos.verdicts import FORCEFUL_SOURCES, is_scripted_verdict
+from lakatos.verdicts import (FORCEFUL_SOURCES, is_scripted_verdict, match_receipt_encoding,
+                              receipt_content_sha)
 
 # 심각도 서열(단일 정본 — audit·boundary 가 공유). FATAL > ERROR > WARN > INFO.
 FATAL, ERROR, WARN, INFO = "FATAL", "ERROR", "WARN", "INFO"
@@ -35,6 +36,8 @@ _SEVERITY = {
     "RECEIPT_CHAIN_MISMATCH": ERROR,    # R5: current_receipt_sha 가 동봉 체인 밖(dangling — 변조/부패). verify 라우트와 공용 어휘
     "FORCEFUL_SOURCE_WITHOUT_RECEIPT": ERROR,   # R6: FORCEFUL 판결인데 원장 포인터 없음(G1 이전/우회 write — skiplist 로만 면제)
     "MEASUREMENT_REFUTED_BUT_STANDING": WARN,   # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 관측(비차단)
+    "RECEIPT_SHA_CONTENT_MISMATCH": ERROR,      # jp3: stored receipt_sha ≠ recompute(content) — 어느 인코딩과도 불일치(in-place 변조/원장우회 위조)
+    "RECEIPT_ENCODING_STALE": WARN,             # jp3: 미선언 구-인코딩(pre-ag3) 정직 mint — 필드드리프트 가시화(변조 아님, 비차단)
 }
 
 # AG6 값무결: 반증(mismatch)이 걸릴 때 '서있음'으로 보는 verdict 집합(positive claim).
@@ -110,6 +113,38 @@ def _check_forceful_receipt(rec: dict) -> Finding | None:
     return None
 
 
+def _check_receipt_sha_content(rec: dict) -> Finding | None:
+    """jp3(JP 캠페인): read-time recompute-and-reject — 동봉 영수증마다 stored receipt_sha 를 content
+    로부터 재유도(알려진 인코딩 계보 전수: v2/v1 presence-dispatch + pre-ag3, prediction 은 자기 도메인)
+    해 대조. 어느 것과도 불일치 = in-place 변조/원장우회 위조행 → ERROR. fold 는 불변(AG1 pointer-walk
+    ADR 경계 — 검증 좌석은 fsck/verify, fold 아님). R5 와 같은 enriched-전용 발화(비동봉=판단 보류)."""
+    if "receipts" not in rec:
+        return None
+    bad = [r for r in (rec.get("receipts") or [])
+           if r.get("receipt_sha") and match_receipt_encoding(r, r["receipt_sha"]) is None]
+    if bad:
+        r0 = bad[0]
+        return Finding("RECEIPT_SHA_CONTENT_MISMATCH", _SEVERITY["RECEIPT_SHA_CONTENT_MISMATCH"],
+                       f"{len(bad)}건: stored={r0['receipt_sha'][:12]}… ≠ recompute={receipt_content_sha(r0)[:12]}… "
+                       f"— 어느 알려진 인코딩과도 불일치(in-place 변조/원장우회 위조)")
+    return None
+
+
+def _check_receipt_encoding_stale(rec: dict) -> Finding | None:
+    """jp3: 미선언 구-인코딩(계보 일치, 'current' 아님)의 정직 mint — 필드드리프트를 시끄럽게(WARN, 비차단).
+    label ∉ (None, 'current') 만: 변조(None)는 MISMATCH ERROR 단독 발화(이중 발화 금지 — 신호 순도)."""
+    if "receipts" not in rec:
+        return None
+    stale = [(r, lbl) for r in (rec.get("receipts") or [])
+             if r.get("receipt_sha")
+             and (lbl := match_receipt_encoding(r, r["receipt_sha"])) not in (None, "current")]
+    if stale:
+        return Finding("RECEIPT_ENCODING_STALE", _SEVERITY["RECEIPT_ENCODING_STALE"],
+                       f"{len(stale)}건 구-인코딩('{stale[0][1]}') 정직 mint — 미선언 필드드리프트 가시화"
+                       f"(변조 아님; 재봉인은 재채점/freshen 경로로)")
+    return None
+
+
 def _check_measurement_refuted(rec: dict) -> Finding | None:
     """AG6/R-SOV V4 값무결 (측정주권 2026-07-03): producer replay 가 *실행되어 측정을 반증*
     (replay_status='mismatch')했는데 노드가 여전히 standing verdict 를 든다 → 값무결 WARN(비차단).
@@ -128,6 +163,7 @@ def _check_measurement_refuted(rec: dict) -> Finding | None:
 
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
            _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt,
+           _check_receipt_sha_content, _check_receipt_encoding_stale,
            _check_measurement_refuted)
 
 

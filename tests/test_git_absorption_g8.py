@@ -11,9 +11,19 @@
 """
 from __future__ import annotations
 
+import lakatos.verdicts as V
 from lakatos.quant.bayes import bayes_factor
 from lakatos.trust import evidence_weight
 from server.contexts.audit import fsck as F
+
+# jp3 corpus 재료: 실 mint 후 in-place 변조(sha 유지) / pre-ag3(12필드) 정직 mint.
+_H = {"tree": "T", "tag": "n", "target_id": None, "verdict": "progressive",
+      "verdict_source": "scripted", "metric_name": "m", "metric_value": 1.0,
+      "novel_confirmed": True, "lakatos_status": "p", "judged_at": "2026-07-10T00:00:00Z",
+      "judge_script_sha": "0" * 64, "prev_receipt_sha": None, "measurement_grade": "client_asserted"}
+_TAMPERED = {**_H, "receipt_sha": V.receipt_content_sha(_H), "verdict": "CANONICAL"}
+_STALE_ENC = {k: _H[k] for k in V.RECEIPT_FIELDS_PRE_AG3}
+_STALE_ENC["receipt_sha"] = V.receipt_content_sha(_STALE_ENC, fieldset=V.RECEIPT_FIELDS_PRE_AG3)
 
 
 # ── guard_defect (개선축) — 착륙 ─────────────────────────────────────────────────────────
@@ -52,6 +62,13 @@ _CORRUPT = {
                                         "assurance_tier_resolved": "legacy"},
     # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 WARN(다른 check 미발화로 격리).
     "MEASUREMENT_REFUTED_BUT_STANDING": {"verdict": "progressive", "replay_status": "mismatch"},
+    # jp3: 실 mint 체인의 head verdict 를 in-place 변조(receipt_sha 유지) — recompute 가 문다.
+    #   'proof' + head 는 체인 안(R5 미발화)으로 다른 체크 격리.
+    "RECEIPT_SHA_CONTENT_MISMATCH": {"verdict": "proof", "current_receipt_sha": _TAMPERED["receipt_sha"],
+                                     "receipts": [_TAMPERED]},
+    # jp3: pre-ag3(12필드, 미선언 드리프트) *정직* mint — STALE WARN 이지 MISMATCH ERROR 아님.
+    "RECEIPT_ENCODING_STALE": {"verdict": "proof", "current_receipt_sha": _STALE_ENC["receipt_sha"],
+                               "receipts": [_STALE_ENC]},
 }
 
 
