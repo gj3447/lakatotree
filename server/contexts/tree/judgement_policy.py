@@ -27,7 +27,8 @@ def apply_verdict_demotes(verdict: str, lakatos_status: str, *, hc_derived: bool
                           require_novel_anchor: bool, novel: bool, cross_metric_novel: bool,
                           novel_server_anchored: bool,
                           reproducible: bool | None = None,
-                          reproducibility_ceiling: bool = False) -> VerdictDecision:
+                          reproducibility_ceiling: bool = False,
+                          engine_fresh_fire: bool = False) -> VerdictDecision:
     """dialectical_verdict 이후의 *구조적* 강등 체인(godmethod L686-696 의 거동 불변 추출 + AG4 확장).
 
       ① #H1-hardcore: hard_core 구조 위반(touched ∩ core ≠ ∅ → hc_derived is False)이면 메트릭/질적
@@ -39,7 +40,11 @@ def apply_verdict_demotes(verdict: str, lakatos_status: str, *, hc_derived: bool
          무회귀의 뿌리. reproducible is True 도 물론 통과.
       ③ FF1: require_novel_anchor 트리에서 cross-metric novel 이 서버앵커 없이 progressive 면
          partial(novel_not_server_anchored) — client float 한 줄이 thesis 머리를 사는 구멍 봉합.
-    precedence: ①→②→③. 상위가 verdict 를 progressive 밖으로 빼면 하위는 발화하지 않는다. ②가 ③보다
+      ④ jp4 CA fail-closed(JP 캠페인): stale/무능력 판관(engine_fresh_fire)은 FORCEFUL progressive 를
+         못 찍는다 → partial('provisional_stale_engine'). *마지막* 인 이유: 내용기반 라벨(①②③)이 더
+         행동유도적이고 각자의 회복 통로를 가지므로, provisional 은 '그 외엔 progressive 였다'의 정밀
+         표식이어야 freshen 통로(재기동 후 동일값 재제출 승급)가 내용 결함까지 승급시키는 오염이 없다.
+    precedence: ①→②→③→④. 상위가 verdict 를 progressive 밖으로 빼면 하위는 발화하지 않는다. ②가 ③보다
     우선(재현성 구조반증이 novel 앵커 갭보다 근본적) — 둘 다 partial 이나 label 이 reproducibility_refuted.
     """
     novel_independent = bool(novel)
@@ -50,7 +55,18 @@ def apply_verdict_demotes(verdict: str, lakatos_status: str, *, hc_derived: bool
     if (require_novel_anchor and novel and cross_metric_novel and not novel_server_anchored
             and verdict in _PROGRESSIVE):
         return VerdictDecision('partial', 'novel_not_server_anchored', False)
+    if engine_fresh_fire and verdict in _PROGRESSIVE:
+        return VerdictDecision('partial', 'provisional_stale_engine', False)
     return VerdictDecision(verdict, lakatos_status, novel_independent)
+
+
+def engine_freshness_fires(fresh: dict | None) -> bool:
+    """jp4 발화 술어(순수) — 판정가능할 때만 문다: stale_code is True(판관 규칙코드가 부팅 후 실변경)
+    또는 capable is False(러닝 프로세스에 G6/resolve_measurement 결손). None(미주입/미무장)과
+    stale_code None(판정불가: git 부재/sha 미상)은 발화 안 함 — AG4 '부재≠반증'(dead-σ) 원칙."""
+    if not fresh:
+        return False
+    return fresh.get('stale_code') is True or fresh.get('capable') is False
 
 
 def qualitative_flags(*, have_qual: bool, verdict: str, novel_server_anchored: bool,

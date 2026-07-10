@@ -24,6 +24,10 @@ _REGISTRY: tuple[tuple[str, str], ...] = (
                                   "novel_script=<서버가 읽을 실파일 경로 또는 file::symbol> 동봉으로 새 tag "
                                   "에 재실행하거나, 이 노드에 동일 metric_value + 서버앵커 script/novel_script "
                                   "재제출(freshen)로 승급. dry_run=true 가 would_demote_to_partial 로 사전 예고."),
+    # jp4: 판관 stale/무능력 provisional 강등의 회복 통로 안내(200-partial 의 다음 수).
+    ("provisional_stale_engine", "판관이 stale/무능력(코드경로 변경 미재기동 또는 G6 결손)이라 progressive 가 "
+                                 "partial 로 provisional 강등 — scripts/dev_server_restart.sh 재기동 후 "
+                                 "*동일 metric_value* 재제출(freshen)로 승급(값 변경은 re-roll 409)."),
     ("metric 온톨로지 위반", "트리 ontology 가 선언한 metric 어휘/방향만 허용 — get_tree 로 ontology 확인."),
     ("judge_script_sha", "script 를 실재 파일 경로(또는 file::symbol)로 제출하면 서버가 sha 를 재유도한다 — "
                          "inline 이면 sha 검증 불가로 미검증 표기."),

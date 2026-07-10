@@ -446,9 +446,9 @@ class ProgrammeService:
                    note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
         if 'novel_server_anchored' in res:   # 있으면 노출(가시성) — 없는 키를 지어내지 않는다
             out['novel_server_anchored'] = res['novel_server_anchored']
-        if res.get('lakatos') == 'novel_not_server_anchored':
+        if res.get('lakatos') in ('novel_not_server_anchored', 'provisional_stale_engine'):
             # suggest-only advice(H9 SSOT=advice.py 레지스트리) — 상태코드/verdict 불변, 우회 수단 아님.
-            tip = advice_for('novel_not_server_anchored')
+            tip = advice_for(res['lakatos'])
             if tip:
                 out['advice'], out['advice_mode'] = tip, 'suggest-only'
         return out
