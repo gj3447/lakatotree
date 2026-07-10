@@ -1,0 +1,3 @@
+cert-foundation-gate keystone — 가드 9개 실행
+  defect_ok(강등)=True  mech_ok(양성+failsafe+비파괴)=True
+  ⇒ verdict=progressive  (measured=1.0 novel_measured=1.0) [엔진 생성·손입력 0]
