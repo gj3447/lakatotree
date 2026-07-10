@@ -1,0 +1,8 @@
+{
+  "tree": "LakatosTree_MeasurementSovereignty_20260703",
+  "node": "go1_replay_flip_dogfood",
+  "metric": "go1_scoring_replay_enabled",
+  "value": 1.0,
+  "serving_pid": 390940,
+  "replay_exec_env": "1"
+}
