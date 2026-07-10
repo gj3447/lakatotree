@@ -1,0 +1,62 @@
+# C1 S3-engine — PredictionReceipt keystone: register_prediction seals the FULL spec content-addressed
+# (genesis-chained); the submit verdict receipt commits to it via the sealed prev linkage, so a spec
+# back-fit after the result is unrepresentable (hash-causal order). hermetic: in_process + memory
+# backend. emit-adapter drives the REAL JudgementService registration/submit paths (stateful KG double)
+# and the REAL c1verify preregistered gate v2.
+name: c1-external-verifier-s3-engine-prediction-receipt
+target:
+  mode: in_process
+  callable: c1_predreceipt_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # run_all.py overrides with the absolute receipt dir
+
+requirements:
+  - id: C1PR-1
+    description: register_prediction mints a content-addressed PredictionReceipt (full spec sealed, genesis prev=None) and advances the node's chain pointer — rederivable from stored fields, not a mint ritual
+    gate:
+      - {event: c1_predreceipt_minted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1PR:minted
+      source: c1_predreceipt_receipt.py
+      symbol: verify
+      must_emit: c1_predreceipt_minted
+
+  - id: C1PR-2
+    description: hash-causal commit — submit_test_result's verdict receipt seals the prediction receipt's sha as prev_receipt_sha (spec ≺ verdict in chain order), and the chain folds clean to genesis
+    gate:
+      - {event: c1_predreceipt_hashcausal, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1PR:hashcausal
+      source: c1_predreceipt_receipt.py
+      symbol: verify
+      must_emit: c1_predreceipt_hashcausal
+
+  - id: C1PR-3
+    description: golden cross-check — c1verify.prediction_content_sha agrees with lakatos.verdicts.prediction_content_sha byte-for-byte over a coercion corpus (external-verifier copy-fidelity == 1.0)
+    gate:
+      - {event: c1_predreceipt_golden, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1PR:golden
+      source: c1_predreceipt_receipt.py
+      symbol: verify
+      must_emit: c1_predreceipt_golden
+
+  - id: C1PR-4
+    description: back-fit forgery classes all die — shown-spec swap, moved novel bar, sealed-field tamper, kind-strip smuggle, double-registration ambiguity (backfit_reject_rate == 1.0) while the honest sealed bundle ACCEPTs with the narrowed hash-causal residual
+    gate:
+      - {event: c1_predreceipt_backfit_killed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1PR:backfit_killed
+      source: c1_predreceipt_receipt.py
+      symbol: verify
+      must_emit: c1_predreceipt_backfit_killed
+
+  - id: C1PR-5
+    description: negative oracle (no fake green) — without the sealed-vs-shown comparison the back-fit spec judge-recomputes clean and would slip (v1 semantics); without kind-aware sha recompute the honest prediction receipt itself fails integrity — both checks are load-bearing
+    gate:
+      - {event: c1_predreceipt_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1PR:negative_oracle
+      source: c1_predreceipt_receipt.py
+      symbol: verify
+      must_emit: c1_predreceipt_negative_oracle

@@ -61,6 +61,47 @@ def receipt_content_sha(fields: dict) -> str:
     return hashlib.sha256(canonical_receipt_blob(fields)).hexdigest()
 
 
+#: PredictionReceipt (S3-engine keystone) — the engine seals the FULL prediction spec at
+#: register_prediction time under its own type header (domain separation from verdict receipts:
+#: no cross-kind sha collision for any input). The discriminator receipt_kind is INSIDE the sealed
+#: set, so tampering it breaks the sha (kind-smuggling dies). Byte-exact mirror of
+#: lakatos.verdicts.PREDICTION_RECEIPT_FIELDS / canonical_prediction_blob.
+PREDICTION_RECEIPT_FIELDS = (
+    "receipt_kind",
+    "tree", "tag",
+    "metric_name", "direction", "baseline_value", "noise_band", "scale_type",
+    "novel_prediction", "novel_metric", "novel_direction", "novel_threshold",
+    "judge_script_sha", "closes_question", "credence", "baseline_lineage",
+    "registered_at", "prev_receipt_sha",
+)
+_PREDICTION_ENCODING_VERSION = "v1"
+_PREDICTION_NUMERIC_FIELDS = ("baseline_value", "noise_band", "novel_threshold", "credence")
+
+
+def canonical_prediction_blob(fields: dict) -> bytes:
+    """Same JCS discipline as the verdict blob, distinct type header — byte-identical to
+    lakatos.verdicts.canonical_prediction_blob (numeric fields unify to float, registered_at to str)."""
+    payload = {k: fields.get(k) for k in PREDICTION_RECEIPT_FIELDS}
+    for k in _PREDICTION_NUMERIC_FIELDS:
+        payload[k] = _coerce_metric_value(payload.get(k))
+    payload["registered_at"] = _coerce_judged_at(payload.get("registered_at"))
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    header = f"prediction-receipt\x00{_PREDICTION_ENCODING_VERSION}\n"
+    return header.encode("utf-8") + body.encode("utf-8")
+
+
+def prediction_content_sha(fields: dict) -> str:
+    """Content-address of a prediction receipt: sha256 (full 64-hex) of the canonical blob."""
+    return hashlib.sha256(canonical_prediction_blob(fields)).hexdigest()
+
+
+def is_prediction_receipt(r) -> bool:
+    """Kind discriminator — safe to branch on because receipt_kind is sealed inside the sha:
+    adding it to a verdict receipt (or stripping it from a prediction receipt) changes which
+    canonicalization the integrity check recomputes with, and the claimed sha stops matching."""
+    return isinstance(r, dict) and r.get("receipt_kind") == "prediction"
+
+
 class ReceiptChainBroken(Exception):
     """head_sha absent (dangling) or a prev link missing / a cycle = tamper / corruption."""
 
@@ -99,7 +140,10 @@ def check_chain_integrity(chain, head):
     for r in chain:
         if not isinstance(r, dict) or not isinstance(r.get("receipt_sha"), str):
             return None, "malformed receipt (missing receipt_sha)"
-        if receipt_content_sha(r) != r["receipt_sha"]:
+        # Kind-aware recompute: prediction receipts hash under their own type header. The branch is
+        # tamper-safe (receipt_kind is inside the sealed set — see is_prediction_receipt).
+        sha_fn = prediction_content_sha if is_prediction_receipt(r) else receipt_content_sha
+        if sha_fn(r) != r["receipt_sha"]:
             return None, f"receipt content-sha mismatch — tampered @ {r.get('receipt_sha', '')[:12]}…"
     try:
         fold = fold_receipt_chain(chain, head)
