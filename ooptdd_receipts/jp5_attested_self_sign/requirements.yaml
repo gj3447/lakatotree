@@ -1,0 +1,50 @@
+# jp5 — 자기서명(무-attestor fallback)은 attestation 이 아니다 (JP 캠페인 LakatosTree_JudgeProprioception_20260708).
+# hermetic: in_process + memory backend. emit-adapter 가 실코드 구동(재구현 금지): 실 ed25519 서명 →
+# 실 JudgementService.submit_test_result(fake KG) → captured grade 관측 + is_measurement_owned 실호출.
+name: lakatotree-jp5-attested-self-sign-authored-grade
+target:
+  mode: in_process
+  callable: jp5_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all 이 절대경로로 오버라이드
+
+requirements:
+  - id: JP5-1
+    description: 무-attestor 트리의 유효 자발적 self-sign → grade='authored' (attested 아님 — 버리는 키페어가 G6 를 사는 인센티브 역전 사망)
+    gate:
+      - {event: jp5_self_sign_downgraded_to_authored, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP5:self_sign_downgraded
+      source: jp5_receipt.py
+      symbol: verify
+      must_emit: jp5_self_sign_downgraded_to_authored
+
+  - id: JP5-2
+    description: 비파괴 경계 — attestor 선언 트리의 allow-list 서명은 여전히 attested(오강등 0) + 무서명은 client_asserted 그대로
+    gate:
+      - {event: jp5_allowlist_attested_preserved, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP5:allowlist_preserved
+      source: jp5_receipt.py
+      symbol: verify
+      must_emit: jp5_allowlist_attested_preserved
+
+  - id: JP5-3
+    description: G6 이빨 — is_measurement_owned('authored', True)=False (OWNED_GRADES 의도적 배제 = 인증 불가) + 등급이 receipt_sha 를 가름
+    gate:
+      - {event: jp5_authored_not_certifiable, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP5:authored_not_certifiable
+      source: jp5_receipt.py
+      symbol: verify
+      must_emit: jp5_authored_not_certifiable
+
+  - id: JP5-4
+    description: 음성 오라클 — 구법 배선 재현(무-attestor 서명에 resolve_measurement(attested=True) 직접 호출)이 여전히 attested 를 찍는 것과 실 submit seam 의 authored 가 *달라야* 발행(fix 가 seam 에 실재, vacuous green 차단)
+    gate:
+      - {event: jp5_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP5:negative_oracle
+      source: jp5_receipt.py
+      symbol: verify
+      must_emit: jp5_negative_oracle
