@@ -98,7 +98,21 @@ def check_registration(already_judged: bool) -> None:
 def judge(pred: Prediction | None, measured: float,
           novel_target: 'NovelTarget | None' = None,
           novel_measured: float | None = None,
-          measured_sha: str = '', novel_sha: str = '') -> Verdict:
+          measured_sha: str = '', novel_sha: str = '', *,
+          require_independent_source: bool = False,
+          independence_witness: str = '') -> Verdict:
+    # jp6 (JP 캠페인 2026-07-08, jp6a 정정 준수): opt-in 독립출처 게이트 — 기본 False 는 모든 기존
+    #   호출부에서 바이트동일 거동(keyword-only 라 positional 유입 불가). armed 시 cross-metric novel 도
+    #   distinct sha OR 선언 witness 를 요구해, FF1 이 의도적으로 남긴 순수-judge() 하네스 경로의
+    #   relabel 공격(m→m_v2 개명·빈 sha·excess content 0)을 봉합한다. 서버층(judgement_policy
+    #   novel-anchor demote)은 별개 신뢰 tier 로 불변. T3 정직 경계: 순수술어로 causal 독립 증명은
+    #   불가 — witness 는 silent license 를 explicit·challengeable 선언으로 바꿀 뿐이다.
+    witness = independence_witness.strip()
+    if independence_witness and not require_independent_source:
+        raise ValueError('independence_witness 는 require_independent_source=True 와만 — '
+                         '아무 일도 안 하는 witness(죽은 장식) 금지')
+    if independence_witness and novel_target is None:
+        raise ValueError('independence_witness 는 novel 주장(novel_target)과만 — 장식 금지')
     if pred is None:
         raise PredictionMissing('사전등록된 예측 없음 — prediction 먼저 (사후 채점 금지)')
     if not math.isfinite(measured):
@@ -139,6 +153,17 @@ def judge(pred: Prediction | None, measured: float,
         # 나생문 F-CON-3: 구조적 novel_target 없으면 텍스트 존재만으론 novel 불인정(→partial)
         novel = False
         noindep = False
+    # jp6 cross-metric 게이트(armed 전용): same-metric 게이트(위, 불변 — witness 로 못 약화) 통과 후에도
+    #   metric 이 다르면 :133 의 'different-metric=independent by construction' 라이선스가 남는다.
+    #   armed 면 그 라이선스를 default-deny 로 뒤집는다: distinct sha(같은 독립 화폐) OR 선언 witness.
+    noindep_cross = witness_licensed = False
+    if (require_independent_source and novel and novel_target is not None
+            and novel_target.metric_name != pred.metric_name
+            and not (measured_sha and novel_sha and novel_sha != measured_sha)):
+        if witness:
+            witness_licensed = True    # witness 가 실제로 license 를 실은 유일한 경우에만 마커 봉인
+        else:
+            novel, noindep_cross = False, True
     if improved and novel:
         verdict = 'progressive'
     elif improved:
@@ -149,5 +174,8 @@ def judge(pred: Prediction | None, measured: float,
         verdict = 'rejected'
     sense = f', novelty_sense={novel_target.novelty_sense}' if novel_target is not None else ''
     indep = ' [novel 비독립: 같은 metric·동일 출처(sha)/측정 재활용 → 초과내용 아님]' if noindep else ''
+    xind = (' [novel 비독립: cross-metric 출처 미증명(distinct sha·witness 부재) — '
+            'require_independent_source 하 초과내용 불인정]' if noindep_cross else '')
+    wit = f' [independence_witness: {witness}]' if witness_licensed else ''
     return Verdict(verdict=verdict, delta=delta, improved=improved, novel=novel,
-                   reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{sense}{indep}')
+                   reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{sense}{indep}{xind}{wit}')

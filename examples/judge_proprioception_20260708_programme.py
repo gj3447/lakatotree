@@ -32,7 +32,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
 from lakatos import verdicts as V                    # RECEIPT_FIELDS, fold_receipt_chain, receipt_content_sha
-from lakatos.verdict.judge import Prediction, judge  # 엔진 판결 커널 (verdict 손입력 금지 — 전부 judge() 생성)
+from lakatos.verdict.judge import NovelTarget, Prediction, judge  # 엔진 판결 커널 (verdict 손입력 금지 — 전부 judge() 생성)
 
 _TREE = "LakatosTree_JudgeProprioception_20260708"
 
@@ -130,6 +130,24 @@ def _m_served_full_seam() -> float:
     return 1.0 if (_m_engine_sha() and "measurement_owned" in certify) else 0.0
 
 
+def _m_cross_metric_relabel_rejected() -> float:
+    """jp6 행동 실측(문자열 grep 아님): relabel 공격(m→m_v2·같은 값·빈 sha)을 disk judge() 에
+    armed(require_independent_source=True)로 재생 — 기각되고 *동시에* distinct-sha 대조군은
+    통과해야 1.0 (과잉차단은 메커니즘이 아님). 표면 부재(TypeError)=0.0 → revert-민감."""
+    pred = Prediction(metric_name='m', direction='higher', baseline_value=0.0, novel_prediction='x')
+    nt = NovelTarget('m_v2', 'higher', 1.0)
+    try:
+        attack = judge(pred, 1.0, novel_target=nt, novel_measured=1.0,
+                       require_independent_source=True)
+        control = judge(pred, 1.0, novel_target=nt, novel_measured=1.0,
+                        measured_sha='a', novel_sha='b', require_independent_source=True)
+    except TypeError:
+        return 0.0                                    # opt-in 표면 부재 = 미착륙
+    rejected = attack.verdict != 'progressive' and not attack.novel
+    licensed = control.verdict == 'progressive' and control.novel
+    return 1.0 if (rejected and licensed) else 0.0
+
+
 NODES = [
     FixNode("jp1-engine-rule-sha", "strategic", "receipt_binds_engine_rule_sha", "q_judge_identity",
             "engine_rule_sha 를 RECEIPT_FIELDS+인증서에 바인딩 · v1→v2(legacy carve-out) · stale CANONICAL 자동강등",
@@ -146,6 +164,10 @@ NODES = [
     FixNode("jp5-attested-self-sign", "tactical", "self_signed_attested_rejected", "q_attestation_authority",
             "empty-attestor fallback allowlist=[signer_did] → 자기인가 거부(grade 'authored'≠'attested')",
             _m_attested_self_sign_rejected),
+    FixNode("jp6-cross-metric-novelty", "structural", "cross_metric_requires_distinct_source", "q_source_independence",
+            "judge() opt-in require_independent_source — cross-metric novel 에 distinct sha OR 선언 witness "
+            "요구(armed 시 default-deny); FF1 이 남긴 순수 judge() 하네스 경로 봉합 (jp6a: 커널 rip-out 아님)",
+            _m_cross_metric_relabel_rejected),
 ]
 
 
@@ -187,7 +209,7 @@ def main() -> int:
     print(f"\n── 요약 ── progressive={progressive}/{len(rows)}  pending={len(rows) - progressive}  "
           f"anomalies_live={anomalies_live}/3")
     if progressive == 0 and anomalies_live == 3:
-        print("  ⇒ 정직 상태: 예측 5 잠금, 채점 0(no fake green). 결함 3/3 실행 재현. fix 착륙 시 실측이 flip.")
+        print(f"  ⇒ 정직 상태: 예측 {len(rows)} 잠금, 채점 0(no fake green). 결함 3/3 실행 재현. fix 착륙 시 실측이 flip.")
     elif progressive > 0:
         print("  ⇒ ★ fix 감지 — 해당 노드를 (비-stale 서버에서) judge()-채점·submit_result 로 progressive 등재하라.")
     elif anomalies_live < 3:
