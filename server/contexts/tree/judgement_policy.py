@@ -69,19 +69,24 @@ def qualitative_flags(*, have_qual: bool, verdict: str, novel_server_anchored: b
 def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric_name,
                          metric_value: float, novel_confirmed: bool, lakatos_status: str,
                          judged_at: str, judge_script_sha: str, prev_receipt_sha,
-                         measurement_grade: str) -> dict:
+                         measurement_grade: str, engine_rule_sha: str | None = None) -> dict:
     """G1 :VerdictReceipt 봉인 필드 조립(godmethod L758-761 거동 불변 추출).
 
     lakatos.verdicts.RECEIPT_FIELDS 와 *정확히 1:1*(특성화 골든이 키 집합 동일성 고정). verdict_source
     는 scripted 고정(수동판결 어휘는 별도 경로). AG3 착지(2026-07-03): measurement_grade(측정 출처등급 —
     server_regenerated/client_asserted)를 봉인 필드로 추가 → RECEIPT_FIELDS 도 동시 확장(둘 다 안 하면
     골든 RED). grade 가 payload 에 들어가 진짜검증≠위조가 다른 receipt_sha 를 든다.
+
+    jp1 (JP 캠페인): engine_rule_sha(판관 정체성) — None 기본값은 v1 mint(presence-dispatch; 키는 항상
+    포함돼 키집합 골든이 자동 동시확장, sha-봉인된 기존 judge 스크립트 무편집 green). *프로덕션* 유일
+    호출부(judgement_service submit)는 ENGINE_RULE_SHA 를 명시 전달해야 하며 이는 fix_harness 가드가
+    핀한다(기본값 뒤에 숨은 v1-조용히-mint 드리프트 보험).
     """
     return dict(tree=tree, tag=tag, target_id=target_id, verdict=verdict,
                 verdict_source='scripted', metric_name=metric_name, metric_value=metric_value,
                 novel_confirmed=novel_confirmed, lakatos_status=lakatos_status,
                 judged_at=judged_at, judge_script_sha=judge_script_sha, prev_receipt_sha=prev_receipt_sha,
-                measurement_grade=measurement_grade)
+                measurement_grade=measurement_grade, engine_rule_sha=engine_rule_sha)
 
 
 def resolve_measurement(replay, client_metric, *, attested: bool = False):

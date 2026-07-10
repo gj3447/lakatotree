@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from lakatos import assurance, longinus
+from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
@@ -355,9 +356,10 @@ class JudgementService:
             #   pre-read 와 write 사이에 head 전진·canonical 교체가 끼면 0행 → 409(어차피 floor 재평가 대상).
             ts = datetime.now(timezone.utc).isoformat()
             prev_rsha = cand.get('prev_receipt_sha')
+            # jp1: 승격/강등도 판관 행위 — engine_rule_sha 봉인(v2 mint). null-스펙의 측정필드는 여전히 null.
             _null_spec = dict(tree=name, target_id=None, metric_name=None, metric_value=None,
                               novel_confirmed=None, lakatos_status=None, judged_at=ts,
-                              judge_script_sha=None)
+                              judge_script_sha=None, engine_rule_sha=ENGINE_RULE_SHA)
             rsha = receipt_content_sha(dict(_null_spec, tag=tag, verdict='CANONICAL',
                                             verdict_source='admin', prev_receipt_sha=prev_rsha))
             old_tag, old_prev = cand.get('old_tag'), cand.get('old_prev')
@@ -388,7 +390,8 @@ class JudgementService:
                       MERGE (orec:VerdictReceipt {receipt_sha:$old_rsha})
                         ON CREATE SET orec.tree=$tree, orec.tag=$old_tag,
                           orec.verdict='former_canonical', orec.verdict_source='engine',
-                          orec.judged_at=$ts, orec.prev_receipt_sha=$old_prev
+                          orec.judged_at=$ts, orec.prev_receipt_sha=$old_prev,
+                          orec.engine_rule_sha=$engine_rule_sha
                       MERGE (old)-[:HAS_RECEIPT]->(orec)
                   )
                   SET cur.verdict='CANONICAL', cur.verdict_source='admin',
@@ -401,7 +404,8 @@ class JudgementService:
                       cur.measurement_externally_anchored=$mea
                   MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                     ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='CANONICAL',
-                      rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                      rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
+                      rec.engine_rule_sha=$engine_rule_sha
                   MERGE (cur)-[:HAS_RECEIPT]->(rec)
                   SET cur.current_receipt_sha=$rsha
                   RETURN cur.tag AS tag''',
@@ -415,7 +419,8 @@ class JudgementService:
                     evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted,
                     mea=floor_anchored,
                     ts=ts, prev_rsha=prev_rsha, rsha=rsha,
-                    old_tag=old_tag, old_prev=old_prev, old_rsha=old_rsha)
+                    old_tag=old_tag, old_prev=old_prev, old_rsha=old_rsha,
+                    engine_rule_sha=ENGINE_RULE_SHA)
             if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박/head 전진) → 차단
                 raise HTTPException(409, '동시변경 감지(CANONICAL 원자 CAS 0행) — floor 판정 스냅샷'
                                          '(verdict/source/qsr/논증집합/영수증 포인터/직전 canonical)이 승격 직전 '
@@ -438,21 +443,24 @@ class JudgementService:
             rsha = receipt_content_sha(dict(
                 tree=name, tag=tag, target_id=None, verdict=v.verdict, verdict_source='admin',
                 metric_name=None, metric_value=None, novel_confirmed=None, lakatos_status=None,
-                judged_at=ts, judge_script_sha=None, prev_receipt_sha=prev_rsha))
+                judged_at=ts, judge_script_sha=None, prev_receipt_sha=prev_rsha,
+                engine_rule_sha=ENGINE_RULE_SHA))
             rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                       WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
                         AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                       SET e.verdict=$verdict, e.verdict_source='admin', e.node_state=$node_state
                       MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                         ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict=$verdict,
-                          rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                          rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
+                          rec.engine_rule_sha=$engine_rule_sha
                       MERGE (e)-[:HAS_RECEIPT]->(rec)
                       SET e.current_receipt_sha=$rsha
                       RETURN e.tag AS tag''',
                            tree=name, tag=tag, verdict=v.verdict,
                            node_state=next_state.value,
                            exp_verdict=state_rows[0].get('verdict'),
-                           prev_rsha=prev_rsha, rsha=rsha, ts=ts)
+                           prev_rsha=prev_rsha, rsha=rsha, ts=ts,
+                           engine_rule_sha=ENGINE_RULE_SHA)
             if not rows:   # mini-CAS 0행 = read→write 사이 동시변경(재채점/head 전진) → stale 이동 차단
                 raise HTTPException(409, '동시변경 감지(행정 verdict mini-CAS 0행) — 최신상태 재평가 필요.')
         if not rows:
@@ -823,7 +831,8 @@ class JudgementService:
             tree=name, tag=tag, target_id=target_id, verdict=verdict, metric_name=pr['m'],
             metric_value=effective_metric, novel_confirmed=novel_independent, lakatos_status=lakatos_status,
             judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha,
-            measurement_grade=measurement_grade)
+            measurement_grade=measurement_grade,
+            engine_rule_sha=ENGINE_RULE_SHA)   # jp1: 판관 정체성 봉인(v2) — 명시 전달(가드가 핀)
         rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
@@ -849,7 +858,7 @@ class JudgementService:
                        rec.verdict=$v, rec.verdict_source='scripted', rec.metric_name=$mn,
                        rec.metric_value=$mv, rec.novel_confirmed=$novel, rec.lakatos_status=$lstat,
                        rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha,
-                       rec.measurement_grade=$mg
+                       rec.measurement_grade=$mg, rec.engine_rule_sha=$engine_rule_sha
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
                    RETURN e.tag AS claimed""",
@@ -864,6 +873,7 @@ class JudgementService:
                      attested_by_did=attested_by_did,   # G10: author=서명 유도(client 문자열 아님), 무cert=null
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch)
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
+                     engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
         for tr in prov_triples(name, tag, r.script, r.result_path, verdict, stored_sha, ts):
@@ -927,6 +937,9 @@ class JudgementService:
         h = head_rows[0]
         # C1 S3-engine: receipt_kind + prediction 봉인필드도 노출 — 외부검증자(c1verify)가 read 표면
         #   바이트만으로 prediction blob 을 재유도(sha 재계산)할 수 있어야 한다(포인터 신뢰 금지).
+        # jp1: verdict 봉인필드(tree/tag/target_id/metric_value/novel_confirmed/lakatos_status/
+        #   measurement_grade/engine_rule_sha)도 전량 노출 — v1/v2 verdict blob 재유도가 같은 표면에서
+        #   성립(jp3 recompute·외부검증자 소비). judged_at 는 기존 노출분 재사용 불가라 명시 추가.
         recs = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:HAS_RECEIPT]->(r:VerdictReceipt)
                      RETURN r.receipt_sha AS receipt_sha, r.prev_receipt_sha AS prev_receipt_sha,
                             r.verdict AS verdict, r.verdict_source AS verdict_source,
@@ -937,7 +950,12 @@ class JudgementService:
                             r.novel_direction AS novel_direction, r.novel_threshold AS novel_threshold,
                             r.judge_script_sha AS judge_script_sha, r.closes_question AS closes_question,
                             r.credence AS credence, r.baseline_lineage AS baseline_lineage,
-                            r.registered_at AS registered_at""", tree=name, tag=tag)
+                            r.registered_at AS registered_at,
+                            r.tree AS tree, r.tag AS tag, r.target_id AS target_id,
+                            r.metric_value AS metric_value, r.novel_confirmed AS novel_confirmed,
+                            r.lakatos_status AS lakatos_status, r.judged_at AS judged_at,
+                            r.measurement_grade AS measurement_grade,
+                            r.engine_rule_sha AS engine_rule_sha""", tree=name, tag=tag)
         return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
                 'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
 
@@ -952,3 +970,57 @@ class JudgementService:
         ok = folded['verdict'] == chain['cache_verdict']
         return {'ok': ok, 'rederived': folded['verdict'], 'cache': chain['cache_verdict'],
                 'from_receipt': folded['from_receipt']}
+
+    def demote_stale_canonical(self, name: str, *, dry_run: bool = True) -> dict:
+        """jp1 stale-CANONICAL 재심 스윕(opt-in ops verb) — '오늘 판관이면 이걸 여전히 CANONICAL 이라
+        부를까?'를 원장 수준에서 집행. head receipt 의 sealed engine_rule_sha 가 유효 floor
+        (docs/engine_rule_floor.json 선언분 ∪ 현 ENGINE_RULE_SHA) 밖이면 — v1 legacy 의 필드 부재
+        (익명 판관) 포함 — 재심 전까지 former_canonical 강등 + v2 engine receipt mint(원장 append,
+        app.py AGM per-tag CAS 패턴 계승). dry_run 기본 true = 후보 열거만(비파괴 기본off).
+        인간 잠금(valid_until_rebutted=false)은 강등하지 않고 skipped_locked 로 보고만.
+        demoted 카운트가 novel 오라클(stale_canonical_auto_demoted)의 실측값."""
+        floor = effective_floor()
+        rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {verdict:'CANONICAL'})
+                  OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(r:VerdictReceipt {receipt_sha:e.current_receipt_sha})
+                  RETURN e.tag AS tag, e.current_receipt_sha AS prev_rsha,
+                         r.engine_rule_sha AS ers,
+                         coalesce(e.valid_until_rebutted, true) AS vur''', tree=name)
+        stale = [x for x in (rows or []) if x.get('ers') not in floor]
+        locked = [x['tag'] for x in stale if x.get('vur') is False]
+        candidates = [x for x in stale if x.get('vur') is not False]
+        out = {'tree': name, 'dry_run': dry_run, 'floor_size': len(floor),
+               'canonical_total': len(rows or []),
+               'candidates': [{'tag': x['tag'], 'sealed_engine_rule_sha': x.get('ers')}
+                              for x in candidates],
+               'skipped_locked': locked, 'demoted': []}
+        if dry_run:
+            return out
+        ts = datetime.now(timezone.utc).isoformat()
+        for x in candidates:
+            prev = x.get('prev_rsha')
+            rsha = receipt_content_sha(dict(
+                tree=name, tag=x['tag'], target_id=None, verdict='former_canonical',
+                verdict_source='engine', metric_name=None, metric_value=None,
+                novel_confirmed=None, lakatos_status=None, judged_at=ts,
+                judge_script_sha=None, prev_receipt_sha=prev, engine_rule_sha=ENGINE_RULE_SHA))
+            done = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      WHERE e.verdict='CANONICAL'
+                        AND coalesce(e.current_receipt_sha,'') = coalesce($prev,'')
+                      SET e.verdict='former_canonical', e.verdict_source='engine',
+                          e.current_best_pointer=false, e.node_state=$former_state,
+                          e.demoted_at=$ts, e.stale_engine_rule_demoted_at=$ts
+                      MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='former_canonical',
+                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev,
+                          rec.engine_rule_sha=$engine_rule_sha
+                      MERGE (e)-[:HAS_RECEIPT]->(rec)
+                      SET e.current_receipt_sha=$rsha
+                      RETURN e.tag AS tag''',
+                           tree=name, tag=x['tag'], prev=prev, rsha=rsha, ts=ts,
+                           former_state=NodeState.FORMER_CANONICAL.value,
+                           engine_rule_sha=ENGINE_RULE_SHA)
+            if done:
+                out['demoted'].append(x['tag'])
+                self.hist(name, 'stale_engine_demotion', x['tag'],
+                          {'sealed': x.get('ers'), 'floor_size': len(floor), 'receipt_sha': rsha})
+        return out

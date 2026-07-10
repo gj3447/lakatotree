@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException
 
 import server.contexts.tree.judgement_service as js_mod
+from lakatos.engine_identity import ENGINE_RULE_SHA
 from lakatos.verdicts import receipt_content_sha
 from server.contexts.tree.judgement_service import JudgementService
 from server.contexts.tree.schemas import VerdictIn
@@ -196,13 +197,16 @@ def test_promotion_and_demotion_mint_v1_receipts(monkeypatch):
     assert kg.nodes['oldc']['current_receipt_sha'] == demo['receipt_sha']
     was = next(r for r in kg.receipts if r['receipt_sha'] == demo['prev_receipt_sha'])
     assert was['verdict'] == 'CANONICAL', 'prev 체인 한 칸 걷기가 강등 전 상태를 복구하지 못함'
-    # (3) 인코딩 v1 결정론: 서비스가 판 receipt_sha 가 null-스펙 필드의 content-sha 재유도와 일치(bump 없음).
+    # (3) 인코딩 결정론: 서비스가 판 receipt_sha 가 null-스펙 필드의 content-sha 재유도와 일치.
+    #   jp1 개정(2026-07-10, 의도된 tripwire 발화): 승격도 판관 행위 — engine_rule_sha 를 봉인한
+    #   v2 mint 로 승격됐다(legacy v1 은 RECEIPT_FIELDS_V1 carve-out 으로 여전히 재유도 가능).
     ts = kg.last_promo_ts   # 구현이 파라미터로 넘긴 judged_at (fake 가 캡처)
     refields = dict(tree='T', tag='n', target_id=None, verdict='CANONICAL', verdict_source='admin',
                     metric_name=None, metric_value=None, novel_confirmed=None, lakatos_status=None,
-                    judged_at=ts, judge_script_sha=None, prev_receipt_sha='r1' * 32)
+                    judged_at=ts, judge_script_sha=None, prev_receipt_sha='r1' * 32,
+                    engine_rule_sha=ENGINE_RULE_SHA)
     assert receipt_content_sha(refields) == promo['receipt_sha'], \
-        'v1 인코딩 재유도 불일치 — 필드셋/정규화가 스펙 밖(인코딩 bump 위험)'
+        'v2 인코딩 재유도 불일치 — 필드셋/정규화가 스펙 밖(인코딩 드리프트)'
     # (4) 두 노드 verify 모두 정방향.
     assert svc.verify_verdict_chain('T', 'n')['ok'] is True
     assert svc.verify_verdict_chain('T', 'oldc')['ok'] is True

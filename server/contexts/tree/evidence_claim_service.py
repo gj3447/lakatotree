@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from lakatos.engine_identity import ENGINE_RULE_SHA
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.verdict.spine import reconcile_standing
 from lakatos.verdicts import receipt_content_sha
@@ -142,7 +143,8 @@ class EvidenceClaimService:
                     tree=name, tag=tag, target_id=None, verdict='former_canonical',
                     verdict_source='engine', metric_name=None, metric_value=None,
                     novel_confirmed=None, lakatos_status=None, judged_at=_ts,
-                    judge_script_sha=None, prev_receipt_sha=_prev))
+                    judge_script_sha=None, prev_receipt_sha=_prev,
+                    engine_rule_sha=ENGINE_RULE_SHA))   # jp1: 강등도 판관 행위 — 정체성 봉인(v2)
                 demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                       SET e._cas = coalesce(e._cas,0) + 0
                       WITH t, e
@@ -156,13 +158,15 @@ class EvidenceClaimService:
                           e.current_best_pointer=false, e.standing_retracted_at=$ts
                       MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                         ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='former_canonical',
-                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
+                          rec.engine_rule_sha=$engine_rule_sha
                       MERGE (e)-[:HAS_RECEIPT]->(rec)
                       SET e.current_receipt_sha=$rsha
                       RETURN e.tag AS tag""",
                         tree=name, tag=tag, exp_verdict=rows[0]['verdict'],
                         exp_argn=len(snap_fp), exp_arg_fp=snap_fp,
-                        ts=_ts, prev_rsha=_prev, rsha=_rsha)
+                        ts=_ts, prev_rsha=_prev, rsha=_rsha,
+                        engine_rule_sha=ENGINE_RULE_SHA)
                 if not demoted_rows:   # 원자 CAS 0행 = 스냅샷 변경(동시 재승격/critique) → stale 강등 미적용
                     out['standing']['demote_skipped'] = 'concurrent_change'
                 else:
@@ -526,10 +530,12 @@ class EvidenceClaimService:
 
     def node_certificate(self, name: str, tag: str) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                     OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt {receipt_sha:e.current_receipt_sha})
                      RETURN e.verdict AS verdict, e.verdict_source AS vsrc,
                             e.pred_metric AS pm, e.judge_script AS script,
                             e.judge_script_sha AS sha, e.result_path AS rp,
-                            e.measurement_grade AS mg, e.metric_value AS mv""", tree=name, tag=tag)
+                            e.measurement_grade AS mg, e.metric_value AS mv,
+                            hr.engine_rule_sha AS sealed_ers""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         x = rows[0]
@@ -568,8 +574,11 @@ class EvidenceClaimService:
                                  '' if owned else
                                  f"측정값 grade={mg or 'client_asserted'} — 값소유(server_regenerated: "
                                  'replay 재유도) 또는 attested(allow-list 신원 서명) 필요'))
+        # jp1: 판관 정체성을 인증서 payload 에 동봉 — sealed(head receipt 봉인값; v1 legacy=None=익명 판관)
+        #   vs current(이 프로세스의 규칙 정체성). 독자는 '누가 찍었고 지금 판관과 같은가'를 읽을 수 있다.
         cert = certify_claim(f'{name}/{tag}', checks, dict(
             as_of=datetime.now(timezone.utc).isoformat(),
+            engine_rule_sha=dict(sealed=x.get('sealed_ers'), current=ENGINE_RULE_SHA),
             shas={k: v for k, v in {(x['script'] or ''): (x['sha'] or '')}.items() if k and v}))
         return dict(claim_id=cert.claim_id, certified=cert.certified, missing=list(cert.missing),
                     checks=[dict(gate=c.gate, passed=c.passed, evidence_ref=c.evidence_ref,

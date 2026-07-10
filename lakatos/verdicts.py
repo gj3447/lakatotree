@@ -225,16 +225,24 @@ def is_registered_verdict(verdict: str) -> bool:
 #   import), metric_value/judged_at 정규화를 *blob 안에서* 강제해 write·rederive 경로가 표류 못 하게 한다
 #   (int 3 ↔ float 3.0, mixed judged_at 타입이 다른 blob 을 내는 것을 봉쇄).
 _RECEIPT_ENCODING_VERSION = 'v1'
+_RECEIPT_ENCODING_VERSION_V2 = 'v2'
 # 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
 #   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
 #   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
-RECEIPT_FIELDS = (
+# jp1 (JP 캠페인 2026-07-08): v1 13필드는 *동결*(RECEIPT_FIELDS_V1 — 기존 코퍼스 전체의 재유도 정본,
+#   legacy carve-out). v2 = v1 + engine_rule_sha(판관 정체성 봉인 — '어느 엔진 규칙이 이 verdict 를
+#   찍었나'가 원장 수준에서 답 가능). 버전 판별자는 봉인 *안*의 engine_rule_sha 존재(non-null)로 추론
+#   (C1 receipt_kind kind-smuggle 봉쇄 동형): v2 에서 필드를 떼면 v1-추론 재유도 ≠ stored v2 sha,
+#   v1 에 주입하면 v2-추론 재유도 ≠ stored v1 sha — 어느 방향 위조도 recompute 가 검출. 별도 헤더로
+#   v1/v2 sha-space 도메인 분리(충돌 불가).
+RECEIPT_FIELDS_V1 = (
     'tree', 'tag', 'target_id', 'verdict', 'verdict_source', 'metric_name', 'metric_value',
     'novel_confirmed', 'lakatos_status', 'judged_at', 'judge_script_sha', 'prev_receipt_sha',
     # AG3/R-SOV V1 (측정주권 2026-07-03): 측정값 출처등급을 봉인 sha 에 포함 — 없으면 서버-재유도
     #   (server_regenerated)와 client-운반(client_asserted) 노드가 같은 receipt_sha 를 든다('운반만' 구멍).
     'measurement_grade',
 )
+RECEIPT_FIELDS = RECEIPT_FIELDS_V1 + ('engine_rule_sha',)
 
 
 def _coerce_metric_value(v):
@@ -259,14 +267,20 @@ def _coerce_judged_at(v):
 def canonical_receipt_blob(fields: dict) -> bytes:
     """verdict 영수증의 정본 바이트열 — 버전드 타입헤더 + JCS(sorted keys·compact·UTF-8) canonical JSON.
 
-    필드셋은 RECEIPT_FIELDS 로 고정하고 metric_value/judged_at 는 내부 정규화. 언어이식성(git typed-object
-    name==content 모델)과 재유도 안정성을 위해 Python repr/pickle·float 포맷 모호성을 배제한다.
+    필드셋은 RECEIPT_FIELDS(_V1) 로 고정하고 metric_value/judged_at 는 내부 정규화. 언어이식성(git
+    typed-object name==content 모델)과 재유도 안정성을 위해 Python repr/pickle·float 모호성을 배제한다.
+
+    jp1 presence-dispatch: engine_rule_sha 가 non-null 이면 v2(14필드+v2 헤더), 아니면 v1 경로
+    *바이트 동일*(legacy carve-out by-construction — 기존 코퍼스 재유도·골든 전부 무변경).
     """
-    payload = {k: fields.get(k) for k in RECEIPT_FIELDS}
+    v2 = fields.get('engine_rule_sha') is not None
+    keys = RECEIPT_FIELDS if v2 else RECEIPT_FIELDS_V1
+    ver = _RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION
+    payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
     payload['judged_at'] = _coerce_judged_at(payload.get('judged_at'))
     body = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-    header = f'verdict-receipt\x00{_RECEIPT_ENCODING_VERSION}\n'
+    header = f'verdict-receipt\x00{ver}\n'
     return header.encode('utf-8') + body.encode('utf-8')
 
 

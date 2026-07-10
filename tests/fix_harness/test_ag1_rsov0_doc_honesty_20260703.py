@@ -63,10 +63,13 @@ def test_adr_code_anchors_hold():
     from lakatos.verdicts import RECEIPT_FIELDS, fold_receipt_chain
     # AG3 착륙: 출처등급이 봉인 필드셋에 실재(진짜검증≠위조가 다른 receipt_sha).
     assert "measurement_grade" in RECEIPT_FIELDS
+    # jp1 착륙(2026-07-10): 판관 정체성(engine_rule_sha)이 봉인 필드셋에 실재 — v2. v1 13필드는
+    #   RECEIPT_FIELDS_V1 로 동결(legacy carve-out). 이 set 리터럴은 의도된 tripwire: 한계선이
+    #   움직이면 이 개정을 기계 강제한다.
     assert set(RECEIPT_FIELDS) == {
         "tree", "tag", "target_id", "verdict", "verdict_source", "metric_name", "metric_value",
         "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
-        "measurement_grade"}
+        "measurement_grade", "engine_rule_sha"}
     # 값소유 치환 코드 실재(verified∧regenerated → SSOT 치환).
     policy = (ROOT / "server" / "contexts" / "tree" / "judgement_policy.py").read_text(encoding="utf-8")
     assert "def resolve_measurement" in policy and "server_regenerated" in policy

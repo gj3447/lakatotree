@@ -18,12 +18,17 @@ import math
 
 #: The sealed field set (order irrelevant under sort_keys; the SET is the contract). receipt_sha is
 #: self-referential and excluded. prev_receipt_sha is IN the payload, so chain position is in the sha.
-RECEIPT_FIELDS = (
+#: jp1: v1 (13 fields) is FROZEN as the legacy carve-out; v2 = v1 + engine_rule_sha (judge identity).
+#: The version discriminator is INSIDE the sealed payload (non-null engine_rule_sha), mirroring
+#: lakatos.verdicts — stripping/injecting the field re-derives a different sha (tamper bites).
+RECEIPT_FIELDS_V1 = (
     "tree", "tag", "target_id", "verdict", "verdict_source", "metric_name", "metric_value",
     "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
     "measurement_grade",
 )
+RECEIPT_FIELDS = RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
 _RECEIPT_ENCODING_VERSION = "v1"
+_RECEIPT_ENCODING_VERSION_V2 = "v2"
 
 
 def _coerce_metric_value(v):
@@ -47,12 +52,18 @@ def _coerce_judged_at(v):
 
 def canonical_receipt_blob(fields: dict) -> bytes:
     """Versioned type header + JCS(sorted-keys, compact, UTF-8) over the fixed field set, with
-    metric_value/judged_at normalised — byte-identical to lakatos.verdicts.canonical_receipt_blob."""
-    payload = {k: fields.get(k) for k in RECEIPT_FIELDS}
+    metric_value/judged_at normalised — byte-identical to lakatos.verdicts.canonical_receipt_blob.
+
+    jp1 presence-dispatch: a non-null engine_rule_sha selects v2 (14 fields + v2 header); otherwise
+    the v1 path stays byte-identical to the pre-jp1 encoding (legacy carve-out by construction)."""
+    v2 = fields.get("engine_rule_sha") is not None
+    keys = RECEIPT_FIELDS if v2 else RECEIPT_FIELDS_V1
+    ver = _RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION
+    payload = {k: fields.get(k) for k in keys}
     payload["metric_value"] = _coerce_metric_value(payload.get("metric_value"))
     payload["judged_at"] = _coerce_judged_at(payload.get("judged_at"))
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    header = f"verdict-receipt\x00{_RECEIPT_ENCODING_VERSION}\n"
+    header = f"verdict-receipt\x00{ver}\n"
     return header.encode("utf-8") + body.encode("utf-8")
 
 

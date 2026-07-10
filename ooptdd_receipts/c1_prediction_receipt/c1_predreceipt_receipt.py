@@ -126,7 +126,11 @@ class _Kg:
                                   "metric_value": params["mv"], "novel_confirmed": params["novel"],
                                   "lakatos_status": params["lstat"], "judged_at": params["ts"],
                                   "judge_script_sha": params["sha"],
-                                  "measurement_grade": params["mg"]})
+                                  "measurement_grade": params["mg"],
+                                  # jp1: 실 서비스가 v2(판관 정체성 봉인)로 mint 하므로 fake 도 충실 반영 —
+                                  # 이로써 이 영수증이 c1verify v2 재유도의 교차검증 tripwire 가 된다
+                                  # (미러 드리프트 = 여기서 REJECT/RED).
+                                  "engine_rule_sha": params["engine_rule_sha"]})
         return [[{"claimed": params.get("tag")}] for _ in ops]
 
 
