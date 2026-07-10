@@ -1,0 +1,5 @@
+jp2-ref-reconcile — 통짜 커밋 존재+served (착지 세션 4-way split 해소 + jp1 착륙으로 proxy flip)
+  measured: served_commit_has_full_seam = 1.0 (하네스 실측 — engine_rule_sha 봉인 ∧ certify measurement_owned 동일 disk 표면)
+  기제: 4-way ref split(실행/체크아웃/origin/acme) → master 단일 계보 수렴(착지 세션) 후
+       jp1 이 마지막 조각(engine 정체성)을 같은 표면에 얹음. 재기동으로 served.
+  ⇒ verdict=엔진 판결(judge) — 손입력 0.

@@ -1,0 +1,6 @@
+jp5-attested-self-sign — 자기서명은 attestation 이 아니다 (commit 272cf17)
+  measured: self_signed_attested_rejected = 1.0 (하네스 실측 — 'authored' 등급이 certify+judgement_service 에 실재)
+  기제: 사다리 4단(server_regenerated > attested[트리 선언 allow-list 만] > authored > client_asserted);
+       OWNED_GRADES 의도적 배제 = G6 fail-closed by-construction(커널 로직 0줄).
+  가드: 이중가드 4(실 ed25519) + ooptdd 4건(구법=attested vs seam=authored 차이 실증) 전부 green
+  ⇒ verdict=엔진 판결(judge) — 손입력 0. 인센티브 역전(버리는 키페어가 G6 를 사는) 사망.

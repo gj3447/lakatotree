@@ -1,0 +1,7 @@
+jp1-engine-rule-sha — 판관 정체성 v2 봉인 (commit 25707a8)
+  measured: receipt_binds_engine_rule_sha = 1.0 (하네스 실측 — RECEIPT_FIELDS 에 engine_rule_sha 실재)
+  novel:    stale_canonical_auto_demoted = 1.0 (judges/jp1_stale_canonical_demo.py — v1 익명 CANONICAL 1그루 재심 강등)
+  기제: engine_identity.py(규칙표면 내용주소) + v1 동결 carve-out(골든 5종 바이트 동일) + mint 6사이트
+       + c1verify 미러 + 인증서 evidence_window {sealed, current} + opt-in 스윕(open posture 실행 거부)
+  가드: 이중가드 6 + ooptdd JP1 4건(strip/주입 위조 검출 + floor load-bearing 음성오라클) 전부 green
+  ⇒ verdict=엔진 판결(judge) — 손입력 0. anomaly 'anonymous judge' 사망(3/3→2/3).

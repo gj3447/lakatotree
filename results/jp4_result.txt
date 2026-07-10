@@ -1,0 +1,7 @@
+jp4-ca-fail-closed — stale/무능력 판관의 FORCEFUL write 게이트 (commit 2b3eb69)
+  measured: forceful_write_gated_on_stale = 1.0 (하네스 실측 — judgement_service 가 boot_git_sha/served 신원 실소비)
+  기제: env opt-in 게이트(코드경로 한정 staleness + live-object capability) → progressive 는
+       provisional_stale_engine 강등(정직 라벨, freshen 승급 통로), CANONICAL 은 하드 409.
+       3중 fail-open(부재≠반증) + 자기차단 루프 3중 해소. 라이브 무장: server.env LAKATOS_JUDGE_FRESHNESS_GATE=1.
+  가드: 이중가드 13 + ooptdd 3건(소비 사이트 절제 시 결함 부활 검출) 전부 green
+  ⇒ verdict=엔진 판결(judge) — 손입력 0.

@@ -1,0 +1,7 @@
+jp6-cross-metric-novelty — judge() opt-in 독립출처 게이트 (commit b196a34)
+  measured: cross_metric_requires_distinct_source = 1.0 (하네스 행동 실측 — armed relabel 공격 기각 ∧ distinct-sha 대조군 통과)
+  novel:    cross_metric_relabel_rejected = 1.0 (ooptdd jp6_receipt — m→m_v2 개명·빈 sha 공격이 partial 로 demote)
+  기제: require_independent_source(keyword-only, 기본 False=바이트동일) — cross-metric novel 에
+       distinct sha OR 선언 witness(T3: causal 증명 아닌 explicit·challengeable 전환). jp6a 준수(커널 rip-out 아님).
+  가드: 이중가드 10 + ooptdd 4건(기본 permissive 쌍대 실행 = vacuous green 차단) 전부 green
+  ⇒ verdict=엔진 판결(judge) — 손입력 0.
