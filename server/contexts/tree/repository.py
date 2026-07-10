@@ -178,6 +178,8 @@ class TreeKgRepository:
                e.author AS author, e.recorded_at AS recorded_at,
                e.demoted_at AS demoted_at, e.standing_retracted_at AS standing_retracted_at,
                e.stale_engine_rule_demoted_at AS stale_engine_rule_demoted_at,
+               e.engine_freshness AS engine_freshness,
+               e.judged_by_boot_git_sha AS judged_by_boot_git_sha,
                e.replay_status AS replay_status, e.measurement_grade AS measurement_grade,
                e.baseline_lineage AS baseline_lineage,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,

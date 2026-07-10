@@ -29,7 +29,9 @@ from lakatos.verdicts import (ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdi
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
-                                                   qualitative_flags, resolve_measurement)
+                                                   engine_freshness_fires, qualitative_flags,
+                                                   resolve_measurement)
+from server.engine_freshness import freshness_provider_from_env
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
@@ -124,6 +126,7 @@ class JudgementService:
         reproducible_for_node: ReproducibleProvider,
         producer_replay_for_node: ReproducibleProvider | None = None,
         producer_replay_submit=None,
+        engine_freshness=None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
@@ -135,6 +138,10 @@ class JudgementService:
         # AG3/R-SOV V1 (측정주권 2026-07-03): submit 시 *들어온* 값을 서버가 재유도 → 전체 ProducerReplayVerdict
         #   (regenerated 포함). 값소유 치환의 원천. 미주입=None 반환 no-op(거동 불변: client 값 그대로 봉인).
         self.producer_replay_submit = producer_replay_submit or (lambda *_a, **_k: None)
+        # jp4: 판관 자기신원/능력 provider — 미주입=env opt-in 기본(미설정=None=게이트 완전 사체,
+        #   비파괴; 테스트는 명시 주입으로만 무장). app.py 무편집 라이브 배선 = 이 env-default.
+        self.engine_freshness = (engine_freshness if engine_freshness is not None
+                                 else freshness_provider_from_env())
 
     def _node_eigentrust(self, name: str, tag: str) -> tuple[str | None, float | None, bool]:
         """노드의 인터넷 관측 그래프 eigentrust → (src, eigen, backed). src=None: internal 노드
@@ -342,6 +349,15 @@ class JudgementService:
             if not decision['ok']:
                 raise HTTPException(409, f"CANONICAL 승격 차단(합성 엔진 게이트): {list(decision['reasons'])}. "
                                          f"게이트별: {decision['gates']}")
+            # jp4 CA fail-closed: stale/무능력 판관은 CANONICAL 을 못 연다 — 하드 409. provisional
+            #   CANONICAL 은 형용모순(최강 주장 + 임시 태그)이고 승격은 저빈도 운영 verb 라 루프 안 막음.
+            _fresh = self.engine_freshness() if self.engine_freshness else None
+            if engine_freshness_fires(_fresh):
+                raise HTTPException(409, f"CANONICAL 승격 차단(jp4 CA fail-closed): 서빙 판관이 stale/무능력 — "
+                                         f"boot_git_sha={(_fresh or {}).get('boot_git_sha')} "
+                                         f"disk_head_sha={(_fresh or {}).get('disk_head_sha')} "
+                                         f"missing={(_fresh or {}).get('missing')}. "
+                                         f"scripts/dev_server_restart.sh 재기동 후 재시도.")
             # 나생문 #1: 측정 외부성(reproducible|human|producer-replay 검증)을 노드에 *persist* — floor 의
             #   honest-exposure 를 실제 관측가능하게(judge_receipt 단독 CANONICAL 은 anchored=False 로 보인다).
             floor_anchored = bool(decision['gates'].get('floor', {}).get('measurement_externally_anchored'))
@@ -601,20 +617,42 @@ class JudgementService:
         require_novel_anchor = (
             assurance.GATE_NOVEL_ANCHOR in assurance.gates_for('submit_test_result', tier)
             or bool(pr.get('require_novel_anchor')))   # FF1 phase2: opt-in tree policy 는 그대로 존중
+        # jp4 판관 자기고유수용감각 — stale(코드경로 한정)/무능력 판정. 3중 fail-open: 미주입(None)=
+        #   'unchecked' 무강등 / 판정불가(stale_code None)='indeterminate' 무발화(부재≠반증) / 발화는
+        #   engine_freshness_fires 가 is True·is False 만 문다. 발화해도 거부가 아니라 ④ provisional
+        #   강등(채점 흐름은 계속 — 정직 라벨) — 재기동 후 동일값 재제출 freshen 으로 승급.
+        fresh = self.engine_freshness() if self.engine_freshness else None
+        fresh_fire = engine_freshness_fires(fresh)
+        efresh = ('unchecked' if fresh is None else
+                  'incapable' if fresh.get('capable') is False else
+                  'stale_code' if fresh.get('stale_code') is True else
+                  'indeterminate' if fresh.get('stale_code') is None else 'fresh')
         # novel-anchor freshen (2026-07-03): 앵커-데모트 partial 은 *동일 metric_value* 의 서버앵커
         #   재제출로만 승급 가능(G1 "바이트동일 재제출=freshen" 정합). 값이 다르면 re-roll → 409 유지.
         #   앵커 성립 여부는 아래 sha 재유도 후 재검(freshen_anchor 인데 미앵커면 409) — client 문자열
         #   재제출로는 이 통로를 못 연다(FF1 봉합 유지).
+        # jp4 확장: provisional_stale_engine partial 도 같은 좁은통로(동일값 재제출)로 — 단 판관이
+        #   *여전히* stale/무능력이면 409(재기동 먼저).
         freshen_anchor = False
+        freshen_reason = None
         if pr['vsrc'] == 'scripted':
             can_freshen = (pr.get('existing_verdict') == 'partial'
-                           and pr.get('existing_lstat') == 'novel_not_server_anchored'
+                           and pr.get('existing_lstat') in ('novel_not_server_anchored',
+                                                            'provisional_stale_engine')
                            and r.metric_value == pr.get('existing_metric_value'))
             if not can_freshen:
                 raise HTTPException(409, '이미 스크립트로 채점된 노드 — 재채점 금지 (re-roll 조작 차단). '
-                                         '새 노드로 분기할 것 (예외: novel_not_server_anchored partial 은 '
-                                         '동일 metric_value + 서버앵커 script/novel_script 재제출로 freshen 가능)')
+                                         '새 노드로 분기할 것 (예외: novel_not_server_anchored/'
+                                         'provisional_stale_engine partial 은 동일 metric_value 재제출로 '
+                                         'freshen 가능 — 전자는 서버앵커, 후자는 비-stale 판관 요구)')
             freshen_anchor = True
+            freshen_reason = pr.get('existing_lstat')
+            if freshen_reason == 'provisional_stale_engine' and fresh_fire:
+                raise HTTPException(409, f"freshen 거부 — 판관이 여전히 stale/무능력: "
+                                         f"boot_git_sha={(fresh or {}).get('boot_git_sha')} vs "
+                                         f"disk_head_sha={(fresh or {}).get('disk_head_sha')}, "
+                                         f"missing={(fresh or {}).get('missing')}. "
+                                         f"scripts/dev_server_restart.sh 재기동 후 동일값 재제출.")
         # #H3 (receipt-integrity): server_sha 를 r.script 파일 *내용*에서 재유도해 영수증을 현실에 묶는다.
         #   불일치 비교 대상을 client-vs-client(psha vs script_sha, 동어반복) → server-vs-client/registered 로 교체.
         server_sha, sha_info = self._recompute_script_sha(r.script)
@@ -677,7 +715,10 @@ class JudgementService:
         novel_server_sha, _ = (self._recompute_script_sha(r.novel_script)
                                if r.novel_script else (None, {'reason': 'no_novel_script'}))
         # freshen 자격 재검: 이번 재제출이 *양측 서버앵커* 를 실제로 성립시켜야만 좁은 통로가 열린다.
-        if freshen_anchor and not (sha_verified and novel_server_sha is not None):
+        #   (jp4: 이 요구는 novel-anchor 사유 전용 — provisional_stale_engine 은 novel_script 가 애초에
+        #   없던 단순 metric 노드도 있어 비-stale 판관 재검(위)만 요구한다.)
+        if (freshen_anchor and freshen_reason == 'novel_not_server_anchored'
+                and not (sha_verified and novel_server_sha is not None)):
             raise HTTPException(409, 'freshen 거부 — 재제출의 script 와 novel_script 가 둘 다 서버가 '
                                      '읽을 수 있는 파일 경로여야 한다 (client 문자열로는 승급 불가)')
         both_anchored = sha_verified and novel_server_sha is not None
@@ -759,7 +800,8 @@ class JudgementService:
             decided['verdict'], decided['lakatos'], hc_derived=hc_derived,
             require_novel_anchor=require_novel_anchor, novel=bool(v.novel),
             cross_metric_novel=cross_metric_novel, novel_server_anchored=novel_server_anchored,
-            reproducible=_repro, reproducibility_ceiling=_repro_ceiling)
+            reproducible=_repro, reproducibility_ceiling=_repro_ceiling,
+            engine_fresh_fire=fresh_fire)   # jp4 ④: stale/무능력 판관 → provisional 강등(마지막)
         verdict, lakatos_status, novel_independent = _dec.verdict, _dec.lakatos_status, _dec.novel_independent
         # #H1/#H10 질적 backing(서버앵커 독립 novel + ce_novel_corroborated) — DE1 순수 추출.
         qual_backed, qual_self_report = qualitative_flags(
@@ -839,7 +881,7 @@ class JudgementService:
                    WITH e
                    WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                       OR ($freshen AND e.verdict = 'partial'
-                          AND e.lakatos_status = 'novel_not_server_anchored'
+                          AND e.lakatos_status IN ['novel_not_server_anchored', 'provisional_stale_engine']
                           AND e.metric_value = $mv)
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.node_state=$node_state,
@@ -851,7 +893,8 @@ class JudgementService:
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
                        e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
-                       e.measurement_grade=$mg
+                       e.measurement_grade=$mg,
+                       e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
@@ -874,6 +917,8 @@ class JudgementService:
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch)
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
+                     efresh=efresh,                     # jp4: 판관 자기진단 관측화(unchecked/fresh/stale_code/incapable/indeterminate)
+                     boot_sha=(fresh or {}).get('boot_git_sha'),   # jp4: 노드-레벨 판관 신원 provenance(영수증 봉인은 jp1 engine_rule_sha 가 정본)
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
         for tr in prov_triples(name, tag, r.script, r.result_path, verdict, stored_sha, ts):

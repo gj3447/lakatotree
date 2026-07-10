@@ -1,0 +1,40 @@
+# jp4 — CA fail-closed: 판관 자기신원(stale)·자기능력 게이트 (JP 캠페인 LakatosTree_JudgeProprioception_20260708).
+# hermetic: in_process + memory backend. emit-adapter 가 실 JudgementService.submit_test_result 를
+# fake kg/kg_tx + 주입 provider 로 구동(재구현 금지). 이벤트 리터럴은 adapter 에만.
+name: lakatotree-jp4-ca-fail-closed-engine-freshness
+target:
+  mode: in_process
+  callable: jp4_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all 이 절대경로로 오버라이드
+
+requirements:
+  - id: JP4-1
+    description: stale/무능력 판관은 FORCEFUL progressive 를 봉인 못 함 — partial('provisional_stale_engine') 강등 + 판관 신원 스탬프
+    gate:
+      - {event: jp4_stale_progressive_demoted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP4:stale_progressive_demoted
+      source: jp4_receipt.py
+      symbol: verify
+      must_emit: jp4_stale_progressive_demoted
+
+  - id: JP4-2
+    description: 신선 판관 무변경 통과(progressive 유지) + judged_by_boot_git_sha provenance 스탬프 실재
+    gate:
+      - {event: jp4_fresh_passthrough_stamped, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP4:fresh_passthrough_stamped
+      source: jp4_receipt.py
+      symbol: verify
+      must_emit: jp4_fresh_passthrough_stamped
+
+  - id: JP4-3
+    description: 음성 오라클 — 소비 사이트(judgement_service.engine_freshness_fires) 절제(무조건 False 패치=게이트 절단) 시 stale provider 로도 progressive 가 부활함을 검출해야 발행(vacuous green 차단), patch 원복 후 강등 재현까지 확인
+    gate:
+      - {event: jp4_negative_defect_detected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP4:negative_defect_detected
+      source: jp4_receipt.py
+      symbol: verify
+      must_emit: jp4_negative_defect_detected

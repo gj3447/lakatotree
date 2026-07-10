@@ -72,3 +72,39 @@ def served_version() -> dict:
         "disk_head_sha": disk,
         "stale": BOOT_GIT_SHA != disk and BOOT_GIT_SHA != "unknown" and disk != "unknown",
     }
+
+
+# ── jp4 (JP 캠페인 2026-07-10): 코드경로-한정 staleness — 판관 관련 코드가 실제로 바뀌었나 ──────
+#   전체 stale(boot≠disk)은 결과-아티팩트/docs 커밋에도 발화해 채점 루프를 자기차단한다. 판관
+#   게이트는 lakatos/·server/ 경로의 실변경만 물어야 한다(git diff pathspec).
+JUDGE_CODE_PATHS = ("lakatos", "server")
+_code_paths_cache: dict = {}
+
+
+def code_paths_changed(base: str, head: str, paths: tuple = JUDGE_CODE_PATHS,
+                       root: str | None = None) -> bool | None:
+    """base..head 사이에 판관-관련 코드경로가 바뀌었는가. True/False/None(판정불가).
+
+    'unknown'(git 부재/tarball) 검사가 base==head 보다 *먼저* — 양쪽 다 unknown 인 동일성이
+    '신선'으로 위장하지 못하게(관측 채널의 정직). 판정불가는 None(부재≠반증 — 발화는 호출측
+    engine_freshness_fires 가 is True 만 문다). root seam 은 테스트(tmp git repo) 주입용."""
+    if "unknown" in (base, head):
+        return None
+    if base == head:
+        return False
+    r = root or _cached_root()
+    key = (r, base, head, paths)
+    if key in _code_paths_cache:
+        return _code_paths_cache[key]
+    try:
+        out = subprocess.run(
+            ["git", "-C", r, "diff", "--name-only", f"{base}..{head}", "--", *paths],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None                     # base sha 미해석(rebase-drop/shallow 등) = 판정불가
+    result = bool(out.stdout.strip())
+    _code_paths_cache[key] = result     # (root,base,head) 불변 쌍만 캐시 — 실패(None)는 캐시 안 함
+    return result
