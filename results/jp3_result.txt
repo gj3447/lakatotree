@@ -1,0 +1,7 @@
+jp3-fsck-recompute — read-time recompute-and-reject (commit 1d0f743)
+  measured: fsck_recompute_reject_checkers = 1.0 (하네스 실측 — fsck 에 recompute 체커 실재)
+  novel:    tampered_receipt_detected = 1.0 (ooptdd jp3_receipt — 실 mint 체인 in-place 변조가 RECEIPT_SHA_CONTENT_MISMATCH 로 검출)
+  기제: 인코딩 계보 전수 대조(match_receipt_encoding: current/pre-ag3/None) + 변조 ERROR·드리프트 WARN 분리
+       + ops_fsck include_receipts opt-in(base-sha 선-단락 = census FREEZE 존중). fold 불변(AG1 경계).
+  가드: 이중가드 14 + ooptdd 4건(recompute 절제 시 slip 재현 = load-bearing) 전부 green
+  ⇒ verdict=엔진 판결(judge) — 손입력 0. anomaly 'tamper invisible' 은 fold 층에 의도적으로 잔존(검출 좌석=fsck).

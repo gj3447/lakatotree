@@ -1,0 +1,17 @@
+═══ Judge Proprioception PROM 하네스 — LakatosTree_JudgeProprioception_20260708 ═══
+
+── 실행 데모(결함 running proof) ──
+  [tamper]  honest=progressive → 변조후 fold=CANONICAL  invisible=True  stored_sha_now_wrong=True
+  [anon]    RECEIPT_FIELDS=14  binds_engine_identity=True  anonymous=False
+  → anomalies reproduced live: 2/3
+
+── fix 노드 이중가드(RED-first; disk 실측 → judge()) ──
+  [✓] jp1-engine-rule-sha    strategic  receipt_binds_engine_rule_sha    measured=1 verdict=partial        MECHANISM DETECTED → submit progressive
+  [✓] jp2-ref-reconcile      tactical   served_commit_has_full_seam      measured=1 verdict=partial        MECHANISM DETECTED → submit progressive
+  [✓] jp3-fsck-recompute     structural fsck_recompute_reject_checkers   measured=1 verdict=partial        MECHANISM DETECTED → submit progressive
+  [✓] jp4-ca-fail-closed     structural forceful_write_gated_on_stale    measured=1 verdict=partial        MECHANISM DETECTED → submit progressive
+  [✓] jp5-attested-self-sign tactical   self_signed_attested_rejected    measured=1 verdict=partial        MECHANISM DETECTED → submit progressive
+  [✓] jp6-cross-metric-novelty structural cross_metric_requires_distinct_source measured=1 verdict=partial        MECHANISM DETECTED → submit progressive
+
+── 요약 ── progressive=6/6  pending=0  anomalies_live=2/3
+  ⇒ ★ fix 감지 — 해당 노드를 (비-stale 서버에서) judge()-채점·submit_result 로 progressive 등재하라.
