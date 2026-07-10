@@ -829,10 +829,14 @@ class JudgementService:
         #   verified∧regenerated 부분집합에서만 regenerated 를 SSOT 로 치환(SCOPED — 외부/반증값 파괴 금지).
         #   여기서 계산해 next_state·receipt·SET·hist 가 *같은* effective_metric/measurement_grade 를 봉인.
         _vo = self.producer_replay_submit(r.script, r.result_path, r.metric_value)
-        # AG5/R-SOV V3: 유효 write-cert(allow-list 신원 서명)면 값이 익명 아님 → attested 등급(값소유<attested<client).
-        #   attested_by_did 는 위 G10 cert 검증에서 유도됨. 무-attestor/무서명 → None → client_asserted(무회귀).
+        # AG5/R-SOV V3 + jp5: 권위(attested)는 *트리가 선언한* non-empty allow-list 대비 서명만 —
+        #   empty-attestor fallback 자기서명은 authorship('authored', OWNED_GRADES 밖 → G6 fail-closed)
+        #   이지 attestation 이 아니다(버리는 키페어로 G6 를 사는 인센티브 역전 봉합). :654 의 fallback
+        #   검증 자체는 유지(서명 유효성+verb 바인딩 = sign-X-execute-Y 봉쇄는 self-sign 에도 가치).
+        attested_by_allowlist = attested_by_did is not None and bool(attestors)
+        authored_self_signed = attested_by_did is not None and not attestors
         effective_metric, measurement_grade, replay_status = resolve_measurement(
-            _vo, r.metric_value, attested=attested_by_did is not None)
+            _vo, r.metric_value, attested=attested_by_allowlist, authored=authored_self_signed)
         next_state = derive_node_state({
             'verdict': verdict,
             'verdict_source': 'scripted',

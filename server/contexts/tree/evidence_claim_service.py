@@ -573,7 +573,8 @@ class EvidenceClaimService:
                                  f"measurement_grade={mg or 'n/a(측정값 없음)'}" if owned else '',
                                  '' if owned else
                                  f"측정값 grade={mg or 'client_asserted'} — 값소유(server_regenerated: "
-                                 'replay 재유도) 또는 attested(allow-list 신원 서명) 필요'))
+                                 'replay 재유도) 또는 attested(트리 attestor_dids 선언 allow-list 신원 서명) '
+                                 '필요; authored(자기서명)는 authorship 증명일 뿐 권위 아님(jp5)'))
         # jp1: 판관 정체성을 인증서 payload 에 동봉 — sealed(head receipt 봉인값; v1 legacy=None=익명 판관)
         #   vs current(이 프로세스의 규칙 정체성). 독자는 '누가 찍었고 지금 판관과 같은가'를 읽을 수 있다.
         cert = certify_claim(f'{name}/{tag}', checks, dict(

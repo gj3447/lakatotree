@@ -23,15 +23,19 @@ from dataclasses import dataclass, field
 
 GATES = ('preregistered', 'reproducible', 'stands', 'calibrated', 'grounded', 'measurement_owned')
 
+# measurement_grade 어휘 정본(4단 사다리, jp5): server_regenerated > attested > authored > client_asserted.
+MEASUREMENT_GRADES = ('server_regenerated', 'attested', 'authored', 'client_asserted')
 # G6 값소유 등급(AG3~5 measurement_grade 사다리)이 인증을 *지탱*하는 등급.
+# jp5: 'authored'(empty-attestor 자기서명)는 *의도적 배제* — 자기인가는 authorship 증명이지 권위가
+#   아니다(버리는 키페어가 G6 를 사는 인센티브 역전 봉합). membership fail-closed 가 곧 게이트.
 OWNED_GRADES = ('server_regenerated', 'attested')
 
 
 def is_measurement_owned(grade, has_metric: bool) -> bool:
     """G6 술어 (순수) — 측정을 *근거로 든* claim(has_metric)은 값이 소유돼야 인증가능:
-    server_regenerated(서버 replay 재유도=값소유) 또는 attested(allow-list 신원 서명).
+    server_regenerated(서버 replay 재유도=값소유) 또는 attested(트리 선언 allow-list 신원 서명).
     측정값 없는 노드(질적/problem)는 측정소유가 무의미 → 자동 소유(SCOPED, 무회귀).
-    client_asserted / None grade + 측정근거 → 미소유(무replay·무서명 float 는 인증 못 받음)."""
+    client_asserted / authored(자기서명 — jp5) / None grade + 측정근거 → 미소유."""
     return (not has_metric) or (grade in OWNED_GRADES)
 
 
