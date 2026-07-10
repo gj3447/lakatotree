@@ -1,0 +1,50 @@
+# jp6 — judge() opt-in 독립출처 게이트 (JP 캠페인 LakatosTree_JudgeProprioception_20260708).
+# hermetic: in_process + memory backend. emit-adapter jp6_receipt:verify 가 *실* lakatos.verdict.judge.judge
+# 를 구동(재구현 금지, 순수 커널 — 서버 불요). 이벤트 리터럴은 adapter 에만(엔진 코드 금지).
+name: lakatotree-jp6-cross-metric-novelty-independent-source
+target:
+  mode: in_process
+  callable: jp6_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all 이 절대경로로 오버라이드
+
+requirements:
+  - id: JP6-1
+    description: armed relabel 공격 기각 — require_independent_source=True 에서 m→m_v2 개명 + measured==novel_measured + 빈 sha novel 이 partial 로 demote (cross-metric 비독립 reason 봉인)
+    gate:
+      - {event: cross_metric_relabel_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP6:cross_metric_relabel_rejected
+      source: jp6_receipt.py
+      symbol: verify
+      must_emit: cross_metric_relabel_rejected
+
+  - id: JP6-2
+    description: 음성 오라클(과잉차단 회귀가드) — distinct-sha 변형과 witness 변형은 armed 에서도 progressive·novel 유지 (blanket demote 면 여기서 RED)
+    gate:
+      - {event: independent_cross_metric_licensed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP6:independent_cross_metric_licensed
+      source: jp6_receipt.py
+      symbol: verify
+      must_emit: independent_cross_metric_licensed
+
+  - id: JP6-3
+    description: 음성 오라클(vacuous-green 차단 + 비파괴 기본 핀) — 게이트 해제(기본 off) 시 같은 공격이 여전히 progressive — JP6-1 의 기각이 게이트 소행임을 쌍대 실행으로 증명
+    gate:
+      - {event: default_permissive_preserved, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP6:default_permissive_preserved
+      source: jp6_receipt.py
+      symbol: verify
+      must_emit: default_permissive_preserved
+
+  - id: JP6-4
+    description: 죽은 장식 금지 — require_independent_source=False 인데 independence_witness 동봉 시 ValueError(fail-loud)
+    gate:
+      - {event: dead_witness_refused, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP6:dead_witness_refused
+      source: jp6_receipt.py
+      symbol: verify
+      must_emit: dead_witness_refused
