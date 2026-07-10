@@ -1,0 +1,4 @@
+{
+  "_doc": "jp1 정직 floor — 판관 규칙 정체성(engine_rule_sha) allowlist. 유효 floor = entries ∪ {현 ENGINE_RULE_SHA}(자동). 등재는 사람 검토 후 git 커밋으로만(fsck_skiplist R6 확정결정 답습 — KG 저장은 writer 셀프등재 자기면제 구멍이라 기각). sha ∉ floor(v1 legacy 의 부재 포함)인 CANONICAL 은 /api/ops/demote-stale-canonical 스윕의 재심 후보.",
+  "entries": []
+}

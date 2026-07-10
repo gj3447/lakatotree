@@ -24,6 +24,7 @@ from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.programme.leaderboard import Competitor, leaderboard as build_leaderboard
 from lakatos.programme.kuhn import assess_paradigm, propose_supersession
 from lakatos.programme.explore import rank_questions
+from lakatos.engine_identity import ENGINE_RULE_SHA as _ENGINE_RULE_SHA
 from lakatos.verdicts import receipt_content_sha
 from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
@@ -233,6 +234,20 @@ def ops_fsck(tree: str = '', emit_skiplist: bool = False):
     if emit_skiplist:
         out['skiplist_candidates'] = candidates
     return out
+
+
+@app.post('/api/ops/demote-stale-canonical')
+def ops_demote_stale_canonical(tree: str, dry_run: bool = True):
+    """jp1 stale-CANONICAL 재심 스윕(opt-in) — head receipt 의 sealed engine_rule_sha 가 정직 floor
+    (docs/engine_rule_floor.json ∪ 현 ENGINE_RULE_SHA) 밖인 CANONICAL 을 재심 전까지 former_canonical
+    강등(+v2 engine receipt). tree 필수(전수 스윕 금지), dry_run 기본 true(후보 열거만 — 첫 라이브
+    실행은 반드시 열거 검토 후). mutating → LAKATOS_API_TOKEN Bearer(_bearer_auth); 단 open posture
+    (무토큰)에선 dry_run=false 를 거부한다 — 무인증 파괴 verb 잔여구멍 봉쇄(FE5 관측 + fail-closed)."""
+    if not dry_run and _current_auth_posture() == 'open':
+        raise HTTPException(403, 'demote-stale-canonical 실행 거부 — auth_posture=open(무토큰) 서버에서 '
+                                 '파괴적 스윕 금지. LAKATOS_API_TOKEN 설정 후 Bearer 로 호출하거나 '
+                                 'dry_run=true 로 열거만.')
+    return _judgement_service().demote_stale_canonical(tree, dry_run=dry_run)
 
 
 @app.post('/api/ops/reconcile-outbox')
@@ -882,7 +897,8 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                     tree=tree, tag=_tag, target_id=None, verdict='former_canonical',
                     verdict_source='engine', metric_name=None, metric_value=None,
                     novel_confirmed=None, lakatos_status=None, judged_at=ts,
-                    judge_script_sha=None, prev_receipt_sha=_prev))
+                    judge_script_sha=None, prev_receipt_sha=_prev,
+                    engine_rule_sha=_ENGINE_RULE_SHA))   # jp1: AGM 강등도 판관 행위 — 정체성 봉인(v2)
                 ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                                WHERE e.verdict='CANONICAL'
                                      AND coalesce(e.valid_until_rebutted, true) = true
@@ -892,10 +908,12 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                                MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                                  ON CREATE SET rec.tree=$tree, rec.tag=$tag,
                                    rec.verdict='former_canonical', rec.verdict_source='engine',
-                                   rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha
+                                   rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
+                                   rec.engine_rule_sha=$engine_rule_sha
                                MERGE (e)-[:HAS_RECEIPT]->(rec)
                                SET e.current_receipt_sha=$rsha""",
-                            dict(tree=tree, tag=_tag, ts=ts, prev_rsha=_prev, rsha=_rsha)))
+                            dict(tree=tree, tag=_tag, ts=ts, prev_rsha=_prev, rsha=_rsha,
+                                 engine_rule_sha=_ENGINE_RULE_SHA)))
     kg_tx(ops)
     hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
                                   'programme_shift_candidate': r.programme_shift_candidate,

@@ -1,0 +1,51 @@
+# jp1 — 판관 정체성(engine_rule_sha) v2 봉인 + legacy carve-out + stale-CANONICAL 재심 스윕.
+# hermetic: in_process + memory backend. emit-adapter 가 실코드 구동(재구현 금지):
+# lakatos.verdicts(receipt_content_sha)·engine_identity·JudgementService.demote_stale_canonical(fake KG).
+# 이벤트 리터럴은 adapter 에만(엔진 코드 금지).
+name: lakatotree-jp1-engine-rule-sha-judge-identity
+target:
+  mode: in_process
+  callable: jp1_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all 이 절대경로로 오버라이드
+
+requirements:
+  - id: JP1-1
+    description: 실 mint 가 v2 — engine_rule_sha 봉인 + read-표면 재유도 일치(포인터 신뢰 없이 sha 재계산 성립)
+    gate:
+      - {event: jp1_engine_identity_sealed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP1:engine_identity_sealed
+      source: jp1_receipt.py
+      symbol: verify
+      must_emit: jp1_engine_identity_sealed
+
+  - id: JP1-2
+    description: legacy carve-out — engine_rule_sha 부재/None 입력의 sha 가 변경-전 실측 골든과 바이트 동일(기존 코퍼스 무이동)
+    gate:
+      - {event: jp1_v1_carveout_stable, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP1:v1_carveout_stable
+      source: jp1_receipt.py
+      symbol: verify
+      must_emit: jp1_v1_carveout_stable
+
+  - id: JP1-3
+    description: stale-CANONICAL 재심 스윕 — floor 밖(v1 익명 판관 포함) CANONICAL 강등 ≥1 + v2 engine receipt mint (novel 오라클 stale_canonical_auto_demoted 의 기제)
+    gate:
+      - {event: jp1_stale_canonical_demoted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP1:stale_canonical_demoted
+      source: jp1_receipt.py
+      symbol: verify
+      must_emit: jp1_stale_canonical_demoted
+
+  - id: JP1-4
+    description: 음성 오라클 — strip/주입 위조가 recompute 로 검출돼야 하고, floor 대조를 무력화(전체 floor)하면 스윕이 0 강등(강등이 floor 대조에 load-bearing = vacuous green 차단)
+    gate:
+      - {event: jp1_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP1:negative_oracle
+      source: jp1_receipt.py
+      symbol: verify
+      must_emit: jp1_negative_oracle

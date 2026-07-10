@@ -149,3 +149,11 @@ ACCEPTED (2026-07-03, AG1 착륙 — ADR + 교정 3건 + 가드). **AG3/R-SOV V1
 (채점기 `judges/ag4_rsov4_reproducibility_ceiling.py`). AG5 가드:
 `tests/fix_harness/test_ag5_rsov5_attested_grade_20260703.py`
 (채점기 `judges/ag5_rsov5_attested_grade.py`).
+
+## 갱신 (jp1 판관 정체성 봉인 — 한계선 한 칸 이동, 2026-07-10)
+
+JP 캠페인(JudgeProprioception) jp1 착륙: `RECEIPT_FIELDS` 는 이제 **v2 = 14필드**(engine_rule_sha —
+판결 규칙표면 lakatos/verdicts.py+verdict/*.py 의 내용주소, lakatos/engine_identity.py SSOT). v1
+13필드는 `RECEIPT_FIELDS_V1` 로 **동결**(legacy carve-out — 기존 코퍼스 sha-space 바이트 무변경,
+presence-dispatch: engine_rule_sha 비-null 만 v2 헤더/필드셋). 판별자가 봉인 안에 있어 strip/주입
+어느 방향 위조도 recompute 가 문다. 이로써 '누가 이 verdict 를 찍었나'가 원장 수준에서 답 가능해졌다.

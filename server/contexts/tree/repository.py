@@ -177,6 +177,7 @@ class TreeKgRepository:
                e.measurement_externally_anchored AS measurement_externally_anchored,
                e.author AS author, e.recorded_at AS recorded_at,
                e.demoted_at AS demoted_at, e.standing_retracted_at AS standing_retracted_at,
+               e.stale_engine_rule_demoted_at AS stale_engine_rule_demoted_at,
                e.replay_status AS replay_status, e.measurement_grade AS measurement_grade,
                e.baseline_lineage AS baseline_lineage,
                CASE WHEN size(parent_edges)>0 THEN parent_edges[0].tag ELSE null END AS parent,
