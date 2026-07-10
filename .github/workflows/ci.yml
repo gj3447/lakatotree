@@ -114,3 +114,31 @@ jobs:
         run: pip install -r requirements.txt
       - name: re-verify 13 design-audit ooptdd-loop receipts (vendored loop, no secret)
         run: python ooptdd_receipts/run_all.py   # 13/13 green 아니면 exit 1
+
+  c1verify-standalone:
+    # campaign C1 / P0b — engine-independence as a CONSTRUCTION FACT, not a promise. Install ONLY the
+    # external verifier into a fresh venv where lakatos/server are NOT present, then run its suite via
+    # `--pyargs` against the INSTALLED package (the repo, which contains lakatos/, is never on the path).
+    # An accidental `import lakatos` anywhere in c1verify is an ImportError here — not a green test —
+    # strictly stronger than the import-linter forbidden contract alone. Stdlib-only: no requirements.txt.
+    name: c1verify-standalone — external verifier in a lakatos-free venv (P0b)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: fresh venv with ONLY c1verify (+pytest); engine absent
+        run: |
+          python -m venv /tmp/c1venv
+          /tmp/c1venv/bin/pip install ./c1verify pytest
+      - name: assert lakatos/server are NOT importable in this venv
+        run: |
+          cd /tmp && /tmp/c1venv/bin/python - <<'PY'
+          import importlib.util as u
+          for m in ("lakatos", "server"):
+              assert u.find_spec(m) is None, f"{m} leaked into the clean venv — isolation broken"
+          print("clean venv confirmed: lakatos/server absent")
+          PY
+      - name: run the installed c1verify suite (any engine import => ImportError => RED)
+        run: cd /tmp && /tmp/c1venv/bin/python -m pytest --pyargs c1verify.tests -q

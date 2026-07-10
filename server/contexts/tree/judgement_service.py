@@ -23,7 +23,8 @@ from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, ju
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
 from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
-from lakatos.verdicts import ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict, receipt_content_sha
+from lakatos.verdicts import (ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict,
+                              prediction_content_sha, receipt_content_sha)
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
@@ -504,10 +505,27 @@ class JudgementService:
                      + onto.metric_violations(p.novel_metric, p.novel_direction))
             if viols:
                 raise HTTPException(422, f"metric 온톨로지 위반: {viols}")
+        # C1 S3-engine: 등록-시점 spec 봉인 — 예측 spec *전체*를 내용주소 PredictionReceipt 로 mint.
+        #   prev 는 노드의 현 체인 head(보통 None=genesis). rsha 를 Python 에서 선계산해야 하므로 head 를
+        #   먼저 읽고, 아래 guarded SET 의 WHERE 에 CAS(coalesce(current)=coalesce($prev_rsha))를 더해
+        #   read-write 사이 경합을 원자적으로 봉쇄(#M5/강등 receipt 의 CAS 패턴 답습 — 불일치=0행=409,
+        #   오염된 mint 없음). submit 은 이미 e.current_receipt_sha 를 prev 로 봉인하므로 verdict receipt 가
+        #   이 prediction sha 를 내용으로 커밋 → spec back-fit 은 체인이 표현 못 한다(ReceiptChainBroken).
+        head_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  RETURN e.current_receipt_sha AS prev_rsha""", tree=name, tag=tag)
+        prev_rsha = head_rows[0].get('prev_rsha') if head_rows else None
+        ts = datetime.now(timezone.utc).isoformat()
+        spec = p.model_dump()
+        pred_receipt_fields = dict(
+            receipt_kind='prediction', tree=name, tag=tag,
+            baseline_lineage=baseline_lineage, registered_at=ts, prev_receipt_sha=prev_rsha,
+            **spec)
+        rsha = prediction_content_sha(pred_receipt_fields)
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted')
                         AND e.pred_registered_at IS NULL
                         AND coalesce(e.node_state, 'DRAFT') IN $allowed_from
+                        AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                       e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
                       e.pred_scale_type=$scale_type,
@@ -519,12 +537,26 @@ class JudgementService:
                       e.pred_registered_at=$ts,
                       e.node_state=$node_state,
                       e.baseline_lineage=$baseline_lineage
+                  WITH e
+                  MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                    ON CREATE SET rec.receipt_kind='prediction', rec.tree=$tree, rec.tag=$tag,
+                      rec.metric_name=$metric_name, rec.direction=$direction,
+                      rec.baseline_value=$baseline_value, rec.noise_band=$noise_band,
+                      rec.scale_type=$scale_type, rec.novel_prediction=$novel_prediction,
+                      rec.novel_metric=$novel_metric, rec.novel_direction=$novel_direction,
+                      rec.novel_threshold=$novel_threshold, rec.judge_script_sha=$judge_script_sha,
+                      rec.closes_question=$closes_question, rec.credence=$credence,
+                      rec.baseline_lineage=$baseline_lineage, rec.registered_at=$ts,
+                      rec.prev_receipt_sha=$prev_rsha
+                  MERGE (e)-[:HAS_RECEIPT]->(rec)
+                  SET e.current_receipt_sha=$rsha, e.pred_receipt_sha=$rsha
                   RETURN e.tag AS tag""",
-                       tree=name, tag=tag, ts=datetime.now(timezone.utc).isoformat(),
+                       tree=name, tag=tag, ts=ts,
                        node_state=NodeState.PREDICTED.value,
                        baseline_lineage=baseline_lineage,   # R12: 계보 앵커 마크(비파괴)
                        allowed_from=[NodeState.DRAFT.value, NodeState.ADMINISTRATIVE.value],
-                       **p.model_dump())
+                       rsha=rsha, prev_rsha=prev_rsha,
+                       **spec)
         if not rows:
             raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
         if p.closes_question:
@@ -893,9 +925,19 @@ class JudgementService:
         if not head_rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         h = head_rows[0]
+        # C1 S3-engine: receipt_kind + prediction 봉인필드도 노출 — 외부검증자(c1verify)가 read 표면
+        #   바이트만으로 prediction blob 을 재유도(sha 재계산)할 수 있어야 한다(포인터 신뢰 금지).
         recs = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})-[:HAS_RECEIPT]->(r:VerdictReceipt)
                      RETURN r.receipt_sha AS receipt_sha, r.prev_receipt_sha AS prev_receipt_sha,
-                            r.verdict AS verdict, r.verdict_source AS verdict_source""", tree=name, tag=tag)
+                            r.verdict AS verdict, r.verdict_source AS verdict_source,
+                            r.receipt_kind AS receipt_kind, r.metric_name AS metric_name,
+                            r.direction AS direction, r.baseline_value AS baseline_value,
+                            r.noise_band AS noise_band, r.scale_type AS scale_type,
+                            r.novel_prediction AS novel_prediction, r.novel_metric AS novel_metric,
+                            r.novel_direction AS novel_direction, r.novel_threshold AS novel_threshold,
+                            r.judge_script_sha AS judge_script_sha, r.closes_question AS closes_question,
+                            r.credence AS credence, r.baseline_lineage AS baseline_lineage,
+                            r.registered_at AS registered_at""", tree=name, tag=tag)
         return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
                 'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
 
