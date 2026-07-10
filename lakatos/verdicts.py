@@ -276,6 +276,47 @@ def receipt_content_sha(fields: dict) -> str:
     return hashlib.sha256(canonical_receipt_blob(fields)).hexdigest()
 
 
+# ── C1 S3-engine (2026-07-10): PredictionReceipt — 등록-시점 spec 봉인 ──────────────────────
+#   preregistered 게이트의 back-fit residual("spec 이 결과를 보고 씌워졌다") 절반을 *해시-인과 순서*로
+#   방전한다: register_prediction 이 예측 spec *전체*를 내용주소 receipt 로 mint 하고 노드 포인터를
+#   전진 → submit 의 verdict receipt 는 이미 prev_receipt_sha 를 payload 에 봉인하므로(RECEIPT_FIELDS)
+#   verdict 가 prediction sha 를 내용으로 커밋한다. spec 을 사후 수정하면 prediction sha 가 바뀌고
+#   verdict 의 sealed prev 가 dangling → ReceiptChainBroken. verdict v1 sha-space 는 무변경(별도
+#   타입헤더 = git typed-object 도메인 분리; verdict-receipt 와 어떤 입력에서도 sha 충돌 불가).
+#   receipt_kind 판별자는 봉인 필드셋 *안*에 있다 — 판별자 변조도 sha 가 문다(kind-smuggle 봉쇄).
+#   남는 residual(정직 경계): 체인 통째 위조는 authenticity(substrate-B Ed25519)·벽시계 순서는
+#   temporal witness 의 몫 — 이 커널이 주는 것은 "spec-봉인 ≺ verdict-mint 의 해시-인과 순서"다.
+_PREDICTION_ENCODING_VERSION = 'v1'
+PREDICTION_RECEIPT_FIELDS = (
+    'receipt_kind',   # 'prediction' 고정 — 도메인 판별자(봉인 안에 포함)
+    'tree', 'tag',
+    'metric_name', 'direction', 'baseline_value', 'noise_band', 'scale_type',
+    'novel_prediction', 'novel_metric', 'novel_direction', 'novel_threshold',
+    'judge_script_sha', 'closes_question', 'credence', 'baseline_lineage',
+    'registered_at', 'prev_receipt_sha',
+)
+_PREDICTION_NUMERIC_FIELDS = ('baseline_value', 'noise_band', 'novel_threshold', 'credence')
+
+
+def canonical_prediction_blob(fields: dict) -> bytes:
+    """prediction 영수증의 정본 바이트열 — verdict blob 과 같은 JCS 규율, 다른 타입헤더(도메인 분리).
+
+    수치 필드는 _coerce_metric_value(int/float 통일·비유한→None), registered_at 는 _coerce_judged_at
+    — write·rederive 양쪽이 이 함수를 거쳐 legacy 타입이 sha 를 발산시키지 못한다(verdict 커널 동형)."""
+    payload = {k: fields.get(k) for k in PREDICTION_RECEIPT_FIELDS}
+    for k in _PREDICTION_NUMERIC_FIELDS:
+        payload[k] = _coerce_metric_value(payload.get(k))
+    payload['registered_at'] = _coerce_judged_at(payload.get('registered_at'))
+    body = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    header = f'prediction-receipt\x00{_PREDICTION_ENCODING_VERSION}\n'
+    return header.encode('utf-8') + body.encode('utf-8')
+
+
+def prediction_content_sha(fields: dict) -> str:
+    """prediction 영수증 내용주소 sha256(full 64-hex) — 노드 pred_receipt_sha/체인 genesis 가 이 값."""
+    return hashlib.sha256(canonical_prediction_blob(fields)).hexdigest()
+
+
 class ReceiptChainBroken(Exception):
     """head_sha 가 체인에 없거나(dangling 포인터) prev 링크가 끊김(genesis 미도달) = 변조/부패."""
 

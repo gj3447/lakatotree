@@ -1,0 +1,15 @@
+{
+  "metric_name": "backfit_reject_classes",
+  "metric_value": 5.0,
+  "baseline_slip_reproduced": true,
+  "novel_metric": "prediction_seal_rederivable",
+  "novel_measured": 1.0,
+  "forgery_classes": [
+    "shown_spec_swap",
+    "moved_novel_bar",
+    "sealed_field_tamper",
+    "kind_strip_smuggle",
+    "double_registration_ambiguity"
+  ],
+  "engine_commit": "1b04bfb"
+}

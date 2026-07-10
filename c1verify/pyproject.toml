@@ -1,0 +1,20 @@
+# c1verify — the standalone External Certificate Verifier for LakatoTree (campaign C1).
+# DISTRIBUTED SEPARATELY from the engine: an outsider `pip install ./c1verify` into a fresh
+# venv with NO lakatos/server present and re-verifies a certificate bundle. Trust base =
+# stdlib only (sha256 + a re-implemented Ed25519, no third-party). Zero lakatos/server import
+# is enforced three ways: import-linter forbidden contract, this package's clean-venv CI job,
+# and a subprocess sys.modules guard.  KG: LakatosTree_C1ExternalVerifier_20260708
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "c1verify"
+version = "0.0.1"
+description = "External, engine-import-forbidden, fail-closed verifier for LakatoTree certificate bundles"
+requires-python = ">=3.10"
+dependencies = []   # stdlib ONLY — a third-party dep here is a trust-base regression
+
+[tool.setuptools]
+packages = ["c1verify", "c1verify.gates", "c1verify.tests"]   # gates = reverifiers; tests ship so `pytest --pyargs c1verify.tests` runs in the clean venv
+package-dir = {"c1verify" = "."}

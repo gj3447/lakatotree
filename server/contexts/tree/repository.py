@@ -165,6 +165,7 @@ class TreeKgRepository:
                e.novel_server_anchored AS novel_server_anchored,
                e.assurance_tier_resolved AS assurance_tier_resolved,
                e.attested_by_did AS attested_by_did, e.current_receipt_sha AS current_receipt_sha,
+               e.pred_receipt_sha AS pred_receipt_sha,
                e.eureka_felt AS eureka_felt, e.eureka_true AS eureka_true,
                e.eureka_hallucinated AS eureka_hallucinated, e.eureka_reasons AS eureka_reasons,
                e.eureka_bf AS eureka_bf,
