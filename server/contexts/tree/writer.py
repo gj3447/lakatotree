@@ -184,6 +184,7 @@ class TreeKgWriter:
         coverage_statement: str = "",
         ontology: str = "",
         require_novel_anchor: bool = False,
+        require_certified_evidence: bool = False,
         assurance_tier: str | None = None,
         attestor_dids: Sequence[str] | None = None,
     ) -> WriteSummary:
@@ -200,7 +201,8 @@ class TreeKgWriter:
                    SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
                        t.doc=$doc, t.coverage_backlog=$coverage_backlog,
                        t.coverage_statement=$coverage_statement, t.ontology=$ontology,
-                       t.require_novel_anchor=$require_novel_anchor, t.updated_at=$ts
+                       t.require_novel_anchor=$require_novel_anchor,
+                       t.require_certified_evidence=$require_certified_evidence, t.updated_at=$ts
                    SET t.assurance_tier = CASE
                          WHEN $declared_tier IS NULL THEN t.assurance_tier
                          WHEN $declared_rank >= """ + _TIER_RANK_CASE + """ THEN $declared_tier
@@ -219,6 +221,7 @@ class TreeKgWriter:
                     coverage_statement=coverage_statement,
                     ontology=ontology,
                     require_novel_anchor=require_novel_anchor,
+                    require_certified_evidence=require_certified_evidence,
                     declared_tier=assurance_tier,
                     declared_rank=assurance.tier_rank(assurance_tier),
                     default_tier=assurance.DEFAULT_NEW_TREE_TIER,
