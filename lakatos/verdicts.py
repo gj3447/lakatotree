@@ -264,7 +264,7 @@ def _coerce_judged_at(v):
     return str(v)
 
 
-def canonical_receipt_blob(fields: dict) -> bytes:
+def canonical_receipt_blob(fields: dict, *, fieldset: tuple | None = None) -> bytes:
     """verdict 영수증의 정본 바이트열 — 버전드 타입헤더 + JCS(sorted keys·compact·UTF-8) canonical JSON.
 
     필드셋은 RECEIPT_FIELDS(_V1) 로 고정하고 metric_value/judged_at 는 내부 정규화. 언어이식성(git
@@ -272,9 +272,15 @@ def canonical_receipt_blob(fields: dict) -> bytes:
 
     jp1 presence-dispatch: engine_rule_sha 가 non-null 이면 v2(14필드+v2 헤더), 아니면 v1 경로
     *바이트 동일*(legacy carve-out by-construction — 기존 코퍼스 재유도·골든 전부 무변경).
+    jp3 fieldset=: 명시 계보 필드셋으로 재유도(감사 recompute 전용 — 헤더는 engine_rule_sha 포함
+    여부로 결정, 기본 None=presence-dispatch 그대로).
     """
-    v2 = fields.get('engine_rule_sha') is not None
-    keys = RECEIPT_FIELDS if v2 else RECEIPT_FIELDS_V1
+    if fieldset is None:
+        v2 = fields.get('engine_rule_sha') is not None
+        keys = RECEIPT_FIELDS if v2 else RECEIPT_FIELDS_V1
+    else:
+        v2 = 'engine_rule_sha' in fieldset
+        keys = fieldset
     ver = _RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION
     payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
@@ -284,10 +290,35 @@ def canonical_receipt_blob(fields: dict) -> bytes:
     return header.encode('utf-8') + body.encode('utf-8')
 
 
-def receipt_content_sha(fields: dict) -> str:
+def receipt_content_sha(fields: dict, *, fieldset: tuple | None = None) -> str:
     """내용주소 sha256(full 64-hex). 노드는 이 값을 current_receipt_sha 포인터로 든다. (G4 미러의 [:16] 절단은
     drift 알람 휴리스틱이라 별개 — 같은 primitive 를 공유하되 receipt 무결성은 full 해시.)"""
-    return hashlib.sha256(canonical_receipt_blob(fields)).hexdigest()
+    return hashlib.sha256(canonical_receipt_blob(fields, fieldset=fieldset)).hexdigest()
+
+
+# ── jp3 (JP 캠페인): 인코딩 계보 + read-time recompute 판별 ─────────────────────────────────
+#   AG3(2026-07-03)가 measurement_grade 를 추가하며 헤더를 안 올렸다 — 그 이전 mint(12필드)는 저장된
+#   버전 문자열이 존재하지 않는 *미선언 드리프트*. 반면 v1→v2(jp1)는 헤더 bump+carve-out 의 선언 전이.
+#   따라서 STALE 은 미선언 계보(pre-ag3)에만, 선언 정본 가족(v2/v1 presence-dispatch)은 'current'.
+RECEIPT_FIELDS_PRE_AG3 = tuple(f for f in RECEIPT_FIELDS_V1 if f != 'measurement_grade')
+RECEIPT_FIELDSET_LINEAGE = (('pre-ag3', RECEIPT_FIELDS_PRE_AG3),)   # 신→구 (미선언 드리프트만)
+
+
+def match_receipt_encoding(receipt: dict, stored_sha: str) -> str | None:
+    """동봉 영수증의 stored sha 를 content 로부터 재유도해 어느 인코딩과 일치하는지 판별.
+
+    반환: 'current'(선언 정본 가족 — v2/v1 presence-dispatch, prediction 은 자기 도메인 단일 대조) /
+    계보 label(예: 'pre-ag3' — 정직 mint 이나 미선언 구-인코딩 = 필드드리프트) / None(어느 알려진
+    인코딩과도 불일치 = in-place 변조/원장우회 위조). 변조된 content 는 어떤 정직 인코딩의 sha 도
+    재현할 수 없다 — 판별자 자체가 위조 통로가 되지 않는다(receipt_kind 는 봉인 안, C1 동형)."""
+    if receipt.get('receipt_kind') == 'prediction':
+        return 'current' if prediction_content_sha(receipt) == stored_sha else None
+    if receipt_content_sha(receipt) == stored_sha:
+        return 'current'
+    for label, fs in RECEIPT_FIELDSET_LINEAGE:
+        if receipt_content_sha(receipt, fieldset=fs) == stored_sha:
+            return label
+    return None
 
 
 # ── C1 S3-engine (2026-07-10): PredictionReceipt — 등록-시점 spec 봉인 ──────────────────────

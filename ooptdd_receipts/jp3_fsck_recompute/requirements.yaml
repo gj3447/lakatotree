@@ -1,0 +1,50 @@
+# jp3 — fsck read-time recompute-and-reject (JP 캠페인 LakatosTree_JudgeProprioception_20260708).
+# hermetic: in_process + memory backend. emit-adapter 가 실코드 구동(재구현 금지):
+# lakatos.verdicts 실 mint + server.contexts.audit.fsck.fsck_node 실호출. 이벤트 리터럴은 adapter 에만.
+name: lakatotree-jp3-fsck-recompute-and-reject
+target:
+  mode: in_process
+  callable: jp3_receipt:verify        # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all 이 절대경로로 오버라이드
+
+requirements:
+  - id: JP3-1
+    description: tamper-reject — 실 mint 체인의 head verdict 를 in-place 변조(sha 유지)하면 fsck 가 RECEIPT_SHA_CONTENT_MISMATCH(ERROR)로 표면화 (novel 오라클 tampered_receipt_detected 의 기제)
+    gate:
+      - {event: jp3_tamper_detected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP3:tamper_detected
+      source: jp3_receipt.py
+      symbol: verify
+      must_emit: jp3_tamper_detected
+
+  - id: JP3-2
+    description: honest-clean(반진공) — 정직 mint 체인(v1·v2 둘 다)은 발견 0, recompute 가 코퍼스 오탐을 안 낸다
+    gate:
+      - {event: jp3_honest_clean, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP3:honest_clean
+      source: jp3_receipt.py
+      symbol: verify
+      must_emit: jp3_honest_clean
+
+  - id: JP3-3
+    description: lineage-honesty — pre-ag3(미선언 드리프트) 정직 mint 는 STALE WARN 으로 구별(MISMATCH ERROR 오탐 0, census FREEZE 무오탐)
+    gate:
+      - {event: jp3_stale_distinguished, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP3:stale_distinguished
+      source: jp3_receipt.py
+      symbol: verify
+      must_emit: jp3_stale_distinguished
+
+  - id: JP3-4
+    description: 음성 오라클 — match_receipt_encoding 절제(상수 'current' 치환) 시 같은 변조가 clean 통과(slip)함을 검출해야 발행 = 검사가 recompute 호출에 load-bearing(vacuous green 차단)
+    gate:
+      - {event: jp3_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:JP3:negative_oracle
+      source: jp3_receipt.py
+      symbol: verify
+      must_emit: jp3_negative_oracle
