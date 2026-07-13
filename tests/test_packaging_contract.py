@@ -70,9 +70,7 @@ def test_examples_shims_stay_backcompat():
     """Old imports keep working via re-export shims (in-repo programmes must not break)."""
     from examples._evidence import load_record, is_grounded, summarize  # noqa: F401
     from examples.record_judge import judge_record  # noqa: F401
-    from examples.bpc_icp_programme import _n
 
-    assert _n.__module__ == "lakatos.programme.authoring", "bpc_icp._n must alias the public node()"
 
 
 def test_engine_examples_boundary_contract_declared():

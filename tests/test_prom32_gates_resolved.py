@@ -68,8 +68,8 @@ def test_gtrust_enforced_no_silent_promotion():
 # ── G-SourceHistory: Longinus drift-guard (process gate) 실재 ──────────────────
 def test_gsourcehistory_drift_guard_exists():
     # in-repo Longinus binding line→symbol 해석 강제(test_p7e)가 SourceHistory 게이트의 코드면.
-    import tests.test_p7e_manifest_integrity as t
-    assert callable(t.test_lakatotree_binding_lines_resolve_to_symbol)
+    import tests.test_longinus_bindings as t
+    assert callable(t.test_all_bindings_symbol_resolves)
 
 
 # ── 종합: 4 명명 게이트 모두 강제 지점 보유 ───────────────────────────────────

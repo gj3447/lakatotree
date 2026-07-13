@@ -24,7 +24,7 @@ OUT_OF_FLIP_SCOPE = (
 )
 
 # run() 이 flip-호환 노드 리스트를 *조용히* 반환하는 dogfood 프로그램(나머지 4개는 데모 리포트 출력).
-FLIP_COMPATIBLE_DOGFOOD = ('euler_polyhedron_programme', 'consumer3d_inspection_programme')
+FLIP_COMPATIBLE_DOGFOOD = ('euler_polyhedron_programme',)
 
 
 def test_flip_scope_is_exactly_the_three_stack_layers():

@@ -90,7 +90,7 @@
       "file": "server/app.py",
       "symbol": "add_observation",
       "kind": "def",
-      "line_hint": 392,
+      "line_hint": 436,
       "sha256": "7dbaa3624c6bf530",
       "layer": "positive_heuristic",
       "frege_sinn": "compatibility facade delegating G-Web observation ingestion to the tree evidence claim service"
@@ -100,7 +100,7 @@
       "file": "server/app.py",
       "symbol": "add_world_action",
       "kind": "def",
-      "line_hint": 396,
+      "line_hint": 440,
       "sha256": "8ce460f1910728f0",
       "layer": "positive_heuristic",
       "frege_sinn": "compatibility facade delegating G-WorldAction ingestion to the tree evidence claim service"
@@ -110,7 +110,7 @@
       "file": "server/app.py",
       "symbol": "add_research_event",
       "kind": "def",
-      "line_hint": 383,
+      "line_hint": 427,
       "sha256": "c4c8ccb9b34f3c08",
       "layer": "negative_heuristic",
       "frege_sinn": "compatibility facade delegating gated-realm bypass protection to the tree evidence claim service"
@@ -120,7 +120,7 @@
       "file": "server/app.py",
       "symbol": "_store_research_event",
       "kind": "def",
-      "line_hint": 387,
+      "line_hint": 431,
       "sha256": "75f55700362b2a6b",
       "layer": "implementation",
       "frege_sinn": "compatibility facade delegating gate-passed evidence append-only storage to the tree evidence claim service"
@@ -130,7 +130,7 @@
       "file": "server/app.py",
       "symbol": "neo4j_constraint_diagnostics",
       "kind": "def",
-      "line_hint": 907,
+      "line_hint": 1024,
       "sha256": "d9bb6500b1bfc3d1",
       "layer": "ops-diagnostics",
       "frege_sinn": "compatibility facade delegating Neo4j constraint diagnostics to the tree programme service"
@@ -140,7 +140,7 @@
       "file": "server/app.py",
       "symbol": "set_verdict",
       "kind": "def",
-      "line_hint": 358,
+      "line_hint": 402,
       "sha256": "b4ff896af73da5db",
       "layer": "hard_core",
       "frege_sinn": "compatibility facade delegating administrative verdict mutation to the tree judgement service"
@@ -150,7 +150,7 @@
       "file": "server/app.py",
       "symbol": "register_prediction",
       "kind": "def",
-      "line_hint": 370,
+      "line_hint": 414,
       "sha256": "0e44b4709b7b23e7",
       "layer": "hard_core",
       "frege_sinn": "compatibility facade delegating preregistered prediction mutation to the tree judgement service"
@@ -160,7 +160,7 @@
       "file": "server/app.py",
       "symbol": "submit_test_result",
       "kind": "def",
-      "line_hint": 373,
+      "line_hint": 417,
       "sha256": "18f6c4941151478a",
       "layer": "hard_core",
       "frege_sinn": "compatibility facade delegating scripted test-result judgement to the tree judgement service"
@@ -220,7 +220,7 @@
       "file": "server/app.py",
       "symbol": "_close_resources",
       "kind": "def",
-      "line_hint": 91,
+      "line_hint": 94,
       "sha256": "561e2a9b0e90d365",
       "layer": "implementation",
       "frege_sinn": "P7-D shutdown close"
@@ -234,16 +234,6 @@
       "sha256": "51466666e59c217c",
       "layer": "implementation",
       "frege_sinn": "dogfood 갭 progress.scope 공개"
-    },
-    {
-      "sourceId": "examples.bpc_icp_programme.run",
-      "file": "examples/bpc_icp_programme.py",
-      "symbol": "run",
-      "kind": "def",
-      "line_hint": 226,
-      "sha256": "cccceec311f96125",
-      "layer": "applications",
-      "frege_sinn": "consumer_b/ICP 실연구 라카토스 모델 dogfood"
     },
     {
       "sourceId": "oo_verify.verify_trace",
@@ -276,36 +266,6 @@
       "frege_sinn": "LTDD 오케스트레이터 build→ship→verify→policy"
     },
     {
-      "sourceId": "examples.bpc_inspection_groundtruth.ground_truth_verdict",
-      "file": "examples/bpc_inspection_groundtruth.py",
-      "symbol": "ground_truth_verdict",
-      "kind": "def",
-      "line_hint": 48,
-      "sha256": "307793d177226e32",
-      "layer": "applications",
-      "frege_sinn": "ZDF 측정 dev→사전등록 공차 judge→정답 PASS/FAIL(B 해결)"
-    },
-    {
-      "sourceId": "examples.bpc_inspection_groundtruth.check_against_pipeline",
-      "file": "examples/bpc_inspection_groundtruth.py",
-      "symbol": "check_against_pipeline",
-      "kind": "def",
-      "line_hint": 57,
-      "sha256": "40bdf30c0c780d1e",
-      "layer": "applications",
-      "frege_sinn": "파이프라인 verdict(oo) vs 정답 — 전체-ZDF drift 탐지"
-    },
-    {
-      "sourceId": "examples.bpc_inspection_groundtruth.preregister",
-      "file": "examples/bpc_inspection_groundtruth.py",
-      "symbol": "preregister",
-      "kind": "def",
-      "line_hint": 37,
-      "sha256": "5e90470d284c5de6",
-      "layer": "applications",
-      "frege_sinn": "공차를 잠긴 Prediction 으로 사전등록=ground-truth contract"
-    },
-    {
       "sourceId": "oo_sink.test_outcome_records",
       "file": "lakatos/io/oo_sink.py",
       "symbol": "test_outcome_records",
@@ -330,7 +290,7 @@
       "file": "_vendor/ooptdd/plugin.py",
       "symbol": "pytest_sessionfinish",
       "kind": "def",
-      "line_hint": 146,
+      "line_hint": 161,
       "sha256": "40c36f3a590b458b",
       "layer": "implementation",
       "frege_sinn": "ooptdd session-finish hook that ships and verifies collected pytest outcomes"
@@ -400,7 +360,7 @@
       "file": "server/contexts/tree/evidence_claim_service.py",
       "symbol": "EvidenceClaimService",
       "kind": "class",
-      "line_hint": 55,
+      "line_hint": 56,
       "sha256": "9351226f61ddd7b1",
       "layer": "application",
       "frege_sinn": "application service owning evidence ingestion, standing, claim-standing, and certificate assembly"
@@ -410,7 +370,7 @@
       "file": "server/contexts/tree/evidence_claim_service.py",
       "symbol": "embedded_observation",
       "kind": "def",
-      "line_hint": 294,
+      "line_hint": 298,
       "sha256": "3e6c1ad40ce15f1d",
       "layer": "application",
       "frege_sinn": "G-Web observation을 theory/rival/Longinus 임베딩 순수 모델로 조립"
@@ -420,7 +380,7 @@
       "file": "server/contexts/tree/evidence_claim_service.py",
       "symbol": "bind_embedded_observation",
       "kind": "def",
-      "line_hint": 361,
+      "line_hint": 365,
       "sha256": "c280e3f012d24c75",
       "layer": "application",
       "frege_sinn": "InternetObservation 이벤트를 LakatosNode, RivalProgramme, ReferenceSite:Longinus 로 KG 결합"
@@ -460,7 +420,7 @@
       "file": "server/contexts/tree/judgement_service.py",
       "symbol": "JudgementService",
       "kind": "class",
-      "line_hint": 108,
+      "line_hint": 112,
       "sha256": "9b598a5a0143116e",
       "layer": "application",
       "frege_sinn": "application service owning verdict, prediction, and scripted test-result judgement mutations"
@@ -470,7 +430,7 @@
       "file": "server/app.py",
       "symbol": "_lineage_service",
       "kind": "def",
-      "line_hint": 315,
+      "line_hint": 359,
       "sha256": "5ea238baf00fd7bc",
       "layer": "composition",
       "frege_sinn": "composition-root factory wiring lineage service ports while preserving monkeypatch-compatible load-lineage facade"
@@ -530,7 +490,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "QuestionIn",
       "kind": "class",
-      "line_hint": 56,
+      "line_hint": 58,
       "sha256": "b0fe77de4c2b8657",
       "layer": "schema",
       "frege_sinn": "tree context frontier question request schema"
@@ -540,7 +500,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "ResearchEventIn",
       "kind": "class",
-      "line_hint": 179,
+      "line_hint": 186,
       "sha256": "d1ce2227c575ae4a",
       "layer": "schema",
       "frege_sinn": "tree context append-only research event schema with engine conversion"
@@ -550,7 +510,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "LonginusRefIn",
       "kind": "class",
-      "line_hint": 206,
+      "line_hint": 213,
       "sha256": "c11cb2d011290c2c",
       "layer": "schema",
       "frege_sinn": "HTTP schema for sourceId/sourcePath references attached to embedded internet evidence"
@@ -560,7 +520,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "ObservationIn",
       "kind": "class",
-      "line_hint": 213,
+      "line_hint": 220,
       "sha256": "62344d403c4a9ef2",
       "layer": "schema",
       "frege_sinn": "tree context G-Web observation schema with decomposed credibility inputs"
@@ -570,7 +530,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "WorldActionIn",
       "kind": "class",
-      "line_hint": 245,
+      "line_hint": 252,
       "sha256": "ffad3f91ef5778f3",
       "layer": "schema",
       "frege_sinn": "tree context G-WorldAction execution evidence schema"
@@ -580,7 +540,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "CycleIn",
       "kind": "class",
-      "line_hint": 261,
+      "line_hint": 268,
       "sha256": "c21c7a77adaf1d84",
       "layer": "schema",
       "frege_sinn": "tree context no-RCE programme cycle orchestration schema"
@@ -590,7 +550,7 @@
       "file": "server/contexts/tree/schemas.py",
       "symbol": "FoundationRequirementIn",
       "kind": "class",
-      "line_hint": 324,
+      "line_hint": 331,
       "sha256": "273d3e9151d319ea",
       "layer": "schema",
       "frege_sinn": "tree context foundation requirement schema with engine conversion"
@@ -730,7 +690,7 @@
       "file": "server/contexts/tree/mutations.py",
       "symbol": "TreeMutationService",
       "kind": "class",
-      "line_hint": 39,
+      "line_hint": 40,
       "sha256": "eab1f136610bf3c5",
       "layer": "application",
       "frege_sinn": "validated mutation API coordinating semantic policy, KG writer, and history"
@@ -1076,7 +1036,7 @@
       "file": "lakatos/verdict/certify.py",
       "symbol": "certify_claim",
       "kind": "def",
-      "line_hint": 50,
+      "line_hint": 69,
       "sha256": "e643b5109adcd26f",
       "layer": "hard_core",
       "serving": "wired",
@@ -1087,7 +1047,7 @@
       "file": "lakatos/verdict/certify.py",
       "symbol": "gate_check",
       "kind": "def",
-      "line_hint": 42,
+      "line_hint": 61,
       "sha256": "cbfc07e0f1aa0d10",
       "layer": "hard_core",
       "serving": "wired",
@@ -1098,7 +1058,7 @@
       "file": "lakatos/verdict/certify.py",
       "symbol": "Certificate",
       "kind": "class",
-      "line_hint": 32,
+      "line_hint": 51,
       "sha256": "481d2bb482470328",
       "layer": "hard_core",
       "serving": "wired",
@@ -1850,7 +1810,7 @@
       "file": "lakatos/programme/record_judge.py",
       "symbol": "judge_record",
       "kind": "function",
-      "line_hint": 52,
+      "line_hint": 47,
       "sha256": "4af4c9cecf36d86a",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "grounded record→엔진 생성 verdict(자기채점차단·정합실패시 abstain)"
@@ -1860,7 +1820,7 @@
       "file": "lakatos/programme/record_judge.py",
       "symbol": "audit_dir",
       "kind": "function",
-      "line_hint": 90,
+      "line_hint": 85,
       "sha256": "08e0daa05c3b81f2",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "evidence 디렉토리 전수 judge-ability 감사(judged/abstain/invalid)"
@@ -1870,7 +1830,7 @@
       "file": "lakatos/programme/record_judge.py",
       "symbol": "_measured_for",
       "kind": "function",
-      "line_hint": 41,
+      "line_hint": 36,
       "sha256": "9a935fc452d16cd7",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "예측 metric에 정합하는 실측치를 record(value/derived)에서 해소"
@@ -1880,7 +1840,7 @@
       "file": "lakatos/programme/record_judge.py",
       "symbol": "_baseline",
       "kind": "function",
-      "line_hint": 32,
+      "line_hint": 27,
       "sha256": "5a7b53a86b5c62c7",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "사전등록 baseline/threshold 추출(value|value_geq|value_leq)"
@@ -1924,16 +1884,6 @@
       "sha256": "17a367d761a359cf",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "파일 로드→align+judge-ability 분류"
-    },
-    {
-      "sourceId": "consumer_d_loop_demo.run",
-      "file": "examples/consumer_d_loop_demo.py",
-      "symbol": "run",
-      "kind": "function",
-      "line_hint": 29,
-      "sha256": "db06f621a33faa10",
-      "layer": "measurement_judgment_loop",
-      "frege_sinn": "측정→판결 루프 닫힌 형태(손입력 verdict 0, record→judge_record)"
     },
     {
       "sourceId": "test_record_judge._rec",
@@ -1986,16 +1936,6 @@
       "frege_sinn": "record에 verdict 있으면 거부(자기채점차단)"
     },
     {
-      "sourceId": "test_record_judge.test_real_consumer_d_records_audit",
-      "file": "tests/test_record_judge.py",
-      "symbol": "test_real_consumer_d_records_audit",
-      "kind": "test",
-      "line_hint": 65,
-      "sha256": "26b99e908355ce6e",
-      "layer": "tests",
-      "frege_sinn": "실 SX3i record 감사=마이그레이션분 judged·원본 abstain/invalid"
-    },
-    {
       "sourceId": "test_migrate_record.test_align_makes_misaligned_record_judgeable",
       "file": "tests/test_migrate_record.py",
       "symbol": "test_align_makes_misaligned_record_judgeable",
@@ -2046,46 +1986,6 @@
       "frege_sinn": "layer×drift status×provenance 구조화 페이지 조립"
     },
     {
-      "sourceId": "three_d_detection.run",
-      "file": "examples/three_d_detection.py",
-      "symbol": "run",
-      "kind": "function",
-      "line_hint": 79,
-      "sha256": "cccceec311f96125",
-      "layer": "three_d_detection",
-      "frege_sinn": "통합 3D 형상검출 나무 조립(consumer_b 줄기+SX3i/consumer_c/DATUM 가지)+hard-core 3축+q_external_trueness 외부정확도(trueness) 천장 키스톤"
-    },
-    {
-      "sourceId": "consumer_d_engine_judged.judged_nodes",
-      "file": "examples/consumer_d_engine_judged.py",
-      "symbol": "judged_nodes",
-      "kind": "function",
-      "line_hint": 51,
-      "sha256": "c13b4ad52c57f08e",
-      "layer": "measurement_judgment_loop",
-      "frege_sinn": "SX3i 가지 verdict 를 record_judge 가 grounded record 에서 엔진생성(손입력0=자기채점 차단)"
-    },
-    {
-      "sourceId": "lx3_engine_judged.judged_nodes",
-      "file": "examples/lx3_engine_judged.py",
-      "symbol": "judged_nodes",
-      "kind": "function",
-      "line_hint": 52,
-      "sha256": "c13b4ad52c57f08e",
-      "layer": "measurement_judgment_loop",
-      "frege_sinn": "consumer_c 가지 verdict 를 record_judge 가 grounded record 에서 엔진생성(손입력0=자기채점 차단)"
-    },
-    {
-      "sourceId": "lx3_engine_judged._judge_aligned",
-      "file": "examples/lx3_engine_judged.py",
-      "symbol": "_judge_aligned",
-      "kind": "function",
-      "line_hint": 41,
-      "sha256": "a5e378dcb4378bd5",
-      "layer": "measurement_judgment_loop",
-      "frege_sinn": "consumer_c record 사전등록 플래그(임계예측=사양) 세팅 + migrate.align 후 judge"
-    },
-    {
       "sourceId": "_evidence.validate_record",
       "file": "lakatos/programme/evidence.py",
       "symbol": "validate_record",
@@ -2116,46 +2016,6 @@
       "frege_sinn": "record 가 실측 grounded(scan/CMM 출처) 인지 판정"
     },
     {
-      "sourceId": "consumer_d_icp_programme.run",
-      "file": "examples/consumer_d_icp_programme.py",
-      "symbol": "run",
-      "kind": "function",
-      "line_hint": 151,
-      "sha256": "cccceec311f96125",
-      "layer": "three_d_detection",
-      "frege_sinn": "SX3i 가지 프로그램 트리(v8_pipeline 개화, 삼각대 자유이동 ArUco DICT_4X4_250, C1~C5 frontier)"
-    },
-    {
-      "sourceId": "lx3_icp_programme.run",
-      "file": "examples/lx3_icp_programme.py",
-      "symbol": "run",
-      "kind": "function",
-      "line_hint": 302,
-      "sha256": "cccceec311f96125",
-      "layer": "three_d_detection",
-      "frege_sinn": "consumer_c 가지 프로그램 트리(aruco_metric 개화, 회전지그 ArUco·markerless 음의분기 보존)"
-    },
-    {
-      "sourceId": "datum_programme.run",
-      "file": "examples/datum_programme.py",
-      "symbol": "run",
-      "kind": "function",
-      "line_hint": 182,
-      "sha256": "cccceec311f96125",
-      "layer": "three_d_detection",
-      "frege_sinn": "DATUM 가지 프로그램 트리(3-2-1 DRF 계측기, best-fit 21~62% 위치오차 은폐 실증)"
-    },
-    {
-      "sourceId": "datum_programme.ground_real_records",
-      "file": "examples/datum_programme.py",
-      "symbol": "ground_real_records",
-      "kind": "function",
-      "line_hint": 42,
-      "sha256": "7d0457c01ca022dc",
-      "layer": "three_d_detection",
-      "frege_sinn": "DATUM D3 실 lot grounded record 주입(best-fit vs datum-DRF 부등식 + 은폐폭)"
-    },
-    {
       "sourceId": "verdicts.force_of",
       "file": "lakatos/verdicts.py",
       "symbol": "force_of",
@@ -2180,7 +2040,7 @@
       "file": "lakatos/verdicts.py",
       "symbol": "fold_receipt_chain",
       "kind": "function",
-      "line_hint": 280,
+      "line_hint": 369,
       "sha256": "02a21d2613bd57d3",
       "layer": "hard_core",
       "frege_sinn": "현 verdict 를 영수증 체인 fold 로 재유도(head→prev 무결성 walk) — e.verdict 는 파생캐시"
@@ -2190,7 +2050,7 @@
       "file": "lakatos/assurance.py",
       "symbol": "gates_for",
       "kind": "function",
-      "line_hint": 73,
+      "line_hint": 79,
       "sha256": "626d7d117919339d",
       "layer": "domain-policy",
       "frege_sinn": "verb×tier 게이트 단일 디스패치 조회 — 핸들러는 읽기만(하드코딩 금지, git commands[] 이식)"
@@ -2200,7 +2060,7 @@
       "file": "lakatos/assurance.py",
       "symbol": "resolve_tier",
       "kind": "function",
-      "line_hint": 58,
+      "line_hint": 64,
       "sha256": "bb191606a5b71263",
       "layer": "domain-policy",
       "frege_sinn": "KG tier 프로퍼티→tier(미정의=LEGACY, tolerant read) — 소급 강등 없음"
@@ -2210,7 +2070,7 @@
       "file": "lakatos/assurance.py",
       "symbol": "tier_rank",
       "kind": "function",
-      "line_hint": 66,
+      "line_hint": 72,
       "sha256": "5f5a6e0e3f0b2c8d",
       "layer": "domain-policy",
       "frege_sinn": "tier 서열 랭크(LEGACY=-1) — 단조 ratchet 의 비교 기준"
@@ -2220,7 +2080,7 @@
       "file": "lakatos/assurance.py",
       "symbol": "cypher_tier_rank_case",
       "kind": "function",
-      "line_hint": 84,
+      "line_hint": 90,
       "sha256": "b3de6c692391610e",
       "layer": "domain-policy",
       "frege_sinn": "TIER_RANK 에서 DB-side ratchet CASE 생성 — 서열 정본 하나(Cypher 리터럴 표류 불가)"
@@ -2230,7 +2090,7 @@
       "file": "lakatos/assurance.py",
       "symbol": "structural_core_gates",
       "kind": "function",
-      "line_hint": 78,
+      "line_hint": 84,
       "sha256": "f223c7b5643867b4",
       "layer": "hard_core",
       "frege_sinn": "구조 코어는 tier 인자를 받되 무시 — 어떤 tier 도 끄는 문장을 표현할 수 없다(by construction)"
@@ -2270,7 +2130,7 @@
       "file": "server/contexts/tree/advice.py",
       "symbol": "advice_for",
       "kind": "function",
-      "line_hint": 35,
+      "line_hint": 39,
       "sha256": "5e4850d050eacfdf",
       "layer": "application",
       "frege_sinn": "4xx→다음 명령 제안 레지스트리 조회(git advice.* 이식) — 미적중이면 조언 날조 금지(None)"
@@ -2280,7 +2140,7 @@
       "file": "server/contexts/tree/advice.py",
       "symbol": "with_advice",
       "kind": "function",
-      "line_hint": 44,
+      "line_hint": 48,
       "sha256": "92c196a801d64805",
       "layer": "application",
       "frege_sinn": "HTTPException 에 advice 동봉 — suggest-only(상태코드 불변·실행 없음·우회 off-switch 부재)"
@@ -2290,7 +2150,7 @@
       "file": "server/contexts/audit/fsck.py",
       "symbol": "fsck_node",
       "kind": "function",
-      "line_hint": 120,
+      "line_hint": 178,
       "sha256": "03b8dc01f966139a",
       "layer": "infrastructure",
       "frege_sinn": "단일 노드 구조 체커(열거 check-id) — 감사와 쓰기경계가 공유하는 유일 체커(audit==ingest)"
@@ -2300,7 +2160,7 @@
       "file": "server/contexts/audit/fsck.py",
       "symbol": "boundary_fsck",
       "kind": "function",
-      "line_hint": 135,
+      "line_hint": 193,
       "sha256": "a60b052880c5a92d",
       "layer": "infrastructure",
       "frege_sinn": "쓰기 경계 게이트 — 동일 체커·동일 심각도표, min_severity 는 거부 임계일 뿐 판정 바이트동일"
@@ -2310,7 +2170,7 @@
       "file": "server/contexts/audit/fsck.py",
       "symbol": "record_content_sha",
       "kind": "function",
-      "line_hint": 113,
+      "line_hint": 171,
       "sha256": "0ec219b6cd91d7be",
       "layer": "infrastructure",
       "frege_sinn": "skiplist 키=레코드 내용 sha256 — 면제는 내용 그대로일 때만(규칙 면제 불가, git per-OID 이식)"
@@ -2350,7 +2210,7 @@
       "file": "lakatos/write_cert.py",
       "symbol": "ed25519_verify",
       "kind": "function",
-      "line_hint": 188,
+      "line_hint": 191,
       "sha256": "fac2b885264fe733",
       "layer": "hard_core",
       "frege_sinn": "RFC-8032 Ed25519 순수 검증(hashlib 만, malleability 거부) — authorship 의 수학적 바닥"
@@ -2360,7 +2220,7 @@
       "file": "lakatos/write_cert.py",
       "symbol": "verify_write_cert",
       "kind": "function",
-      "line_hint": 302,
+      "line_hint": 305,
       "sha256": "96555dde84765c8b",
       "layer": "hard_core",
       "frege_sinn": "서명 blob=유일 명령원 검증(sign-X-execute-Y 불가) + attestor allow-list + nonce 신선도"
@@ -2370,7 +2230,7 @@
       "file": "lakatos/write_cert.py",
       "symbol": "canonical_cert_blob",
       "kind": "function",
-      "line_hint": 74,
+      "line_hint": 77,
       "sha256": "0b3f7b31afde7899",
       "layer": "hard_core",
       "frege_sinn": "서명 대상 canonical 인코딩(JCS) — 같은 명령=같은 바이트(서명 범위의 정본)"
@@ -2440,7 +2300,7 @@
       "file": "server/contexts/tree/judgement_service.py",
       "symbol": "submit_test_result",
       "kind": "method",
-      "line_hint": 510,
+      "line_hint": 592,
       "sha256": "50301c1d5268dd62",
       "layer": "measurement_judgment_loop",
       "frege_sinn": "측정 제출의 신뢰경계 단일 관문 — sha 서버 재유도·novel 앵커·tier 디스패치·verdict receipt 사슬이 전부 이 안을 통과 (2026-07-03 평가: ~340줄 god-method, 분해 후보)"
@@ -2490,7 +2350,7 @@
       "file": "server/app.py",
       "symbol": "_safe_replay_argv",
       "kind": "def",
-      "line_hint": 509,
+      "line_hint": 553,
       "sha256": "8aeadc8e5d8c7d5f",
       "layer": "infrastructure",
       "frege_sinn": "AG2 replay RCE 봉쇄 — 재현명령 문자열을 안전 argv 로만 변환(python계열만·스크립트=FF4 허용루트 실존파일·result_path flag 거부). 안전 아니면 None → 미실행."
@@ -2500,7 +2360,7 @@
       "file": "server/app.py",
       "symbol": "_apply_replay_rlimits",
       "kind": "def",
-      "line_hint": 500,
+      "line_hint": 544,
       "sha256": "bceaef26c352b2fd",
       "layer": "infrastructure",
       "frege_sinn": "AG2 preexec_fn — fork 직후·exec 직전 자식에 CPU/AS/FSIZE/CORE 유한 상한 적용(fork/mem/disk-DoS 차단)."
@@ -2510,7 +2370,7 @@
       "file": "server/app.py",
       "symbol": "_replay_rlimits",
       "kind": "def",
-      "line_hint": 487,
+      "line_hint": 531,
       "sha256": "e61d3254f5311691",
       "layer": "infrastructure",
       "frege_sinn": "AG2 replay 자원 상한표(env 조정 가능, 기본 유한=RLIM_INFINITY 금지)."
@@ -2520,7 +2380,7 @@
       "file": "server/contexts/tree/judgement_service.py",
       "symbol": "isolate_script_file",
       "kind": "def",
-      "line_hint": 59,
+      "line_hint": 63,
       "sha256": "9242fb5cc5dba5e4",
       "layer": "infrastructure",
       "frege_sinn": "FF4 경로격리 단일 정본 — sha 재유도(_isolate_script_file)와 AG2 replay 실행(app._safe_replay_argv)이 공유. 허용루트·size-cap·traversal 거부."
@@ -2540,7 +2400,7 @@
       "file": "server/contexts/tree/judgement_policy.py",
       "symbol": "qualitative_flags",
       "kind": "def",
-      "line_hint": 47,
+      "line_hint": 72,
       "sha256": "b91585763086994e",
       "layer": "verdict-authority",
       "frege_sinn": "DE1 순수 질적 backing 판정(#H1/#H10) — 서버앵커 독립 novel + ce_corroborated 여야 backed, 아니면 self_report 표식(CANONICAL floor 차단)."
@@ -2550,7 +2410,7 @@
       "file": "server/contexts/tree/judgement_policy.py",
       "symbol": "build_receipt_fields",
       "kind": "def",
-      "line_hint": 60,
+      "line_hint": 85,
       "sha256": "3435f634e89e3d41",
       "layer": "verdict-authority",
       "frege_sinn": "DE1 순수 G1 receipt 봉인필드 조립 — RECEIPT_FIELDS 1:1. AG3 measurement_grade 봉인 착지대."

@@ -62,15 +62,3 @@ def test_invalid_when_record_carries_verdict():
     assert r["status"] == "invalid" and any("verdict" in e for e in r["errors"]), r
 
 
-def test_real_consumer_d_records_audit():
-    """실 SX3i record: conformant 2개도 metric 불일치로 abstain, 나머지 invalid = 0/11 자동판결."""
-    from record_judge import audit_dir
-    rows = audit_dir("<WORKSPACE>/PROJECT/3D/SX3i_ICP_SPEC/evidence")
-    if not rows:
-        import pytest; pytest.skip("evidence dir 비었음")
-    judged = [r for r in rows if r["status"] == "judged"]
-    assert all(r["status"] in ("judged", "abstain", "invalid", "unreadable", "not_object") for r in rows)
-    # migrate_record(align/wrap_adhoc)로 정합·마이그레이션된 v1 record는 이제 엔진이 자동판결
-    # (루프 부분폐쇄). 미마이그레이션 원본은 여전히 abstain(metric불일치)/invalid(ad-hoc).
-    assert any(r["status"] == "judged" for r in rows), "마이그레이션된 record가 judge돼야"
-    assert any(r["status"] in ("abstain", "invalid") for r in rows), "미마이그레이션 원본은 여전히 미판결"
