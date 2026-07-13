@@ -5516,6 +5516,24 @@
     "VERDICT_WRITE_WITHOUT_TIER_RESOLVE"
    ],
    "reason": "pre-campaign-serving(2026-06-26T08:08:27 < 2026-07-02T13:41Z)"
+  },
+  {
+   "sha": "e8628da193d4c349e4ed0861fe1ef308f0a03187989ed92740920dbce6935209",
+   "tree": "LakatosTree_BPC_FalseOK_20260709",
+   "tag": "E16_correctedmap_replay",
+   "checks": [
+    "MEASUREMENT_REFUTED_BUT_STANDING"
+   ],
+   "reason": "2026-07-13 fable 재검증(유저 위임): mismatch=서버 replay CLI 계약 아티팩트(argparse positional 거부, exit2 'unrecognized arguments' — 66a338c에서 not_replayable로 근본수정). 올바른 env full 재실행으로 primary 9(z1)/novel 2/arm_a 87/full_ref 0 + per-fid 139점수 비트동일 재현 — 값 무반증. 영수증=3DLAB docs/falseok_20260709/replay_20260713/ + 트리노드 V2_replay_reverify_20260713."
+  },
+  {
+   "sha": "e99bc064110b7368c52758300b2ffa21503de64be900624675abbb1e13674bc5",
+   "tree": "LakatosTree_BPC_FalseOK_20260709",
+   "tag": "E17_seamfield_fixedcalib",
+   "checks": [
+    "MEASUREMENT_REFUTED_BUT_STANDING"
+   ],
+   "reason": "2026-07-13 fable 재검증(유저 위임): 동일 CLI 계약 아티팩트. full 재실행으로 primary 0.223/novel R2 0.1799(n=13197)/anchor 0.3117 전부 재현 — 값 무반증. 영수증=3DLAB docs/falseok_20260709/replay_20260713/ + 트리노드 V2_replay_reverify_20260713."
   }
  ]
 }
