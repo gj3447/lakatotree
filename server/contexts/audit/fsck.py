@@ -151,7 +151,8 @@ def _check_measurement_refuted(rec: dict) -> Finding | None:
 
     승격 floor(G6)는 CANONICAL 만 막는다 — progressive/partial 로 선 반증된 측정은 조용했다. 이 차원이
     관측화(WARN)해 재실험/분기를 권고하되 write 를 막지 않는다(boundary min ERROR). ★dead-σ:
-    not_attempted(exec OFF)/verified(일치)/비-standing verdict 은 무발화(검증 불가·일치·이미 부정 ≠ 반증)."""
+    not_attempted(exec OFF)/not_replayable(CLI 계약 비호환 등 실행 불가 — 2026-07-13 신설)/verified(일치)/
+    비-standing verdict 은 무발화(검증 불가·일치·이미 부정 ≠ 반증)."""
     if rec.get("replay_status") != "mismatch":
         return None
     if rec.get("verdict") in _STANDING_VERDICTS:

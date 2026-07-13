@@ -594,6 +594,11 @@ def _replay_run(score_cmd: str) -> tuple[str, int]:
                            preexec_fn=_apply_replay_rlimits)
     except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
         return (f'replay_error:{type(exc).__name__}', 1)   # 비정상 → producer_replay 가 verified=False 로 처리
+    if p.returncode != 0:
+        # 실패 경로만 stderr 동봉 — argparse usage-error(CLI 계약 비호환) 시그니처가 stderr 로 가므로
+        # producer_replay 의 cli_contract 분류가 볼 수 있어야 한다. 성공 경로는 stdout 순수 유지(metric 파싱).
+        joined = (p.stdout or '') + ('\n' if p.stdout and p.stderr else '') + (p.stderr or '')
+        return (joined, p.returncode)
     return (p.stdout, p.returncode)
 
 

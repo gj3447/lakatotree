@@ -867,7 +867,8 @@ class JudgementService:
         # P0a (ManifestoGap R8): producer replay 상태를 판결에 persist — 채점 스크립트 재실행 검증이
         #   시도됐나/일치했나를 label 로 공시(TOUCH_THE_SKY '영수증은 현실이 끊어 준다'의 관측가능화).
         #   not_attempted = LAKATOS_REPLAY_EXEC off(dead-σ 교정: 검증 불가는 부재지 반증 아님) 또는 미주입;
-        #   verified = 재실행 측정이 제출값과 일치; mismatch = 불일치(승격 floor 가 이걸로 차단).
+        #   verified = 재실행 측정이 제출값과 일치; mismatch = 불일치(승격 floor 가 이걸로 차단);
+        #   not_replayable = 재실행 시도했으나 실행 불가(CLI 계약 비호환 등 — 2026-07-13, mismatch 오분류 교정).
         #   (replay_status·effective_metric·measurement_grade 는 위 값소유 seam 에서 이미 계산됨.)
         prev_rsha = pr.get('prev_receipt_sha')
         target_id = pr.get('closes')   # q_target_identity_scheme: 선언 의미키(pred_closes)
@@ -918,7 +919,7 @@ class JudgementService:
                      nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
                      atier=tier,   # G6 S5: 이 판결이 어느 tier 로 resolve 됐는지 스탬프(fsck tier-resolve 흔적)
                      attested_by_did=attested_by_did,   # G10: author=서명 유도(client 문자열 아님), 무cert=null
-                     replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch)
+                     replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch/not_replayable)
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
                      efresh=efresh,                     # jp4: 판관 자기진단 관측화(unchecked/fresh/stale_code/incapable/indeterminate)

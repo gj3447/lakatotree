@@ -121,7 +121,10 @@ def resolve_measurement(replay, client_metric, *, attested: bool = False, author
 
       replay.verified ∧ regenerated 존재 → server_regenerated(regenerated 를 SSOT 로 *SCOPED 치환*).
       그 외(None / mismatch / regen None) → client 값 유지, grade = attested > authored > client_asserted.
-                                            status = not_attempted(None) | verified | mismatch.
+                                            status = not_attempted(replay None) | verified | mismatch
+                                                   | not_replayable(verdict 있으나 verified None —
+                                                     CLI 계약 비호환 등 재실행 불가; 2026-07-13 신설,
+                                                     dead-σ: 검증 불가를 mismatch(반증)로 오분류 금지).
 
     SCOPED 원칙(확정결정): 값소유는 verified∧regenerated 부분집합에 국한(외부/비재현값 파괴 금지).
     ★dead-σ 안전: attested/authored 는 서명이 실제 붙을 때만 — 무서명은 그대로 client_asserted(무회귀).
@@ -130,6 +133,13 @@ def resolve_measurement(replay, client_metric, *, attested: bool = False, author
     """
     if replay is not None and replay.verified and replay.regenerated is not None:
         return replay.regenerated, 'server_regenerated', 'verified'
-    status = 'not_attempted' if replay is None else ('verified' if replay.verified else 'mismatch')
+    if replay is None:
+        status = 'not_attempted'
+    elif replay.verified is None:
+        # 재실행 *시도했으나 실행 불가*(CLI 계약 비호환 등) — 검증 불가 ≠ 반증(dead-σ).
+        # 종전엔 falsy 로 'mismatch' 에 합쳐져 fsck MEASUREMENT_REFUTED 오발화(E16/E17 사건, 2026-07-13).
+        status = 'not_replayable'
+    else:
+        status = 'verified' if replay.verified else 'mismatch'
     grade = 'attested' if attested else ('authored' if authored else 'client_asserted')
     return client_metric, grade, status
