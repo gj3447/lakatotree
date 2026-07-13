@@ -141,7 +141,14 @@ def producer_replay(*, score_cmd: str | None, recorded_metric: float, run_bash,
 
       verified=True  : 재실행 성공 ∧ |regen−recorded|≤tolerance → 측정 외부검증(외부앵커 자격)
       verified=False : 불일치(위조)·exit≠0(크래시, #24 정합)·metric 부재 → 신뢰 불가(forge 적발)
-      verified=None  : score_cmd 없음 → 재실행 불가(증명 못 함, *차단 안 함* — reproducible=None 동형)
+      verified=None  : score_cmd 없음 *또는 CLI 계약 비호환* → 재실행 불가(증명 못 함, *차단 안 함*
+                       — reproducible=None 동형)
+
+    CLI 계약 비호환(2026-07-13, consumer_b FalseOK E16/E17 실사에서 발견): 서버 재현명령은
+    'python <script> <result_path>'(positional) 형태인데 argparse-only 하네스는 positional 을
+    거부한다 — argparse usage-error(exit 2 + 'unrecognized arguments'/'the following arguments
+    are required')는 *스코어러가 측정을 시작조차 못 한 것*이지 측정의 반증이 아니다(dead-σ:
+    검증 불가 ≠ 반증). 좁은 시그니처만 면제: exit 2 단독·일반 크래시는 여전히 False.
 
     포트 주입이라 순수/hermetic: 실 실행은 호출자(서버 integration tier)가 sandbox 로 공급한다 — 본 함수는
     *판정 로직*만. (live HTTP 서버가 client 스크립트를 직접 실행하는 것은 보안상 별도 gated 통합 — 미연결.)
@@ -151,6 +158,10 @@ def producer_replay(*, score_cmd: str | None, recorded_metric: float, run_bash,
                                      recorded=recorded_metric, reason='no_rerunnable_scorer')
     out, code = run_bash(score_cmd)
     if code != 0:
+        if code == 2 and ('unrecognized arguments' in (out or '')
+                          or 'the following arguments are required' in (out or '')):
+            return ProducerReplayVerdict(verified=None, regenerated=None,
+                                         recorded=recorded_metric, reason='cli_contract_incompatible')
         return ProducerReplayVerdict(verified=False, regenerated=None,
                                      recorded=recorded_metric, reason=f'scorer_nonzero_exit:{code}')
     regen = _parse_metric(out)
