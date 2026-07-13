@@ -138,8 +138,9 @@ class ProgrammeService:
                     canonical_credence=cred, problem_pressure=pressure, learned_reward=reward,
                     on_canonical_frontier=q['name'] in front_qnames,
                     has_novel_target=q['name'] in novel_qnames)
+            # finding D2: None은 비용 미측정 상태로 보존한다. ranker가 가짜 단위비용을 만들지 않는다.
             qmeta.append(dict(name=q['name'], body=(q['body'] or '')[:160],
-                              expected_gain=eg, cost=_num(q, 'cost', 1.0),
+                              expected_gain=eg, cost=q.get('cost'),
                               credence=cred, n_visits=_num(q, 'n_visits', 1),
                               on_canonical_frontier=q['name'] in front_qnames,
                               gain_source='explicit' if q.get('expected_gain') is not None else 'derived'))

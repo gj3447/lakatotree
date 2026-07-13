@@ -197,10 +197,14 @@ def calibration(name: str) -> str:
 
 @mcp.tool()
 def open_question(name: str, qname: str, body: str = '',
-                  expected_gain: float = 0.1, cost: float = 1.0) -> str:
-    """frontier 질문 열기. expected_gain/cost = VoI 입력(directions 우선순위). 안 주면 default."""
-    return json.dumps(_post(f'/api/tree/{name}/question',
-        dict(qname=qname, body=body, expected_gain=expected_gain, cost=cost)), ensure_ascii=False)
+                  expected_gain: float | None = None, cost: float | None = None) -> str:
+    """frontier 질문 열기. gain/cost 생략 시 서버 파생 gain과 미측정 cost를 보존한다."""
+    payload = dict(qname=qname, body=body)
+    if expected_gain is not None:
+        payload['expected_gain'] = expected_gain
+    if cost is not None:
+        payload['cost'] = cost
+    return json.dumps(_post(f'/api/tree/{name}/question', payload), ensure_ascii=False)
 
 
 @mcp.tool()

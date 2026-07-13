@@ -20,6 +20,24 @@ def test_rank_orders_by_priority():
     assert ranked[0]['name'] == 'cheap_high'
     assert 'voi' in ranked[0] and 'ucb' in ranked[0] and 'priority' in ranked[0]
 
+def test_rank_without_measured_cost_does_not_fabricate_voi():
+    ranked = rank_questions([
+        dict(name='unknown-cost', expected_gain=0.3, cost=None, credence=0.6, n_visits=1)
+    ], total_visits=1)
+    q = ranked[0]
+    assert q['cost'] is None and q['cost_source'] == 'unmeasured'
+    assert q['voi'] is None
+    assert q['ranking_basis'] == 'expected_gain_x_ucb'
+    assert q['priority'] == round(q['expected_gain'] * q['ucb'], 4)
+
+def test_rank_with_explicit_cost_uses_howard_voi():
+    q = rank_questions([
+        dict(name='measured-cost', expected_gain=0.3, cost=2.0, credence=0.6, n_visits=1)
+    ], total_visits=1)[0]
+    assert q['cost_source'] == 'explicit'
+    assert q['voi'] == 0.15
+    assert q['ranking_basis'] == 'voi_x_ucb'
+
 def test_crisis_widens_exploration():
     # Kuhn 위기(incumbent 퇴행) = 가설공간 확장 신호 → UCB 탐색항을 넓혀 덜 본 질문 정찰 강화(라이선스 kuhn1962)
     qs = [dict(name='q', expected_gain=0.2, cost=1.0, credence=0.5, n_visits=1)]

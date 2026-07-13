@@ -103,6 +103,13 @@ def test_open_question_tool_passes_voi_meta(monkeypatch):
     assert (body['expected_gain'], body['cost']) == (0.4, 2.0)
 
 
+def test_open_question_tool_omits_unmeasured_voi_meta(monkeypatch):
+    seen = _cap_post(monkeypatch)
+    json.loads(m.open_question('T', 'q1'))
+    _path, body = seen[0]
+    assert 'expected_gain' not in body and 'cost' not in body
+
+
 def test_close_question_tool_routes(monkeypatch):
     seen = _cap_post(monkeypatch)
     json.loads(m.close_question('T', 'q1', closed_by='mid'))

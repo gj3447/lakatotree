@@ -132,6 +132,13 @@ def test_question_cli_passes_voi_meta(monkeypatch, capsys):
     assert (body['expected_gain'], body['cost'], body['qname']) == (0.4, 2.0, 'q1')
 
 
+def test_question_cli_omits_unmeasured_voi_meta(monkeypatch, capsys):
+    calls = _capture_calls(monkeypatch)
+    cli.main(['question', 'T', 'q1'])
+    _method, _path, body = calls[0]
+    assert 'expected_gain' not in body and 'cost' not in body
+
+
 def test_question_close_cli_routes(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['question-close', 'T', 'q1', '--by', 'mid'])

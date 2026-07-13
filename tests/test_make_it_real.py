@@ -69,6 +69,17 @@ def test_open_question_writes_voi_meta(monkeypatch):
     assert (kw['expected_gain'], kw['cost']) == (0.4, 2.0)
 
 
+def test_open_question_defaults_preserve_unmeasured_voi_inputs(monkeypatch):
+    app = load_app()
+    calls = _capture_kg(monkeypatch, app)
+    question = app.QuestionIn(qname='q-unmeasured')
+    assert question.expected_gain is None and question.cost is None
+
+    app.open_question('T', question)
+    _q, kw = calls[0]
+    assert kw['expected_gain'] is None and kw['cost'] is None
+
+
 def test_directions_ranks_by_real_voi_and_survives_none(monkeypatch):
     app = load_app()
     td = dict(name='T', title='T', hard_core=[], frontier_rule='', doc='',
@@ -77,13 +88,20 @@ def test_directions_ranks_by_real_voi_and_survives_none(monkeypatch):
               frontier=[
                   dict(name='q-old', status='OPEN', body='', expected_gain=None, cost=None, n_visits=None),
                   dict(name='q-hi', status='OPEN', body='', expected_gain=0.9, cost=1.0, n_visits=1),
-                  dict(name='q-lo', status='OPEN', body='', expected_gain=0.05, cost=5.0, n_visits=1)])
+                  dict(name='q-lo', status='OPEN', body='', expected_gain=0.05, cost=5.0, n_visits=1),
+                  dict(name='q-zero', status='OPEN', body='', expected_gain=0.0, cost=1.0, n_visits=1)])
     monkeypatch.setattr(app, 'tree_data', lambda n: td)
     monkeypatch.setattr(app, 'compute_metrics', lambda t: {'bayes': {'canonical_credence': 0.5}})
     out = app.directions('T')
     names = [d['name'] for d in out['ranked_directions']]
     assert names[0] == 'q-hi'                     # 실 VoI 반영 → 차등 생김 (전엔 전부 동률)
     assert 'q-old' in names                       # None(옛 질문)이어도 crash 없이 포함
+    old = next(d for d in out['ranked_directions'] if d['name'] == 'q-old')
+    assert old['gain_source'] == 'derived'
+    assert old['cost'] is None and old['cost_source'] == 'unmeasured'
+    assert old['voi'] is None and old['ranking_basis'] == 'expected_gain_x_ucb'
+    zero = next(d for d in out['ranked_directions'] if d['name'] == 'q-zero')
+    assert zero['gain_source'] == 'explicit' and zero['expected_gain'] == 0.0
 
 
 # ── GAP-T2-04: route-contract (CLI/MCP 가 부르는 경로가 전부 실재하는가) ──

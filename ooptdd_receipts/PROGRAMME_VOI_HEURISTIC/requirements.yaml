@@ -1,0 +1,41 @@
+# LakatoTree 판정엔진 감사 finding D — VoI/positive-heuristic 부활 — ooptdd 정식 영수증(R02 trace + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=programme_voi_heuristic_receipt.verify 가
+# 실제 lakatos.programme.explore.voi / heuristic.expected_progress_gain / _question_moves 를 구동.
+# 음성 오라클: cost-정직(D2)·파생차등(D1)·novel-gating(D4) 어느 결함이든 살아있으면 verify assert 가 깨진다.
+name: lakatotree-judge-audit-voi-positive-heuristic
+target:
+  mode: in_process
+  callable: programme_voi_heuristic_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all / run_all 가 절대 root 로 오버라이드
+
+requirements:
+  - id: VOI-D2
+    description: cost 모델 부재(None)면 숫자 VoI를 발행하지 않고 gain×UCB fallback을 공시 — client가 실 cost를 줄 때만 Howard cost-정규화. 전엔 schema default 1.0이 항상 주입돼 VoI≡expected_gain인데 정규화를 주장했다
+    gate:
+      - {event: voi_cost_honest, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRAMME_VOI_HEURISTIC:voi_cost_honest
+      source: programme_voi_heuristic_receipt.py
+      symbol: verify
+      must_emit: voi_cost_honest
+
+  - id: VOI-D1
+    description: expected_progress_gain(positive heuristic 분자)이 정본 전선 momentum 으로 실제 차등한다 — schema default 0.1 이 EVERY question 에 주입돼 파생이 shadow 되던 것을 NULL sentinel 로 부활(전선 질문 > 전선 밖 질문, 하드코딩 0.1 아님)
+    gate:
+      - {event: gain_derived_differentiates, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRAMME_VOI_HEURISTIC:gain_derived_differentiates
+      source: programme_voi_heuristic_receipt.py
+      symbol: verify
+      must_emit: gain_derived_differentiates
+
+  - id: VOI-D4
+    description: PG_NOVEL(0.40, 최대 항)은 등록 novelty 또는 구조적으로 완전한 NovelTarget spec(metric ∧ direction ∧ threshold)에만 부여 — 아무 novel_* 필드 하나의 존재로 move 랭킹 최상위를 사는 Goodhart 구멍 봉합
+    gate:
+      - {event: novel_gating_closes_goodhart, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRAMME_VOI_HEURISTIC:novel_gating_closes_goodhart
+      source: programme_voi_heuristic_receipt.py
+      symbol: verify
+      must_emit: novel_gating_closes_goodhart
