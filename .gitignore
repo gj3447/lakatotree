@@ -21,3 +21,4 @@ longinus_bindings.html
 *.egg-info/
 build/
 dist/
+.venv/
