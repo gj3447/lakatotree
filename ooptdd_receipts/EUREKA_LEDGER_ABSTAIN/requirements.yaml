@@ -1,0 +1,41 @@
+# LakatoTree 판정엔진 감사 finding B — eureka ledger-absent ABSTAIN — ooptdd 정식 영수증(R02 trace + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=eureka_ledger_abstain_receipt.verify 가
+# 실제 lakatos.eureka.classify / eureka_over_tree 를 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: 옛 `balance <= 0` veto 가 살아있으면(장부부재→hallucinated) verify 첫 assert 가 깨진다.
+name: lakatotree-judge-audit-eureka-ledger-absent-abstain
+target:
+  mode: in_process
+  callable: eureka_ledger_abstain_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all / run_all 가 절대 root 로 오버라이드
+
+requirements:
+  - id: EUREKA-B-1
+    description: 확증+substantial-BF 인데 문제장부 부재(0 closed ∧ 0 opened)인 felt 노드는 hallucinated 가 아니라 INCONCLUSIVE 로 abstain (옛 balance<=0 veto 아티팩트 해소 — hallucination_rate 1.0 고정 원인)
+    gate:
+      - {event: ledger_absent_abstained, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EUREKA_LEDGER_ABSTAIN:ledger_absent_abstained
+      source: eureka_ledger_abstain_receipt.py
+      symbol: verify
+      must_emit: ledger_absent_abstained
+
+  - id: EUREKA-B-2
+    description: 장부가 PRESENT 하고 net-negative(closed<opened = 변명이 문제를 낳는 중)면 여전히 veto → hallucinated (과잉완화 회귀가드, 양성 대조)
+    gate:
+      - {event: net_negative_still_vetoed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EUREKA_LEDGER_ABSTAIN:net_negative_still_vetoed
+      source: eureka_ledger_abstain_receipt.py
+      symbol: verify
+      must_emit: net_negative_still_vetoed
+
+  - id: EUREKA-B-3
+    description: eureka_over_tree 의 hallucination_rate 는 assessable(felt−inconclusive) 위에서 계산 — 장부-없는 라이브 트리가 1.0 으로 고정되지 않는다
+    gate:
+      - {event: rate_over_assessable, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EUREKA_LEDGER_ABSTAIN:rate_over_assessable
+      source: eureka_ledger_abstain_receipt.py
+      symbol: verify
+      must_emit: rate_over_assessable

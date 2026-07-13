@@ -6,9 +6,10 @@
           공시 + 영수증 없는 close 알럿 ③장부부재(closed0∧opened0) felt 가 '실패 사유' hallucinated 로
           뭉개지지 않고 problem_ledger_absent 버킷으로 세분(OmdEngine 7/7 완전체 장르).
   guard_mechanism(양성)  : test_facts_split_without_redefining_truth
-        — **true 정의·기존 지표 불변**(사실 세분만 — 지표 마사지 아님): ledger_absent 노드는 여전히
-          true 가 아니고, hallucination_rate 헤드라인은 종전 그대로, 기존 close_ratio 도 그대로.
-          closed_count 는 seam(judgement 1/0) 의미론과 동형인 단일 정본(G5 단일 프로젝터 장르).
+        — ledger_absent 노드는 여전히 **true 아님**(승격 금지 — 지표 마사지 금지), 기존 close_ratio 불변,
+          closed_count 는 seam(judgement 1/0) 동형 단일 정본(G5). **단 audit 2026-07-12 finding B 가
+          R7 의 "hallucination_rate 헤드라인 불변" 결정을 supersede**: 장부부재(0,0) felt 는 hallucinated
+          이 아니라 INCONCLUSIVE(판정 불가) — rate 분모(assessable=felt−inconclusive)서 제외(1.0 아티팩트 해소).
 
 # KG: LakatosTree_GitAbsorption_20260702 / followup-R7-measure
 """
@@ -59,8 +60,10 @@ def test_facts_split_without_redefining_truth():
     no_ledger = _judged('a', closes='', questions=())
     eu = eureka_over_tree([no_ledger])
     assert eu['true'] == 0 and eu['felt'] == 1
-    # 헤드라인 hallucination_rate 는 종전 정의 그대로(felt ∧ ¬true 전부 포함).
-    assert eu['hallucinated'] == 1 and eu['hallucination_rate'] == 1.0
+    # audit 2026-07-12 finding B supersedes R7's "헤드라인 불변": 장부부재(0,0) felt 는 hallucinated
+    # 이 아니라 INCONCLUSIVE(판정할 Laudan 데이터가 없음) — rate 분모(assessable)서 제외. 여전히 true 아님(위).
+    assert eu['hallucinated'] == 0 and eu['inconclusive'] == 1
+    assert eu['assessable'] == 0 and eu['hallucination_rate'] == 0.0
     # (2) 진짜 장부(닫은 질문 1, 연 질문 0)를 가진 확증 노드는 true — closed_count 가 이를 가능케 함.
     with_ledger = _judged('b', closes='q-real', questions=())
     eu2 = eureka_over_tree([with_ledger])

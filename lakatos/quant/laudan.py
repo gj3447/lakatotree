@@ -113,7 +113,8 @@ def _nonnegative_finite(name: str, value: float) -> float:
 
 
 def branch_problem_balance_windowed(chain: list, frontier: list,
-                                    window: int = ABANDON_BUDGET) -> int:
+                                    window: int = ABANDON_BUDGET,
+                                    receipted_tags: set | None = None) -> int:
     """가지 단위 문제수지 (gap4 해소 — 규칙③을 살리는 per-branch 질문귀속).
 
     chain    = leaf→분기점 순 노드 dict 리스트. 노드의 'questions' = 그 노드가 연 질문 이름들
@@ -128,8 +129,15 @@ def branch_problem_balance_windowed(chain: list, frontier: list,
     recent = chain[:max(window, 0)]
     recent_tags = {r.get('tag') for r in recent}
     opened = sum(len(r.get('questions') or []) for r in recent)
-    closed = sum(1 for q in frontier
-                 if recent_tags & set(q.get('closed_by') or []))
+    # audit 2026-07-12 finding A: receipted_tags 를 주면 close 는 *영수증 있는*(verdict_source ∈
+    # FORCEFUL) 닫은 노드가 낸 것만 집계 = 폐기 결정(규칙③)이 무채점 self-report close 를 credit
+    # 하지 않는다. None=옛 동작(노드귀속 close 전부, 비파괴 기본값 — 직접 호출자·테스트 불변).
+    def _credited(q):
+        closers = recent_tags & set(q.get('closed_by') or [])
+        if receipted_tags is not None:
+            closers = closers & receipted_tags
+        return bool(closers)
+    closed = sum(1 for q in frontier if _credited(q))
     return problem_balance(closed, opened)
 
 

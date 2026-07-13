@@ -1,0 +1,32 @@
+# LakatoTree 판정엔진 감사 finding A — Laudan 폐기결정 receipt-gate — ooptdd 정식 영수증(R02 + R10).
+# hermetic: in_process + memory backend. emit-adapter=laudan_receipt_gated_abandon_receipt.verify 가
+# 실제 lakatos.quant.metrics.tree_metrics 를 구동해 폐기(abandon) 결정이 무채점 self-report close 를
+# credit 하지 않음을 증언. 음성 오라클: receipt-gate 가 없으면(옛 동작) draft closer 로도 balance 가
+# 부풀어(-1) 가지가 폐기되지 않아 첫 assert 가 깨진다.
+name: lakatotree-judge-audit-laudan-receipt-gated-abandon
+target:
+  mode: in_process
+  callable: laudan_receipt_gated_abandon_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: LAUDAN-A-1
+    description: 무채점(draft·verdict_source∉FORCEFUL) closer 로 닫은 close 는 폐기 규칙③서 credit 되지 않아, 그 가지가 abandon_candidate 로 잡힌다(문제수지 -3 ≤ −2). = 손입력 close 로 폐기를 면제받던 조용한 false-retain 차단
+    gate:
+      - {event: unreceipted_close_not_credited_abandons, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:LAUDAN_RECEIPT_GATED_ABANDON:unreceipted_close_not_credited_abandons
+      source: laudan_receipt_gated_abandon_receipt.py
+      symbol: verify
+      must_emit: unreceipted_close_not_credited_abandons
+
+  - id: LAUDAN-A-2
+    description: 동일 트리인데 closer 가 scripted(FORCEFUL) 면 close 가 credit 되어 문제수지 -1 → 폐기되지 않는다(양성 대조, 과잉폐기 회귀가드)
+    gate:
+      - {event: receipted_close_credited_retains, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:LAUDAN_RECEIPT_GATED_ABANDON:receipted_close_credited_retains
+      source: laudan_receipt_gated_abandon_receipt.py
+      symbol: verify
+      must_emit: receipted_close_credited_retains
