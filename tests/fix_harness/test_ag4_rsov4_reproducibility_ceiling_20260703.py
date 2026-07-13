@@ -132,7 +132,10 @@ def test_reproducible_none_stays_progressive_no_regression():
     kg = _SubmitKg(tier="anchored")
     _submit(_svc(kg, None))
     _q, params = kg.captured[0][0]
-    assert params["v"] == "progressive", f"None 인데 천장됨(dead-σ 오분류) — verdict={params['v']}"
+    # finding A 2026-07-12: dogfood default (no Lakatos qual) is now 'progressive_unverified'; the no-regression
+    # invariant is UNCHANGED — reproducible=None does NOT ceiling-demote (would be 'partial'), it stays the
+    # un-demoted dogfood verdict (progressive_unverified ≠ partial).
+    assert params["v"] == "progressive_unverified", f"None 인데 천장됨(dead-σ 오분류) — verdict={params['v']}"
 
 
 guard_defect = "test_reproducibility_refuted_caps_at_partial"

@@ -24,8 +24,11 @@ def test_metric_progressive_incomplete_conditional():
     assert r['verdict'] == 'progressive_conditional'
 
 def test_missing_lakatos_evidence_flags_unverified():   # 정직: 질적 미검증
+    # audit 2026-07-12 finding A (CRITICAL): metric progressive + ZERO Lakatos scrutiny now emits a DISTINCT
+    # verdict 'progressive_unverified' (was 'progressive' — the unverified tag was non-load-bearing).
     r = reconcile_verdict('progressive', None)
-    assert r['verdict'] == 'progressive' and r['lakatos'] == 'unverified'
+    assert r['verdict'] == 'progressive_unverified' and r['lakatos'] == 'unverified'
+    assert r['status'] == 'qualitative_unverified'
     assert 'lakatos_evidence_missing' in r['reasons']
 
 def test_metric_not_progressive_governs():   # 메트릭 비진보는 질적 무관하게 그대로

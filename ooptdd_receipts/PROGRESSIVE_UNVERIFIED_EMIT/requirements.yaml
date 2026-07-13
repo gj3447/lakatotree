@@ -1,0 +1,41 @@
+# LakatoTree 판정엔진 감사 finding A(유일 CRITICAL) — progressive_unverified emit — ooptdd 정식 영수증(R02 trace + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=progressive_unverified_emit_receipt.verify 가
+# 실제 lakatos.verdict.spine / quant.bayes / eureka 를 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: emit 결함(reconcile 가 'progressive' 발행) OR E2 매핑 제거 OR PnR-rescue 분기 미갱신이면 verify assert 가 깨진다.
+name: lakatotree-judge-audit-progressive-unverified-emit
+target:
+  mode: in_process
+  callable: progressive_unverified_emit_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all / run_all 가 절대 root 로 오버라이드
+
+requirements:
+  - id: PU-A-1
+    description: metric progressive + Lakatos 정성증거 부재 + PnR 부재(dogfood default)면 spine 이 full 'progressive' 가 아니라 DISTINCT 'progressive_unverified' 를 발행한다 — 미검증을 진보로 취급하던 finding A 버그 봉합(유일 producer=reconcile_verdict)
+    gate:
+      - {event: unverified_emitted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:unverified_emitted
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: unverified_emitted
+
+  - id: PU-A-2
+    description: present PnR appraisal 은 dialectical 정성검증이므로 progressive_unverified 를 승격(rescue) — PnR progressive → full 'progressive', PnR conditional → 'progressive_conditional' (무검증은 오직 PnR·Lakatos 둘 다 부재일 때만)
+    gate:
+      - {event: pnr_rescue_lifts, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:pnr_rescue_lifts
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: pnr_rescue_lifts
+
+  - id: PU-A-3
+    description: FORK3 E2 직교 — 발견 축(eureka_verdict)은 pu 를 'progressive' 로 읽어 BF 6.0(novel⊥belt, 발견은 metric 강도로 평가)인 반면 abandon-stack bayes 는 raw 'progressive_unverified' 로 BF 1.0(미검증은 credence 축적·폐기면책 없음) — 두 축이 같은 verdict 를 다르게 소비
+    gate:
+      - {event: eureka_orthogonal, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:eureka_orthogonal
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: eureka_orthogonal

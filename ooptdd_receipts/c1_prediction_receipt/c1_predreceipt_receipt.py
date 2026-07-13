@@ -146,7 +146,7 @@ def _registered_and_judged():
     pred = next(r for r in kg.receipts if r.get("receipt_kind") == "prediction")
     out = svc.submit_test_result("T", "seam",
                                  Result(metric_value=1.0, script="inline", novel_measured=1.0))
-    assert out["verdict"] == "progressive", out
+    assert out["verdict"] == "progressive_unverified", out   # finding A 2026-07-12: dogfood default (no Lakatos qual)
     verdict = next(r for r in kg.receipts if r.get("verdict_source") == "scripted")
     return kg, pred, verdict
 
@@ -213,7 +213,13 @@ def negative_oracle_load_bearing() -> bool:
     #     the sealed spec: judge-recompute alone cannot tell them apart.
     backfit = {**_shown_spec(pred), "baseline_value": 9.0}   # still improved at measured=1.0
     from c1verify.judge import judge as cj
-    assert cj(backfit, 1.0, _shown_novel(pred), 1.0)["verdict"] == verdict["verdict"], \
+    # finding A 2026-07-12: the sealed verdict is the DIALECTICAL 'progressive_unverified'; c1verify's judge is
+    # METRIC-only. The oracle needs the back-fit to be judge-INDISTINGUISHABLE from the shown spec (same METRIC
+    # verdict) so that verdict-recompute alone cannot catch it — only the sealed-vs-shown SPEC comparison can.
+    # Compare metric-to-metric (both 'progressive'); the pu-shadow allowance now makes the verdict step provably
+    # non-catching, so this oracle proves the spec-seal comparison is the load-bearing check.
+    assert (cj(backfit, 1.0, _shown_novel(pred), 1.0)["verdict"]
+            == cj(_shown_spec(pred), 1.0, _shown_novel(pred), 1.0)["verdict"]), \
         "back-fit spec no longer judge-consistent — negative oracle vacuous"
     d = _gate(chain, head, backfit, _shown_novel(pred))
     assert d["decision"] == c1verify.REJECT and "sealed" in d["reason"], \
@@ -237,7 +243,7 @@ def verify(backend, cid):
     # ② HASH-CAUSAL — verdict receipt seals the prediction sha as prev; chain folds; spec-swap breaks.
     assert verdict["prev_receipt_sha"] == pred["receipt_sha"], "verdict does not commit to the seal"
     fold = fold_receipt_chain(kg.receipts, kg.node["current_receipt_sha"])
-    assert fold["from_receipt"] and fold["verdict"] == "progressive"
+    assert fold["from_receipt"] and fold["verdict"] == "progressive_unverified"   # finding A: sealed receipt carries the emitted verdict
     swapped = dict(pred, baseline_value=-100.0)
     swapped["receipt_sha"] = LV.prediction_content_sha(swapped)   # self-consistent re-mint
     broke = False

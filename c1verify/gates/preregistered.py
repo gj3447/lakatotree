@@ -134,7 +134,16 @@ def verify_preregistered(payload, ctx) -> dict:
                            novel_sha=payload.get("novel_sha", ""))
     except JudgeError as exc:
         return gate_decision(GATE, REJECT, f"spec invalid or judge failed (fail-closed): {exc}")
-    if recomputed["verdict"] != fold["verdict"]:
+    # finding A 2026-07-12: 'progressive_unverified' is the engine's DIALECTICAL shadow of a metric-progressive
+    # verdict when NO Lakatos qualitative evidence was supplied (spine.reconcile_verdict). This gate recomputes
+    # the METRIC verdict only (the bundle carries no lakatos_* fields), so a sealed 'progressive_unverified' over
+    # a metric-progressive spec is a LEGITIMATE engine derivation, NOT hand-typed. The allowance is TIGHT — it
+    # fires ONLY recomputed=='progressive' → sealed=='progressive_unverified' (progressive_unverified provably
+    # arises only from metric_verdict=='progressive'), so a forged pu sealed over a rejected/partial/equivalent
+    # metric still REJECTs (test_verdict_inconsistent_with_spec_rejects stays green).
+    _pu_shadow = (recomputed["verdict"] == "progressive"
+                  and fold["verdict"] == "progressive_unverified")
+    if recomputed["verdict"] != fold["verdict"] and not _pu_shadow:
         return gate_decision(GATE, REJECT,
                              f"sealed verdict {fold['verdict']!r} != judge-recomputed "
                              f"{recomputed['verdict']!r} from the shown spec — hand-typed or forged")

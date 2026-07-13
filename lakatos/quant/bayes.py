@@ -38,7 +38,11 @@ BF_BASE = {'progressive': GROUNDED['bf_progressive']['value'],
            # 다시 섞는 곡해. 1.0 은 'evidence 가 두 프로그램 공통'이라서가 아니라 *모델 범위 밖*이라서다.
            # withdrawn(off-axis 철회)과 동형 그룹. ★범위 면책(line 14-15)을 고치지 않는 한 BF<1 승격 금지.
            'different_programme': GROUNDED['bf_partial_equivalent']['value'],
-           'progressive_conditional': GROUNDED['bf_partial_equivalent']['value']}
+           'progressive_conditional': GROUNDED['bf_partial_equivalent']['value'],
+           # audit 2026-07-12 finding A: progressive_unverified(질적 미검증 진보)=무정보(1.0, 누적금지) —
+           # 미검증 노드는 abandon-stack credence 를 못 쌓는다(폐기 면책 없음). THR-1 교훈대로 *명시* 등록
+           # (.get default 1.0 의존 금지). eureka 는 발견 축(novel⊥belt)이라 별도 매핑(eureka_verdict)으로 BF 복원.
+           'progressive_unverified': GROUNDED['bf_partial_equivalent']['value']}
 DEFAULT_PRIOR = GROUNDED['default_prior']['value']        # 무차별 원리 (Laplace 1814)
 ABANDON_CREDENCE = GROUNDED['abandon_credence']['value']  # odds 1:9 폐기 문턱
 EFF_CAP = GROUNDED['eff_cap']['value']                    # 효과크기 상한 (Cohen d=4=large×5)

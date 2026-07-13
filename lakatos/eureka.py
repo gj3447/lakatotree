@@ -41,6 +41,18 @@ from lakatos.quant.laudan import problem_balance
 BF_SUBSTANTIAL = 3.162
 
 
+def eureka_verdict(verdict: str) -> str:
+    """Verdict as seen by the DISCOVERY axis (audit 2026-07-12 finding A, fork E2). Eureka's own gates
+    (novel_confirmed + substantial BF + net problem-closure) are ORTHOGONAL to Lakatos-belt verification
+    (anomaly/consequence/excess/hardcore). 'progressive_unverified' means the metric improved but the belt
+    was not scrutinised — a DIFFERENT axis. So for BF purposes eureka reads it AS 'progressive' (its metric
+    strength stands, BF base 6.0), while the abandon-stack bayes layer reads the raw 'progressive_unverified'
+    (BF 1.0, no credence). Applied SYMMETRICALLY at the write-call (judgement_service) and _node_to_eureka_input
+    so write-time e.eureka_* and eureka_over_tree recompute never diverge. (Fix B ledger-absent abstain still
+    applies independently: an unverified node with no problem ledger is inconclusive, never branded hallucination.)"""
+    return 'progressive' if verdict == 'progressive_unverified' else verdict
+
+
 @dataclass(frozen=True)
 class EurekaVerdict:
     felt: bool          # 🔵 the flash: a novel prediction was made (aha-prone, unreliable)
@@ -152,7 +164,7 @@ def _node_to_eureka_input(node: dict) -> dict:
     return {
         "novel_registered": node.get("novel_registered"),
         "novel_confirmed": node.get("novel_confirmed"),
-        "verdict": node.get("verdict", ""),
+        "verdict": eureka_verdict(node.get("verdict", "")),   # finding A E2: discovery axis reads pu as progressive
         "delta": delta,
         "noise_band": node.get("pred_noise_band") or 0.0,
         "source_trust": node.get("source_trust", 1.0),

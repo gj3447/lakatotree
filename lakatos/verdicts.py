@@ -44,6 +44,11 @@ KNOWLEDGE_VERDICTS = frozenset({
 ENGINE_VERDICTS = frozenset({
     "progressive",            # judge 와 공유
     "progressive_conditional",
+    "progressive_unverified",  # audit 2026-07-12 finding A (CRITICAL): metric-progressive but ZERO Lakatos
+                              # qualitative scrutiny (dogfood default: no lakatos_* fields, no PnR). spine.
+                              # reconcile_verdict emits it so downstream does NOT treat unscrutinised metric-
+                              # progress as full progressive. OUT of SCRIPTED (no CANONICAL floor)/PROGRESS/
+                              # NONPROGRESSIVE/CONFIRMED_NOVEL_PROGRESS. ENGINE = registration + self-report block.
     "degenerating",
     "withdrawn",              # ENG-CORR-2: pnr surrender → spine.dialectical_verdict 가 emit (등록 누락이었음)
     "different_programme",    # AXIS-CORR (audit qual-fidelity 2026-06-18): hard_core 위반 = 음의 휴리스틱을

@@ -18,7 +18,13 @@ DIAGNOSTIC_ONLY_AUTHORITY = "diagnostic_only"
 PROGRESSIVE_VERDICTS = {"progressive"}
 NONPROGRESSIVE_VERDICTS = {"partial", "equivalent", "rejected", "degenerating"}
 OFF_AXIS_VERDICTS = {"different_programme", "withdrawn"}
-KNOWN_VERDICTS = PROGRESSIVE_VERDICTS | NONPROGRESSIVE_VERDICTS | OFF_AXIS_VERDICTS
+# audit 2026-07-12 finding A: progressive_unverified = metric-progressive but Lakatos-unverified — a NEUTRAL
+# third state. KNOWN (so ProgrammeSeriesRecord does not RAISE and series_from_path does not silently DROP it),
+# in-axis (not off-axis), but excluded from BOTH progressive_count and nonprogressive_count → an unverified
+# node is neither progress nor degeneration pressure (a neutral-only series falls through to trend='mixed').
+# NOT counted as progressive = the fix; NOT counted as degenerating = honest (absence of a receipt ≠ refutation).
+NEUTRAL_VERDICTS = {"progressive_unverified"}
+KNOWN_VERDICTS = PROGRESSIVE_VERDICTS | NONPROGRESSIVE_VERDICTS | OFF_AXIS_VERDICTS | NEUTRAL_VERDICTS
 
 
 @dataclass(frozen=True)

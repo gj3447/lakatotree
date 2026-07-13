@@ -17,7 +17,7 @@ from lakatos import assurance, longinus
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.verdict.argue import assemble_af, grounded_extension
-from lakatos.eureka import classify as eureka_classify
+from lakatos.eureka import classify as eureka_classify, eureka_verdict
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
 from lakatos.ontology import DomainOntology
 from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, judge
@@ -817,7 +817,8 @@ class JudgementService:
         # 동일 원천). internal 노드=1.0. 영속(e.source_trust)도 이 값으로 → tree-level eureka_over_tree 도 정직.
         est = self._eigentrust_source_trust(name, tag)
         eu = eureka_classify({
-            'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent, 'verdict': verdict,
+            'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent,
+            'verdict': eureka_verdict(verdict),   # finding A E2: discovery axis reads pu as progressive (symmetric with _node_to_eureka_input)
             'delta': v.delta, 'noise_band': pr['nb'] or 0.0, 'source_trust': est,
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)

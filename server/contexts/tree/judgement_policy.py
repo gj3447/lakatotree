@@ -13,7 +13,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-_PROGRESSIVE = ('progressive', 'progressive_conditional')
+_PROGRESSIVE = ('progressive', 'progressive_conditional', 'progressive_unverified')  # finding A 2026-07-12:
+#   progressive_unverified 도 구조적 강등(apply_verdict_demotes) 대상 — 특히 rule1(hc_derived False →
+#   different_programme)은 hard_core 위반(touched_assumptions, have_qual 무관)이라 미검증 노드에도 반드시
+#   발화해야 한다. qualitative_flags 는 have_qual=True 를 요구하므로 pu(have_qual=False)엔 무영향.
 
 
 @dataclass(frozen=True)
