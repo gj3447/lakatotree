@@ -170,8 +170,12 @@ def _question_moves(nodes: list, open_qs: list, branch: dict,
         on_front = qn in front_qnames or (
             bool(set(q.get("opened_by") or []) & {n.get("tag") for n in nodes
                  if n.get("verdict") in progressive}))
+        # finding D4 (2026-07-12): PG_NOVEL(0.40, 최대 항)은 *등록된* novelty(novel_qnames) 또는 *구조적으로
+        # 완전한* NovelTarget spec(metric ∧ direction ∧ threshold) 에만 부여 — 아무 novel_* 필드 하나의 존재로
+        # PG_NOVEL 을 사는 Goodhart 구멍 봉합(novel_target='x' 한 줄로 move 랭킹 최상위 조작 방지).
         has_novel = qn in novel_qnames or bool(
-            q.get("novel_metric") or q.get("novel_target") or q.get("novel_threshold"))
+            q.get("novel_metric") and q.get("novel_direction")
+            and q.get("novel_threshold") is not None)
         eg = expected_progress_gain(
             canonical_credence=float(branch.get("canonical_credence", 0.5) or 0.5),
             problem_pressure=pressure, learned_reward=reward,

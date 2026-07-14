@@ -1,0 +1,47 @@
+name: lakatotree-exact-repository-identity
+target:
+  mode: in_process
+  callable: repo_identity_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: RID-A-1
+    description: an exact marker-bearing LakatoTree git root exposes its own short HEAD
+    gate:
+      - {event: exact_identity_accepted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:REPO_IDENTITY_GATE:exact_identity_accepted
+      source: repo_identity_receipt.py
+      symbol: verify
+      must_emit: exact_identity_accepted
+
+  - id: RID-A-2
+    description: a nested snapshot without its own git root cannot inherit the enclosing repository SHA
+    gate:
+      - {event: parent_identity_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:REPO_IDENTITY_GATE:parent_identity_rejected
+      source: repo_identity_receipt.py
+      symbol: verify
+      must_emit: parent_identity_rejected
+
+  - id: RID-A-3
+    description: absent repository identity is indeterminate and never reported as fresh
+    gate:
+      - {event: unknown_identity_abstains, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:REPO_IDENTITY_GATE:unknown_identity_abstains
+      source: repo_identity_receipt.py
+      symbol: verify
+      must_emit: unknown_identity_abstains
+
+  - id: RID-A-4
+    description: negative oracle proves the exact-root guard is load-bearing by ablating it and reproducing parent-SHA theft
+    gate:
+      - {event: identity_guard_ablation_detected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:REPO_IDENTITY_GATE:identity_guard_ablation_detected
+      source: repo_identity_receipt.py
+      symbol: verify
+      must_emit: identity_guard_ablation_detected

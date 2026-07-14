@@ -1,0 +1,41 @@
+# LakatoTree 판정엔진 감사 programme-classify — series sea-of-anomalies — ooptdd 정식 영수증(R02 trace + R10 Longinus).
+# hermetic: in_process + memory backend(zero-infra). emit-adapter=series_sea_of_anomalies_receipt.verify 가
+# 실제 lakatos.programme.series.programme_series_appraisal 을 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: zero-tolerance(이상 1개→강등) 부활이든 과잉완화(이상 무시)든 verify assert 가 깨진다.
+name: lakatotree-judge-audit-series-sea-of-anomalies
+target:
+  mode: in_process
+  callable: series_sea_of_anomalies_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all / run_all 가 절대 root 로 오버라이드
+
+requirements:
+  - id: SERIES-SEA-1
+    description: dominant-progressive 시리즈(clean progressive strict 과반)는 rival anomaly 하나에 강등되지 않고 trend='progressive' 유지 — Lakatos MSRP "이상현상의 바다에서 헤엄치며 전진"(전엔 rival==0 ∧ conceptual==0 zero-tolerance 로 anomaly 1개면 즉시 박탈)
+    gate:
+      - {event: dominant_survives_lone_anomaly, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SERIES_SEA_OF_ANOMALIES:dominant_survives_lone_anomaly
+      source: series_sea_of_anomalies_receipt.py
+      symbol: verify
+      must_emit: dominant_survives_lone_anomaly
+
+  - id: SERIES-SEA-2
+    description: marginal 시리즈(2중 1 오염 = clean 과반 아님)는 'mixed' 유지 — 과잉완화 회귀가드(기존 test_conceptual_pressure_stays_diagnostic_only pin 정합)
+    gate:
+      - {event: marginal_stays_mixed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SERIES_SEA_OF_ANOMALIES:marginal_stays_mixed
+      source: series_sea_of_anomalies_receipt.py
+      symbol: verify
+      must_emit: marginal_stays_mixed
+
+  - id: SERIES-SEA-3
+    description: degenerating 게이트 불변 — nonprogressive 우세 + 이상/문제 압력은 여전히 'degenerating'(이상 누적은 정당한 강등)
+    gate:
+      - {event: degenerating_gate_unchanged, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SERIES_SEA_OF_ANOMALIES:degenerating_gate_unchanged
+      source: series_sea_of_anomalies_receipt.py
+      symbol: verify
+      must_emit: degenerating_gate_unchanged

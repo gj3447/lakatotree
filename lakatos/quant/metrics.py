@@ -65,6 +65,9 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         else:
             break
     recent = chain[:window]
+    # finding A(2026-07-12): 폐기 규칙③ 은 영수증 있는(verdict_source ∈ FORCEFUL) 닫은 노드가 낸
+    # close 만 credit — 무채점 self-report close 가 문제수지를 부풀려 폐기를 면제하는 것을 차단.
+    _rtags = {t for t, r in by.items() if r.get('verdict_source') in FORCEFUL_SOURCES}
     return dict(
         leaf=leaf, window=window, verdicts=seq,
         # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
@@ -74,7 +77,8 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         #     former_canonical 제외) — 넓은 PROGRESS_VERDICTS 로 세면 미확증이 폐기를 면제·reward 오염.
         prediction_hits=sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
-                                                                 window=window),
+                                                                 window=window,
+                                                                 receipted_tags=_rtags),
         novel_registered_recent=sum(1 for r in recent if r.get('novel_registered')),
         # 'partial' 은 NONPROGRESSIVE(정체/퇴행 신호)이므로 '정본 개선' 으로 세면 안 됨 —
         # 그러면 diverging/harvesting 조기경보(lifecycle)를 부당하게 막는다 (나생문 F1).
@@ -214,6 +218,9 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
         tv = _tv(nodes=tv, frontier=frontier, by=by, path=path, leaves=leaves,
                  open_q=open_q, closed_q=closed_q)
     abandon = []
+    # finding A(2026-07-12): 폐기 규칙③ 은 영수증 있는(verdict_source ∈ FORCEFUL) close 만 credit —
+    # 무채점 self-report close 가 문제수지를 부풀려 폐기를 면제(조용한 false-retain)하는 것을 차단.
+    _rtags = {r.get('tag') for r in tv.nodes if r.get('verdict_source') in FORCEFUL_SOURCES}
     for leaf in tv.leaves:
         if leaf in tv.path:
             continue
@@ -228,7 +235,7 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
         #     (예산 소진 ∧ 적중 0)가 면제돼 degenerating 가지가 무기한 산다(폐기 지연).
         hits = sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
         # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
-        pb_windowed = branch_problem_balance_windowed(chain, tv.frontier)
+        pb_windowed = branch_problem_balance_windowed(chain, tv.frontier, receipted_tags=_rtags)
         ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
                                     prediction_hits=hits, problem_balance_windowed=pb_windowed)
         if ok:

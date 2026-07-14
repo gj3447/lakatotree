@@ -96,8 +96,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('certificate'); sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('calibration'); sp.add_argument('name')
     sp = sub.add_parser('question'); sp.add_argument('name'); sp.add_argument('qname')
-    sp.add_argument('--body', default=''); sp.add_argument('--gain', type=float, default=0.1)
-    sp.add_argument('--cost', type=float, default=1.0)
+    sp.add_argument('--body', default=''); sp.add_argument('--gain', type=float)
+    sp.add_argument('--cost', type=float)
     sp = sub.add_parser('question-close'); sp.add_argument('name'); sp.add_argument('qname')
     sp.add_argument('--by', default='', help='닫은 *노드 tag* (라우든 규칙③ per-branch 귀속; '
                                              '비-노드면 문제수지 미집계=metrics.unattributed_closed)')
@@ -316,8 +316,12 @@ def main(argv=None):
     elif a.cmd == 'calibration':
         out = call('GET', f'/api/tree/{a.name}/calibration')
     elif a.cmd == 'question':
-        out = call('POST', f'/api/tree/{a.name}/question',
-                   dict(qname=a.qname, body=a.body, expected_gain=a.gain, cost=a.cost))
+        body = dict(qname=a.qname, body=a.body)
+        if a.gain is not None:
+            body['expected_gain'] = a.gain
+        if a.cost is not None:
+            body['cost'] = a.cost
+        out = call('POST', f'/api/tree/{a.name}/question', body)
     elif a.cmd == 'question-close':
         import urllib.parse as up
         q = ('?' + up.urlencode({'closed_by': a.by})) if a.by else ''
