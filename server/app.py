@@ -75,7 +75,8 @@ from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha   # noqa: F401 — _file_sha re-export(테스트/외부)
-from lakatos.io.replay import producer_replay as _producer_replay   # 나생문 #1 live: 채점 스크립트 재실행 판정
+from lakatos.io.replay import (ReplayExecutionResult as _ReplayExecutionResult,
+                               producer_replay as _producer_replay)   # 나생문 #1 live: 채점 스크립트 재실행 판정
 from lakatos.io.prov import replay_command as _replay_command       # judge_script(경로)+result_path → 재현명령
 from server.container import AppContainer
 from server.settings import ServerSettings
@@ -528,26 +529,38 @@ def _replay_exec_enabled() -> bool:
 
 # AG2/R-SOV-1 (측정주권 2026-07-03): replay exec 경로의 RCE 봉합용 자원 상한. 값은 env 로 조정 가능하되
 #   기본이 *유한*(RLIM_INFINITY 금지)이어야 fork/mem/disk-DoS 가 timeout 만으로 새지 않는다.
+#   Darwin arm64는 공유 캐시 때문에 프로세스가 이미 수백 GiB의 가상 주소공간을 매핑한다. 그래서 설정값을
+#   총량으로 쓰면 setrlimit가 EINVAL을 내며 무음 skip됐다. Darwin에서는 현재 VSZ를 부모에서 실측해 설정값을
+#   *추가 성장 허용량*으로 더한다. 실측 실패는 RuntimeError → replay 자체가 fail-closed한다.
 def _replay_rlimits() -> list[tuple[int, int]]:
     import resource
+    import sys
     as_mb = int(os.environ.get('LAKATOS_REPLAY_AS_MB', '2048') or '2048')       # 가상메모리 상한
     fsize_mb = int(os.environ.get('LAKATOS_REPLAY_FSIZE_MB', '512') or '512')   # 출력파일 크기 상한
     cpu_s = int(os.environ.get('LAKATOS_REPLAY_CPU_S', '300') or '300')         # CPU 초(wall timeout 600 하위)
+    as_cap = as_mb * 1024 * 1024
+    if sys.platform == 'darwin':
+        import subprocess
+        raw = subprocess.check_output(
+            ['/bin/ps', '-o', 'vsz=', '-p', str(os.getpid())], text=True,
+        ).strip()
+        try:
+            as_cap += int(raw) * 1024   # Darwin ps VSZ 단위 = KiB
+        except ValueError as exc:
+            raise RuntimeError(f'Darwin VSZ 실측 실패: {raw!r}') from exc
     return [
         (resource.RLIMIT_CPU, cpu_s),
-        (resource.RLIMIT_AS, as_mb * 1024 * 1024),
+        (resource.RLIMIT_AS, as_cap),
         (resource.RLIMIT_FSIZE, fsize_mb * 1024 * 1024),
         (resource.RLIMIT_CORE, 0),   # 코어덤프 금지
     ]
 
 
-def _apply_replay_rlimits() -> None:   # preexec_fn — fork 직후·exec 직전 자식에서 실행
+def _apply_replay_rlimits(limits: list[tuple[int, int]] | None = None) -> None:
+    """fork 직후·exec 직전 자식에서 상한 적용. 하나라도 실패하면 replay를 열지 않는다."""
     import resource
-    for res, cap in _replay_rlimits():
-        try:
-            resource.setrlimit(res, (cap, cap))
-        except (ValueError, OSError):
-            pass   # 일부 플랫폼 미지원 리소스는 skip(다른 상한은 계속 적용)
+    for res, cap in (_replay_rlimits() if limits is None else limits):
+        resource.setrlimit(res, (cap, cap))
 
 
 def _safe_replay_argv(score_cmd: str) -> list[str] | None:
@@ -577,11 +590,11 @@ def _safe_replay_argv(score_cmd: str) -> list[str] | None:
     return [_sys.executable, str(resolved), *rest]
 
 
-def _replay_run(score_cmd: str) -> tuple[str, int]:
+def _replay_run(score_cmd: str) -> tuple[str, int] | _ReplayExecutionResult:
     """채점 *재현명령*('python <script> <result_path>') sandbox 재실행 — 게이트 하에서만 호출됨(가드).
 
     AG2/R-SOV-1 보안: shell=False + FF4 격리(_safe_replay_argv: python 계열만·스크립트=허용루트 실존파일·
-    result_path flag 거부 → argv/traversal 인젝션 봉쇄) + setrlimit(CPU/AS/FSIZE/CORE 유한 상한, fork/mem/disk
+    result_path flag 거부 → argv/traversal 인젝션 봉쇄) + setrlimit(CPU/memory/FSIZE/CORE 유한 상한, fork/mem/disk
     -DoS 차단) + timeout(wall 행 차단). fork-bomb 완전차단(NPROC)·seccomp 는 컨테이너/cgroup=운영자 책임.
     hermetic 테스트선 monkeypatch 됨.
     """
@@ -590,10 +603,30 @@ def _replay_run(score_cmd: str) -> tuple[str, int]:
     if argv is None:
         return ('replay_error:unsafe_command', 1)   # RCE 벡터 → 실행 안 함, producer_replay 가 verified=False
     try:
+        limits = _replay_rlimits()   # Darwin VSZ 실측은 fork 전 부모에서만(안전·결정적)
+    except (subprocess.SubprocessError, OSError, ValueError, RuntimeError) as exc:
+        # scorer 가 측정에 실패한 것이 아니라 replay 기반시설/설정이 열리지 않은 것. 후단이
+        # 과학적 mismatch 로 오인하지 않도록 wire 진단을 명시적으로 분리한다.
+        detail = type(exc).__name__
+        return _ReplayExecutionResult(
+            f'replay_error:infrastructure:{detail}', 1, infrastructure_error=detail)
+    try:
         p = subprocess.run(argv, capture_output=True, text=True, timeout=600,
-                           preexec_fn=_apply_replay_rlimits)
-    except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
-        return (f'replay_error:{type(exc).__name__}', 1)   # 비정상 → producer_replay 가 verified=False 로 처리
+                           preexec_fn=lambda: _apply_replay_rlimits(limits))
+    except subprocess.TimeoutExpired as exc:
+        # scorer 가 wall-time 계약을 어긴 것은 실행 기반시설 부재가 아니라 실행 실패다.
+        return (f'replay_error:{type(exc).__name__}', 1)
+    except UnicodeDecodeError:
+        # child 는 이미 실행됐다. target-controlled malformed bytes 를 infra 면제로 올리면 안 된다.
+        return ('replay_error:invalid_output_encoding', 1)
+    except subprocess.SubprocessError as exc:
+        # check=False 이므로 Timeout 외 SubprocessError 는 우리 preexec_fn(setrlimit) 실패다.
+        detail = type(exc).__name__
+        return _ReplayExecutionResult(
+            f'replay_error:infrastructure:{detail}', 1, infrastructure_error=detail)
+    except (OSError, ValueError, RuntimeError) as exc:
+        # user argv(E2BIG/NUL 등)도 만들 수 있는 오류 — 출처가 모호하므로 fail-closed target 실패.
+        return (f'replay_error:{type(exc).__name__}', 1)
     if p.returncode != 0:
         # 실패 경로만 stderr 동봉 — argparse usage-error(CLI 계약 비호환) 시그니처가 stderr 로 가므로
         # producer_replay 의 cli_contract 분류가 볼 수 있어야 한다. 성공 경로는 stdout 순수 유지(metric 파싱).

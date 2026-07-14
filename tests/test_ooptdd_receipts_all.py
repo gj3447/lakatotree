@@ -5,7 +5,7 @@
 emit-adapter 만 두면 등록 없이 CI 상주(추가만 하면 이빨). 엔진 코드가 영수증 계약을 깨면 스위트 RED.
 
 러너는 self-contained: _vendor/ooptdd_loop + repo .venv(fastapi 有), 네트워크/시크릿 0 (memory backend).
-비용 실측: 13 영수증 전수 ~0.7s (in_process).
+코퍼스는 자동발견하므로 수동 개수표와 무관하게 모든 영수증을 실행한다.
 
 규율 리마인드(각 영수증): emit-adapter 는 실코드 구동(재구현 금지) + 음성 오라클(vacuous green 차단) 필수.
 """
@@ -26,8 +26,18 @@ _SPECS = sorted(glob.glob(str(_REPO / "ooptdd_receipts" / "*" / "requirements.ya
 
 
 def test_receipt_corpus_is_nonempty_and_growing():
-    """자동발견이 진공이 아님 — 설계감사 13 + git-흡수 G3 이상(영수증을 지우면 여기서 먼저 RED)."""
-    assert len(_SPECS) >= 14, f"영수증 코퍼스 축소: {len(_SPECS)}개 — 삭제는 명시 결정이어야 한다"
+    """자동발견이 진공이 아님 — 현재 정본 28개 이상(삭제는 명시 결정이어야 한다)."""
+    assert len(_SPECS) >= 28, f"영수증 코퍼스 축소: {len(_SPECS)}개 — 삭제는 명시 결정이어야 한다"
+
+
+def test_dedicated_runner_discovers_exact_same_corpus():
+    """전용 CI runner와 pytest가 같은 spec 집합을 실행한다 — 수동 allowlist drift 차단."""
+    from ooptdd_receipts.run_all import discover_specs
+
+    dedicated = {str(p) for p in discover_specs()}
+    assert dedicated == set(_SPECS), (
+        f"전용 runner와 pytest corpus 불일치: dedicated_only={sorted(dedicated - set(_SPECS))}, "
+        f"pytest_only={sorted(set(_SPECS) - dedicated)}")
 
 
 @pytest.mark.parametrize("spec_path", _SPECS, ids=lambda p: Path(p).parent.name)

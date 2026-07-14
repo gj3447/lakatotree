@@ -1,33 +1,27 @@
-"""FIX-HARNESS #3 (P2 correctness): 누락/0 noise_band 가 Bayes 효과크기 가중을 조용히 최대화 — '마진 < 대폭' 무력화.
+"""FIX-HARNESS #3: *부재* noise_band 가 Bayes 효과크기 가중을 최대화하는 fail-open 회귀 가드.
 
 - finding id: #3 (P2 correctness)
 - locations:
     lakatos/quant/bayes.py:57-60  effect_size = abs(delta) / max(noise_band, GROUNDED['effect_size_floor'](=1e-6))
     lakatos/quant/bayes.py:70-72  bayes_factor: es = min(effect_size, EFF_CAP)/EFF_CAP; w = max(es, WEIGHT_FLOOR)*evidence_weight; exp(log(base)*w)
-    lakatos/quant/metrics.py:58,141  feeder 가 `r.get('pred_noise_band') or 0.0` 로 누락/None 을 0.0 으로 강등
+    lakatos/quant/metrics.py feeder 가 `r.get('pred_noise_band') or 0.0` 로 누락/None 을 0.0 으로 강등
     lakatos/multiplicity.py:37  noise_band<=0 을 untestable(None) 로 *올바르게* 처리 — bayes 와 비일관
 - the bug:
-    noise_band 가 0/누락이면 분모가 floor(1e-6) 로 붕괴 → 임의의 delta 가 effect_size 를 EFF_CAP(4.0) 까지
-    포화 → es=1.0 → full base BF(progressive=6.0) 을 받는다. 즉 '불확실성 미선언'이 *최대 증거력*을 공짜로 얻는다.
-    VERIFIED: bayes_factor('progressive',0.001,0.0)==6.0 이고 ==bayes_factor('progressive',999,0.0)==6.0
-             bayes_factor('progressive',0.001,1.0)==1.71 (정직하게 선언하면 약한 증거).
-    그리고 branch_credence([{progressive,delta=2,noise_band=5,target=A}])=0.631 인데
-          noise_band=0 으로 바꾸면 0.857 (≡ noise band 생략 = STRICTLY HIGHER credence = fail-toward-strong).
+    noise_band 키가 부재한 노드를 feeder 가 0.0 으로 강등하면 임의의 delta 가 full base BF를 받는다.
+    즉 '불확실성 미선언'이 *최대 증거력*을 공짜로 얻는다.
+    수정 전에는 feeder가 부재를 0으로 눌러 declared-zero의 최대 BF를 공짜로 부여했다.
+    branch_credence에서도 noise_band 키 생략이 정직한 양수 선언보다 높은 credence를 만들었다.
     multiplicity.py:37 은 noise_band<=0 을 untestable(None) 로 보는데 bayes 만 fail-open.
-- the exact fix (lakatos/quant/bayes.py:57-72):
-    noise_band<=0 일 때 es 를 최대(1.0)로 포화시키지 말고 약증거(weak evidence)로 떨어뜨린다 —
-    예: noise_band<=0 이면 effect_size 를 0(→ es=0 → w=WEIGHT_FLOOR, 마진 최소 증거력)으로 처리하거나,
-    선언-0 과 부재를 구분하고 부재는 weak/untestable 로. feeder 의 `or 0.0` 강등(metrics.py:58,141) 제거.
-    핵심 계약: noise_band 미선언/0 의 *trivial* delta 가 *huge* delta 와 동일한(최대) bayes_factor 를
-    받아선 안 된다. noise band 생략이 정직 선언보다 strictly higher credence 를 만들어선 안 된다.
+- the fix: 부재(None)는 WEIGHT_FLOOR 약증거로, 명시적 0은 결정론적 측정으로 보존한다.
+  feeder는 키 부재를 None으로 운반하며 `or 0.0`으로 의미를 지우지 않는다.
 
-xfail(strict) until fixed — 아래 단언은 *수정 후* 올바른 동작을 인코딩한다(오늘 = 버그라 FAIL).
+아래 이중가드는 부재 fail-safe와 선언된 척도 메커니즘을 각각 고정한다.
 """
 from __future__ import annotations
 
 import pytest
 
-from lakatos.quant.bayes import bayes_factor, branch_credence
+from lakatos.quant.bayes import BF_BASE, bayes_factor, branch_credence
 
 
 # 정책 게이트 메커니즘이 존재함을 고정하는 양성 오라클(positive oracle):
@@ -41,32 +35,44 @@ def test_declared_noise_band_separates_marginal_from_big():
     assert marginal < 6.0   # 마진은 base(6.0) 에 못 미친다
 
 
-# 결함축 음성 오라클(negative oracle, bug-dead): noise_band=0 인 trivial delta 가
-# huge delta 와 *같은* (최대) bayes_factor 를 받아선 안 된다.
-@pytest.mark.xfail(reason="FIX-HARNESS #3: noise_band=0/누락이 effect-size 가중을 최대화해 trivial delta 가 full base BF 를 받음 — RED until lakatos/quant/bayes.py:57-72 (noise_band<=0 → weak, not es=1.0); strict trips when fixed",
-                   strict=True)
-def test_zero_noise_band_trivial_delta_must_not_mint_max_bayes_factor():
-    trivial = bayes_factor('progressive', 0.001, noise_band=0.0)
-    huge = bayes_factor('progressive', 999.0, noise_band=0.0)
-    base = bayes_factor('progressive', 999.0, noise_band=1e-9)  # 사실상 최대(base=6.0)
-    # 수정 후 계약: 불확실성 미선언(noise_band=0) 의 trivial 개선은 huge 개선과 같은 최대 증거력을
-    # 받아선 안 된다. 오늘은 둘 다 6.0 (== base) 으로 동일 = 버그.
-    assert trivial < huge, f"trivial({trivial}) == huge({huge}): noise_band=0 가 effect-size 를 포화시킴"
-    assert trivial < base, f"trivial({trivial}) 가 full base BF({base}) 를 공짜로 받음(fail-open)"
+def test_declared_zero_is_deterministic_and_keeps_sensitivity():
+    """양성 오라클: 명시된 0은 부재가 아니라 결정론적 측정이다."""
+    assert bayes_factor('progressive', 0.5, noise_band=0.0) > 3.0
 
 
-# 결함축 음성 오라클 #2 (branch_credence 경로, 실 정본경로): noise band 를 생략(0)하는 것이
+def test_absent_noise_band_must_not_mint_max_bayes_factor():
+    """결함축: 척도 부재는 delta 크기와 무관한 약증거이며 선언-0보다 약해야 한다."""
+    absent_trivial = bayes_factor('progressive', 0.001, noise_band=None)
+    absent_huge = bayes_factor('progressive', 999.0, noise_band=None)
+    deterministic = bayes_factor('progressive', 999.0, noise_band=0.0)
+    assert absent_trivial < deterministic
+    assert absent_huge < deterministic
+    assert absent_trivial == pytest.approx(absent_huge)
+
+
+def test_absent_noise_band_weakens_negative_evidence_symmetrically():
+    absent_small = bayes_factor('rejected', 0.001, noise_band=None)
+    absent_huge = bayes_factor('rejected', 999.0, noise_band=None)
+    declared_zero = bayes_factor('rejected', 999.0, noise_band=0.0)
+    assert absent_small == pytest.approx(absent_huge)
+    assert declared_zero == pytest.approx(BF_BASE['rejected'])
+    assert declared_zero < absent_small < 1.0
+
+
+def test_python_default_keeps_legacy_declared_zero_contract():
+    assert bayes_factor('progressive', 0.5) == \
+        bayes_factor('progressive', 0.5, noise_band=0.0) == BF_BASE['progressive']
+
+
+# 결함축 음성 오라클 #2 (branch_credence 경로): noise_band 키를 생략하는 것이
 # 정직하게 선언하는 것보다 STRICTLY HIGHER credence 를 만들어선 안 된다(fail-toward-strong 금지).
-@pytest.mark.xfail(reason="FIX-HARNESS #3: branch_credence 에서 noise_band 생략(0)이 정직 선언보다 높은 신뢰도를 만듦 — RED until lakatos/quant/bayes.py:57-72; strict trips when fixed",
-                   strict=True)
 def test_omitting_noise_band_must_not_beat_declaring_it():
     declared = branch_credence([{'verdict': 'progressive', 'delta': 2.0, 'noise_band': 5.0, 'target': 'A'}])
-    omitted = branch_credence([{'verdict': 'progressive', 'delta': 2.0, 'noise_band': 0.0, 'target': 'A'}])
+    omitted = branch_credence([{'verdict': 'progressive', 'delta': 2.0, 'target': 'A'}])
     # 수정 후 계약: 불확실성 미선언이 정직 선언보다 더 강한 신뢰도를 minting 해선 안 된다.
-    # 오늘은 omitted(0.857) > declared(0.631) = 버그(fail-toward-strong).
     assert omitted <= declared, f"omitting noise band({omitted}) > declaring it({declared}): fail-toward-strong"
 
 
 # 이중 가드 export (defect-axis negative oracle / mechanism positive oracle).
-GUARD_DEFECT = test_zero_noise_band_trivial_delta_must_not_mint_max_bayes_factor.__name__
+GUARD_DEFECT = test_absent_noise_band_must_not_mint_max_bayes_factor.__name__
 GUARD_MECHANISM = test_declared_noise_band_separates_marginal_from_big.__name__

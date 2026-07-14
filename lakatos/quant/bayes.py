@@ -38,7 +38,9 @@ BF_BASE = {'progressive': GROUNDED['bf_progressive']['value'],
            # 다시 섞는 곡해. 1.0 은 'evidence 가 두 프로그램 공통'이라서가 아니라 *모델 범위 밖*이라서다.
            # withdrawn(off-axis 철회)과 동형 그룹. ★범위 면책(line 14-15)을 고치지 않는 한 BF<1 승격 금지.
            'different_programme': GROUNDED['bf_partial_equivalent']['value'],
-           'progressive_conditional': GROUNDED['bf_partial_equivalent']['value']}
+           'progressive_conditional': GROUNDED['bf_partial_equivalent']['value'],
+           # 질적 영수증 부재는 확증도 반증도 아니다. 명시적 중립으로 누적을 막는다.
+           'progressive_unverified': GROUNDED['bf_partial_equivalent']['value']}
 DEFAULT_PRIOR = GROUNDED['default_prior']['value']        # 무차별 원리 (Laplace 1814)
 ABANDON_CREDENCE = GROUNDED['abandon_credence']['value']  # odds 1:9 폐기 문턱
 EFF_CAP = GROUNDED['eff_cap']['value']                    # 효과크기 상한 (Cohen d=4=large×5)
@@ -60,14 +62,19 @@ def effect_size(delta: float, noise_band: float,
     return abs(delta) / max(noise_band, floor)
 
 
-def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float = 0.0,
+def bayes_factor(verdict: str, delta: float = 0.0, noise_band: float | None = 0.0,
                  source_trust: float | None = 1.0) -> float:
     """판결 + 효과크기 + 인터넷 출처신뢰 → Bayes factor. 권위 출처 = 강한 증거(P1).
-    equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게."""
+    equivalent=1(무정보). source_trust 가 log(BF) 를 evidence_weight 로 감쇠 — 저신뢰도 증거는 약하게.
+
+    noise_band 가 *부재*(None)면 측정 척도 미상 → 약증거(WEIGHT_FLOOR)로 fail-safe 한다.
+    *선언된* noise_band(0 포함)는 결정론적 측정으로 보아 기존 효과크기 동작을 보존한다.
+    즉 부재와 선언-0은 다르며, feeder는 누락을 0으로 강등하지 않아야 한다.
+    """
     base = BF_BASE.get(verdict, 1.0)
     if base == 1.0:
         return 1.0
-    es = min(effect_size(delta, noise_band), EFF_CAP) / EFF_CAP   # 0..1
+    es = 0.0 if noise_band is None else min(effect_size(delta, noise_band), EFF_CAP) / EFF_CAP
     w = max(es, WEIGHT_FLOOR) * evidence_weight(source_trust)   # ★출처신뢰 결합
     return math.exp(math.log(base) * w)   # base>1 → BF>1, base<1 → BF<1
 
@@ -105,7 +112,7 @@ def branch_credence(verdicts: list, prior: float = DEFAULT_PRIOR,
             st = SOURCE_TRUST_FAILSAFE if v.get('source') is not None else 1.0
         if source_trust_map and v.get('source') in source_trust_map:
             st = source_trust_map[v['source']]   # ★고유벡터 글로벌 신뢰로 대체
-        bf = bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band', 0.0), st)
+        bf = bayes_factor(v['verdict'], v.get('delta', 0.0), v.get('noise_band'), st)
         tgt = v.get('target')
         if bf > 1.0 and tgt is not None:
             lb = math.log(bf)

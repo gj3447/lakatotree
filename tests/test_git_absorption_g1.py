@@ -120,21 +120,21 @@ def test_current_verdict_is_fold_over_receipt_chain():
     확인 + verify_verdict_chain 이 체인 fold(재유도)==캐시임을 단언. 캐시 손상 시 재유도가 검출(rebuild_verify 판)."""
     svc, kg = _receipt_svc()
     out = svc.submit_test_result('T', 'seam', Result(metric_value=1.0, script='inline', novel_measured=1.0))
-    assert out['verdict'] == 'progressive', out
+    assert out['verdict'] == 'progressive_unverified', out
 
     # (1) receipt 발행 + 포인터 전진(git first-write-wins): 체인에 receipt 1개, 노드 포인터=그 sha.
     assert len(kg.receipts) == 1, kg.receipts
     assert kg.node['current_receipt_sha'] == kg.receipts[0]['receipt_sha']
-    assert kg.receipts[0]['verdict'] == 'progressive'
+    assert kg.receipts[0]['verdict'] == 'progressive_unverified'
 
     # (2) rebuild_verify: 체인 fold 재유도 == e.verdict 캐시(재유도가 판관, 캐시 신뢰 아님).
     v = svc.verify_verdict_chain('T', 'seam')
-    assert v['ok'] and v['from_receipt'] and v['rederived'] == 'progressive', v
+    assert v['ok'] and v['from_receipt'] and v['rederived'] == 'progressive_unverified', v
 
     # (3) 캐시 변조 검출: e.verdict 캐시를 손상시키면 재유도(체인 head)와 불일치 → ok=False.
     kg.node['verdict'] = 'rejected'   # 누군가 캐시만 덮음(체인은 불변)
     v2 = svc.verify_verdict_chain('T', 'seam')
-    assert v2['ok'] is False and v2['rederived'] == 'progressive', v2   # 체인이 진실을 보존, 변조 검출
+    assert v2['ok'] is False and v2['rederived'] == 'progressive_unverified', v2   # 체인이 진실을 보존, 변조 검출
 
 
 def test_receipt_sha_is_content_addressed_and_deterministic():

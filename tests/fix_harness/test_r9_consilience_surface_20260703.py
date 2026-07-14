@@ -71,6 +71,20 @@ def _client(nodes: list[dict]) -> TestClient:
     return TestClient(app)
 
 
+def test_consilience_projector_preserves_absent_vs_declared_zero_noise():
+    """NB1: consilience credence feeder도 None을 0으로 강등하지 않는다."""
+    from lakatos.programme.consilience import project_tree_rows
+
+    rows = [_row('absent', verdict='progressive', pred_closes='q1',
+                 metric_value=1.0, pred_baseline=2.0, pred_noise_band=None),
+            _row('zero', verdict='progressive', pred_closes='q2',
+                 metric_value=1.0, pred_baseline=2.0, pred_noise_band=0.0)]
+    verdicts = project_tree_rows(rows)[2]
+    by = {v['tag']: v for v in verdicts}
+    assert by['absent']['noise_band'] is None
+    assert by['zero']['noise_band'] == 0.0
+
+
 # ── guard_defect (음성): 무타깃 확증의 credence 는 무음 병합이 아니라 422 ────────────────────
 def test_credence_fail_closed_translates_to_422_not_silent_merge():
     c = _client(_crisscross_rows())

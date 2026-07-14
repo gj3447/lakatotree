@@ -56,7 +56,7 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         d = {'verdict': r['verdict']}
         if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
             d['delta'] = r['metric_value'] - r['pred_baseline']
-            d['noise_band'] = r.get('pred_noise_band') or 0.0
+            d['noise_band'] = r.get('pred_noise_band')   # 부재(None)와 선언-0을 보존
         seq.append(d)
     consec = 0
     for r in chain:                                # leaf 쪽부터 연속 비진보
@@ -139,7 +139,7 @@ def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
         d = {'verdict': r['verdict']}
         if r.get('metric_value') is not None and r.get('pred_baseline') is not None:
             d['delta'] = r['metric_value'] - r['pred_baseline']   # 효과크기 → BF 가중
-            d['noise_band'] = r.get('pred_noise_band') or 0.0
+            d['noise_band'] = r.get('pred_noise_band')   # 부재(None)와 선언-0을 보존
         if r.get('pred_closes'):
             d['target'] = r['pred_closes']
         # A2: 출처신뢰를 credence 로 전달 — 전엔 떨궈서 branch_credence 가 항상 1.0(죽은 경로).
@@ -307,15 +307,18 @@ def _anchored_ratio(nodes: list) -> dict:
 
 
 def _multiplicity_screen(nodes: list) -> dict:
-    """gap8 다중비교 — improved 판결을 (metric_name, scope) family 별 BH/Bonferroni 스크린.
-    판결은 불변(judge 권위) — family 수준 false-progressive 경보만."""
+    """gap8 다중비교 — metric-improved 판결을 family 별 BH/Bonferroni 스크린.
+
+    ``progressive_unverified``는 프로그램 진전축에서는 중립이지만 metric-progress 자체는
+    실재하므로 다중비교 후보에서 빼지 않는다. 판결은 불변이고 family 경보만 산출한다.
+    """
     fam = defaultdict(list)
     for r in nodes:
-        if (r['verdict'] in ('progressive', 'partial')
+        if (r['verdict'] in ('progressive', 'progressive_unverified', 'partial')
                 and r.get('metric_value') is not None and r.get('pred_baseline') is not None):
             fam[(r.get('metric_name'), r.get('metric_scope'))].append(dict(
                 tag=r['tag'], delta=r['metric_value'] - r['pred_baseline'],
-                noise_band=r.get('pred_noise_band') or 0.0,
+                noise_band=r.get('pred_noise_band'),   # 부재(None)와 선언-0을 보존
                 direction=r.get('pred_direction') or 'lower'))
     out = {}
     for key, cands in fam.items():
@@ -330,21 +333,31 @@ def _multiplicity_screen(nodes: list) -> dict:
 
 
 def _coverage(cfg: dict) -> dict:
-    """커버리지 — 전수성 backlog 강제 노출(과장 방지)."""
+    """커버리지 — 명시 scope 없이 전수성을 만들지 않는 fail-closed projection."""
+    from lakatos.coverage import resolve_coverage_status
+
     backlog = list(cfg.get('coverage_backlog') or [])
-    return dict(statement=cfg.get('coverage_statement') or '', backlog=backlog,
-                backlog_count=len(backlog), exhaustive=(len(backlog) == 0))
+    statement = cfg.get('coverage_statement') or ''
+    status = resolve_coverage_status(
+        cfg.get('coverage_status'), statement=statement, backlog=backlog)
+    return dict(status=status, statement=statement, backlog=backlog,
+                backlog_count=len(backlog), exhaustive=(status == 'exhaustive'))
 
 
 def _assemble_alerts(*, stalled: int, prog: dict | None, annotated: int, n: int,
-                     coverage_backlog: list, abandon: list, multiplicity: dict) -> list:
+                     coverage: dict, abandon: list, multiplicity: dict) -> list:
     """경보 조립 — 퇴행/정체/주석미완/커버리지/폐기후보/다중비교를 사람 읽는 문자열로."""
     base = [
         f'퇴행 경보: 연속 비진보 깊이 {stalled} ≥3 — 가지 전환 검토' if stalled >= 3 else None,
         '정체 경보: 진보율 ≤0' if prog and prog.get('improvement_pct') is not None
         and prog['improvement_pct'] <= 0 else None,
         '주석 미완 노드 존재' if annotated < n else None,
-        f'커버리지 backlog {len(coverage_backlog)}건 — 전수성 주장 금지' if coverage_backlog else None,
+        f"커버리지 backlog {len(coverage['backlog'])}건 — 전수성 주장 금지"
+        if coverage['backlog'] else None,
+        '커버리지 범위 미검증 — 전수성 주장 금지'
+        if not coverage['backlog'] and coverage['status'] == 'unknown' else None,
+        '커버리지 partial 선언 — 전수성 주장 금지'
+        if not coverage['backlog'] and coverage['status'] == 'partial' else None,
     ]
     base += [f"폐기 후보: {c['leaf']} ({c['reason']})" for c in abandon]
     base += [f"다중비교 경보({k}): improved {m['family_size']}건 중 BH 생존 {len(m['survivors_bh'])}건"
@@ -403,7 +416,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     multiplicity = _multiplicity_screen(nodes)
     coverage = _coverage(cfg)
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
-                              coverage_backlog=coverage['backlog'],
+                              coverage=coverage,
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
     if inconclusive:
         alerts = [*alerts, (

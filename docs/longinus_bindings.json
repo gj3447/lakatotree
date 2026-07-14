@@ -1158,7 +1158,7 @@
       "symbol": "bayes_factor",
       "kind": "def",
       "line_hint": 63,
-      "sha256": "b4b1bffb11ccc10a",
+      "sha256": "b3dd304dcc38baf6",
       "layer": "bayes",
       "serving": "diagnostic",
       "frege_sinn": "판결+효과크기+출처신뢰→BF"
@@ -2360,10 +2360,10 @@
       "file": "server/app.py",
       "symbol": "_apply_replay_rlimits",
       "kind": "def",
-      "line_hint": 544,
-      "sha256": "bceaef26c352b2fd",
+      "line_hint": 558,
+      "sha256": "a2f6f661269e6177",
       "layer": "infrastructure",
-      "frege_sinn": "AG2 preexec_fn — fork 직후·exec 직전 자식에 CPU/AS/FSIZE/CORE 유한 상한 적용(fork/mem/disk-DoS 차단)."
+      "frege_sinn": "AG2 preexec_fn — 부모에서 산출한 플랫폼별 CPU/AS/FSIZE/CORE 유한 상한을 fork 직후·exec 직전 자식에 적용하고 실패 시 fail-closed(fork/mem/disk-DoS 차단)."
     },
     {
       "sourceId": "app._replay_rlimits",

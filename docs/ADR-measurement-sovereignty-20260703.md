@@ -112,6 +112,15 @@ cert 를 받지 않고, verb-게이팅은 `FE5 auth_posture` 관측화(open-but-
 않되*(dead-σ: 키 없는 배포를 409/부팅거부로 잠그지 않음) 관측가능하게 만든다. 이 관측화가 AG5-IDENT
 (비가역 verb 서명강제)의 명시적 선행조건이다.
 
+## 갱신 (AB1 외부 listener 경계 — 2026-07-14)
+
+FE5의 **open-but-observable** 결정은 loopback 개발 경로에 그대로 유지한다. 다만 그 결정을 네트워크
+외부 노출까지 확대 해석하던 launcher는 AB1이 supersede한다. `LAKATOS_BIND_HOST` 기본값은
+`127.0.0.1`이며, loopback 밖 bind는 비어 있지 않은 `LAKATOS_API_TOKEN` 없이는 기동하지 않는다.
+`--host`/`--fd`/`--uds` passthrough 우회도 거부한다. 이는 mutating HTTP 요청의 Bearer 인증 경계이며,
+GET 데이터 기밀성이나 TLS를 제공한다는 주장은 아니다. 내부 launcher의 기본 DB 자격증명도 제거하고
+명시 env 파일을 요구한다.
+
 ## 갱신 (AG5-IDENT 비가역 verb 서명강제 — q-rsov5 착륙, 2026-07-03)
 
 FE5 선행조건을 딛고 IDENT 의 *enforcement* 절반이 착륙했다(위 AG5-V3 갱신의 "미착륙" 해소):

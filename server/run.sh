@@ -1,7 +1,32 @@
 #!/usr/bin/env bash
 # 라카토트리 서버 기동 — creds 런타임 주입 (echo 금지)
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIND_HOST="${LAKATOS_BIND_HOST:-127.0.0.1}"
+PYTHON_BIN="${LAKATOS_PYTHON:-$ROOT/.venv/bin/python}"
+# Clean CI/system installs may lack the durable repository venv. Auth posture is stdlib-only and
+# must run *before* dependency checks, so use an available bootstrap interpreter for preflight;
+# the actual server still requires PYTHON_BIN below.
+if [ -x "$PYTHON_BIN" ]; then
+  PREFLIGHT_PYTHON="$PYTHON_BIN"
+elif command -v python3 >/dev/null 2>&1; then
+  PREFLIGHT_PYTHON="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PREFLIGHT_PYTHON="$(command -v python)"
+else
+  echo "[run.sh] Python venv 없음: $PYTHON_BIN (preflight interpreter도 없음)" >&2
+  exit 2
+fi
+cd "$ROOT"
+"$PREFLIGHT_PYTHON" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
+
 set -a; source <WORKSPACE>/vision3d_test/.env; set +a
-eval "$(python -c "
+# sourced env가 token을 지우거나 UVICORN_FD/UDS를 주입할 수 있으므로 최종 자세를 다시 판정한다.
+"$PREFLIGHT_PYTHON" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "[run.sh] Python venv 없음: $PYTHON_BIN" >&2
+  exit 2
+fi
+eval "$("$PYTHON_BIN" -c "
 import json
 e = json.load(open('$HOME/.claude/settings.json'))['env']
 print(f\"export NEO4J_URI='{e['NEO4J_URI']}'\")
@@ -11,7 +36,7 @@ print(f\"export NEO4J_PASSWORD='{e['NEO4J_PASSWORD']}'\")
 export LAKATOS_PG_PASSWORD="$(docker exec postgresql printenv POSTGRES_PASSWORD)"
 export LAKATOS_PG_USER=admin LAKATOS_PG_PORT=55100 LAKATOS_PG_DB=lakatos
 export LAKATOS_MONGO_URI="${LAKATOS_MONGO_URI:-mongodb://localhost:27017}"
-cd "$(dirname "$0")"
+cd "$ROOT/server"
 # OPS-HON-1/OPS-BOOTSTRAP-1: 스키마 부트스트랩(멱등 — schema.sql 은 CREATE TABLE/INDEX IF NOT EXISTS).
 # ★silent skip 금지: psql 미설치/PG 미가동(benign skip) vs PG 가동중 schema.sql 진짜 오류(loud exit) 구분.
 if ! command -v psql >/dev/null 2>&1; then
@@ -33,4 +58,5 @@ else
 fi
 # OPS-UVICORN-1: 워커 수 env 노브(기본 1=현 동작 보존). 멀티워커는 프로세스 분리라 각자
 # NEO/MONGO/PG풀을 갖는다(공유 안전). 부하 시 UVICORN_WORKERS=$(nproc) 로 스케일.
-exec python -m uvicorn app:app --host 0.0.0.0 --port 55170 --workers "${UVICORN_WORKERS:-1}" "$@"
+exec "$PYTHON_BIN" -m uvicorn app:app --host "$BIND_HOST" --port 55170 \
+  --workers "${UVICORN_WORKERS:-1}" "$@"

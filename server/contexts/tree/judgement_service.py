@@ -817,8 +817,9 @@ class JudgementService:
         # 동일 원천). internal 노드=1.0. 영속(e.source_trust)도 이 값으로 → tree-level eureka_over_tree 도 정직.
         est = self._eigentrust_source_trust(name, tag)
         eu = eureka_classify({
-            'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent, 'verdict': verdict,
-            'delta': v.delta, 'noise_band': pr['nb'] or 0.0, 'source_trust': est,
+            'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent,
+            'verdict': verdict,
+            'delta': v.delta, 'noise_band': pr['nb'], 'source_trust': est,
             'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
         }, require_promotion=False)
         ts = datetime.now(timezone.utc).isoformat()

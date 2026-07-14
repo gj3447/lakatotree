@@ -131,6 +131,24 @@ class ProducerReplayVerdict:
     reason: str
 
 
+@dataclass(frozen=True)
+class ReplayExecutionResult:
+    """Trusted replay-adapter result; target stdout cannot manufacture infrastructure status.
+
+    Two-value iteration preserves the historic ``(stdout, exit_code)`` port contract. Only an
+    adapter that deliberately constructs this engine type can attach ``infrastructure_error``;
+    an arbitrary scorer printing the same words still returns a plain tuple and is a real failure.
+    """
+
+    stdout: str
+    exit_code: int
+    infrastructure_error: str | None = None
+
+    def __iter__(self):
+        yield self.stdout
+        yield self.exit_code
+
+
 def producer_replay(*, score_cmd: str | None, recorded_metric: float, run_bash,
                     tolerance: float = 1e-9) -> ProducerReplayVerdict:
     """채점 스크립트를 *재실행*해 client 가 보고한 recorded_metric 을 검증 (나생문 #1 근본 봉합).
@@ -141,8 +159,8 @@ def producer_replay(*, score_cmd: str | None, recorded_metric: float, run_bash,
 
       verified=True  : 재실행 성공 ∧ |regen−recorded|≤tolerance → 측정 외부검증(외부앵커 자격)
       verified=False : 불일치(위조)·exit≠0(크래시, #24 정합)·metric 부재 → 신뢰 불가(forge 적발)
-      verified=None  : score_cmd 없음 *또는 CLI 계약 비호환* → 재실행 불가(증명 못 함, *차단 안 함*
-                       — reproducible=None 동형)
+      verified=None  : score_cmd 없음·CLI 계약 비호환·replay 기반시설 실패 → 재실행 불가
+                       (증명 못 함, *차단 안 함* — reproducible=None 동형)
 
     CLI 계약 비호환(2026-07-13, consumer_b FalseOK E16/E17 실사에서 발견): 서버 재현명령은
     'python <script> <result_path>'(positional) 형태인데 argparse-only 하네스는 positional 을
@@ -156,8 +174,17 @@ def producer_replay(*, score_cmd: str | None, recorded_metric: float, run_bash,
     if not score_cmd:
         return ProducerReplayVerdict(verified=None, regenerated=None,
                                      recorded=recorded_metric, reason='no_rerunnable_scorer')
-    out, code = run_bash(score_cmd)
+    run_result = run_bash(score_cmd)
+    out, code = run_result
     if code != 0:
+        if isinstance(run_result, ReplayExecutionResult) and run_result.infrastructure_error:
+            detail = run_result.infrastructure_error
+            return ProducerReplayVerdict(
+                verified=None,
+                regenerated=None,
+                recorded=recorded_metric,
+                reason=f'replay_infrastructure_error:{detail}',
+            )
         if code == 2 and ('unrecognized arguments' in (out or '')
                           or 'the following arguments are required' in (out or '')):
             return ProducerReplayVerdict(verified=None, regenerated=None,

@@ -21,10 +21,41 @@ from __future__ import annotations
 from server.contexts.audit import fsck as F
 
 _ID = "MEASUREMENT_REFUTED_BUT_STANDING"
+_SCRIPTED_SOURCE_ID = "SCRIPTED_WITHOUT_SOURCE"
 
 
 def _ids(rec):
     return {f.check_id for f in F.fsck_node(rec)}
+
+
+def test_progressive_unverified_mismatch_keeps_value_integrity_warning():
+    """PU is programme-neutral, but its metric result is still a standing measurement claim."""
+    assert _ID in _ids({"verdict": "progressive_unverified", "replay_status": "mismatch"})
+
+
+def test_offline_progressive_unverified_without_source_or_receipt_fails_closed():
+    """An offline-corrupted PU row cannot evade scripted-source integrity checks."""
+    rec = {
+        "verdict": "progressive_unverified",
+        "pred_registered_at": "2026-07-14T00:00:00Z",
+        "assurance_tier_resolved": "T0",
+    }
+
+    findings = F.fsck_node(rec)
+
+    assert _SCRIPTED_SOURCE_ID in {finding.check_id for finding in findings}
+    assert next(f for f in findings if f.check_id == _SCRIPTED_SOURCE_ID).severity == F.ERROR
+
+    managed = {
+        **rec,
+        "verdict_source": "scripted",
+        "current_receipt_sha": "0" * 64,
+    }
+    assert _SCRIPTED_SOURCE_ID not in _ids(managed)
+
+    # Scope guard: historical scripted verdicts retain their pre-source-stamping semantics.
+    legacy = {**rec, "verdict": "progressive"}
+    assert _SCRIPTED_SOURCE_ID not in _ids(legacy)
 
 
 # ── guard_defect ──────────────────────────────────────────────────────────────────

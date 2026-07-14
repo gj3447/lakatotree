@@ -31,7 +31,7 @@
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
-  result <name> <tag> --value V --script S [--sha S] [--novel-measured X]
+  result <name> <tag> --value V --script S [--sha S] [--novel-measured X] [질적/PnR 증거]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
   event <name> <tag> <event_id>  ClaimStanding 용 상계/하계 evidence event 기록
   events <name> <tag>            ClaimStanding 이 소비하는 evidence event 목록
@@ -132,6 +132,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('tree-create'); sp.add_argument('name')
     sp.add_argument('--title', default=''); sp.add_argument('--hard-core', default='')
     sp.add_argument('--frontier-rule', default=''); sp.add_argument('--doc', default='')
+    sp.add_argument('--coverage-status', default='unknown',
+                    choices=['unknown', 'partial', 'exhaustive'],
+                    help='커버리지 선언; exhaustive 는 scope 문장+빈 backlog 필수')
     sp.add_argument('--coverage-statement', default='')
     sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
     sp.add_argument('--ontology', default='', help='도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)')
@@ -168,6 +171,30 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--data-branch', action='store_true', help='데이터 재생성 의존 분기(ENG-DU-2)')
     sp.add_argument('--no-data-replay', action='store_true', help='데이터 재현 미통과 → progressive_conditional')
     sp.add_argument('--human-verdict', action='store_true', help='인간 판정 보류 → ambiguous')
+    # PU: REST TestResultIn 의 질적/PnR 증거를 basic CLI 에도 그대로 노출한다. Lakatos 4축과
+    # heuristic-spirit 은 부재(unknown)와 명시적 false 가 다르므로 BooleanOptionalAction 3상이다.
+    sp.add_argument('--lakatos-anomaly', action=argparse.BooleanOptionalAction, default=None,
+                    help='이론의존적 anomaly 여부(--no-lakatos-anomaly 로 false)')
+    sp.add_argument('--lakatos-consequence', action=argparse.BooleanOptionalAction, default=None,
+                    help='독립 검증가능 귀결 여부')
+    sp.add_argument('--lakatos-excess', action=argparse.BooleanOptionalAction, default=None,
+                    help='초과 경험내용 여부')
+    sp.add_argument('--lakatos-hardcore', action=argparse.BooleanOptionalAction, default=None,
+                    help='hard core 보존 여부(touched-assumption 구조판정이 우선)')
+    sp.add_argument('--touched-assumption', action='append', default=[],
+                    help='변경이 건드린 가정(반복); tree hard_core 와 교집합을 서버가 판정')
+    sp.add_argument('--implementation-complete', action=argparse.BooleanOptionalAction, default=True)
+    sp.add_argument('--counterexample-response', choices=[
+        'surrender', 'monster_barring', 'exception_barring', 'monster_adjustment',
+        'lemma_incorporation', 'proofs_and_refutations'])
+    sp.add_argument('--counterexample-type', choices=[
+        'global', 'local', 'local_and_global', 'local_not_global', 'global_not_local'])
+    sp.add_argument('--ce-excess-content', action='store_true')
+    sp.add_argument('--ce-novel-corroborated', action='store_true')
+    sp.add_argument('--ce-in-heuristic-spirit', action=argparse.BooleanOptionalAction, default=None)
+    sp.add_argument('--ce-proof-concept-name', default='')
+    sp.add_argument('--ce-proof-born-from', default='')
+    sp.add_argument('--ce-proof-incorporated-lemma', default='')
     sp = sub.add_parser('provenance'); sp.add_argument('name'); sp.add_argument('tag')
     sp = sub.add_parser('element'); sp.add_argument('name'); sp.add_argument('element_name')
     sp.add_argument('--definition', default=''); sp.add_argument('--implication', default='')
@@ -337,7 +364,8 @@ def main(argv=None):
     elif a.cmd == 'tree-create':
         out = call('POST', f'/api/tree/{a.name}',
                    dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
-                        doc=a.doc, coverage_statement=a.coverage_statement,
+                        doc=a.doc, coverage_status=a.coverage_status,
+                        coverage_statement=a.coverage_statement,
                         coverage_backlog=a.coverage_backlog, ontology=a.ontology,
                         assurance_tier=(a.assurance_tier or None),
                         attestor_dids=(a.attestor_did or None)))
@@ -376,7 +404,21 @@ def main(argv=None):
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured,
                         novel_script=a.novel_script,
                         data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
-                        human_verdict_required=a.human_verdict))
+                        human_verdict_required=a.human_verdict,
+                        lakatos_anomaly=a.lakatos_anomaly,
+                        lakatos_consequence=a.lakatos_consequence,
+                        lakatos_excess=a.lakatos_excess,
+                        lakatos_hardcore=a.lakatos_hardcore,
+                        touched_assumptions=a.touched_assumption,
+                        implementation_complete=a.implementation_complete,
+                        counterexample_response=a.counterexample_response,
+                        counterexample_type=a.counterexample_type,
+                        ce_excess_content=a.ce_excess_content,
+                        ce_novel_corroborated=a.ce_novel_corroborated,
+                        ce_in_heuristic_spirit=a.ce_in_heuristic_spirit,
+                        ce_proof_concept_name=a.ce_proof_concept_name,
+                        ce_proof_born_from=a.ce_proof_born_from,
+                        ce_proof_incorporated_lemma=a.ce_proof_incorporated_lemma))
     elif a.cmd == 'provenance':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/provenance')
     elif a.cmd == 'element':

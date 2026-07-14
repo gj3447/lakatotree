@@ -124,6 +124,50 @@ def test_predict_cli_passes_credence(monkeypatch, capsys):
     assert body['credence'] == 0.8
 
 
+def test_result_cli_passes_lakatos_and_pnr_evidence(monkeypatch, capsys):
+    """Basic CLI must not discard evidence that can rescue metric progress from PU."""
+    calls = _capture_calls(monkeypatch)
+    cli.main([
+        'result', 'T', 'v', '--value', '0.4', '--script', 'judge.py',
+        '--lakatos-anomaly', '--lakatos-consequence', '--lakatos-excess',
+        '--lakatos-hardcore', '--touched-assumption', 'aux-a',
+        '--touched-assumption', 'aux-b',
+        '--counterexample-response', 'lemma_incorporation',
+        '--counterexample-type', 'local', '--ce-excess-content',
+        '--ce-novel-corroborated', '--ce-in-heuristic-spirit',
+        '--ce-proof-concept-name', 'simple connectivity',
+        '--ce-proof-born-from', 'hollow cube',
+        '--ce-proof-incorporated-lemma', 'Euler step',
+    ])
+    method, path, body = calls[0]
+    assert (method, path) == ('POST', '/api/tree/T/node/v/test_result')
+    assert body['lakatos_anomaly'] is True
+    assert body['lakatos_consequence'] is True
+    assert body['lakatos_excess'] is True
+    assert body['lakatos_hardcore'] is True
+    assert body['touched_assumptions'] == ['aux-a', 'aux-b']
+    assert body['counterexample_response'] == 'lemma_incorporation'
+    assert body['counterexample_type'] == 'local'
+    assert body['ce_excess_content'] is True
+    assert body['ce_novel_corroborated'] is True
+    assert body['ce_in_heuristic_spirit'] is True
+    assert body['ce_proof_concept_name'] == 'simple connectivity'
+    assert body['ce_proof_born_from'] == 'hollow cube'
+    assert body['ce_proof_incorporated_lemma'] == 'Euler step'
+
+
+def test_result_cli_preserves_explicit_negative_qualitative_evidence(monkeypatch, capsys):
+    """Absent is unknown; --no-* is explicit false and must remain distinguishable."""
+    calls = _capture_calls(monkeypatch)
+    cli.main([
+        'result', 'T', 'v', '--value', '0.4', '--script', 'judge.py',
+        '--no-lakatos-anomaly', '--no-ce-in-heuristic-spirit',
+    ])
+    body = calls[0][2]
+    assert body['lakatos_anomaly'] is False
+    assert body['ce_in_heuristic_spirit'] is False
+
+
 def test_question_cli_passes_voi_meta(monkeypatch, capsys):
     calls = _capture_calls(monkeypatch)
     cli.main(['question', 'T', 'q1', '--body', 'why', '--gain', '0.4', '--cost', '2.0'])

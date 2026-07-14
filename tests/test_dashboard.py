@@ -47,6 +47,22 @@ def test_dashboard_surfaces_new_layers(monkeypatch):
     assert '베이즈 신뢰도' in t and '발전성' in t            # bayes + fertility (DASH-1)
     assert '/node/best/certificate' in t                   # per-node 분석 링크 (dead-end 해소)
     assert 'directions' in t                                # 다음-방향 흐름 링크
+    assert 'unknown' in t and '(전수)' not in t             # legacy/missing status 는 전수 주장 금지
+
+
+def test_dashboard_marks_only_explicit_scoped_exhaustive_coverage(monkeypatch):
+    app = load_app()
+    exhaustive = dict(
+        HEALTHY,
+        coverage_status='exhaustive',
+        coverage_statement='scope=src/** @ commit abc123',
+        coverage_backlog=[],
+    )
+    monkeypatch.setattr(app, 'trees', lambda: [{'name': 'T', 'title': 'T tree'}])
+    monkeypatch.setattr(app, 'tree_data', lambda n: exhaustive)
+    r = TestClient(app.app).get('/')
+    assert r.status_code == 200
+    assert 'exhaustive' in r.text and '(전수)' in r.text
 
 
 def test_dashboard_leaderboard_with_two_trees(monkeypatch):

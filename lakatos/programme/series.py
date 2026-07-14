@@ -18,7 +18,8 @@ DIAGNOSTIC_ONLY_AUTHORITY = "diagnostic_only"
 PROGRESSIVE_VERDICTS = {"progressive"}
 NONPROGRESSIVE_VERDICTS = {"partial", "equivalent", "rejected", "degenerating"}
 OFF_AXIS_VERDICTS = {"different_programme", "withdrawn"}
-KNOWN_VERDICTS = PROGRESSIVE_VERDICTS | NONPROGRESSIVE_VERDICTS | OFF_AXIS_VERDICTS
+NEUTRAL_VERDICTS = {"progressive_unverified"}
+KNOWN_VERDICTS = PROGRESSIVE_VERDICTS | NONPROGRESSIVE_VERDICTS | OFF_AXIS_VERDICTS | NEUTRAL_VERDICTS
 
 
 @dataclass(frozen=True)

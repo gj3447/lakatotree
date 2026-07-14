@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from fastapi import HTTPException
 
 from lakatos import assurance
+from lakatos.coverage import validate_coverage_declaration
 from server.contexts.tree.materialization import TreeMaterializationPlanner
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.validation import LakatosSemanticValidator, PolicyFinding
@@ -26,6 +27,7 @@ class TreeSpec:
     doc: str = ""
     coverage_backlog: tuple[str, ...] = ()
     coverage_statement: str = ""
+    coverage_status: str = "unknown"
     ontology: str = ""   # 도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)
     require_novel_anchor: bool = False   # FF1: cross-metric novel 서버앵커 강제(opt-in, 기본 off)
     require_certified_evidence: bool = False   # cert-consumer(2026-07-08): 근거 노드 인증서 강제(opt-in, 기본 off)
@@ -82,6 +84,14 @@ class TreeMutationService:
         if spec.assurance_tier is not None and spec.assurance_tier not in assurance.TIERS:
             raise HTTPException(422, f"assurance_tier 미정의 어휘: '{spec.assurance_tier}' — "
                                      f"{list(assurance.TIERS)} 중 하나(생략=신규 anchored/기존 유지)")
+        try:
+            coverage_status = validate_coverage_declaration(
+                spec.coverage_status,
+                statement=spec.coverage_statement,
+                backlog=spec.coverage_backlog,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         bulk = self._validate_bulk_nodes(spec)
         meta_findings = self.validator.validate_tree_meta(
             hard_core=spec.hard_core,
@@ -98,6 +108,7 @@ class TreeMutationService:
                     doc=spec.doc,
                     coverage_backlog=spec.coverage_backlog,
                     coverage_statement=spec.coverage_statement,
+                    coverage_status=coverage_status,
                     ontology=spec.ontology,
                     require_novel_anchor=spec.require_novel_anchor,
                     require_certified_evidence=spec.require_certified_evidence,

@@ -41,7 +41,20 @@ _SEVERITY = {
 }
 
 # AG6 값무결: 반증(mismatch)이 걸릴 때 '서있음'으로 보는 verdict 집합(positive claim).
-_STANDING_VERDICTS = frozenset({"progressive", "progressive_conditional", "partial", "CANONICAL"})
+_STANDING_VERDICTS = frozenset({
+    "progressive", "progressive_conditional", "progressive_unverified", "partial", "CANONICAL",
+})
+# Dialectical shadows are deliberately outside SCRIPTED_VERDICTS, but they still come from the
+# preregistered scripted-judgement path and must retain its structural fsck protections.
+_SCRIPTED_DIALECTICAL_VERDICTS = frozenset({"progressive_unverified"})
+
+
+def _is_scripted_judgement(rec: dict) -> bool:
+    """Whether a row must carry the preregistration/source/tier structure of a scripted write."""
+    verdict = rec.get("verdict", "")
+    return (is_scripted_verdict(verdict)
+            or verdict in _SCRIPTED_DIALECTICAL_VERDICTS
+            or rec.get("verdict_source") == "scripted")
 
 
 @dataclass(frozen=True)
@@ -67,7 +80,7 @@ def _check_judged_at_type(rec: dict) -> Finding | None:
 
 
 def _check_prereg(rec: dict) -> Finding | None:
-    if is_scripted_verdict(rec.get("verdict", "")) and not rec.get("pred_registered_at"):
+    if _is_scripted_judgement(rec) and not rec.get("pred_registered_at"):
         return Finding("VERDICT_WITHOUT_PREREG", _SEVERITY["VERDICT_WITHOUT_PREREG"],
                        f"scripted verdict '{rec.get('verdict')}' 인데 pred_registered_at 없음 (영수증 사슬 끊김)")
     return None
@@ -75,7 +88,16 @@ def _check_prereg(rec: dict) -> Finding | None:
 
 def _check_scripted_source(rec: dict) -> Finding | None:
     v, src = rec.get("verdict", ""), rec.get("verdict_source")
-    if is_scripted_verdict(v) and src is not None and src not in FORCEFUL_SOURCES:
+    # Legacy scripted rows may predate source stamping, but a dialectical shadow is a new
+    # managed-write shape: accepting a missing source here would let an offline-corrupted PU
+    # evade both this check and the source-conditioned receipt-pointer check below.
+    dialectical_source_missing = v in _SCRIPTED_DIALECTICAL_VERDICTS and src is None
+    invalid_present_source = src is not None and src not in FORCEFUL_SOURCES
+    if _is_scripted_judgement(rec) and (dialectical_source_missing or invalid_present_source):
+        if dialectical_source_missing:
+            return Finding("SCRIPTED_WITHOUT_SOURCE", _SEVERITY["SCRIPTED_WITHOUT_SOURCE"],
+                           f"scripted dialectical '{v}' 인데 verdict_source 없음 "
+                           f"(오프라인 손상 — managed write 는 FORCEFUL source 를 스탬프함)")
         return Finding("SCRIPTED_WITHOUT_SOURCE", _SEVERITY["SCRIPTED_WITHOUT_SOURCE"],
                        f"scripted '{v}' 인데 verdict_source='{src}' 가 영수증(FORCEFUL) 아님 (force_of 오판)")
     return None
@@ -85,7 +107,7 @@ def _check_tier_resolve(rec: dict) -> Finding | None:
     # G6(git-흡수): scripted 판결 write 는 단일 디스패치가 tier 를 resolve 해 스탬프한다
     # (judgement_service e.assurance_tier_resolved). 스탬프 없는 scripted 판결 = G6 이전 write(legacy —
     # skiplist 로만 면제) 또는 디스패치 우회(진짜 부패). git fsck 의 FATAL 비강등 규율: 규칙은 못 깎는다.
-    if is_scripted_verdict(rec.get("verdict", "")) and not rec.get("assurance_tier_resolved"):
+    if _is_scripted_judgement(rec) and not rec.get("assurance_tier_resolved"):
         return Finding("VERDICT_WRITE_WITHOUT_TIER_RESOLVE", _SEVERITY["VERDICT_WRITE_WITHOUT_TIER_RESOLVE"],
                        f"scripted verdict '{rec.get('verdict')}' 인데 assurance_tier_resolved 스탬프 없음 "
                        f"(G6 이전 write 는 record content-sha skiplist 로만 면제)")

@@ -1,0 +1,47 @@
+name: lakatotree-progressive-unverified-emit
+target:
+  mode: in_process
+  callable: progressive_unverified_emit_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: PU-A-1
+    description: metric progressive without Lakatos or PnR evidence emits the distinct progressive_unverified verdict
+    gate:
+      - {event: unverified_emitted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:unverified_emitted
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: unverified_emitted
+
+  - id: PU-A-2
+    description: present PnR evidence rescues unverified metric progress to progressive or progressive_conditional
+    gate:
+      - {event: pnr_rescue_lifts, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:pnr_rescue_lifts
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: pnr_rescue_lifts
+
+  - id: PU-A-3
+    description: raw progressive_unverified is Bayes-neutral while the orthogonal Eureka axis evaluates its metric strength
+    gate:
+      - {event: eureka_orthogonal, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:eureka_orthogonal
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: eureka_orthogonal
+
+  - id: PU-A-4
+    description: the new verdict retains scripted fsck/value-integrity guards and metric-family multiplicity screening
+    gate:
+      - {event: downstream_guards_hold, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROGRESSIVE_UNVERIFIED_EMIT:downstream_guards_hold
+      source: progressive_unverified_emit_receipt.py
+      symbol: verify
+      must_emit: downstream_guards_hold

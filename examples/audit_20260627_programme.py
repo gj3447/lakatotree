@@ -222,11 +222,11 @@ AUDIT_NODES: tuple[AuditNode, ...] = (
     AuditNode(
         tag="OPEN3_noise_band_maxes_bayes", severity="P2", parent="audit_20260627_root", claimed=False,
         evidence="bayes.py:57-72 · metrics.py:58,141",
-        story="noise_band 누락/0 → effect-size 포화 → 최대 BF(marginal<big 무력화, abandonment 약화). fix: "
-              "noise_band<=0 약한증거. defect=trivial delta 가 max BF 못 빚음 / mechanism=선언 시 marginal<big 산다.",
-        prediction=_P("noise_band_zero_maxes_bayes", "noise_band 미선언/0 은 최대 효과크기 가중을 받지 않는다", "q-3-noise"),
+        story="noise_band 부재가 0으로 강등 → effect-size 포화 → 최대 BF. fix: 부재(None)는 약증거, "
+              "선언-0은 결정론적 측정으로 보존. defect=부재가 max BF 못 빚음 / mechanism=선언 시 가중이 산다.",
+        prediction=_P("noise_band_absent_maxes_bayes", "noise_band 부재는 최대 효과크기 가중을 받지 않는다", "q-3-noise"),
         novel_target=_N("effect_size_separates_when_declared"),
-        guard_defect="test_zero_noise_band_trivial_delta_must_not_mint_max_bayes_factor",
+        guard_defect="test_absent_noise_band_must_not_mint_max_bayes_factor",
         guard_mechanism="test_declared_noise_band_separates_marginal_from_big"),
     AuditNode(
         tag="OPEN4_branch_credence_nan", severity="P3", parent="OPEN3_noise_band_maxes_bayes", claimed=True,

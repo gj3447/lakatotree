@@ -90,7 +90,7 @@ def test_distinct_server_anchored_novel_script_is_independent(tmp_path):
     assert out["ok"] is True
     op = _verdict_op(cap)
     assert op["novel"] is True, "양측 서버앵커 + 서로 다른 sha 인데 독립 불인정 → 과잉차단"
-    assert op["v"] == "progressive"
+    assert op["v"] == "progressive_unverified"
 
 
 def test_same_script_for_novel_is_not_independent(tmp_path):

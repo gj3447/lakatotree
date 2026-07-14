@@ -1,4 +1,8 @@
-"""c1verify preregistered gate — clean venv (no engine). Verdict re-derived from the sealed spec."""
+"""c1verify preregistered gate — clean venv (no engine).
+
+Metric verdicts are re-derived from the sealed spec; the conservative
+``progressive_unverified`` dialectical shadow is checked as an explicit one-way relation.
+"""
 from __future__ import annotations
 
 import c1verify
@@ -12,18 +16,19 @@ SPEC = {"metric_name": "reject_rate", "direction": "higher", "baseline_value": 0
 NOVEL = {"metric_name": "other_axis", "direction": "higher", "threshold": 1.0}
 
 
-def _receipt(verdict, source="scripted"):
+def _receipt(verdict, source="scripted", lakatos_status="canonical"):
     fields = {"tree": "T", "tag": "n", "target_id": "n", "verdict": verdict, "verdict_source": source,
               "metric_name": "reject_rate", "metric_value": 1.0, "novel_confirmed": True,
-              "lakatos_status": "canonical", "judged_at": "2026-07-09T00:00:00+00:00",
+              "lakatos_status": lakatos_status, "judged_at": "2026-07-09T00:00:00+00:00",
               "judge_script_sha": "deadbeef", "prev_receipt_sha": None,
               "measurement_grade": "server_regenerated"}
     fields["receipt_sha"] = receipt_content_sha(fields)
     return fields
 
 
-def _bundle(spec, measured, novel, novel_measured, sealed_verdict, source="scripted"):
-    r = _receipt(sealed_verdict, source)
+def _bundle(spec, measured, novel, novel_measured, sealed_verdict, source="scripted",
+            lakatos_status="canonical"):
+    r = _receipt(sealed_verdict, source, lakatos_status)
     payload = {"spec": spec, "novel_target": novel, "measured": measured,
                "novel_measured": novel_measured, "chain": [r], "head": r["receipt_sha"]}
     return jcs({"c1_bundle_version": 1, "gates": {"preregistered": payload}})
@@ -39,6 +44,31 @@ def test_verdict_consistent_with_spec_accepts_with_residual():
     d = _dec(_bundle(SPEC, 1.0, NOVEL, 1.0, v))
     assert d["decision"] == c1verify.ACCEPT
     assert d["residual_trust_surface"] and "back-fit" in d["residual_trust_surface"]
+
+
+def test_progressive_unverified_is_accepted_only_as_progressive_metric_shadow():
+    assert judge(SPEC, 1.0, NOVEL, 1.0)["verdict"] == "progressive"
+    d = _dec(_bundle(SPEC, 1.0, NOVEL, 1.0, "progressive_unverified",
+                     lakatos_status="unverified"))
+    assert d["decision"] == c1verify.ACCEPT
+    assert "dialectical shadow" in d["reason"]
+    assert "re-derived by judge" not in d["reason"]
+    assert "qualitative absence" in d["residual_trust_surface"]
+
+
+def test_progressive_unverified_with_non_unverified_lakatos_status_rejects():
+    d = _dec(_bundle(SPEC, 1.0, NOVEL, 1.0, "progressive_unverified",
+                     lakatos_status="canonical"))
+    assert d["decision"] == c1verify.REJECT
+    assert "lakatos_status" in d["reason"]
+
+
+def test_progressive_unverified_forged_over_rejected_metric_rejects():
+    assert judge(SPEC, -5.0, NOVEL, 0.0)["verdict"] == "rejected"
+    d = _dec(_bundle(SPEC, -5.0, NOVEL, 0.0, "progressive_unverified",
+                     lakatos_status="unverified"))
+    assert d["decision"] == c1verify.REJECT
+    assert "judge-recomputed" in d["reason"]
 
 
 def test_hand_typed_verdict_source_rejects():

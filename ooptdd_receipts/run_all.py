@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LakatoTree 설계감사 13건 ooptdd-loop 영수증 일괄 재검증 (CI 엔트리).
+"""LakatoTree ooptdd-loop 영수증 전체 자동발견·재검증 (CI 엔트리).
 
 각 finding 의 emit-adapter(`<F>/<f>_receipt.py:verify`)가 *실제 고쳐진 lakatos/server 코드*를
 in-process 구동하고 구조화 이벤트를 ship → ooptdd-loop 이 R02(이벤트 trace 도착) + R10(Longinus
@@ -31,16 +31,18 @@ try:   # ooptdd_loop = _vendor/ooptdd_loop (loop runner subset) — private repo
 except ModuleNotFoundError as e:
     sys.exit(f"ooptdd_loop 미해석 — _vendor/ooptdd_loop 벤더 누락? ({e}).")
 
-FINDINGS = ["H1", "H2", "H3", "H4", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"]
+
+def discover_specs() -> tuple[Path, ...]:
+    """등록표 없이 모든 ``*/requirements.yaml``을 결정론적 순서로 발견한다."""
+    return tuple(sorted(HERE.glob("*/requirements.yaml")))
 
 
-def _run_one(finding: str) -> tuple[int, int, bool, str]:
-    spec_path = HERE / finding / "requirements.yaml"
+def _run_one(spec_path: Path) -> tuple[int, int, bool, str]:
     if not spec_path.exists():
         return 0, 0, False, "spec 없음"
     try:
         spec = load_spec(str(spec_path))
-        spec.target.root = str((HERE / finding).resolve())   # 절대 root 오버라이드(이식성)
+        spec.target.root = str(spec_path.parent.resolve())   # 절대 root 오버라이드(이식성)
         payload = _run_payload(run_loop(spec))
     except Exception as ex:   # import/실행 예외도 정직하게 RED 로
         return 0, 0, False, f"{type(ex).__name__}: {str(ex)[:70]}"
@@ -51,16 +53,17 @@ def _run_one(finding: str) -> tuple[int, int, bool, str]:
 
 
 def main() -> int:
-    rows = [(f, *_run_one(f)) for f in FINDINGS]
-    print("LakatoTree 설계감사 ooptdd-loop 영수증 재검증 (R02 trace + R10 Longinus)")
+    specs = discover_specs()
+    rows = [(p.parent.name, *_run_one(p)) for p in specs]
+    print("LakatoTree ooptdd-loop 영수증 전체 재검증 (R02 trace + R10 Longinus)")
     print("-" * 60)
     greens = 0
     for finding, done, total, green, note in rows:
         greens += green
         print(f"  {finding:3} {'GREEN' if green else 'RED  '}  {done}/{total}  {note}")
     print("-" * 60)
-    print(f"  {greens}/{len(FINDINGS)} green")
-    return 0 if greens == len(FINDINGS) else 1
+    print(f"  {greens}/{len(specs)} green")
+    return 0 if specs and greens == len(specs) else 1
 
 
 if __name__ == "__main__":

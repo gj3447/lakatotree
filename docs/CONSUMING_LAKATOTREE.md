@@ -62,6 +62,39 @@ metrics = tree_metrics(nodes, frontier)
 pre-registered prediction and a measured value. Writing `verdict='progressive'` by hand is the
 fake-green anti-pattern the whole engine exists to prevent.
 
+The metric scorer and the dialectical layer are distinct. A metric result that qualifies as
+`progressive` but has neither Lakatos evidence nor a PnR appraisal is persisted as
+`progressive_unverified`: known and in-programme, but not counted as programme progress,
+the branch-stack `prediction_hits` signal, or promotion authority. It is a neutral streak boundary:
+it neither increments consecutive nonprogressive depth nor gets skipped when that leafward streak
+is measured. Predictive fertility remains an orthogonal registration/confirmation ratio and still
+counts an independently confirmed novel prediction regardless of this verdict. A
+progressive/conditional PnR appraisal can rescue it to `progressive`/`progressive_conditional`.
+
+The basic CLI and MCP `submit_result` surface accept the same qualitative/PnR evidence as the
+REST `TestResultIn` schema. For a Lakatos appraisal, submit all four axes explicitly; omission means
+“unknown”, while each CLI `--no-lakatos-*` form means an explicit negative observation:
+
+```bash
+python -m lakatos.cli result MY_TREE v2 --value 0.4 --script judge.py \
+  --lakatos-anomaly --lakatos-consequence --lakatos-excess --lakatos-hardcore \
+  --touched-assumption auxiliary-model-a
+```
+
+Alternatively, a PnR appraisal can be supplied through `--counterexample-response` plus its
+`--ce-*` evidence (the MCP tool uses the corresponding snake-case parameters):
+
+```bash
+python -m lakatos.cli result MY_TREE v2 --value 0.4 --script judge.py \
+  --counterexample-response lemma_incorporation --counterexample-type local \
+  --ce-excess-content --ce-novel-corroborated --ce-in-heuristic-spirit
+```
+
+These inputs do not hand-set a verdict: the server still validates the enum values, evaluates the
+evidence, and derives the dialectical verdict. A node already sealed as `progressive_unverified`
+cannot be re-rolled with new evidence; submit the evidence with the initial result or create a new
+branch node.
+
 ## One-off vs durable
 
 | you want… | do this | touches this repo? |

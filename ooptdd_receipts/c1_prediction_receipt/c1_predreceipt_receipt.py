@@ -146,7 +146,7 @@ def _registered_and_judged():
     pred = next(r for r in kg.receipts if r.get("receipt_kind") == "prediction")
     out = svc.submit_test_result("T", "seam",
                                  Result(metric_value=1.0, script="inline", novel_measured=1.0))
-    assert out["verdict"] == "progressive", out
+    assert out["verdict"] == "progressive_unverified", out
     verdict = next(r for r in kg.receipts if r.get("verdict_source") == "scripted")
     return kg, pred, verdict
 
@@ -201,19 +201,22 @@ def backfit_reject_rate() -> float:
 
 
 def negative_oracle_load_bearing() -> bool:
-    """(a) The back-fit shown spec judge-recomputes CLEAN (fold verdict == judge(shown)) — so without
-    the sealed-vs-shown comparison (v1 semantics) it would ACCEPT; only the comparison kills it.
+    """(a) The back-fit and honest shown specs produce the same metric verdict; the sealed PU is
+    the permitted conservative shadow of both. Without the sealed-vs-shown comparison (v1
+    semantics) the back-fit would ACCEPT; only the comparison kills it.
     (b) Recomputing the honest prediction receipt with the VERDICT canonicalization mismatches — so
     without the kind-aware branch, honest sealed chains would never verify (the branch is load-bearing,
     and it is tamper-safe because receipt_kind is inside the sha)."""
     kg, pred, verdict = _registered_and_judged()
     chain, head = kg.receipts, verdict["receipt_sha"]
 
-    # (a) craft a shown spec that yields the SAME verdict as sealed (progressive) but differs from
-    #     the sealed spec: judge-recompute alone cannot tell them apart.
+    # (a) craft a shown spec that yields the SAME metric verdict as the honest shown spec but
+    #     differs from the sealed spec: judge-recompute alone cannot tell them apart. The sealed
+    #     engine verdict is its legitimate progressive_unverified dialectical shadow.
     backfit = {**_shown_spec(pred), "baseline_value": 9.0}   # still improved at measured=1.0
     from c1verify.judge import judge as cj
-    assert cj(backfit, 1.0, _shown_novel(pred), 1.0)["verdict"] == verdict["verdict"], \
+    assert (cj(backfit, 1.0, _shown_novel(pred), 1.0)["verdict"]
+            == cj(_shown_spec(pred), 1.0, _shown_novel(pred), 1.0)["verdict"]), \
         "back-fit spec no longer judge-consistent — negative oracle vacuous"
     d = _gate(chain, head, backfit, _shown_novel(pred))
     assert d["decision"] == c1verify.REJECT and "sealed" in d["reason"], \
@@ -237,7 +240,7 @@ def verify(backend, cid):
     # ② HASH-CAUSAL — verdict receipt seals the prediction sha as prev; chain folds; spec-swap breaks.
     assert verdict["prev_receipt_sha"] == pred["receipt_sha"], "verdict does not commit to the seal"
     fold = fold_receipt_chain(kg.receipts, kg.node["current_receipt_sha"])
-    assert fold["from_receipt"] and fold["verdict"] == "progressive"
+    assert fold["from_receipt"] and fold["verdict"] == "progressive_unverified"
     swapped = dict(pred, baseline_value=-100.0)
     swapped["receipt_sha"] = LV.prediction_content_sha(swapped)   # self-consistent re-mint
     broke = False

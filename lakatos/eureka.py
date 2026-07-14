@@ -41,6 +41,17 @@ from lakatos.quant.laudan import problem_balance
 BF_SUBSTANTIAL = 3.162
 
 
+def eureka_verdict(verdict: str) -> str:
+    """Map the Lakatos-unverified metric verdict onto Eureka's orthogonal discovery axis.
+
+    The abandon-stack reads ``progressive_unverified`` as neutral BF=1.0. Eureka still
+    evaluates the independently confirmed novelty/problem-closure gates, so it reads the
+    same metric result as ``progressive``. ``classify`` owns this normalization so every public
+    measurement caller receives the same semantics; promotion still sees the raw verdict.
+    """
+    return "progressive" if verdict == "progressive_unverified" else verdict
+
+
 @dataclass(frozen=True)
 class EurekaVerdict:
     felt: bool          # 🔵 the flash: a novel prediction was made (aha-prone, unreliable)
@@ -84,8 +95,9 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     reasons: list[str] = []
     if not node.get("novel_confirmed"):
         reasons.append("novel_unconfirmed")  # the decisive false-aha signature
-    bf = bayes_factor(node.get("verdict", ""), node.get("delta", 0.0),
-                      node.get("noise_band", 0.0), node.get("source_trust", 1.0))
+    raw_verdict = node.get("verdict", "")
+    bf = bayes_factor(eureka_verdict(raw_verdict), node.get("delta", 0.0),
+                      node.get("noise_band"), node.get("source_trust", 1.0))
     if bf <= bf_substantial:
         reasons.append(f"bf_marginal:{bf:.3f}<={bf_substantial}")
     balance = problem_balance(int(node.get("closed", 0)), int(node.get("opened", 0)))
@@ -97,7 +109,7 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
                 "require_promotion=True requires an injected promotion_gate (DI: eureka 는 verdict.promote 를 "
                 "import 하지 않는 측정 코어 — finding D3/eureka). 프로덕션 트리 경로는 require_promotion=False "
                 "라 이 분기를 타지 않는다; promotion 이 필요한 호출자가 lakatos.verdict.promote.promotion_gate 를 주입할 것.")
-        ok, gate_reasons = promotion_gate(scripted_verdict=node.get("verdict", ""),
+        ok, gate_reasons = promotion_gate(scripted_verdict=raw_verdict,
                                           stands=bool(node.get("stands", False)),
                                           reproducible=node.get("reproducible"))
         if not ok:
@@ -141,7 +153,7 @@ def _node_to_eureka_input(node: dict) -> dict:
         "novel_confirmed": node.get("novel_confirmed"),
         "verdict": node.get("verdict", ""),
         "delta": delta,
-        "noise_band": node.get("pred_noise_band") or 0.0,
+        "noise_band": node.get("pred_noise_band"),
         "source_trust": node.get("source_trust", 1.0),
         "closed": closed_count(node.get("pred_closes")),   # R7: 글자수 버그 봉합(str 질문명=1)
         "opened": len(node.get("questions") or []),

@@ -11,6 +11,7 @@ import json
 from fastapi import HTTPException
 
 from lakatos.node_state import derive_state_value
+from lakatos.coverage import resolve_coverage_status
 
 
 KgQuery = Callable[..., list[dict]]
@@ -44,6 +45,11 @@ def normalize_tree_row(row: dict) -> dict:
     for key in ("title", "hard_core", "frontier_rule", "doc", "coverage_statement"):
         out[key] = normalize_text(out.get(key))
     out["coverage_backlog"] = normalize_text_list(out.get("coverage_backlog"))
+    out["coverage_status"] = resolve_coverage_status(
+        out.get("coverage_status"),
+        statement=out["coverage_statement"],
+        backlog=out["coverage_backlog"],
+    )
     return out
 
 
@@ -128,6 +134,7 @@ class TreeKgRepository:
             "MATCH (t:LakatosTree {name:$n}) RETURN t.title AS title, t.hard_core AS hard_core, "
             "t.frontier_rule AS frontier_rule, t.doc AS doc, "
             "t.coverage_backlog AS coverage_backlog, t.coverage_statement AS coverage_statement, "
+            "t.coverage_status AS coverage_status, "
             "t.ontology AS ontology, t.assurance_tier AS assurance_tier, "
             # R1(후속 PROM): 게이트 정책의 사전 공시 — 제출자가 403/partial 을 맞기 *전에* 알 수 있어야.
             "t.require_novel_anchor AS require_novel_anchor, "

@@ -1,0 +1,47 @@
+name: lakatotree-explicit-coverage-status
+target:
+  mode: in_process
+  callable: cov1_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: COV1-1
+    description: status가 없거나 자유서술만 있는 커버리지는 unknown이며 exhaustive가 아니다
+    gate:
+      - {event: undeclared_coverage_fails_closed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:COV1:undeclared_coverage_fails_closed
+      source: cov1_receipt.py
+      symbol: verify
+      must_emit: undeclared_coverage_fails_closed
+
+  - id: COV1-2
+    description: 명시 exhaustive는 비어 있지 않은 scope 문장과 빈 backlog가 있을 때만 인정된다
+    gate:
+      - {event: scoped_exhaustive_is_earned, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:COV1:scoped_exhaustive_is_earned
+      source: cov1_receipt.py
+      symbol: verify
+      must_emit: scoped_exhaustive_is_earned
+
+  - id: COV1-3
+    description: backlog는 legacy write와 손상된 stored exhaustive를 partial로 강등한다
+    gate:
+      - {event: backlog_forces_partial, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:COV1:backlog_forces_partial
+      source: cov1_receipt.py
+      symbol: verify
+      must_emit: backlog_forces_partial
+
+  - id: COV1-4
+    description: fail-closed resolver를 제거하면 빈 backlog가 다시 거짓 exhaustive를 만들며 음성 오라클이 검출한다
+    gate:
+      - {event: empty_backlog_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:COV1:empty_backlog_negative_oracle
+      source: cov1_receipt.py
+      symbol: verify
+      must_emit: empty_backlog_negative_oracle

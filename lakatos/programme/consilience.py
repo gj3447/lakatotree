@@ -219,7 +219,7 @@ def project_tree_rows(nodes: list) -> tuple:
             stances[tag] = {target: {"verdict": row.get("verdict"),
                                      "metric_value": row.get("metric_value")}}
         v = {"tag": tag, "verdict": row.get("verdict"),
-             "noise_band": row.get("pred_noise_band") or 0.0,
+             "noise_band": row.get("pred_noise_band"),
              "target": row.get("pred_closes") or None,
              "source_trust": row.get("source_trust")}
         if row.get("metric_value") is not None and row.get("pred_baseline") is not None:

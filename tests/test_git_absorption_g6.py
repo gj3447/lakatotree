@@ -89,7 +89,7 @@ def test_no_mutating_verb_writes_verdict_below_tier_floor():
     cap2: list = []
     _submit_svc(cap2, tier=None, flag=False).submit_test_result('T', 'n', Result(
         metric_value=1.0, script='inline', novel_measured=1.0))
-    assert cap2[0][0][1]['v'] == 'progressive'
+    assert cap2[0][0][1]['v'] == 'progressive_unverified'
     assert cap2[0][0][1].get('atier') == assurance.LEGACY
     # (3) legacy 의 opt-in 플래그(FF1)는 그대로 존중 — 플래그로 올릴 순 있어도 tier 를 내릴 순 없다.
     cap3: list = []
