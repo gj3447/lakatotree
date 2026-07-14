@@ -28,6 +28,9 @@ def voi(expected_gain: float, cost: float, floor: float = 1e-6) -> float:
 
     질문 q 를 닫았을 때 기대되는 진보이득을 그 검증비용으로 나눈 의사결정 가치 — 비용 대비
     정보가 큰 frontier 질문을 우선. grounding SOURCES['howard1966'] 가 출처 정본.
+
+    이 함수는 측정되거나 명시된 비용이 있을 때만 호출한다. 비용을 모르면 `rank_questions`가
+    gain×UCB로 순위를 매기고 VoI를 null로 남겨, 가짜 단위비용으로 Howard 정규화를 주장하지 않는다.
     """
     return max(expected_gain, 0.0) / max(cost, floor)
 
@@ -42,8 +45,13 @@ def rank_questions(questions: list, total_visits: int, crisis: bool = False) -> 
     c = UCB_C * (CRISIS_EXPLORATION_SCALE if crisis else 1.0)
     out = []
     for q in questions:
-        v = voi(q.get('expected_gain', 0.0), q.get('cost', 1.0))
+        gain = max(q.get('expected_gain', 0.0), 0.0)
+        cost = q.get('cost')
+        v = None if cost is None else voi(gain, cost)
+        decision_value = gain if v is None else v
         u = ucb_score(q.get('credence', 0.5), q.get('n_visits', 1), total_visits, c=c)
-        out.append({**q, 'voi': round(v, 4), 'ucb': round(u, 4),
-                    'priority': round(v * u, 4)})
+        out.append({**q, 'voi': None if v is None else round(v, 4), 'ucb': round(u, 4),
+                    'cost_source': 'unmeasured' if cost is None else 'explicit',
+                    'ranking_basis': 'expected_gain_x_ucb' if v is None else 'voi_x_ucb',
+                    'priority': round(decision_value * u, 4)})
     return sorted(out, key=lambda x: -x['priority'])

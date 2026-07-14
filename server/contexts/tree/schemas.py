@@ -59,8 +59,13 @@ class VerdictIn(BaseModel):
 class QuestionIn(BaseModel):
     qname: str = Field(min_length=1)
     body: str = ""
-    expected_gain: float = Field(0.1, ge=0)
-    cost: float = Field(1.0, gt=0)
+    # audit 2026-07-12 finding D1/D2: NULL sentinel (was 0.1 / 1.0 hardcoded defaults). A non-None default was
+    # persisted on EVERY question → q.get('expected_gain') was never None → directions' ~120-LOC
+    # expected_progress_gain derivation (positive heuristic) was DEAD, and voi's cost≡1.0 reduced VoI to
+    # expected_gain while claiming Howard-1966 cost-normalization. None stays None end-to-end (SET x=null removes
+    # the property), so the server-side derivation fires and gain_source/cost_source label provenance honestly.
+    expected_gain: float | None = Field(None, ge=0)
+    cost: float | None = Field(None, gt=0)
 
 
 class CreateTreeIn(BaseModel):
