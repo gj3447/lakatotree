@@ -88,7 +88,16 @@ def _check_prereg(rec: dict) -> Finding | None:
 
 def _check_scripted_source(rec: dict) -> Finding | None:
     v, src = rec.get("verdict", ""), rec.get("verdict_source")
-    if _is_scripted_judgement(rec) and src is not None and src not in FORCEFUL_SOURCES:
+    # Legacy scripted rows may predate source stamping, but a dialectical shadow is a new
+    # managed-write shape: accepting a missing source here would let an offline-corrupted PU
+    # evade both this check and the source-conditioned receipt-pointer check below.
+    dialectical_source_missing = v in _SCRIPTED_DIALECTICAL_VERDICTS and src is None
+    invalid_present_source = src is not None and src not in FORCEFUL_SOURCES
+    if _is_scripted_judgement(rec) and (dialectical_source_missing or invalid_present_source):
+        if dialectical_source_missing:
+            return Finding("SCRIPTED_WITHOUT_SOURCE", _SEVERITY["SCRIPTED_WITHOUT_SOURCE"],
+                           f"scripted dialectical '{v}' 인데 verdict_source 없음 "
+                           f"(오프라인 손상 — managed write 는 FORCEFUL source 를 스탬프함)")
         return Finding("SCRIPTED_WITHOUT_SOURCE", _SEVERITY["SCRIPTED_WITHOUT_SOURCE"],
                        f"scripted '{v}' 인데 verdict_source='{src}' 가 영수증(FORCEFUL) 아님 (force_of 오판)")
     return None

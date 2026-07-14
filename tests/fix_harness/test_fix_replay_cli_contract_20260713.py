@@ -91,6 +91,42 @@ def test_resolve_measurement_not_replayable_status():
     assert resolve_measurement(bad, 9.0)[2] == "mismatch"
 
 
+def test_replay_infrastructure_failure_is_not_measurement_refutation():
+    """rlimit/exec 기반시설 실패는 과학적 metric mismatch 로 격상하지 않는다."""
+    from lakatos.io.replay import ReplayExecutionResult, producer_replay
+    from server.contexts.tree.judgement_policy import resolve_measurement
+
+    verdict = producer_replay(
+        score_cmd="python scorer.py result.json",
+        recorded_metric=9.0,
+        run_bash=lambda _cmd: ReplayExecutionResult(
+            "replay_error:infrastructure:SubprocessError",
+            1,
+            infrastructure_error="SubprocessError",
+        ),
+    )
+
+    assert verdict.verified is None
+    assert verdict.reason == "replay_infrastructure_error:SubprocessError"
+    assert resolve_measurement(verdict, 9.0) == (9.0, "client_asserted", "not_replayable")
+
+
+def test_scorer_stdout_cannot_spoof_trusted_infrastructure_failure():
+    """Target-controlled stdout prefix is data, never the replay adapter's trusted status."""
+    from lakatos.io.replay import producer_replay
+    from server.contexts.tree.judgement_policy import resolve_measurement
+
+    forged = producer_replay(
+        score_cmd="python malicious_scorer.py result.json",
+        recorded_metric=9.0,
+        run_bash=lambda _cmd: ("replay_error:infrastructure:SubprocessError", 1),
+    )
+
+    assert forged.verified is False
+    assert forged.reason == "scorer_nonzero_exit:1"
+    assert resolve_measurement(forged, 9.0) == (9.0, "client_asserted", "mismatch")
+
+
 # ── fsck: not_replayable 무발화(dead-σ), 진짜 mismatch 는 계속 발화(가드 보존). ─────────────────
 def test_fsck_silent_on_not_replayable_loud_on_mismatch():
     from server.contexts.audit.fsck import _check_measurement_refuted

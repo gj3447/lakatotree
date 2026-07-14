@@ -75,7 +75,8 @@ from server.contexts.tree.service import TreeService
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha   # noqa: F401 — _file_sha re-export(테스트/외부)
-from lakatos.io.replay import producer_replay as _producer_replay   # 나생문 #1 live: 채점 스크립트 재실행 판정
+from lakatos.io.replay import (ReplayExecutionResult as _ReplayExecutionResult,
+                               producer_replay as _producer_replay)   # 나생문 #1 live: 채점 스크립트 재실행 판정
 from lakatos.io.prov import replay_command as _replay_command       # judge_script(경로)+result_path → 재현명령
 from server.container import AppContainer
 from server.settings import ServerSettings
@@ -589,7 +590,7 @@ def _safe_replay_argv(score_cmd: str) -> list[str] | None:
     return [_sys.executable, str(resolved), *rest]
 
 
-def _replay_run(score_cmd: str) -> tuple[str, int]:
+def _replay_run(score_cmd: str) -> tuple[str, int] | _ReplayExecutionResult:
     """채점 *재현명령*('python <script> <result_path>') sandbox 재실행 — 게이트 하에서만 호출됨(가드).
 
     AG2/R-SOV-1 보안: shell=False + FF4 격리(_safe_replay_argv: python 계열만·스크립트=허용루트 실존파일·
@@ -603,11 +604,29 @@ def _replay_run(score_cmd: str) -> tuple[str, int]:
         return ('replay_error:unsafe_command', 1)   # RCE 벡터 → 실행 안 함, producer_replay 가 verified=False
     try:
         limits = _replay_rlimits()   # Darwin VSZ 실측은 fork 전 부모에서만(안전·결정적)
+    except (subprocess.SubprocessError, OSError, ValueError, RuntimeError) as exc:
+        # scorer 가 측정에 실패한 것이 아니라 replay 기반시설/설정이 열리지 않은 것. 후단이
+        # 과학적 mismatch 로 오인하지 않도록 wire 진단을 명시적으로 분리한다.
+        detail = type(exc).__name__
+        return _ReplayExecutionResult(
+            f'replay_error:infrastructure:{detail}', 1, infrastructure_error=detail)
+    try:
         p = subprocess.run(argv, capture_output=True, text=True, timeout=600,
                            preexec_fn=lambda: _apply_replay_rlimits(limits))
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError,
-            OSError, ValueError, RuntimeError) as exc:
-        return (f'replay_error:{type(exc).__name__}', 1)   # 비정상 → producer_replay 가 verified=False 로 처리
+    except subprocess.TimeoutExpired as exc:
+        # scorer 가 wall-time 계약을 어긴 것은 실행 기반시설 부재가 아니라 실행 실패다.
+        return (f'replay_error:{type(exc).__name__}', 1)
+    except UnicodeDecodeError:
+        # child 는 이미 실행됐다. target-controlled malformed bytes 를 infra 면제로 올리면 안 된다.
+        return ('replay_error:invalid_output_encoding', 1)
+    except subprocess.SubprocessError as exc:
+        # check=False 이므로 Timeout 외 SubprocessError 는 우리 preexec_fn(setrlimit) 실패다.
+        detail = type(exc).__name__
+        return _ReplayExecutionResult(
+            f'replay_error:infrastructure:{detail}', 1, infrastructure_error=detail)
+    except (OSError, ValueError, RuntimeError) as exc:
+        # user argv(E2BIG/NUL 등)도 만들 수 있는 오류 — 출처가 모호하므로 fail-closed target 실패.
+        return (f'replay_error:{type(exc).__name__}', 1)
     if p.returncode != 0:
         # 실패 경로만 stderr 동봉 — argparse usage-error(CLI 계약 비호환) 시그니처가 stderr 로 가므로
         # producer_replay 의 cli_contract 분류가 볼 수 있어야 한다. 성공 경로는 stdout 순수 유지(metric 파싱).

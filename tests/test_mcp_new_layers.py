@@ -117,6 +117,38 @@ def test_register_prediction_tool_includes_credence(monkeypatch):
     assert body['credence'] == 0.8
 
 
+def test_submit_result_tool_passes_lakatos_and_pnr_evidence(monkeypatch):
+    """MCP submit must expose the REST evidence seam instead of forcing PU."""
+    seen = _cap_post(monkeypatch)
+    json.loads(m.submit_result(
+        'T', 'v', 0.4, 'judge.py',
+        lakatos_anomaly=True, lakatos_consequence=True,
+        lakatos_excess=True, lakatos_hardcore=True,
+        touched_assumptions_csv='aux-a, aux-b',
+        counterexample_response='lemma_incorporation',
+        counterexample_type='local', ce_excess_content=True,
+        ce_novel_corroborated=True, ce_in_heuristic_spirit=True,
+        ce_proof_concept_name='simple connectivity',
+        ce_proof_born_from='hollow cube',
+        ce_proof_incorporated_lemma='Euler step',
+    ))
+    path, body = seen[0]
+    assert path == '/api/tree/T/node/v/test_result'
+    assert body['lakatos_anomaly'] is True
+    assert body['lakatos_consequence'] is True
+    assert body['lakatos_excess'] is True
+    assert body['lakatos_hardcore'] is True
+    assert body['touched_assumptions'] == ['aux-a', 'aux-b']
+    assert body['counterexample_response'] == 'lemma_incorporation'
+    assert body['counterexample_type'] == 'local'
+    assert body['ce_excess_content'] is True
+    assert body['ce_novel_corroborated'] is True
+    assert body['ce_in_heuristic_spirit'] is True
+    assert body['ce_proof_concept_name'] == 'simple connectivity'
+    assert body['ce_proof_born_from'] == 'hollow cube'
+    assert body['ce_proof_incorporated_lemma'] == 'Euler step'
+
+
 # ── Cluster ② MCP: agm_revise ──
 
 def test_agm_revise_tool_posts_spec(monkeypatch):

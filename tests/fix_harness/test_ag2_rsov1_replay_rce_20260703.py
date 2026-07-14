@@ -20,6 +20,7 @@ Darwin은 이미 매핑된 대형 공유 주소공간을 실측한 뒤 허용 gr
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 
 os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
@@ -91,6 +92,69 @@ def test_honest_replay_runs_under_finite_rlimits():
         assert app._producer_replay_for_node("t", "n") is False   # 위조는 여전히 적발
     finally:
         monkey.undo()
+
+
+def test_rlimit_computation_failure_never_executes_target(monkeypatch, tmp_path):
+    """자원상한을 계산하지 못하면 scorer 를 열지 않고 infrastructure failure 로 남긴다.
+
+    측정값 불일치가 아니라 replay 기반시설 부재이므로 후단은 ``not_replayable`` 로
+    분류할 수 있어야 한다. revert-민감: 계산 실패를 무시하거나 일반 replay_error 로
+    합치면 이 테스트가 RED다.
+    """
+    app = _app()
+    scorer = tmp_path / "ag2_never_run.py"
+    sentinel = tmp_path / "PWNED_BY_REPLAY"
+    scorer.write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n")
+
+    def _limits_fail():
+        raise RuntimeError("cannot_measure_parent_vsz")
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("subprocess.run called after rlimit computation failure")
+
+    monkeypatch.setattr(app, "_replay_rlimits", _limits_fail)
+    monkeypatch.setattr(subprocess, "run", _must_not_run)
+    out, code = app._replay_run(f"python {scorer} ignored")
+
+    assert (out, code) == ("replay_error:infrastructure:RuntimeError", 1)
+    assert not sentinel.exists()
+
+
+def test_rlimit_application_failure_never_executes_target(monkeypatch, tmp_path):
+    """fork 후 setrlimit 실패도 exec 전에 닫히며 infrastructure failure 로 구분된다."""
+    app = _app()
+    scorer = tmp_path / "ag2_preexec_never_run.py"
+    sentinel = tmp_path / "PWNED_AFTER_PREEXEC"
+    scorer.write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n")
+
+    def _apply_fails(_limits=None):
+        raise RuntimeError("setrlimit_failed")
+
+    monkeypatch.setattr(app, "_apply_replay_rlimits", _apply_fails)
+    out, code = app._replay_run(f"python {scorer} ignored")
+
+    assert (out, code) == ("replay_error:infrastructure:SubprocessError", 1)
+    assert not sentinel.exists()
+
+
+def test_target_invalid_utf8_is_failure_not_infrastructure_exemption(tmp_path):
+    """실행된 scorer의 malformed stdout은 target failure이며 ``not_replayable`` 면제가 아니다."""
+    app = _app()
+    scorer = tmp_path / "ag2_invalid_utf8.py"
+    scorer.write_text("import sys\nsys.stdout.buffer.write(b'\\xff')\n")
+
+    from lakatos.io.replay import producer_replay
+    from server.contexts.tree.judgement_policy import resolve_measurement
+
+    verdict = producer_replay(
+        score_cmd=f"python {scorer} ignored",
+        recorded_metric=1.0,
+        run_bash=app._replay_run,
+    )
+
+    assert verdict.verified is False
+    assert verdict.reason == "scorer_nonzero_exit:1"
+    assert resolve_measurement(verdict, 1.0)[2] == "mismatch"
 
 
 # 이중 가드 export

@@ -333,17 +333,45 @@ def submit_result(name: str, tag: str, value: float, script: str,
                   novel_script: str = '',
                   data_branch: bool = False, data_replay_passed: bool = True,
                   human_verdict_required: bool = False, result_path: str = '',
-                  write_cert_json: str = '') -> str:
+                  write_cert_json: str = '',
+                  lakatos_anomaly: bool | None = None,
+                  lakatos_consequence: bool | None = None,
+                  lakatos_excess: bool | None = None,
+                  lakatos_hardcore: bool | None = None,
+                  touched_assumptions_csv: str = '',
+                  implementation_complete: bool = True,
+                  counterexample_response: str = '', counterexample_type: str = '',
+                  ce_excess_content: bool = False, ce_novel_corroborated: bool = False,
+                  ce_in_heuristic_spirit: bool | None = None,
+                  ce_proof_concept_name: str = '', ce_proof_born_from: str = '',
+                  ce_proof_incorporated_lemma: str = '') -> str:
     """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). metric progressive라도 Lakatos/PnR
     질적 영수증이 없으면 progressive_unverified(프로그램 진전·승격으로 계산하지 않음).
     그 외 metric 판결은 progressive/partial/equivalent/rejected.
     ENG-DU-2: data_branch(데이터 재생성 의존)+data_replay_passed=false → progressive_conditional;
     human_verdict_required=true → ambiguous(인간 판정 보류).
+    Lakatos 4축은 모두 true/false 로 제출해야 질적 평가가 성립(None=미제출). PnR 반례 대응은
+    counterexample_response 와 ce_* 근거로 서버가 progressive/conditional/degenerating 을 재유도한다.
+    touched_assumptions_csv 는 쉼표구분 가정이며 tree hard_core 보존을 서버가 구조적으로 판정한다.
     result_path = 산출물(영수증) 경로 — 서버가 노드에 비파괴 병합(coalesce). reproducible 게이트
     (F-CON-1) 앵커: record_derivation 계보의 최종 output 과 일치, root 는 raw_root 안 실존 source."""
     body = dict(metric_value=value, script=script,
                 data_branch=data_branch, data_replay_passed=data_replay_passed,
-                human_verdict_required=human_verdict_required)
+                human_verdict_required=human_verdict_required,
+                lakatos_anomaly=lakatos_anomaly,
+                lakatos_consequence=lakatos_consequence,
+                lakatos_excess=lakatos_excess,
+                lakatos_hardcore=lakatos_hardcore,
+                touched_assumptions=[a.strip() for a in touched_assumptions_csv.split(',') if a.strip()],
+                implementation_complete=implementation_complete,
+                counterexample_response=(counterexample_response or None),
+                counterexample_type=(counterexample_type or None),
+                ce_excess_content=ce_excess_content,
+                ce_novel_corroborated=ce_novel_corroborated,
+                ce_in_heuristic_spirit=ce_in_heuristic_spirit,
+                ce_proof_concept_name=ce_proof_concept_name,
+                ce_proof_born_from=ce_proof_born_from,
+                ce_proof_incorporated_lemma=ce_proof_incorporated_lemma)
     if script_sha:
         body['script_sha'] = script_sha
     if novel_measured is not None:
