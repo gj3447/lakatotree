@@ -109,14 +109,23 @@ def programme_series_appraisal(
     if conceptual_problem_score > 0:
         reasons.append(f"conceptual_problem_score={conceptual_problem_score:g}")
 
+    # audit 2026-07-12 (programme-classify: single-anomaly antipattern): 라카토스 MSRP — 진보하는 프로그램은
+    # *이상현상의 바다에서 헤엄치며* 전진한다(novel fact 예측). 이상 *하나*가 dominant-progressive 시리즈를
+    # 강등하면 안 된다(전엔 rival_anomaly==0 ∧ conceptual==0 zero-tolerance → anomaly 1 개면 즉시 'progressive'
+    # 박탈). 새 게이트 = *무압력 진보 레코드(clean progressive: 진보 verdict ∧ rival 이상 없음 ∧ conceptual
+    # 문제 없음)가 in-axis 의 strict 과반*. 매직넘버 없이 과반 비교만으로: 5중 1 오염(dominant) → 여전히
+    # progressive(sea-of-anomalies), 2중 1 오염(marginal) → mixed(기존 진단 보수성 유지 — 이상이 시리즈의
+    # 절반을 오염시키면 clean 우세 아님). degenerating 게이트(아래)는 불변 — 이상 누적·nonprog 우세는 여전히 강등.
+    # progressive_unverified(NEUTRAL) 레코드는 clean-progressive 로 세지 않는다 — verified progressive 만 카운트.
+    clean_progressive = sum(1 for r in in_axis if r.verdict in PROGRESSIVE_VERDICTS
+                            and not r.rival_anomaly and r.conceptual_problem_score == 0)
     if (
         progressive_count > nonprogressive_count
         and problem_balance_total >= 0
-        and rival_anomaly_count == 0
-        and conceptual_problem_score == 0
+        and clean_progressive * 2 > len(in_axis)
     ):
         trend = "progressive"
-        reasons.append("progressive majority without problem/rival/conceptual pressure")
+        reasons.append("clean-progressive strict majority (Lakatos sea-of-anomalies: lone anomaly does not demote)")
     elif (
         nonprogressive_count > 0
         and nonprogressive_count >= progressive_count
