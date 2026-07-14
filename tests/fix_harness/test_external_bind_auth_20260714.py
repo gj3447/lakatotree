@@ -72,6 +72,14 @@ def test_both_launchers_reject_external_open_before_touching_dependencies():
         assert "LAKATOS_API_TOKEN" in proc.stderr
 
 
+def test_both_launchers_accept_external_token_before_enforcing_server_interpreter():
+    for launcher in ("server/run.sh", "server/run_internal.sh"):
+        proc = _run_launcher(launcher, env_overrides={"LAKATOS_API_TOKEN": "secret"})
+        assert proc.returncode == 2, (launcher, proc.stdout, proc.stderr)
+        assert "Python venv 없음" in proc.stderr
+        assert "외부 bind에는 LAKATOS_API_TOKEN" not in proc.stderr
+
+
 def test_launchers_reject_listener_override_and_have_no_fallback_credentials():
     for launcher in ("server/run.sh", "server/run_internal.sh"):
         src = (ROOT / launcher).read_text(encoding="utf-8")

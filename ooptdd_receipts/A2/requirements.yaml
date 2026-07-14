@@ -1,0 +1,42 @@
+# LakatoTree A2 eigentrust trust-coverage — ooptdd 정식 영수증(R02 trace + R10 Longinus, hermetic).
+# emit-adapter=a2_receipt.verify 가 실 server.read_models.compute_tree_metrics 를 *서빙 형상*(verdict_source
+# 키 present)으로 구동, 구조화 이벤트 ship. 픽스처-vs-실DB drift(키 absent vs present-None)로 인한 silent
+# canonical-path 붕괴(matched=0)를 RED-first 로 잡는다. Neo4j 불요(in_process + memory backend).
+name: lakatotree-a2-eigentrust-path-source-match
+
+target:
+  mode: in_process
+  callable: a2_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: A2-1
+    description: 정본경로 progress 노드가 verdict_source 영수증을 달면 trust_coverage가 그 source를 eigentrust 맵에 매칭한다.
+    gate:
+      - {event: trust_path_source_matched, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:A2:trust_path_source_matched
+      source: a2_receipt.py
+      symbol: verify
+      must_emit: trust_path_source_matched
+
+  - id: A2-2
+    description: verdict_source가 None인 서빙 형상에서는 inconclusive 강등과 canonical_path 붕괴를 명시 이벤트로 노출한다.
+    gate:
+      - {event: canonical_path_collapsed_inconclusive, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:A2:canonical_path_collapsed_inconclusive
+      source: a2_receipt.py
+      symbol: verify
+      must_emit: canonical_path_collapsed_inconclusive
+
+  - id: A2-3
+    description: eigentrust map 주입은 같은 canonical_path의 canonical_credence를 baseline에서 유의미하게 이동시킨다.
+    gate:
+      - {event: canonical_credence_moved_by_eigentrust, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:A2:canonical_credence_moved_by_eigentrust
+      source: a2_receipt.py
+      symbol: verify
+      must_emit: canonical_credence_moved_by_eigentrust

@@ -1,9 +1,16 @@
 """A2 실DB 영수증: eigentrust 글로벌 신뢰가 canonical_credence 를 *실제로 움직인다* (Gate 1 해금).
 
 mock 으로는 못 떨군 영수증: 실 Neo4j 에 트리+노드+다출처 internet 관측을 만들고, 프로덕션 read-model 의 실
-경로(TreeKgRepository.load_tree_data → compute_tree_metrics)를 태운다. 정본경로 progressive 노드가 *저신뢰*
-출처(블로그, peer_reviewed 와 co-support 되어 eigentrust 정규화로 낮아짐)에 묶이면, 맵 주입 credence 가
-맵-없음(per-node 기본 1.0) baseline 보다 *낮다* — 글로벌 그래프 신뢰가 판결 신뢰도를 가중함을 입증.
+경로(TreeKgRepository.load_tree_data → compute_tree_metrics)를 태운다. 정본경로 progressive 노드가 internet
+출처(블로그+peer co-support)에 묶이면, 맵 주입 credence 가 맵-없음 baseline 과 *달라진다* — 글로벌 그래프
+신뢰가 판결 신뢰도를 실제로 가중함(A2 가 prod 경로서 inert 아님)을 입증한다. 방향(↑/↓)은 prior-상대적이라
+*크기 있는 이동*을 불변식으로 본다(저신뢰 출처가 항상 credence 를 낮추는 건 아니다 — 증거가 prior 아래로
+끌었으면 가중 감소가 credence 를 prior 쪽으로 *복귀*시킨다).
+
+★전제(서빙 형상): 정본경로 progress/CANONICAL 노드는 verdict_source 영수증을 들어야 한다. 실 KG 서빙 로더는
+verdict_source 키를 항상 싣고(미설정=None), tree_metrics 의 prom-honesty 가 영수증 없는 진보를 inconclusive 로
+강등해 canonical_path 를 비운다(키 생략한 옛 픽스처는 trusted 라 통과=fake-green). seed 가 verdict_source 를
+달아 이 drift 를 닫는다. 항-drift 가드: ooptdd_receipts/A2 (hermetic, R02+R10).
 """
 import pytest
 
@@ -32,10 +39,11 @@ def _seed_tree(c, name):
                   root.metric_value=1.0, root.metric_scope='s'
             MERGE (t)-[:HAS_NODE]->(root)
             MERGE (p1:LakatosNode {tag:'p1'}) SET p1.verdict='progressive', p1.metric_value=0.5,
-                  p1.metric_scope='s', p1.pred_baseline=1.0, p1.pred_noise_band=0.02, p1.pred_closes='q1'
+                  p1.metric_scope='s', p1.pred_baseline=1.0, p1.pred_noise_band=0.02, p1.pred_closes='q1',
+                  p1.verdict_source='engine'
             MERGE (t)-[:HAS_NODE]->(p1)
             MERGE (top:LakatosNode {tag:'top'}) SET top.verdict='CANONICAL', top.metric_value=0.4,
-                  top.metric_scope='s'
+                  top.metric_scope='s', top.verdict_source='engine'
             MERGE (t)-[:HAS_NODE]->(top)
             MERGE (p1)-[:BRANCHED_FROM]->(root)
             MERGE (top)-[:BRANCHED_FROM]->(p1)""", {"n": name}),
@@ -67,5 +75,9 @@ def test_eigentrust_map_moves_canonical_credence_on_real_db(neo4j_driver):
     m_without = compute_tree_metrics({**td, "observations": []})         # 맵 없음 baseline
     tc = m_with["bayes"]["trust_coverage"]
     assert tc["map_supplied"] is True and tc["path_sources_matched"] >= 1
-    # 글로벌 신뢰가 판결 신뢰도를 *움직인다*: 저신뢰(블로그<1.0) 출처 → 맵 credence < baseline(1.0)
-    assert m_with["bayes"]["canonical_credence"] < m_without["bayes"]["canonical_credence"]
+    # 글로벌 eigentrust 신뢰가 판결 신뢰도를 *움직인다*(A2 prod-wired): 맵 주입 ≠ baseline, 크기 있는 이동.
+    # 방향은 prior-상대적(여기선 blog 0.5 가 증거가중↓ → credence 가 prior 쪽 복귀 ↑). 핵심 = inert 아님.
+    cred_with = m_with["bayes"]["canonical_credence"]
+    cred_without = m_without["bayes"]["canonical_credence"]
+    assert cred_with is not None and cred_without is not None
+    assert cred_with != cred_without and abs(cred_with - cred_without) > 0.05
