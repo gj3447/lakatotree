@@ -3,16 +3,29 @@
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIND_HOST="${LAKATOS_BIND_HOST:-127.0.0.1}"
 PYTHON_BIN="${LAKATOS_PYTHON:-$ROOT/.venv/bin/python}"
+# Clean CI/system installs may lack the durable repository venv. Auth posture is stdlib-only and
+# must run *before* dependency checks, so use an available bootstrap interpreter for preflight;
+# the actual server still requires PYTHON_BIN below.
+if [ -x "$PYTHON_BIN" ]; then
+  PREFLIGHT_PYTHON="$PYTHON_BIN"
+elif command -v python3 >/dev/null 2>&1; then
+  PREFLIGHT_PYTHON="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PREFLIGHT_PYTHON="$(command -v python)"
+else
+  echo "[run.sh] Python venv 없음: $PYTHON_BIN (preflight interpreter도 없음)" >&2
+  exit 2
+fi
+cd "$ROOT"
+"$PREFLIGHT_PYTHON" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
+
+set -a; source <WORKSPACE>/vision3d_test/.env; set +a
+# sourced env가 token을 지우거나 UVICORN_FD/UDS를 주입할 수 있으므로 최종 자세를 다시 판정한다.
+"$PREFLIGHT_PYTHON" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "[run.sh] Python venv 없음: $PYTHON_BIN" >&2
   exit 2
 fi
-cd "$ROOT"
-"$PYTHON_BIN" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
-
-set -a; source <WORKSPACE>/vision3d_test/.env; set +a
-# sourced env가 token을 지우거나 UVICORN_FD/UDS를 주입할 수 있으므로 최종 자세를 다시 판정한다.
-"$PYTHON_BIN" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
 eval "$("$PYTHON_BIN" -c "
 import json
 e = json.load(open('$HOME/.claude/settings.json'))['env']

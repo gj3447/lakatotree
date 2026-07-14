@@ -56,7 +56,10 @@ def test_listener_override_environment_is_rejected(env):
 def _run_launcher(path: str, *args: str,
                   env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
-           "PYTHONPATH": str(ROOT), "LAKATOS_BIND_HOST": "0.0.0.0"}
+           "PYTHONPATH": str(ROOT), "LAKATOS_BIND_HOST": "0.0.0.0",
+           # GitHub Actions installs into setup-python, not a repository .venv. Security posture
+           # must be checked before the durable server interpreter requirement in either layout.
+           "LAKATOS_PYTHON": str(ROOT / ".missing-ci-venv" / "bin" / "python")}
     env.update(env_overrides or {})
     return subprocess.run(["bash", path, *args], cwd=ROOT, env=env,
                           capture_output=True, text=True, check=False, timeout=5)
