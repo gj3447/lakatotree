@@ -56,10 +56,13 @@ def eureka_verdict(verdict: str) -> str:
 class EurekaVerdict:
     felt: bool          # 🔵 the flash: a novel prediction was made (aha-prone, unreliable)
     true: bool          # 🔴 survives external red: confirmed + every gate passes
-    hallucinated: bool  # felt ∧ ¬true — the false aha (the ~37%)
+    hallucinated: bool  # felt ∧ ¬true ∧ ledger-assessable — the false aha (the ~37%)
     bf: float
     balance: int
     reasons: tuple = ()  # which external-red gate(s) vetoed it (why it is not true)
+    inconclusive: bool = False  # felt but the Laudan axis has NO data (no problem ledger):
+    #   neither true nor hallucinated — excluded from the true/hallucination rate denominator
+    #   (audit 2026-07-12 finding B).
 
 
 def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
@@ -100,9 +103,16 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
                       node.get("noise_band"), node.get("source_trust", 1.0))
     if bf <= bf_substantial:
         reasons.append(f"bf_marginal:{bf:.3f}<={bf_substantial}")
-    balance = problem_balance(int(node.get("closed", 0)), int(node.get("opened", 0)))
-    if balance <= 0:
-        reasons.append(f"problem_balance:{balance}<=0")
+    closed_n, opened_n = int(node.get("closed", 0)), int(node.get("opened", 0))
+    balance = problem_balance(closed_n, opened_n)
+    ledger_absent = (closed_n == 0 and opened_n == 0)
+    # audit 2026-07-12 finding B: only a PRESENT, net-negative ledger (closed<opened =
+    # excuses breeding problems) vetoes true-eureka. An ABSENT ledger (0,0) leaves the
+    # Laudan axis UNASSESSABLE → the node abstains (inconclusive below), it is NOT branded a
+    # hallucination. Was `<= 0`, which conflated absent-ledger AND break-even with genuine
+    # net-negative, pinning hallucination_rate=1.0 on ledger-less live trees.
+    if not ledger_absent and balance < 0:
+        reasons.append(f"problem_balance:{balance}<0")
     if require_promotion:
         if promotion_gate is None:
             raise ValueError(
@@ -115,9 +125,12 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
         if not ok:
             reasons.extend(gate_reasons)
 
-    true = not reasons
-    return EurekaVerdict(felt=True, true=true, hallucinated=not true,
-                         bf=bf, balance=balance, reasons=tuple(reasons))
+    inconclusive = ledger_absent and not reasons   # would be true, but the Laudan axis has no data
+    true = (not reasons) and not inconclusive
+    return EurekaVerdict(felt=True, true=true,
+                         hallucinated=(not true and not inconclusive),
+                         bf=bf, balance=balance, reasons=tuple(reasons),
+                         inconclusive=inconclusive)
 
 
 def closed_count(value) -> int:
@@ -176,18 +189,22 @@ def eureka_over_tree(nodes: list) -> dict:
     felt = sum(1 for v in verdicts if v.felt)
     true = sum(1 for v in verdicts if v.true)
     hallucinated = sum(1 for v in verdicts if v.hallucinated)
-    # R7 사실 세분(true 정의·hallucination_rate 헤드라인 *불변* — 지표 마사지 아님): 장부 자체가
-    # 없는(closed==0∧opened==0) felt-실패는 '측정 실패'가 아니라 '문제 장부 부재'라는 별개 사실 —
-    # OmdEngine 7/7(확증+BF 완전체인데 pred_closes 미선언) 장르를 실패 사유와 구분해 공시만 한다.
-    ledger_absent = sum(1 for i, v in zip(inputs, verdicts)
-                        if v.hallucinated and i["closed"] == 0 and i["opened"] == 0)
+    # audit 2026-07-12 finding B (supersedes R7 "헤드라인 불변" — that only *disclosed* the
+    # artifact): a felt node whose problem ledger is absent (closed==0∧opened==0) is now an
+    # INCONCLUSIVE abstain, not a hallucination. true_rate/hallucination_rate are computed over
+    # ASSESSABLE nodes (felt − inconclusive) — the ones whose Laudan axis actually has data —
+    # so a ledger-less live tree no longer pins hallucination_rate to 1.0. (OmdEngine 7/7 genre:
+    # confirmed+substantial-BF but no declared pred_closes → inconclusive, honestly unmeasured.)
+    inconclusive = sum(1 for v in verdicts if v.inconclusive)
+    assessable = felt - inconclusive
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
-        "true_rate": round(true / felt, 3) if felt else 0.0,
-        "hallucination_rate": round(hallucinated / felt, 3) if felt else 0.0,
-        "problem_ledger_absent": ledger_absent,
-        "hallucinated_reason_split": {"problem_ledger_absent": ledger_absent,
-                                      "measurement_failed": hallucinated - ledger_absent},
+        "inconclusive": inconclusive, "assessable": assessable,
+        "true_rate": round(true / assessable, 3) if assessable else 0.0,
+        "hallucination_rate": round(hallucinated / assessable, 3) if assessable else 0.0,
+        "problem_ledger_absent": inconclusive,
+        "hallucinated_reason_split": {"problem_ledger_absent": inconclusive,
+                                      "measurement_failed": hallucinated},
         "measurement_grade": True,
     }
 
@@ -212,8 +229,11 @@ def eureka_rate(nodes: list, *, promotion_gate=None) -> dict:
     felt = sum(1 for v in verdicts if v.felt)
     true = sum(1 for v in verdicts if v.true)
     hallucinated = sum(1 for v in verdicts if v.hallucinated)
+    inconclusive = sum(1 for v in verdicts if v.inconclusive)   # audit 2026-07-12 finding B
+    assessable = felt - inconclusive
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
-        "true_rate": round(true / felt, 3) if felt else 0.0,
-        "hallucination_rate": round(hallucinated / felt, 3) if felt else 0.0,
+        "inconclusive": inconclusive, "assessable": assessable,
+        "true_rate": round(true / assessable, 3) if assessable else 0.0,
+        "hallucination_rate": round(hallucinated / assessable, 3) if assessable else 0.0,
     }

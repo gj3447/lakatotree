@@ -177,3 +177,51 @@ def test_eureka_over_tree_aggregates_and_flags_measurement_grade():
     assert r["measurement_grade"] is True
     assert r["felt"] == 2 and r["true"] == 1 and r["hallucinated"] == 1
     assert r["true_rate"] == 0.5
+
+
+# ── ledger-absent ABSTAIN (audit 2026-07-12, finding B) ───────────────────────
+# A confirmed novel prediction with strong evidence but NO declared problem ledger
+# (0 closed ∧ 0 opened) has an UNASSESSABLE Laudan axis. The old `balance <= 0` veto
+# branded it a hallucination identically to a net-negative (balance<0) programme,
+# pinning hallucination_rate to 1.0 on ledger-less live trees. The honest verdict is a
+# third state — INCONCLUSIVE — neither true nor hallucinated, excluded from the rate.
+_LEDGER_ABSENT_NODE = {
+    "tag": "v_no_ledger", "verdict": "progressive",
+    "novel_registered": True, "novel_confirmed": True,
+    "metric_value": 12.0, "pred_baseline": 2.0, "pred_noise_band": 0.1,
+    "pred_closes": [], "questions": [], "source_trust": 1.0,   # → closed=0, opened=0
+}
+
+
+def test_ledger_absent_node_is_inconclusive_not_hallucinated():
+    v = classify(_node_to_eureka_input(_LEDGER_ABSENT_NODE), require_promotion=False)
+    assert v.felt
+    assert not v.hallucinated          # a ledger-less node is NOT a false aha
+    assert not v.true                  # nor a full true-eureka (Laudan axis unverified)
+    assert v.inconclusive              # the honest third state
+    assert not any(r.startswith("problem_balance") for r in v.reasons)
+
+
+def test_net_negative_ledger_still_vetoes_and_is_not_inconclusive():
+    # a PRESENT ledger that is net-negative (closed<opened) is a genuine veto — unchanged.
+    node = {**_TRUE, "closed": 1, "opened": 3}   # balance -2, ledger present
+    v = classify(node)
+    assert v.hallucinated and not v.inconclusive
+    assert any(r.startswith("problem_balance") for r in v.reasons)
+
+
+def test_eureka_over_tree_excludes_inconclusive_from_rate():
+    nodes = [
+        _TREE_NODE,                                     # true (ledger present 3,1)
+        {**_TREE_NODE, "novel_confirmed": False},       # hallucinated (ledger present)
+        _LEDGER_ABSENT_NODE,                            # inconclusive (0,0)
+        {**_LEDGER_ABSENT_NODE, "tag": "v_no_ledger2"}, # inconclusive (0,0)
+    ]
+    r = eureka_over_tree(nodes)
+    assert r["felt"] == 4
+    assert r["inconclusive"] == 2
+    assert r["true"] == 1 and r["hallucinated"] == 1
+    # rates over ASSESSABLE (felt − inconclusive = 2), not the raw felt=4
+    assert r["true_rate"] == 0.5
+    assert r["hallucination_rate"] == 0.5   # NOT 0.75, NOT 1.0
+    assert r["problem_ledger_absent"] == 2
