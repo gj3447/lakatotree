@@ -12,7 +12,9 @@ the content-addressed receipt chain, and this gate:
      unless the SHOWN spec/novel_target equal the SEALED ones — a spec back-fit to the result died
      at registration time, by hash-causal order (changing the spec changes the prediction sha,
      which dangles the verdict's sealed prev);
-  4. re-runs judge() over the spec and REJECTs unless it reproduces the sealed verdict.
+  4. re-runs judge() over the spec and REJECTs unless it reproduces the sealed verdict, with one
+     conservative exception: metric ``progressive`` may seal as ``progressive_unverified`` only
+     when the same receipt seals ``lakatos_status='unverified'``.
 
 Residual (enumerated, never silently discharged):
   - chains WITHOUT a prediction receipt (pre-keystone nodes): spec-fixed-before-result stays
@@ -42,6 +44,10 @@ _RESIDUAL_SEALED = (
     "Fabricating an entire fresh chain (prediction + verdict) after seeing results needs "
     "substrate-B (Ed25519 write-cert) + witnessed temporal ordering to die. judge_script_sha is "
     "carried in both receipts but registration==submit identity is not compared here.")
+
+_RESIDUAL_PU_SHADOW = (
+    " The verifier proves the metric-progressive precondition and a conservative sealed shadow; "
+    "qualitative absence (no Lakatos/PnR evidence) is not independently replayed from this bundle.")
 
 
 def _f(v):
@@ -102,13 +108,23 @@ def verify_preregistered(payload, ctx) -> dict:
     novel_sha]}. Total, fail-closed."""
     if not isinstance(payload, dict):
         return gate_decision(GATE, REJECT, "preregistered payload absent or not an object")
-    fold, reason = check_chain_integrity(payload.get("chain"), payload.get("head"))
+    chain, head_sha = payload.get("chain"), payload.get("head")
+    fold, reason = check_chain_integrity(chain, head_sha)
     if reason:
         return gate_decision(GATE, REJECT, reason)
     if fold["verdict_source"] != "scripted":
         return gate_decision(GATE, REJECT,
                              f"verdict_source is {fold['verdict_source']!r}, not 'scripted' — "
                              f"hand-typed / engine verdict, not a scripted judgement")
+    head_receipt = next(r for r in chain if r.get("receipt_sha") == head_sha)
+    if (fold["verdict"] == "progressive_unverified"
+            and head_receipt.get("lakatos_status") != "unverified"):
+        return gate_decision(
+            GATE,
+            REJECT,
+            "progressive_unverified requires sealed lakatos_status='unverified'; "
+            f"got {head_receipt.get('lakatos_status')!r}",
+        )
     # S3-engine sub-claim B: spec sealed at registration (PredictionReceipt in the head's ancestry).
     preds = _ancestry_predictions(payload["chain"], payload["head"])
     sealed = None
@@ -134,17 +150,30 @@ def verify_preregistered(payload, ctx) -> dict:
                            novel_sha=payload.get("novel_sha", ""))
     except JudgeError as exc:
         return gate_decision(GATE, REJECT, f"spec invalid or judge failed (fail-closed): {exc}")
-    if recomputed["verdict"] != fold["verdict"]:
+    # This gate replays the metric judge, while the sealed engine verdict may be its
+    # fail-closed dialectical shadow when no Lakatos evidence was present. Keep the
+    # allowance one-way so a forged shadow over rejected/partial still fails closed.
+    pu_shadow = (recomputed["verdict"] == "progressive"
+                 and fold["verdict"] == "progressive_unverified")
+    if recomputed["verdict"] != fold["verdict"] and not pu_shadow:
         return gate_decision(GATE, REJECT,
                              f"sealed verdict {fold['verdict']!r} != judge-recomputed "
                              f"{recomputed['verdict']!r} from the shown spec — hand-typed or forged")
+    if pu_shadow:
+        verdict_reason = (
+            "sealed verdict 'progressive_unverified' is accepted as the conservative "
+            "dialectical shadow of judge-recomputed 'progressive'")
+        residual_suffix = _RESIDUAL_PU_SHADOW
+    else:
+        verdict_reason = f"sealed verdict {fold['verdict']!r} re-derived by judge()"
+        residual_suffix = ""
     if sealed is not None:
         return gate_decision(GATE, ACCEPT,
-                             f"sealed verdict {fold['verdict']!r} re-derived by judge() from the spec "
+                             f"{verdict_reason} from the spec "
                              f"sealed at registration (PredictionReceipt, hash-causally committed by "
                              f"the verdict receipt's prev linkage); chain content-addressed + folded",
-                             residual_trust_surface=_RESIDUAL_SEALED)
+                             residual_trust_surface=_RESIDUAL_SEALED + residual_suffix)
     return gate_decision(GATE, ACCEPT,
-                         f"sealed verdict {fold['verdict']!r} re-derived by judge() from the shown "
+                         f"{verdict_reason} from the shown "
                          f"spec; receipt chain content-addressed + folded",
-                         residual_trust_surface=_RESIDUAL)
+                         residual_trust_surface=_RESIDUAL + residual_suffix)

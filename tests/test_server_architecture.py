@@ -160,9 +160,12 @@ def test_kg_read_normalization_handles_string_list_and_null_values():
     assert normalize_text(None) == ""
     assert normalize_text("alpha") == "alpha"
     assert normalize_text(["alpha", "beta"]) == "alpha\nbeta"
-    row = normalize_tree_row({"hard_core": ["h1", "h2"], "coverage_backlog": "missing.md"})
+    row = normalize_tree_row({"hard_core": ["h1", "h2"], "coverage_backlog": "missing.md",
+                              "coverage_status": "partial"})
     assert row["hard_core"] == "h1\nh2"
     assert row["coverage_backlog"] == ["missing.md"]
+    assert row["coverage_status"] == "partial"
+    assert normalize_tree_row({"coverage_status": "COMPLETE"})["coverage_status"] == "unknown"
 
 
 def test_core_tree_routes_are_owned_by_tree_context_router():

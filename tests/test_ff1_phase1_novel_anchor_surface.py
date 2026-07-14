@@ -41,7 +41,7 @@ def test_unanchored_cross_metric_novel_keeps_progressive_but_flags_not_anchored(
     cap: list = []
     _svc(cap).submit_test_result('T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0))
     p = _verdict_params(cap)
-    assert p['v'] == 'progressive'          # 데모트 없음(Phase1)
+    assert p['v'] == 'progressive_unverified'   # 데모트 없음(Phase1), 질적 검증은 부재
     assert p['nsa'] is False                # 서버앵커 아님 = FF1 구멍 인스턴스로 가시화
 
 

@@ -215,9 +215,49 @@ def test_multiplicity_screen_isolated_only_families_of_2plus():
     assert 'iou/s' in _multiplicity_screen(two)                    # family 2개 → 스크린
 
 
-def test_coverage_isolated_backlog_blocks_exhaustive():
-    assert _coverage({})['exhaustive'] is True
-    assert _coverage({'coverage_backlog': ['x']})['exhaustive'] is False
+def test_progressive_unverified_stays_in_metric_multiplicity_family():
+    """PU is programme-neutral, but it still records metric improvement and must face FDR/FWER."""
+    pu = [
+        _r('a', 'progressive_unverified', metric_name='iou', metric_value=0.39,
+           pred_baseline=0.5, pred_noise_band=0.1, pred_direction='lower'),
+        _r('b', 'progressive_unverified', metric_name='iou', metric_value=0.1,
+           pred_baseline=0.5, pred_noise_band=0.1, pred_direction='lower'),
+    ]
+    assert _multiplicity_screen(pu)['iou/s']['family_size'] == 2
+
+
+def test_coverage_isolated_fails_closed_without_explicit_exhaustive_evidence():
+    missing = _coverage({})
+    assert missing['status'] == 'unknown'
+    assert missing['exhaustive'] is False
+
+    prose_only = _coverage({'coverage_statement': 'partial import, not exhaustive'})
+    assert prose_only['status'] == 'unknown'
+    assert prose_only['exhaustive'] is False
+
+    backlog = _coverage({'coverage_backlog': ['x']})
+    assert backlog['status'] == 'partial'
+    assert backlog['exhaustive'] is False
+
+
+def test_coverage_explicit_status_requires_scope_and_empty_backlog_for_exhaustive():
+    partial = _coverage({'coverage_status': 'partial'})
+    assert partial['status'] == 'partial' and partial['exhaustive'] is False
+
+    exhaustive = _coverage({
+        'coverage_status': 'exhaustive',
+        'coverage_statement': 'scope=src/** @ commit abc123',
+        'coverage_backlog': [],
+    })
+    assert exhaustive['status'] == 'exhaustive'
+    assert exhaustive['exhaustive'] is True
+
+    corrupt = _coverage({
+        'coverage_status': 'exhaustive',
+        'coverage_statement': '',
+        'coverage_backlog': [],
+    })
+    assert corrupt['status'] == 'unknown' and corrupt['exhaustive'] is False
 
 
 # ── 바인딩이 드러낸 테스트 공백 메움: bound owner 8개 독립 테스트 (owner+test chain) ──────
@@ -270,6 +310,22 @@ def test_eureka_layer_isolated_returns_dict():
 
 
 def test_assemble_alerts_isolated_degeneration_then_clean():
-    al = _assemble_alerts(stalled=3, prog=None, annotated=1, n=1, coverage_backlog=[], abandon=[], multiplicity={})
+    al = _assemble_alerts(stalled=3, prog=None, annotated=1, n=1,
+                          coverage={'status': 'exhaustive', 'backlog': []},
+                          abandon=[], multiplicity={})
     assert any('퇴행' in a for a in al)
-    assert _assemble_alerts(stalled=0, prog=None, annotated=1, n=1, coverage_backlog=[], abandon=[], multiplicity={}) == []
+    assert _assemble_alerts(stalled=0, prog=None, annotated=1, n=1,
+                            coverage={'status': 'exhaustive', 'backlog': []},
+                            abandon=[], multiplicity={}) == []
+
+
+def test_assemble_alerts_names_unknown_and_declared_partial_coverage():
+    unknown = _assemble_alerts(stalled=0, prog=None, annotated=1, n=1,
+                               coverage={'status': 'unknown', 'backlog': []},
+                               abandon=[], multiplicity={})
+    assert unknown == ['커버리지 범위 미검증 — 전수성 주장 금지']
+
+    partial = _assemble_alerts(stalled=0, prog=None, annotated=1, n=1,
+                               coverage={'status': 'partial', 'backlog': []},
+                               abandon=[], multiplicity={})
+    assert partial == ['커버리지 partial 선언 — 전수성 주장 금지']

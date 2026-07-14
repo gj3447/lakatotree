@@ -217,18 +217,22 @@ def close_question(name: str, qname: str, closed_by: str = '') -> str:
 def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: str = '',
                 doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
                 ontology: str = '', require_novel_anchor: bool = False,
-                assurance_tier: str = '', attestor_dids_csv: str = '') -> str:
+                assurance_tier: str = '', attestor_dids_csv: str = '',
+                coverage_status: str = 'unknown') -> str:
     """새 라카토스 나무 생성/메타 upsert — MERGE (t:LakatosTree {name}). add_node 전에 먼저 호출(없는 나무에
     add_node 는 404 '나무 없음'). 멱등이되 last-write-wins: 같은 name 재호출은 보낸 title/hard_core/
     frontier_rule 로 덮어씀(생략 필드 = 빈값으로 초기화). hard_core/frontier_rule 비우면 policy_warnings
-    (hard_core_required 등) 경고만 — 차단 아님. coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티).
+    (hard_core_required 등) 경고만 — 차단 아님. coverage_status = unknown|partial|exhaustive이고,
+    exhaustive 는 비어 있지 않은 coverage_statement(scope)와 빈 backlog가 필요하다.
+    coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티).
     assurance_tier(G6) = notebook|receipted|anchored — 생략 시 신규 트리는 anchored 기본(구조코어는 모든
     tier 무조건), 기존 트리는 무변경. 하향 선언은 409(단조 ratchet). attestor_dids_csv(G10) = 쉼표구분
     did:key allow-list — 선언하면 anchored tier 판결 쓰기에 write-cert(서명 명령) 강제, 생략=불변."""
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
-             doc=doc, coverage_statement=coverage_statement, coverage_backlog=backlog,
+             doc=doc, coverage_status=coverage_status,
+             coverage_statement=coverage_statement, coverage_backlog=backlog,
              ontology=ontology, require_novel_anchor=require_novel_anchor,
              assurance_tier=(assurance_tier.strip() or None),
              attestor_dids=([d.strip() for d in attestor_dids_csv.split(',') if d.strip()]
@@ -330,7 +334,9 @@ def submit_result(name: str, tag: str, value: float, script: str,
                   data_branch: bool = False, data_replay_passed: bool = True,
                   human_verdict_required: bool = False, result_path: str = '',
                   write_cert_json: str = '') -> str:
-    """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). progressive/partial/equivalent/rejected.
+    """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). metric progressive라도 Lakatos/PnR
+    질적 영수증이 없으면 progressive_unverified(프로그램 진전·승격으로 계산하지 않음).
+    그 외 metric 판결은 progressive/partial/equivalent/rejected.
     ENG-DU-2: data_branch(데이터 재생성 의존)+data_replay_passed=false → progressive_conditional;
     human_verdict_required=true → ambiguous(인간 판정 보류).
     result_path = 산출물(영수증) 경로 — 서버가 노드에 비파괴 병합(coalesce). reproducible 게이트

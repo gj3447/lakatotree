@@ -29,12 +29,12 @@ def _phi(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 
-def judgment_pvalue(delta: float, noise_band: float, direction: str) -> float | None:
+def judgment_pvalue(delta: float, noise_band: float | None, direction: str) -> float | None:
     """단측 p — H0 '개선 없음' 하에서 이만한 delta 가 나올 확률. noise_band=1σ 근사(정직①).
 
     direction='lower' 면 delta<0 이 개선. noise_band=0 → None (검정 불가, 정직②).
     """
-    if noise_band <= 0 or not math.isfinite(delta):
+    if noise_band is None or noise_band <= 0 or not math.isfinite(delta):
         return None
     if direction not in ('lower', 'higher'):
         raise ValueError("direction 은 'lower'|'higher'")
@@ -87,7 +87,7 @@ def false_progressive_screen(candidates: list, q: float = FDR_Q) -> Multiplicity
     """
     pvals, untestable = [], []
     for c in candidates:
-        p = judgment_pvalue(c['delta'], c.get('noise_band', 0.0), c.get('direction', 'lower'))
+        p = judgment_pvalue(c['delta'], c.get('noise_band'), c.get('direction', 'lower'))
         pvals.append(p)
         if p is None:
             untestable.append(c['tag'])

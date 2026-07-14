@@ -69,7 +69,7 @@ def reconcile_verdict(metric_verdict: str, lakatos_result=None) -> dict:
             out['qualitative_reasons'] = tuple(lakatos_result.reasons)
         return out
     if lakatos_result is None:
-        return {'verdict': 'progressive', 'lakatos': 'unverified', 'status': 'qualitative_unverified',
+        return {'verdict': 'progressive_unverified', 'lakatos': 'unverified', 'status': 'qualitative_unverified',
                 'reasons': ('lakatos_evidence_missing',)}
     return {'verdict': lakatos_result.verdict.value, 'lakatos': lakatos_result.verdict.value,
             'status': 'reconciled', 'reasons': tuple(lakatos_result.reasons),
@@ -123,11 +123,14 @@ def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None
     if pv == 'conditional':   # 배웠으나 미확정 — 메트릭 진보를 조건부로 (라카토스 이론적≠경험적 진보)
         out = {**base, 'pnr': 'conditional', 'ad_hoc': pnr_appraisal.ad_hoc,
                'status': 'dialectic_conditional', 'reasons': tuple(pnr_appraisal.reasons)}
-        if base.get('verdict') == 'progressive':
+        if base.get('verdict') in ('progressive', 'progressive_unverified'):
             out['verdict'] = 'progressive_conditional'
         return out
-    return {**base, 'pnr': 'progressive', 'ad_hoc': pnr_appraisal.ad_hoc,
-            'status': base.get('status', '') + '+pnr_progressive'}
+    out = {**base, 'pnr': 'progressive', 'ad_hoc': pnr_appraisal.ad_hoc,
+           'status': base.get('status', '') + '+pnr_progressive'}
+    if base.get('verdict') == 'progressive_unverified':
+        out['verdict'] = 'progressive'
+    return out
 
 
 def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,

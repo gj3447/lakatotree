@@ -25,6 +25,7 @@ def compute_tree_metrics(td: dict) -> dict:
     cfg = {
         "coverage_backlog": td.get("coverage_backlog") or [],
         "coverage_statement": td.get("coverage_statement") or "",
+        "coverage_status": td.get("coverage_status") or "unknown",
     }
     # A2: 관측이 있으면 eigentrust 글로벌 출처신뢰 맵을 구성해 credence 가중에 주입(없으면 레거시).
     observations = td.get("observations")

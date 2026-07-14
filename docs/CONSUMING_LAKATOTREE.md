@@ -62,6 +62,15 @@ metrics = tree_metrics(nodes, frontier)
 pre-registered prediction and a measured value. Writing `verdict='progressive'` by hand is the
 fake-green anti-pattern the whole engine exists to prevent.
 
+The metric scorer and the dialectical layer are distinct. A metric result that qualifies as
+`progressive` but has neither Lakatos evidence nor a PnR appraisal is persisted as
+`progressive_unverified`: known and in-programme, but not counted as programme progress,
+the branch-stack `prediction_hits` signal, or promotion authority. It is a neutral streak boundary:
+it neither increments consecutive nonprogressive depth nor gets skipped when that leafward streak
+is measured. Predictive fertility remains an orthogonal registration/confirmation ratio and still
+counts an independently confirmed novel prediction regardless of this verdict. A
+progressive/conditional PnR appraisal can rescue it to `progressive`/`progressive_conditional`.
+
 ## One-off vs durable
 
 | you want… | do this | touches this repo? |

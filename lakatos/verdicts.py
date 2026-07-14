@@ -44,6 +44,8 @@ KNOWLEDGE_VERDICTS = frozenset({
 ENGINE_VERDICTS = frozenset({
     "progressive",            # judge 와 공유
     "progressive_conditional",
+    "progressive_unverified",  # metric-progressive지만 Lakatos/PnR 질적 검증은 없는 중립 판결.
+                               # SCRIPTED/PROGRESS/NONPROGRESSIVE/CONFIRMED_NOVEL_PROGRESS에는 넣지 않는다.
     "degenerating",
     "withdrawn",              # ENG-CORR-2: pnr surrender → spine.dialectical_verdict 가 emit (등록 누락이었음)
     "different_programme",    # AXIS-CORR (audit qual-fidelity 2026-06-18): hard_core 위반 = 음의 휴리스틱을

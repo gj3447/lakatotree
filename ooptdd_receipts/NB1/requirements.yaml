@@ -1,0 +1,47 @@
+name: lakatotree-noise-band-absence-failsafe
+target:
+  mode: in_process
+  callable: nb1_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: NB1-1
+    description: noise_band 부재(None)는 최대 Bayes factor가 아니라 약증거로 fail-safe한다
+    gate:
+      - {event: absent_noise_is_weak, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:NB1:absent_noise_is_weak
+      source: nb1_receipt.py
+      symbol: verify
+      must_emit: absent_noise_is_weak
+
+  - id: NB1-2
+    description: 명시적 noise_band=0은 결정론적 측정으로 보존되고 양수 scale의 효과크기 순서도 유지된다
+    gate:
+      - {event: declared_noise_mechanism_preserved, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:NB1:declared_noise_mechanism_preserved
+      source: nb1_receipt.py
+      symbol: verify
+      must_emit: declared_noise_mechanism_preserved
+
+  - id: NB1-3
+    description: branch_credence에서 noise_band 생략은 정직한 양수 선언보다 강한 credence를 만들지 않는다
+    gate:
+      - {event: branch_omission_fails_safe, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:NB1:branch_omission_fails_safe
+      source: nb1_receipt.py
+      symbol: verify
+      must_emit: branch_omission_fails_safe
+
+  - id: NB1-4
+    description: metrics feeder는 부재를 None으로 운반하며 0으로 결함 주입하면 실제 credence가 부당 상승한다
+    gate:
+      - {event: feeder_collapse_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:NB1:feeder_collapse_negative_oracle
+      source: nb1_receipt.py
+      symbol: verify
+      must_emit: feeder_collapse_negative_oracle

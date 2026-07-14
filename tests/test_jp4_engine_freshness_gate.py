@@ -96,7 +96,7 @@ def test_fresh_engine_passthrough_and_boot_sha_stamp():
     cap: list = []
     _svc(cap, provider=_FRESH).submit_test_result('T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0))
     p = _params(cap)
-    assert p['v'] == 'progressive' and p['lstat'] != 'provisional_stale_engine', '신선 판관인데 강등/오발화'
+    assert p['v'] == 'progressive_unverified' and p['lstat'] != 'provisional_stale_engine', '신선 판관인데 강등/오발화'
     assert p['efresh'] == 'fresh' and p['boot_sha'] == 'cccc333'
 
 

@@ -28,6 +28,14 @@ def _pred_eureka(q, **kw):
     return []
 
 
+def _pred_eureka_without_noise(q, **kw):
+    if 'RETURN e.pred_metric' in q:
+        return [dict(m='p95', d='lower', b=0.5, nb=None, novel='x', vsrc=None,
+                     nmet='nm', ndir='higher', nthr=0.5, psha=None,
+                     closes='q1', n_opened=0)]
+    return []
+
+
 def test_submit_emits_true_eureka_in_same_tx(monkeypatch):
     app = load_app()
     txs = []
@@ -36,6 +44,7 @@ def test_submit_emits_true_eureka_in_same_tx(monkeypatch):
     monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
     out = app.submit_test_result('T', 'v', app.TestResultIn(
         metric_value=0.1, script='j.py', novel_measured=0.9))   # 큰 개선(delta=0.4) + novel 적중
+    assert out['verdict'] == 'progressive_unverified'
     assert out['eureka']['felt'] is True
     assert out['eureka']['true'] is True
     assert out['eureka']['hallucinated'] is False
@@ -56,6 +65,21 @@ def test_submit_unconfirmed_novel_is_hallucinated(monkeypatch):
     assert out['eureka']['felt'] is True
     assert out['eureka']['true'] is False
     assert out['eureka']['hallucinated'] is True
+
+
+def test_submit_eureka_preserves_absent_noise_as_weak_evidence(monkeypatch):
+    """NB1: submit seam이 pred_noise_band=None을 선언-0으로 강등하지 않는다."""
+    from lakatos.quant.bayes import BF_BASE, bayes_factor
+
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', _pred_eureka_without_noise)
+    monkeypatch.setattr(app, 'kg_tx', lambda ops: [[]])
+    monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
+    out = app.submit_test_result('T', 'v', app.TestResultIn(
+        metric_value=0.1, script='j.py', novel_measured=0.9))
+    expected = bayes_factor('progressive', delta=-0.4, noise_band=None)
+    assert out['eureka']['bf'] == round(expected, 3)
+    assert expected < BF_BASE['progressive']
 
 
 # ── A1-surface: GET /node/{tag}/eureka read surface ──────────────────────────

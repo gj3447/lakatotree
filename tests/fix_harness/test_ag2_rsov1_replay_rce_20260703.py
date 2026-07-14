@@ -8,7 +8,8 @@
 ③ setrlimit 부재 → fork/mem/disk-DoS 가 timeout 만으론 안 막힘.
 LAKATOS_REPLAY_EXEC 은 기본 OFF(dead path)라 지금 실피해는 없으나, GO1(exec 기본-ON)의 **절대
 선행조건**이다. 봉합: server/app.py `_safe_replay_argv`(python 계열만·스크립트=허용루트 실존파일·
-result_path flag 거부) + `_apply_replay_rlimits`(CPU/AS/FSIZE/CORE 유한 상한).
+result_path flag 거부) + `_apply_replay_rlimits`(CPU/AS/FSIZE/CORE 유한 상한;
+Darwin은 이미 매핑된 대형 공유 주소공간을 실측한 뒤 허용 growth를 더한다).
 
   guard_defect    = test_rce_vectors_are_rejected            (음성: 4벡터 실행 시 side-effect 없음·거부)
   guard_mechanism = test_honest_replay_runs_under_finite_rlimits (양성: 정직 스크립트 실행 + 자식 rlimit 유한)
@@ -57,18 +58,18 @@ def test_rce_vectors_are_rejected():
 
 def test_honest_replay_runs_under_finite_rlimits():
     """양성 오라클: 허용 루트 내 실존 스크립트는 여전히 실행되고(하드닝이 정직 경로를 안 깬다),
-    자식 프로세스는 유한 rlimit(RLIMIT_AS/FSIZE/CPU) 하에서 돈다. revert-민감: preexec_fn 을 떼면
+    자식 프로세스는 유한 rlimit(memory/FSIZE/CPU) 하에서 돈다. revert-민감: preexec_fn 을 떼면
     자식이 RLIM_INFINITY 를 보고 아래 단언이 RED."""
     app = _app()
     probe = os.path.join(tempfile.gettempdir(), "ag2_rlimit_probe.py")
     with open(probe, "w") as f:
         f.write(
             "import resource\n"
-            "a_s, _ = resource.getrlimit(resource.RLIMIT_AS)\n"
+            "memory, _ = resource.getrlimit(resource.RLIMIT_AS)\n"
             "fs, _ = resource.getrlimit(resource.RLIMIT_FSIZE)\n"
             "cpu, _ = resource.getrlimit(resource.RLIMIT_CPU)\n"
             "inf = resource.RLIM_INFINITY\n"
-            "bounded = a_s != inf and fs != inf and cpu != inf\n"
+            "bounded = memory != inf and fs != inf and cpu != inf\n"
             "print('metric=%d' % (1 if bounded else 0))\n")
     out, code = app._replay_run(f"python {probe} ignored_arg")
     assert code == 0, (out, code)

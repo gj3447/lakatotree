@@ -133,7 +133,7 @@ def test_scored_node_ledger_fields_are_readable():
         novel_threshold=1.0, closes_question='q-x'))
     out = svc.submit_test_result('T', 'seam', Result(
         metric_value=1.0, script='inline', novel_measured=1.0))
-    assert out['verdict'] == 'progressive', out
+    assert out['verdict'] == 'progressive_unverified', out
 
     td = TreeKgRepository(kg).load_tree_data('T')
     row = next(r for r in td['nodes'] if r['tag'] == 'seam')

@@ -1,0 +1,37 @@
+name: lakatotree-external-bind-auth-failclosed
+target:
+  mode: in_process
+  callable: ab1_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: AB1-1
+    description: loopback 밖 bind는 API token 없이는 거부된다
+    gate:
+      - {event: external_bind_requires_token, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:AB1:external_bind_requires_token
+      source: ab1_receipt.py
+      symbol: verify
+      must_emit: external_bind_requires_token
+
+  - id: AB1-2
+    description: loopback open 개발과 token을 가진 외부 bind는 허용된다
+    gate:
+      - {event: safe_bind_paths_preserved, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:AB1:safe_bind_paths_preserved
+      source: ab1_receipt.py
+      symbol: verify
+      must_emit: safe_bind_paths_preserved
+
+  - id: AB1-3
+    description: CLI와 UVICORN_FD/UDS 환경 listener override를 거부하고 검증기를 무력화하면 음성 오라클이 결함을 검출한다
+    gate:
+      - {event: listener_override_negative_oracle, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:AB1:listener_override_negative_oracle
+      source: ab1_receipt.py
+      symbol: verify
+      must_emit: listener_override_negative_oracle

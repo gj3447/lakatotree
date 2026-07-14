@@ -27,6 +27,11 @@ def _ids(rec):
     return {f.check_id for f in F.fsck_node(rec)}
 
 
+def test_progressive_unverified_mismatch_keeps_value_integrity_warning():
+    """PU is programme-neutral, but its metric result is still a standing measurement claim."""
+    assert _ID in _ids({"verdict": "progressive_unverified", "replay_status": "mismatch"})
+
+
 # ── guard_defect ──────────────────────────────────────────────────────────────────
 def test_refuted_standing_node_is_flagged():
     """replay 가 값을 반증(mismatch)했는데 standing verdict 를 든 노드 → 값무결 WARN 표면화."""

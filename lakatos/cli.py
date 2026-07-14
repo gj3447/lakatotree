@@ -132,6 +132,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('tree-create'); sp.add_argument('name')
     sp.add_argument('--title', default=''); sp.add_argument('--hard-core', default='')
     sp.add_argument('--frontier-rule', default=''); sp.add_argument('--doc', default='')
+    sp.add_argument('--coverage-status', default='unknown',
+                    choices=['unknown', 'partial', 'exhaustive'],
+                    help='커버리지 선언; exhaustive 는 scope 문장+빈 backlog 필수')
     sp.add_argument('--coverage-statement', default='')
     sp.add_argument('--coverage-backlog', action='append', default=[], help='(반복) 커버리지 백로그')
     sp.add_argument('--ontology', default='', help='도메인 온톨로지 JSON(선언 시 엔진이 노드 강제)')
@@ -337,7 +340,8 @@ def main(argv=None):
     elif a.cmd == 'tree-create':
         out = call('POST', f'/api/tree/{a.name}',
                    dict(title=a.title, hard_core=a.hard_core, frontier_rule=a.frontier_rule,
-                        doc=a.doc, coverage_statement=a.coverage_statement,
+                        doc=a.doc, coverage_status=a.coverage_status,
+                        coverage_statement=a.coverage_statement,
                         coverage_backlog=a.coverage_backlog, ontology=a.ontology,
                         assurance_tier=(a.assurance_tier or None),
                         attestor_dids=(a.attestor_did or None)))

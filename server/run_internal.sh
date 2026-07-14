@@ -2,10 +2,29 @@
 # 라카토트리 서버 — 내부망(macmini) 기동. 우리 dgx neo4j + dgx mongo 물림.
 # PG는 내부망 미가동 → lazy(history append만 degrade, core neo4j ops 정상).
 set -e
-export NEO4J_URI="${NEO4J_URI:-bolt://100.64.0.3:7687}"
-export NEO4J_USER="${NEO4J_USER:-neo4j}"
-export NEO4J_PASSWORD="${NEO4J_PASSWORD:-neo4jpassword}"
-export LAKATOS_MONGO_URI="${LAKATOS_MONGO_URI:-mongodb://mongo:mongopassword@100.64.0.3:27017/?authSource=admin}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIND_HOST="${LAKATOS_BIND_HOST:-127.0.0.1}"
+PYTHON_BIN="${LAKATOS_PYTHON:-$ROOT/.venv/bin/python}"
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "[run_internal.sh] Python venv 없음: $PYTHON_BIN" >&2
+  exit 2
+fi
 cd "$ROOT"
-exec uv run uvicorn --app-dir server app:app --host 127.0.0.1 --port "${LAKATO_PORT:-55170}"
+"$PYTHON_BIN" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
+
+ENV_FILE="${LAKATOS_ENV_FILE:-$HOME/.config/lakatotree/server.env}"
+if [ -r "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+# env 파일이 token/listener 자세를 바꾼 뒤의 값이 권위다. DB 접촉 전에 다시 fail-closed 검증한다.
+"$PYTHON_BIN" -m server.auth_posture "$BIND_HOST" "$@" || exit $?
+: "${NEO4J_URI:?NEO4J_URI 설정 필요($ENV_FILE)}"
+: "${NEO4J_USER:?NEO4J_USER 설정 필요($ENV_FILE)}"
+: "${NEO4J_PASSWORD:?NEO4J_PASSWORD 설정 필요($ENV_FILE)}"
+: "${LAKATOS_MONGO_URI:?LAKATOS_MONGO_URI 설정 필요($ENV_FILE)}"
+
+exec "$PYTHON_BIN" -m uvicorn --app-dir server app:app --host "$BIND_HOST" \
+  --port "${LAKATO_PORT:-55170}" "$@"

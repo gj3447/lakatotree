@@ -78,7 +78,7 @@ def render_dashboard(
             f"<div class='lay'>📊 <b>베이즈 신뢰도</b> {bayes['canonical_credence']} · "
             f"<b>발전성</b> 적중 {fert.get('hits','?')}/{fert.get('registered','?')} "
             f"(nobel_grade={fert.get('nobel_grade')}) · "
-            f"<b>커버리지</b> backlog {cov['backlog_count']}건"
+            f"<b>커버리지</b> {html.escape(cov['status'])} · backlog {cov['backlog_count']}건"
             f"{' (전수)' if cov['exhaustive'] else ''}</div>"
         )
         sl = tree_stack_lifecycle(td)
@@ -170,4 +170,3 @@ def render_dashboard(
         )
     out.append("</body></html>")
     return "".join(out)
-

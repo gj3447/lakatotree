@@ -11,15 +11,17 @@
 > - `localhost:22` ssh OPEN이나 이 박스엔 키/비번 없음 → 원격 기동 불가.
 >
 > **결론: 서버는 `localhost` 본인 세션에서 띄운다.** 거기선 Neo4j가 localhost:7687.
-> zt에서 CLI로 쓰려면 `--host 0.0.0.0` 로 바인딩(run_internal.sh 기본 `127.0.0.1` 오버라이드):
+> zt에서 CLI로 쓰려면 외부 bind용 API token을 설정하고 지원 launcher를 사용한다:
 > ```bash
 > # ON localhost:
 > cd <lakatotree>
 > NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=<pw> \
 > LAKATOS_MONGO_URI=mongodb://localhost:27017 \
-> uv run uvicorn --app-dir server app:app --host 0.0.0.0 --port 55170
+> LAKATOS_BIND_HOST=0.0.0.0 LAKATOS_API_TOKEN=<random-secret> \
+> bash server/run_internal.sh
 > # 그 뒤 이 박스(10.147.17.136)에서:
-> #   LAKATOTREE_URL=http://localhost:55170 python -m lakatos.cli metrics LakatosTree_VerdictProvenanceGate_20260620
+> #   LAKATOTREE_URL=http://<server-zerotier-ip>:55170 LAKATOS_API_TOKEN=<same-secret> \
+> #     python -m lakatos.cli metrics LakatosTree_VerdictProvenanceGate_20260620
 > ```
 > 단, MCP 경로로 트리 빌드/조회/FDR/Longinus 다 이미 됐으므로 **서버는 CLI 편의용(선택)**이다.
 
@@ -53,15 +55,19 @@ tailscale 로 dgx 에 닿는 호스트의 `lakatotree/` 에서:
 
 ```bash
 cd <lakatotree>
-bash server/run_internal.sh          # → uv run uvicorn --app-dir server app:app --host 127.0.0.1 --port 55170
+bash server/run_internal.sh          # → .venv Python, 기본 127.0.0.1:55170
 ```
 
-`run_internal.sh` 가 박아둔 기본 creds (다르면 export 로 오버라이드):
+자격증명은 `~/.config/lakatotree/server.env`(또는 `LAKATOS_ENV_FILE`)에서 읽으며 기본값은 없다:
 ```bash
 export NEO4J_URI="bolt://100.64.0.3:7687"   NEO4J_USER="neo4j"   NEO4J_PASSWORD="<dgx neo4j pw>"
 export LAKATOS_MONGO_URI="mongodb://mongo:<pw>@100.64.0.3:27017/?authSource=admin"
 # PG 쓸 거면(선택): LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB (없으면 history degrade)
 ```
+
+무토큰 기동은 loopback만 허용한다. 외부 주소/hostname은 `LAKATOS_API_TOKEN`이 없으면 preflight에서
+종료하며, `--host`/`--fd`/`--uds`와 `UVICORN_FD`/`UVICORN_UDS`로 listener 정책을 우회할 수 없다.
+원격 CLI의 `LAKATOTREE_URL`에는 `localhost`가 아니라 서버 호스트의 ZeroTier IP/hostname을 쓴다.
 
 > ⚠️ `server/run.sh`(run_internal 아님)는 **다른 셋업용**이다 — `<WORKSPACE>/vision3d_test/.env`
 > 를 source 하고 `~/.claude/settings.json['env']['NEO4J_*']` + 로컬 docker 컨테이너 `postgresql`

@@ -63,7 +63,7 @@ def test_freshen_upgrades_anchor_demoted_partial(tmp_path):
     out = _svc(cap).submit_test_result('T', 'n', Result(
         metric_value=1.0, script=str(j), novel_measured=1.0, novel_script=str(j)))
     p = _params(cap)
-    assert p['v'] == 'progressive', p
+    assert p['v'] == 'progressive_unverified', p
     assert p['novel'] is True, p
     assert p['prev_rsha'] == 'aa' * 32, 'receipt 는 기존 체인 head 에 append 되어야 한다'
     assert out.get('freshen') is True, out

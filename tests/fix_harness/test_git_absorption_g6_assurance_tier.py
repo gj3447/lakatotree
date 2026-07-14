@@ -69,7 +69,7 @@ def test_notebook_and_legacy_tier_behavior_invariant():
         cap: list = []
         _submit_svc(cap, tier=tier, flag=False).submit_test_result('T', 'n', Result(
             metric_value=1.0, script='inline', novel_measured=1.0))
-        assert _params(cap)['v'] == 'progressive', f"tier={tier} 가 소급 강등됨(비파괴 위반)"
+        assert _params(cap)['v'] == 'progressive_unverified', f"tier={tier} 가 소급 강등됨(비파괴 위반)"
 
 
 def test_legacy_tree_optin_flag_still_respected():

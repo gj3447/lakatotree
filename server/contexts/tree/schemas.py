@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ★server-set-only 경계(적대 재검증 2026-06-21): verdict_source 등 server 전용 필드는 client 가 절대 못 쓴다.
 #   pydantic 기본 extra='ignore' 는 client 가 보낸 verdict_source 를 *조용히 drop* 할 뿐 — 미래에 누군가
@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 _SERVER_SET_ONLY = ConfigDict(extra="forbid")
 
 from lakatos.engine import FoundationRequirement, KnowledgeKind, Realm, ResearchEvent
+from lakatos.coverage import CoverageStatus, validate_coverage_declaration
 
 
 class ParentEdgeIn(BaseModel):
@@ -70,6 +71,7 @@ class CreateTreeIn(BaseModel):
     hard_core: str = ""
     frontier_rule: str = ""
     doc: str = ""
+    coverage_status: CoverageStatus = "unknown"
     coverage_statement: str = ""
     coverage_backlog: list[str] = Field(default_factory=list)
     # 도메인 온톨로지(JSON): {"entities":{name:{required:[...],constraints:{attr:{enum|type|min|max}}}},
@@ -88,6 +90,16 @@ class CreateTreeIn(BaseModel):
     # G10: 서명자 allow-list(did:key, 키 실물) — None=불변(비클로버), 선언 시 교체(revocation 정당).
     #   anchored tier ∧ 이 목록 비어있지 않음 = 판결 쓰기에 write-cert 강제 발동.
     attestor_dids: list[str] | None = None
+
+    @model_validator(mode="after")
+    def validate_coverage(self) -> "CreateTreeIn":
+        """Canonicalize legacy backlog writes and reject unearned exhaustive claims."""
+        self.coverage_status = validate_coverage_declaration(
+            self.coverage_status,
+            statement=self.coverage_statement,
+            backlog=self.coverage_backlog,
+        )
+        return self
 
 
 class PredictionIn(BaseModel):

@@ -96,12 +96,12 @@ jobs:
         run: lake build   # ground-truth gate: error=0, sorry=0
 
   ooptdd-receipts:
-    # 설계감사 13건(H1~H4·M1~M9)의 ooptdd-loop 영수증을 상시 재검증 — pytest 가 아니라 R02(구조화 이벤트
+    # ooptdd-loop 영수증 전체를 자동발견해 상시 재검증 — pytest 가 아니라 R02(구조화 이벤트
     # trace 도착) + R10(Longinus 바인딩) 기준. 각 emit-adapter(ooptdd_receipts/<F>/)가 *실제 고쳐진* 엔진
     # 코드를 in-process 구동하고 음성 오라클을 포함하므로, 엔진이 회귀해 결함이 돌아오면 해당 영수증이 RED.
     # ★self-contained 차단 게이트(continue-on-error 제거): loop runner 를 _vendor/ooptdd_loop (base ooptdd
     #   는 _vendor/ooptdd) 로 벤더해 private repo·시크릿 의존을 없앴다 — requirements.txt(+pyyaml)만으로 돈다.
-    name: ooptdd-receipts — 13 design-audit receipts (R02 trace + R10 Longinus)
+    name: ooptdd-receipts — all auto-discovered receipts (R02 trace + R10 Longinus)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,8 +112,8 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install pinned deps (clean — requirements.txt only)
         run: pip install -r requirements.txt
-      - name: re-verify 13 design-audit ooptdd-loop receipts (vendored loop, no secret)
-        run: python ooptdd_receipts/run_all.py   # 13/13 green 아니면 exit 1
+      - name: re-verify every ooptdd-loop receipt (vendored loop, no secret)
+        run: python ooptdd_receipts/run_all.py   # 발견된 전체가 green 아니면 exit 1
 
   c1verify-standalone:
     # campaign C1 / P0b — engine-independence as a CONSTRUCTION FACT, not a promise. Install ONLY the

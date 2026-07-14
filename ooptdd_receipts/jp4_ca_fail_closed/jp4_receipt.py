@@ -68,9 +68,10 @@ def verify(backend, cid):
     assert p["efresh"] == "stale_code" and p["boot_sha"] == "aaaa111", p
     backend.ship([_ev(cid, "jp4_stale_progressive_demoted", boot=p["boot_sha"])])
 
-    # (B) fresh → progressive 무변경 통과 + 스탬프
+    # (B) fresh → freshness 강등 없이 PU 통과 + 스탬프
     p2 = _drive(_fresh)
-    assert p2["v"] == "progressive" and p2["efresh"] == "fresh" and p2["boot_sha"] == "cccc333", p2
+    assert (p2["v"] == "progressive_unverified" and p2["efresh"] == "fresh"
+            and p2["boot_sha"] == "cccc333"), p2
     backend.ship([_ev(cid, "jp4_fresh_passthrough_stamped", boot=p2["boot_sha"])])
 
     # (C) 음성 오라클 — 소비 사이트 절제 → 결함 부활 검출, 원복 → 강등 재현
@@ -78,7 +79,7 @@ def verify(backend, cid):
     try:
         js_mod.engine_freshness_fires = lambda f: False       # 게이트 절단(결함 재주입)
         p3 = _drive(_stale)
-        revived = p3["v"] == "progressive"                    # 절제된 게이트가 결함을 되살림 = 검출
+        revived = p3["v"] == "progressive_unverified"         # 절제된 게이트가 결함을 되살림 = 검출
     finally:
         js_mod.engine_freshness_fires = orig
     assert revived, "게이트 절제에도 강등 유지 — 검사가 다른 곳에 위장(음성 오라클 실패)"

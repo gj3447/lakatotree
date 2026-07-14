@@ -182,6 +182,7 @@ class TreeKgWriter:
         doc: str = "",
         coverage_backlog: Sequence[str] = (),
         coverage_statement: str = "",
+        coverage_status: str = "unknown",
         ontology: str = "",
         require_novel_anchor: bool = False,
         require_certified_evidence: bool = False,
@@ -200,7 +201,8 @@ class TreeKgWriter:
                      ON CREATE SET t.assurance_tier = coalesce($declared_tier, $default_tier)
                    SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
                        t.doc=$doc, t.coverage_backlog=$coverage_backlog,
-                       t.coverage_statement=$coverage_statement, t.ontology=$ontology,
+                       t.coverage_statement=$coverage_statement,
+                       t.coverage_status=$coverage_status, t.ontology=$ontology,
                        t.require_novel_anchor=$require_novel_anchor,
                        t.require_certified_evidence=$require_certified_evidence, t.updated_at=$ts
                    SET t.assurance_tier = CASE
@@ -219,6 +221,7 @@ class TreeKgWriter:
                     doc=doc,
                     coverage_backlog=list(coverage_backlog),
                     coverage_statement=coverage_statement,
+                    coverage_status=coverage_status,
                     ontology=ontology,
                     require_novel_anchor=require_novel_anchor,
                     require_certified_evidence=require_certified_evidence,

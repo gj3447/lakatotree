@@ -165,13 +165,13 @@ def test_submit_chains_verdict_receipt_onto_prediction_receipt():
     svc.register_prediction('T', 'seam', _pred())
     pred_sha = kg.node['current_receipt_sha']
     out = svc.submit_test_result('T', 'seam', Result(metric_value=1.0, script='inline', novel_measured=1.0))
-    assert out['verdict'] == 'progressive', out
+    assert out['verdict'] == 'progressive_unverified', out
     heads = [r for r in kg.receipts if r.get('verdict_source') == 'scripted']
     assert len(heads) == 1
     assert heads[0]['prev_receipt_sha'] == pred_sha, 'verdict 가 prediction sha 를 봉인 안 함(back-fit 살아있음)'
     # 체인 fold: head(verdict) → prediction(genesis) 도달 (무결)
     v = svc.verify_verdict_chain('T', 'seam')
-    assert v['ok'] and v['from_receipt'] and v['rederived'] == 'progressive', v
+    assert v['ok'] and v['from_receipt'] and v['rederived'] == 'progressive_unverified', v
 
 
 def test_registered_unjudged_node_chain_folds_clean():

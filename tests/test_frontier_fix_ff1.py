@@ -56,7 +56,7 @@ def test_cross_metric_novel_requires_server_readback_or_sha(tmp_path):
     _svc(cap, require_anchor=True).submit_test_result('T', 'n', Result(
         metric_value=1.0, script='inline', novel_measured=1.0, novel_script=str(m)))
     p = _params(cap)
-    assert p['v'] == 'progressive', p
+    assert p['v'] == 'progressive_unverified', p
     assert p['novel'] is True, p
 
 
@@ -66,4 +66,4 @@ def test_policy_is_opt_in_off_by_default_non_breaking():
     cap: list = []
     _svc(cap, require_anchor=False).submit_test_result('T', 'n', Result(
         metric_value=1.0, script='inline', novel_measured=1.0))
-    assert _params(cap)['v'] == 'progressive'
+    assert _params(cap)['v'] == 'progressive_unverified'

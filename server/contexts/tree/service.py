@@ -111,6 +111,7 @@ class TreeService:
             hard_core=spec.hard_core,
             frontier_rule=spec.frontier_rule,
             doc=spec.doc,
+            coverage_status=spec.coverage_status,
             coverage_statement=spec.coverage_statement,
             coverage_backlog=tuple(spec.coverage_backlog),
             ontology=spec.ontology,

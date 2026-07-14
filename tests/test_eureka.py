@@ -45,6 +45,25 @@ def test_true_eureka_passes_every_red_gate():
     assert v.reasons == () and v.bf > BF_SUBSTANTIAL and v.balance > 0
 
 
+def test_public_measurement_classify_normalizes_progressive_unverified():
+    """Callers of the public core must not need to know an internal write/read adapter."""
+    from lakatos import classify as public_classify
+
+    node = {**_TRUE, "verdict": "progressive_unverified"}
+    verdict = public_classify(node, require_promotion=False)
+    assert verdict.true and not verdict.hallucinated
+    assert verdict.bf > BF_SUBSTANTIAL
+
+
+def test_full_classify_keeps_unverified_out_of_promotion_after_bf_normalization():
+    node = {**_TRUE, "verdict": "progressive_unverified"}
+    verdict = classify(node, require_promotion=True)
+    assert verdict.true is False and verdict.hallucinated is True
+    assert "verdict_not_promotable:progressive_unverified" in verdict.reasons
+    assert not any(reason.startswith("bf_marginal") for reason in verdict.reasons)
+    assert verdict.bf > BF_SUBSTANTIAL
+
+
 def test_felt_but_unconfirmed_is_hallucinated():
     # the decisive case: a bold novel conjecture (blue flash) that was never externally
     # confirmed — feels like eureka, is a hallucination (the human 37%).
