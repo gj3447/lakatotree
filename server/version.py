@@ -19,28 +19,83 @@ from functools import lru_cache
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _manual_git_head_sha(root: str) -> str:
+    """git 실행파일 부재 시 *root 자신의* .git/HEAD만 읽는 제한적 fallback."""
+    git_dir = os.path.join(root, ".git")
+    try:
+        # linked worktree의 .git은 실제 git-dir를 가리키는 text file이다.
+        if os.path.isfile(git_dir):
+            with open(git_dir, encoding="utf-8") as f:
+                pointer = f.read().strip()
+            if not pointer.startswith("gitdir:"):
+                return "unknown"
+            git_dir = pointer.split(":", 1)[1].strip()
+            if not os.path.isabs(git_dir):
+                git_dir = os.path.join(root, git_dir)
+            git_dir = os.path.realpath(git_dir)
+
+        head = os.path.join(git_dir, "HEAD")
+        with open(head, encoding="utf-8") as f:
+            ref = f.read().strip()
+        if ref.startswith("ref:"):
+            refpath = os.path.join(git_dir, ref.split(" ", 1)[1].strip())
+            with open(refpath, encoding="utf-8") as f:
+                return f.read().strip()[:7]
+        return ref[:7]   # detached HEAD = 직접 sha
+    except OSError:
+        return "unknown"
+
+
+def _exact_lakatotree_git_root(root: str) -> bool | None:
+    """own .git + project markers + exact top-level이면 True, git 부재면 None."""
+    own_git = os.path.join(root, ".git")
+    has_project_markers = (
+        os.path.isfile(os.path.join(root, "pyproject.toml"))
+        and os.path.isdir(os.path.join(root, "lakatos"))
+    )
+    if not os.path.lexists(own_git) or not has_project_markers:
+        return False
+    try:
+        top = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except OSError:
+        return None
+    except subprocess.SubprocessError:
+        return False
+    top_level = top.stdout.strip()
+    return bool(top_level) and top.returncode == 0 and os.path.realpath(top_level) == root
+
+
 def _git_head_sha(root: str) -> str:
-    """root 저장소의 HEAD 커밋 sha(짧은형). subprocess 우선, 실패 시 .git/HEAD 수동 파싱, 최후 'unknown'."""
+    """검증된 LakatoTree *정확한 repo root*의 HEAD sha. 그 외에는 ``unknown``.
+
+    ``git -C``는 대상에 ``.git``이 없어도 부모 저장소까지 올라간다. 배포 snapshot이
+    SYMPOSIUM 부모 SHA를 자기 신원으로 도용하면 boot/disk가 같은 거짓 ``stale=false``가
+    만들어진다. 따라서 own .git + project markers + show-toplevel exact-match를 모두
+    통과한 뒤에만 HEAD를 신뢰한다.
+    """
+    exact_root = os.path.realpath(os.fspath(root))
+    exact = _exact_lakatotree_git_root(exact_root)
+    if exact is False:
+        return "unknown"
+    if exact is None:
+        return _manual_git_head_sha(exact_root)
+
     try:
         out = subprocess.run(
-            ["git", "-C", root, "rev-parse", "--short", "HEAD"],
+            ["git", "-C", exact_root, "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, timeout=5,
         )
         if out.returncode == 0 and out.stdout.strip():
             return out.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    # 배포 tarball 등 git 부재 대비: .git/HEAD → ref 파일 수동 해석.
-    try:
-        head = os.path.join(root, ".git", "HEAD")
-        with open(head) as f:
-            ref = f.read().strip()
-        if ref.startswith("ref:"):
-            refpath = os.path.join(root, ".git", ref.split(" ", 1)[1].strip())
-            with open(refpath) as f:
-                return f.read().strip()[:7]
-        return ref[:7]   # detached HEAD = 직접 sha
+        return "unknown"
     except OSError:
+        # git binary 자체가 없을 때만 own .git fallback. top-level mismatch/명령 실패는
+        # fallback으로 우회시키지 않는다 — 검증 실패는 신원 부재다.
+        return _manual_git_head_sha(exact_root)
+    except subprocess.SubprocessError:
         return "unknown"
 
 
@@ -63,14 +118,17 @@ def served_version() -> dict:
     """서빙 코드 신원 + stale 자기보고. /version 엔드포인트와 배포 프로브가 소비.
 
     stale=True ⟺ 프로세스가 부팅한 커밋(boot_git_sha)이 현 디스크 HEAD(disk_head_sha)와 다름
-    = 코드가 갱신됐으나 프로세스 미재기동(S5 결함의 관측가능화).
+    = 코드가 갱신됐으나 프로세스 미재기동(S5 결함의 관측가능화). 신원을 검증할 수 없으면
+    stale=None — 부재는 fresh(False)의 증거가 아니다.
     """
     disk = disk_head_sha()
+    identity_verified = BOOT_GIT_SHA != "unknown" and disk != "unknown"
     return {
         "boot_git_sha": BOOT_GIT_SHA,
         "boot_time": BOOT_TIME,
         "disk_head_sha": disk,
-        "stale": BOOT_GIT_SHA != disk and BOOT_GIT_SHA != "unknown" and disk != "unknown",
+        "identity_verified": identity_verified,
+        "stale": (BOOT_GIT_SHA != disk) if identity_verified else None,
     }
 
 

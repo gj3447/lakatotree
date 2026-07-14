@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import itertools
 import os
+import subprocess
 
 from server.maintenance import MaintenanceRunner
 
@@ -34,6 +35,7 @@ def test_served_code_sha_is_observable_at_version_endpoint():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body['boot_git_sha'] and body['boot_git_sha'] != 'unknown', body
+    assert body['identity_verified'] is True, body
     assert 'boot_time' in body and 'disk_head_sha' in body and 'stale' in body, body
 
 
@@ -48,6 +50,68 @@ def test_version_reports_stale_when_boot_sha_differs_from_disk(monkeypatch):
     # 같은 sha 면 stale=False(과잉경보 아님)
     monkeypatch.setattr(ver, 'disk_head_sha', lambda: 'aaaaaaa')
     assert ver.served_version()['stale'] is False
+
+
+def _git(root, *args):
+    return subprocess.run(
+        ['git', *args], cwd=root, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+def _init_repo(root, *, lakatotree_markers: bool) -> str:
+    root.mkdir()
+    _git(root, 'init', '-q')
+    _git(root, 'config', 'user.email', 'lakatotree-test@example.invalid')
+    _git(root, 'config', 'user.name', 'LakatoTree Test')
+    if lakatotree_markers:
+        (root / 'pyproject.toml').write_text('[project]\nname = "lakatotree"\nversion = "0"\n')
+        (root / 'lakatos').mkdir()
+        (root / 'lakatos' / '__init__.py').write_text('')
+    else:
+        (root / 'README.md').write_text('# unrelated repository\n')
+    _git(root, 'add', '-A')
+    _git(root, 'commit', '-q', '-m', 'fixture')
+    return _git(root, 'rev-parse', '--short', 'HEAD')
+
+
+def test_version_rejects_parent_repository_sha_for_nested_snapshot(tmp_path):
+    """guard_defect: .git 없는 배포 snapshot은 부모 repo SHA를 자기 신원으로 훔치지 않는다."""
+    import server.version as ver
+
+    parent = tmp_path / 'symposium'
+    parent_sha = _init_repo(parent, lakatotree_markers=False)
+    snapshot = parent / 'GIT' / 'delltower_import' / 'lakatotree'
+    snapshot.mkdir(parents=True)
+    (snapshot / 'pyproject.toml').write_text('[project]\nname = "lakatotree"\nversion = "0"\n')
+    (snapshot / 'lakatos').mkdir()
+
+    assert ver._git_head_sha(str(snapshot)) == 'unknown', (
+        f'nested snapshot inherited parent SHA {parent_sha}'
+    )
+
+
+def test_version_accepts_only_exact_marked_lakatotree_repository(tmp_path):
+    """guard_mechanism: exact top-level + project markers가 함께 있을 때만 자기 SHA를 신뢰한다."""
+    import server.version as ver
+
+    repo = tmp_path / 'lakatotree'
+    expected = _init_repo(repo, lakatotree_markers=True)
+    assert ver._git_head_sha(str(repo)) == expected
+
+    unrelated = tmp_path / 'unrelated'
+    _init_repo(unrelated, lakatotree_markers=False)
+    assert ver._git_head_sha(str(unrelated)) == 'unknown'
+
+
+def test_version_reports_unknown_identity_as_indeterminate_not_fresh(monkeypatch):
+    """신원 부재는 fresh(False)가 아니다 — stale tri-state의 판정불가(None)다."""
+    import server.version as ver
+
+    monkeypatch.setattr(ver, 'BOOT_GIT_SHA', 'unknown')
+    monkeypatch.setattr(ver, 'disk_head_sha', lambda: 'unknown')
+    version = ver.served_version()
+    assert version['identity_verified'] is False
+    assert version['stale'] is None
 
 
 # ── guard_mechanism (novel축) — 착륙 ─────────────────────────────────────────────────────
