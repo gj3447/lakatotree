@@ -95,6 +95,10 @@ class CreateTreeIn(BaseModel):
     # G10: 서명자 allow-list(did:key, 키 실물) — None=불변(비클로버), 선언 시 교체(revocation 정당).
     #   anchored tier ∧ 이 목록 비어있지 않음 = 판결 쓰기에 write-cert 강제 발동.
     attestor_dids: list[str] | None = None
+    # PROM16 S1/S5(2026-07-15): 루프-경계 사이클 예산 — 이 트리가 소비할 수 있는 채점 사이클 상한.
+    #   None=미선언(불변·비클로버, 기존 트리 전부) = 무제한. 0=동결(더 못 돎). 소모는 인메모리가
+    #   아니라 *저장된 채점노드 count* 로 파생(재시작 내구) — programme_service._cycle_budget_state.
+    cycle_budget: int | None = Field(None, ge=0)
 
     @model_validator(mode="after")
     def validate_coverage(self) -> "CreateTreeIn":

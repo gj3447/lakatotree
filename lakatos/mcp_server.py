@@ -181,7 +181,12 @@ def run_cycle(name: str, spec_json: str) -> str:
     오타 무음드롭 없음). G3 봉인 1-verb: 이 한 호출이 노드+사전등록+판결영수증까지(실패 시 신규노드 0
     롤백, 4xx 에 advice 동봉). `dry_run:true` = incore 판정 미리보기(쓰기 0, 영수증 아님) +
     `would_demote_to_partial` 로 novel-anchor 강등 사전 예고. build/judge(bash)가 필요하면
-    CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎)."""
+    CLI `cycle <spec.json>` 사용(서버는 RCE 회피로 bash 안 돎 — 그 CLI 표면도 타입 종단이라
+    build/judge 실패는 stderr 에 {status:'build_failed'|'scoring_refused'|'timeout'|'config_error'}
+    + exit≠0 으로 나온다; 벽시계 예산은 LAKATOTREE_BASH_TIMEOUT, 기본 600초).
+    루프 상한(PROM16): 트리가 cycle_budget 을 선언했고 소진됐으면 실행 대신 타입 거부
+    {status:'budget_exhausted', remaining_budget:0} — 쓰기 0(노드 미생성). 선언 시 응답에
+    remaining_budget 동봉. 미선언(기본)=무제한이고 응답 shape 도 종전과 동일."""
     try:
         spec = json.loads(spec_json or '{}')
     except json.JSONDecodeError as e:
@@ -222,7 +227,7 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
                 doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
                 ontology: str = '', require_novel_anchor: bool = False,
                 assurance_tier: str = '', attestor_dids_csv: str = '',
-                coverage_status: str = 'unknown') -> str:
+                coverage_status: str = 'unknown', cycle_budget: int | None = None) -> str:
     """새 라카토스 나무 생성/메타 upsert — MERGE (t:LakatosTree {name}). add_node 전에 먼저 호출(없는 나무에
     add_node 는 404 '나무 없음'). 멱등이되 last-write-wins: 같은 name 재호출은 보낸 title/hard_core/
     frontier_rule 로 덮어씀(생략 필드 = 빈값으로 초기화). hard_core/frontier_rule 비우면 policy_warnings
@@ -231,7 +236,10 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
     coverage_backlog_csv = 쉼표구분 백로그(REST/CLI 와 패리티).
     assurance_tier(G6) = notebook|receipted|anchored — 생략 시 신규 트리는 anchored 기본(구조코어는 모든
     tier 무조건), 기존 트리는 무변경. 하향 선언은 409(단조 ratchet). attestor_dids_csv(G10) = 쉼표구분
-    did:key allow-list — 선언하면 anchored tier 판결 쓰기에 write-cert(서명 명령) 강제, 생략=불변."""
+    did:key allow-list — 선언하면 anchored tier 판결 쓰기에 write-cert(서명 명령) 강제, 생략=불변.
+    cycle_budget(PROM16 루프상한) = 이 트리가 소비할 채점 사이클 상한 — 소진되면 run_cycle 이 실행 대신
+    타입 거부(status='budget_exhausted', 쓰기 0)를 돌려준다. 생략=불변(미선언 트리는 무제한), 0=동결.
+    소모량은 *저장된 채점노드 count* 로 파생해 서버 재시작에도 살아남는다(인메모리 카운터 아님)."""
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
@@ -240,7 +248,8 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
              ontology=ontology, require_novel_anchor=require_novel_anchor,
              assurance_tier=(assurance_tier.strip() or None),
              attestor_dids=([d.strip() for d in attestor_dids_csv.split(',') if d.strip()]
-                            if attestor_dids_csv.strip() else None))), ensure_ascii=False)
+                            if attestor_dids_csv.strip() else None),
+             cycle_budget=cycle_budget)), ensure_ascii=False)
 
 
 @mcp.tool()

@@ -139,6 +139,9 @@ class TreeKgRepository:
             # R1(후속 PROM): 게이트 정책의 사전 공시 — 제출자가 403/partial 을 맞기 *전에* 알 수 있어야.
             "t.require_novel_anchor AS require_novel_anchor, "
             "t.require_certified_evidence AS require_certified_evidence, t.attestor_dids AS attestor_dids, "
+            # PROM16 루프상한: 선언된 사이클 예산도 사전 공시 — 드라이버가 budget_exhausted 를 맞기
+            #   *전에* 남은 예산을 알 수 있어야(정책은 읽을 수 있어야 정책이다).
+            "t.cycle_budget AS cycle_budget, "
             "t.updated_at AS updated_at",
             n=name,
         )

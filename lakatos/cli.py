@@ -341,9 +341,10 @@ def main(argv=None):
     elif a.cmd == 'agm':
         out = call('POST', '/api/agm/revise', json.loads(open(a.spec).read()))
     elif a.cmd == 'cycle':
-        from lakatos.harness_run import main as run_cycle
-        run_cycle(a.spec)   # 하네스가 직접 prov JSON 출력 (bash 실행은 client-side, server RCE 회피)
-        return
+        # 타입경계 경유(FIX-A) — main() 직행이면 BuildFailed/ScoringRefused/BashTimeout 이 생
+        #   스택트레이스로 샌다. run_typed 가 이유코드+exit code 로 번역(성공은 prov JSON + 0 그대로).
+        from lakatos.harness_run import run_typed
+        sys.exit(run_typed(a.spec))   # 하네스가 prov JSON 출력 (bash 실행은 client-side, server RCE 회피)
     elif a.cmd == 'cycle-dry':
         # R2-NOVEL: REST run_cycle dry_run 직행(harness_run/CycleSpec 의 bash 실행기 의미론과 무관).
         #   서버 incore trial(쓰기 0) + would_demote_to_partial(FF1 novel-anchor 강등 사전 예고) 반환.

@@ -24,6 +24,7 @@ from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
 from lakatos.programme.tradition import (ResearchTradition, TraditionCommitment, TraditionRevision,
                                          appraise_tradition_revision)
+from lakatos.verdicts import FORCEFUL_SOURCES as _FORCEFUL_SOURCES
 from lakatos import assurance
 from server.contexts.tree.advice import advice_for, with_advice
 from server.contexts.tree.diagnostics import diagnose_required_constraints
@@ -355,6 +356,34 @@ class ProgrammeService:
         return {'verdict_preview': v.verdict, 'delta_preview': round(v.delta, 4),
                 'novel_preview': v.novel}
 
+    # ── PROM16 S1/S5: 루프-경계 사이클 예산 (내구 파생, 인메모리 카운터 아님) ────────────────
+    def _cycle_budget_state(self, name: str) -> tuple[int | None, int]:
+        """(cycle_budget, used) — 트리 메타의 선언 예산과 *저장소서 파생한* 소모량.
+
+        내구성이 요점(S5): 소모량을 인메모리 카운터로 세면 서버 재시작·워커 증설·다중 프로세스마다
+        0 으로 리셋돼 상한이 허구가 된다. 여기선 *이미 채점된 노드*(영수증 보유 = 이 트리가 실제로
+        소비한 사이클)를 세어 파생하므로 재시작 후 resume 이 fresh run 과 같은 답을 낸다.
+        판정 기준은 delete_tree 의 원장 프로브와 같은 술어(FORCEFUL verdict_source ∨ 영수증 sha).
+
+        ★fail-safe(정직한 한계): 조회 실패 = (None, 0) = *무제한*. fail-CLOSED 가 아니다 — KG
+          부분장애 때 예산이 조용히 우회되는 soft bypass 다. 근거: 이 경로는 fake-heavy 라
+          (CLAUDE.md §4) KG-less 테스트/오프라인 소비자가 실 neo4j 없이 돌아야 하고, 예산은
+          안전 게이트가 아니라 *루프 상한*이라 장애 때 연구를 멈추는 쪽이 더 해롭다고 판단.
+          hard bound 가 필요하면 이 read 를 fail-closed 로 뒤집을 것(그 땐 KG 가용성이 전제).
+        """
+        try:
+            rows = self.kg(
+                'MATCH (t:LakatosTree {name:$tree}) '
+                'OPTIONAL MATCH (t)-[:HAS_NODE]->(e) '
+                'WHERE e.verdict_source IN $forceful OR e.current_receipt_sha IS NOT NULL '
+                'RETURN t.cycle_budget AS cycle_budget, count(e) AS used',
+                tree=name, forceful=sorted(_FORCEFUL_SOURCES))
+            if not rows or rows[0].get('cycle_budget') is None:
+                return None, 0   # 미선언(기존 트리 전부) = 무제한 — 기본 비파괴
+            return int(rows[0]['cycle_budget']), int(rows[0].get('used') or 0)
+        except Exception:   # noqa: BLE001 — 조회/파싱 실패=예산 미상 → 무제한(위 fail-safe 계약)
+            return None, 0
+
     def _cycle_node_exists(self, name: str, tag: str) -> bool:
         """롤백 대상 판별용 존재 확인 — *삭제 결정* 입력이라 불확실은 '존재함'으로(fail-safe:
         KG 조회 불가 시 절대 안 지운다). 진짜 KG 장애면 어차피 직후 add_node 가 실패해 4xx."""
@@ -380,14 +409,29 @@ class ProgrammeService:
         ① incore trial(쓰기 0)이 먼저 4xx 격추 · dry_run=True 면 여기서 미리보기 반환(영수증 아님).
         ② write 후 실패는 보상 롤백 — 이 사이클이 만든 신규 노드 0 (고아 예측노드 debris 금지).
         ③ 판결 영수증 착륙이 내구점: 그 후(critique) 실패는 롤백 금지(G1/G9 — 영수증 파괴 불가).
-        4xx 엔 advice 레지스트리가 다음 명령을 제안(suggest-only, 게이트 우회 off-switch 없음)."""
+        4xx 엔 advice 레지스트리가 다음 명령을 제안(suggest-only, 게이트 우회 off-switch 없음).
+        ⓪ 루프-경계 예산(PROM16 S1/S5, opt-in): 트리가 cycle_budget 을 선언했고 소진됐으면 *실행
+           대신* 타입 거부(status='budget_exhausted') — 첫 write 전. 미선언=무제한(응답 shape 불변)."""
+        # ⓪ 예산 게이트 — trial(판정) 보다도 먼저. 못 도는 사이클은 미리보기조차 오도이고,
+        #    루프 드라이버는 이유코드로 즉시 멈춰야 한다(에이전트 자기판단과 독립된 정지).
+        budget, used = self._cycle_budget_state(name)
+        remaining = None if budget is None else max(0, budget - used)   # 음수 clamp(TOCTOU 초과분)
+        if remaining == 0:
+            return {'tree': name, 'tag': c.tag, 'status': 'budget_exhausted',
+                    'remaining_budget': 0, 'cycle_budget': budget, 'cycles_used': used,
+                    'note': f'트리 사이클 예산 {budget} 소진(채점 {used}) — 실행 안 함(쓰기 0). '
+                            f'예산을 올리거나(create_tree cycle_budget) 새 트리로 분기할 것'}
         trial = self._cycle_trial(c)
         if c.dry_run:
             out = dict(tree=name, tag=c.tag, dry_run=True, **trial,
                        note='incore trial — 영수증 아님·아무것도 쓰지 않음. 제출은 dry_run=false 로')
+            if remaining is not None:
+                out['remaining_budget'] = remaining   # 미리보기는 쓰기 0 = 소모 0(차감 없음)
             # R2-NOVEL(s3): FF1 강등 사전 예고 — 트리 정책 1-read 를 *fail-safe* 로 결합. 조회 실패
-            #   (KG-less fake/운영 단절)=힌트 생략: 불확실한 정책으로 예고를 지어내지 않는다. 이 read 는
-            #   dry_run 분기 전용(fake-heavy 비-dry 경로엔 새 kg 쿼리 0 — CLAUDE.md 함정 규율).
+            #   (KG-less fake/운영 단절)=힌트 생략: 불확실한 정책으로 예고를 지어내지 않는다.
+            #   ※ 이 read 는 dry_run 분기 전용. (2026-07-15 정정: "비-dry 경로엔 새 kg 쿼리 0" 이라던
+            #     종전 주석은 더 이상 참이 아니다 — PROM16 예산 게이트가 _cycle_budget_state 1-read 를
+            #     양 경로 공통으로 추가했다. 같은 fail-safe 규율은 지킨다: 조회 실패=무제한 진행.)
             try:
                 rows = self.kg('MATCH (t:LakatosTree {name:$tree}) '
                                'RETURN t.require_novel_anchor AS require_novel_anchor, '
@@ -445,6 +489,10 @@ class ProgrammeService:
                    delta=res.get('delta'), critiques=len(c.critiques),
                    standing=self.standing(name, c.tag),
                    note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        if remaining is not None:
+            # 이 사이클이 영수증 1 을 착륙시켰으므로 정확히 1 소모(재채점은 409 로 막혀 있어 성공경로
+            #   = 새로 채점된 노드 1). 단 *강제*는 언제나 저장소 재파생이지 이 숫자가 아니다(보고용).
+            out['remaining_budget'] = remaining - 1
         if 'novel_server_anchored' in res:   # 있으면 노출(가시성) — 없는 키를 지어내지 않는다
             out['novel_server_anchored'] = res['novel_server_anchored']
         if res.get('lakatos') in ('novel_not_server_anchored', 'provisional_stale_engine'):

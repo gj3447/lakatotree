@@ -188,6 +188,7 @@ class TreeKgWriter:
         require_certified_evidence: bool = False,
         assurance_tier: str | None = None,
         attestor_dids: Sequence[str] | None = None,
+        cycle_budget: int | None = None,
     ) -> WriteSummary:
         # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
         #   tier 미선언 upsert 에 절대 안 덮인다(T2 write-clobber 교정: TreeSpec 기본값 flip 이 아니라
@@ -212,6 +213,9 @@ class TreeKgWriter:
                    SET t.attestor_dids = CASE
                          WHEN $attestor_dids IS NULL THEN t.attestor_dids
                          ELSE $attestor_dids END
+                   SET t.cycle_budget = CASE
+                         WHEN $cycle_budget IS NULL THEN t.cycle_budget
+                         ELSE $cycle_budget END
                    RETURN t.assurance_tier AS assurance_tier""",
                 dict(
                     tree=name,
@@ -229,6 +233,9 @@ class TreeKgWriter:
                     declared_rank=assurance.tier_rank(assurance_tier),
                     default_tier=assurance.DEFAULT_NEW_TREE_TIER,
                     attestor_dids=(None if attestor_dids is None else list(attestor_dids)),
+                    # PROM16: 예산도 tier/attestor 와 같은 非클로버 규율 — None(미선언)=기존값 불변
+                    #   (예산 없는 upsert 가 선언된 상한을 조용히 지우면 루프 상한이 무력화된다).
+                    cycle_budget=cycle_budget,
                     ts=_utc_now(),
                 ),
             )

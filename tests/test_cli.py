@@ -3,6 +3,8 @@
 """
 import json
 
+import pytest
+
 import lakatos.cli as cli
 from lakatos.cli import main
 from lakatos.io.lineage import (
@@ -239,7 +241,11 @@ def test_cycle_cli_invokes_harness_run(monkeypatch):
     import lakatos.harness_run as hr
     seen = []
     monkeypatch.setattr(hr, 'main', lambda p: seen.append(p))
-    cli.main(['cycle', '/tmp/spec.json'])
+    # FIX-A(2026-07-15): 위임은 그대로이되 *타입경계*(run_typed) 경유 — 엔진 예외가 생 스택트레이스로
+    #   새지 않게. 성공은 종전과 같이 exit 0(프로세스 계약 불변), 다만 cli.main 이 SystemExit 를 올린다.
+    with pytest.raises(SystemExit) as e:
+        cli.main(['cycle', '/tmp/spec.json'])
+    assert e.value.code == 0                 # 성공경로 거동 동일(exit 0)
     assert seen == ['/tmp/spec.json']        # 하네스 러너로 위임(서버 RCE 회피, client-side)
 
 

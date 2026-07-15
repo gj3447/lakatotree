@@ -28,6 +28,25 @@ class ScoringRefused(Exception):
     """
 
 
+class BashTimeout(Exception):
+    """하계 벽시계 게이트 — build/judge 서브프로세스가 예산(LAKATOTREE_BASH_TIMEOUT)을 초과.
+
+    BuildFailed/ScoringRefused 의 셋째 형제(PROM16 루프표준 S3, 2026-07-15): 종전엔
+    subprocess.TimeoutExpired 가 *생 예외*로 새어 루프 종단이 무타입 스택트레이스였다.
+    타입 구분이 곧 정책 구분이다 — timeout 은 transient(재시도 가능)이고 BuildFailed 는
+    ground-truth 실패(재시도 무의미)라, 루프 드라이버가 둘을 같게 다루면 안 된다.
+    """
+
+
+class BashConfigError(Exception):
+    """벽시계 예산 *설정값* 자체가 부정(빈값/비정수/≤0) — 사이클 시작 전 거부.
+
+    fail-closed(PROM16): 오염된 값을 조용히 기본 600 으로 되돌리면 운영자가 선언한 경계를
+    무음 무시하는 우회가 된다(가드가 스스로 무타입 크래시로 죽는 것도 같은 결손). 설정 오류는
+    프로그래밍/운영 오류지 transient 가 아니므로 재시도 아닌 즉시 종단.
+    """
+
+
 @dataclass
 class CycleSpec:
     tree: str
