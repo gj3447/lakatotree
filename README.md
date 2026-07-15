@@ -97,6 +97,10 @@ print(result.verdict)  # progressive
 
 For programme authoring, evidence-record validation, and tree metrics, use `lakatos.programme.authoring`, `lakatos.programme.evidence`, `lakatos.programme.record_judge`, and `lakatos.quant.metrics`. The [consumption guide](docs/CONSUMING_LAKATOTREE.md) explains the API boundary and gives source-checkout installation paths for the current pre-release period.
 
+### Portable format: `lakato-evidence-record/v1`
+
+The input format is a small, **tool-agnostic** JSON contract you can adopt on its own — a producer emits an evidence record; a ~25-line validator rejects it unless the claim was **pre-registered**, **grounded in cited inputs**, and carries **no self-authored verdict** (the producer never grades itself). Emit it from any harness, in any language; LakatoTree is just one consumer. **Spec: [`docs/lakato-evidence-record-v1.md`](docs/lakato-evidence-record-v1.md).**
+
 The CLI is available as a module, for example `python -m lakatos.cli --help`. Commands that read or mutate a named tree require a configured LakatoTree server and its backing stores; the repository's current server launch scripts contain deployment-specific assumptions and are not a portable public quickstart. The pure library and Euler demo do not require that service.
 
 Optional dependency groups are declared in `pyproject.toml`: `server`, `db`, `prov`, `receipts`, `dev`, `integration`, and `all`. From a checkout, install one with `python -m pip install -e ".[dev]"` or the relevant extra.
