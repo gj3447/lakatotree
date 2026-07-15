@@ -28,6 +28,7 @@ from lakatos.verdicts import (ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdi
                               prediction_content_sha, receipt_content_sha)
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.audit import fsck as audit_fsck
+from server.contexts.tree.cycle_budget import assert_scoring_budget
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
                                                    engine_freshness_fires, qualitative_flags,
                                                    resolve_measurement)
@@ -252,6 +253,10 @@ class JudgementService:
         if not is_admin_verdict(v.verdict):
             raise HTTPException(403, f'판결 어휘({v.verdict})는 test_result 스크립트 전용 — 수동 지정 금지. '
                                      f'행정 상태만: {sorted(ADMIN_VERDICTS)}')
+        # ⓪ 루프-경계 예산(PROM16 S1/S5) — set_verdict 도 verdict + :VerdictReceipt 를 민팅해 scored_nodes
+        #    를 늘릴 수 있는 verb 다(미채점 draft 에 행정 판결을 찍으면 새 소모 1). run_cycle 만 막던
+        #    첫 구현의 우회 통로 중 하나 — 같은 게이트를 여기서도 지난다(cycle_budget SSOT).
+        assert_scoring_budget(self.kg, name, 'set_verdict')
         if v.verdict == 'CANONICAL':
             # R4(후속 PROM): 승격도 원장에 산다 — 포인터/직전-canonical 스냅샷을 pre 에서 읽어 receipt 를
             #   Python 에서 내용주소로 선계산(prev 체인), write CAS 가 두 스냅샷을 재검증한다.
@@ -590,6 +595,14 @@ class JudgementService:
         return {'ok': True, 'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}
 
     def submit_test_result(self, name: str, tag: str, r: TestResultIn) -> dict:
+        # ⓪ 루프-경계 예산(PROM16 S1/S5) — *진짜 초크포인트*. 채점은 결국 전부 여기로 들어온다
+        #    (REST POST /node/{tag}/test_result · MCP submit_result · run_cycle 내부호출). 첫 구현은
+        #    run_cycle 만 거부해 3-verb 경로(add_node+register_prediction+submit_result)로 갈아타면
+        #    그대로 채점됐다 = 에이전트가 고르는 정지(적대검증 2026-07-15). 판결 민팅 전에 429.
+        #    (run_cycle 은 자기 게이트를 이미 통과했어도 여기서 1-read 를 다시 낸다 — 중복 read 1회는
+        #     초크포인트를 호출자 신뢰에 의존시키지 않기 위한 값이다. 예측등록은 소모가 아니므로
+        #     cycle_budget 술어상 자기 사이클이 자기를 거부하는 일은 없다.)
+        assert_scoring_budget(self.kg, name, 'submit_test_result')
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                      RETURN e.pred_metric AS m, e.pred_direction AS d, e.pred_baseline AS b,
                             e.pred_noise_band AS nb, e.pred_scale_type AS scale,

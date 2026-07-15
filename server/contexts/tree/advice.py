@@ -33,6 +33,14 @@ _REGISTRY: tuple[tuple[str, str], ...] = (
                          "inline 이면 sha 검증 불가로 미검증 표기."),
     ("assurance_tier", "tier 는 notebook|receipted|anchored 닫힌 어휘 + 단조 ratchet(하향 불가) — "
                        "하향이 필요하면 새 트리로 분기."),
+    # PROM16 S1/S5: 채점 예산 소진(429)의 다음 수. verb 를 갈아타라고 권하지 않는다 — 판결 verb 는
+    #   전부 같은 게이트라 우회가 아니라 거짓말이 된다(advice 는 verb-교체 off-switch 를 주지 않는다).
+    #   ★단 여기 권하는 상향(create_tree cycle_budget)은 *운영자 조치*를 상정한 안내인데, 상한엔 단조
+    #   ratchet 이 없고 표면엔 운영자↔에이전트 구분도 없어 에이전트 자신이 그대로 쓸 수 있다 — 즉 상한
+    #   자체는 self-raisable 이다(cycle_budget.py 모듈 docstring 의 잔여 비대칭 참조).
+    ("사이클 예산 소진", "이 트리의 채점 상한이 찼다 — create_tree(cycle_budget=<더 큰 값>) 로 상한을 "
+                    "올리거나 새 트리로 분기할 것. add_node/register_prediction 은 계속 되지만 "
+                    "run_cycle/submit_result/set_verdict 는 전부 거부된다(verb 교체 우회 없음)."),
 )
 
 

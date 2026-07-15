@@ -119,6 +119,7 @@ class TreeService:
             require_certified_evidence=spec.require_certified_evidence,
             assurance_tier=spec.assurance_tier,
             attestor_dids=(None if spec.attestor_dids is None else tuple(spec.attestor_dids)),
+            cycle_budget=spec.cycle_budget,
         ))
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:

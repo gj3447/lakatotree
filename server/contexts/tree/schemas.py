@@ -95,6 +95,14 @@ class CreateTreeIn(BaseModel):
     # G10: 서명자 allow-list(did:key, 키 실물) — None=불변(비클로버), 선언 시 교체(revocation 정당).
     #   anchored tier ∧ 이 목록 비어있지 않음 = 판결 쓰기에 write-cert 강제 발동.
     attestor_dids: list[str] | None = None
+    # PROM16 S1/S5(2026-07-15): 루프-경계 예산 — 이 트리가 받을 수 있는 *판결* 상한.
+    #   세는 것 = scored_nodes(판결받은 노드 수) — 인메모리 카운터가 아니라 저장소 count 로 파생(재시작 내구).
+    #   막는 것 = 판결을 민팅하는 verb 전부(run_cycle / submit_test_result / set_verdict) → verb 교체 우회 없음.
+    #   ★막지 않는 것(정직): add_node/register_prediction 은 세지도 막지도 않는다 — 소진 트리도 노드·예측은
+    #     계속 쌓인다(판결만 안 난다). 즉 0 은 '트리 동결'이 아니라 *판결 정지*다. 또 예산 조회 실패 시엔
+    #     fail-safe 로 무제한(soft bypass). 전체 술어·비대칭: server/contexts/tree/cycle_budget.py.
+    #   None=미선언(불변·비클로버, 기존 트리 전부) = 무제한.
+    cycle_budget: int | None = Field(None, ge=0)
 
     @model_validator(mode="after")
     def validate_coverage(self) -> "CreateTreeIn":
