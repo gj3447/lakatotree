@@ -20,11 +20,43 @@ version = "0.1.0"
 description = "LakatoTree — a Lakatosian research-programme engine (measurement-grounded progress adjudication)."
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [
+  { name = "Gyeongjun Ra" },
+]
+keywords = [
+  "research-software",
+  "philosophy-of-science",
+  "lakatos",
+  "reproducibility",
+  "research-agents",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Software Development :: Quality Assurance",
+]
 # 라이브러리 코어는 서드파티 의존 0 (lakatos.quant.metrics / lakatos.verdict.judge = 순수 stdlib, 실측).
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/gj3447/lakatotree"
+Repository = "https://github.com/gj3447/lakatotree"
+Issues = "https://github.com/gj3447/lakatotree/issues"
+Changelog = "https://github.com/gj3447/lakatotree/blob/master/CHANGELOG.md"
+
+[project.scripts]
+lakatos = "lakatos.cli:main"
+lakatotree-demo = "lakatos.demos.euler:main"
+
 [project.optional-dependencies]
-# --- web/MCP 표면 (서버 배포용) ---
+# --- web/MCP 표면 (서버 배포용; server.app 가 DB 드라이버를 즉시 import 하므로 자기완결) ---
 server = [
   "fastapi==0.137.2",
   "starlette==1.3.1",
@@ -32,6 +64,9 @@ server = [
   "httpx==0.28.1",
   "pydantic==2.13.4",
   "mcp==1.28.0",
+  "psycopg2-binary==2.9.12",
+  "pymongo==4.17.0",
+  "neo4j==6.2.0",
 ]
 # --- datastores (공유 KG/원장) ---
 db = [
@@ -65,5 +100,6 @@ all = [
 ]
 
 [tool.setuptools.packages.find]
-# 엔진(lakatos) + 서버(server)만 배포 — examples/tests/scripts/judges/formal 은 응용·테스트 층이라 제외.
+# wheel package discovery = engine(lakatos)+server only. Source archives may retain tests/docs/examples
+# so recipients can audit the source release; none are installed as import packages.
 include = ["lakatos*", "server*"]

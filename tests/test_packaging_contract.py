@@ -34,6 +34,10 @@ def test_base_install_has_no_third_party_deps():
     extras = d["project"]["optional-dependencies"]
     for k in ("server", "db", "prov", "all"):
         assert k in extras, f"missing optional-dependencies extra: {k}"
+    assert set(extras["db"]) <= set(extras["server"]), (
+        "the documented [server] install must include the DB drivers imported "
+        "unconditionally by server.app"
+    )
 
 
 def test_core_authoring_modules_import_no_third_party():

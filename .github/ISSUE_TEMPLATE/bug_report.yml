@@ -1,0 +1,57 @@
+name: Reproducible bug
+description: Report behavior that can be reproduced against a specific revision.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve LakatoTree. Do not include secrets, private data, or vulnerability details here; follow SECURITY.md for security reports.
+  - type: input
+    id: revision
+    attributes:
+      label: Version or commit SHA
+      description: Use the exact tag or full commit SHA that produced the behavior.
+      placeholder: 11c2e1a...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Python version, install method, and relevant optional extras.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest command or code sample that reproduces the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State the contract or observable you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior and receipts
+      description: Include exact output, traceback, verdict, or redacted receipt references.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues for the same behavior.
+          required: true
+        - label: I removed credentials, private data, and unrelated logs.
+          required: true
+

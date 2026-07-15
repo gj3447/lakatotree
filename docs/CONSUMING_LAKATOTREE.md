@@ -18,12 +18,19 @@ your content depends on the engine as a package.
 
 ## Install
 
+LakatoTree is not published on PyPI yet. Until the first tagged release, install
+from a source checkout and pin the commit SHA used by reproducible work:
+
 ```bash
-pip install lakatotree            # library core — stdlib only, zero third-party deps
-pip install lakatotree[server]    # + fastapi/uvicorn/mcp     (run the MCP/HTTP server)
-pip install lakatotree[db]        # + neo4j/psycopg2/pymongo  (shared KG / ledger)
-pip install lakatotree[prov]      # + prov/lxml/rdflib        (W3C PROV-O provenance)
-pip install lakatotree[all]       # everything (reproduces requirements.txt, 2026-06-18 green)
+git clone https://github.com/gj3447/lakatotree.git
+cd lakatotree
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .             # library core — stdlib only
+python -m pip install -e ".[server]"  # + HTTP/MCP and required DB drivers
+python -m pip install -e ".[db]"      # + DB drivers without the web surface
+python -m pip install -e ".[prov]"    # + W3C PROV-O libraries
+python -m pip install -e ".[all]"     # all runtime and development extras
 ```
 
 The **library core** (`lakatos.quant`, `lakatos.verdict`, `lakatos.programme`) has **zero
@@ -101,7 +108,7 @@ branch node.
 |---|---|---|
 | a node live in the running tree | MCP verbs (`add_node`, `open_question`, …) | no — runtime data |
 | **author a programme (nodes / evidence / judge)** | the public API above | **no** |
-| a durable, reproducible, CI-tested programme | `my_programme.py` + a test **in your own repo**, `lakatotree` as a pip dependency | no |
+| a durable, reproducible, CI-tested programme | `my_programme.py` + a test **in your own repo**, LakatoTree pinned to an exact commit until the first release | no |
 | change the engine's judgment logic | edit `lakatos/` or `server/` | yes — explicit, and only this |
 
 ## The boundary is CI-enforced

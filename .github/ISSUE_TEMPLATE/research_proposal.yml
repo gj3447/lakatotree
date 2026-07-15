@@ -1,0 +1,49 @@
+name: Research or rule proposal
+description: Propose a falsifiable change to a judgement rule, metric, or research workflow.
+title: "proposal: "
+labels:
+  - proposal
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What current behavior is wrong, missing, or too weak?
+    validations:
+      required: true
+  - type: textarea
+    id: counterexample
+    attributes:
+      label: Smallest counterexample
+      description: Give a concrete case that distinguishes the current rule from the proposed rule.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed contract
+      description: Describe inputs, outputs, invariants, and the intended failure behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sources and evidence
+      description: Link primary sources, data, prior art, or executable evidence. Mark interpretation as interpretation.
+    validations:
+      required: true
+  - type: textarea
+    id: falsification
+    attributes:
+      label: Falsifiable acceptance criteria
+      description: What test or observation would reject this proposal?
+    validations:
+      required: true
+  - type: textarea
+    id: limits
+    attributes:
+      label: Known limits and compatibility risks
+      description: Identify overclaim, migration, provenance, or backwards-compatibility risks.
+    validations:
+      required: true
+

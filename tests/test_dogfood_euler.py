@@ -1,16 +1,26 @@
 """Euler 다면체 프로그램 도그푸드 가드 — 엔진이 verdict 를 *생성*하는지(손입력 아님) 회귀 검증.
 
-핵심 주장: examples/euler_polyhedron_programme.py 는 verdict 를 손입력하지 않는다 — judge()/
+핵심 주장: 설치 패키지의 lakatos.demos.euler 는 verdict 를 손입력하지 않는다 — judge()/
 appraise_response()/dialectical_verdict() 가 사전등록 예측 + 정수 측정에서 verdict 를 생성한다.
+examples/euler_polyhedron_programme.py 는 기존 소비자를 위한 얇은 호환 wrapper 다.
 이전 도그푸드(bpc_icp 등)의 `_n(verdict=...)` 손입력 decoration 과 대비.
 # KG: span_lakatotree_euler_dogfood
 """
+import fnmatch
+import pathlib
+import subprocess
+import sys
+import tomllib
 from dataclasses import fields, replace
 
 from lakatos.verdict.judge import judge
-from examples.euler_polyhedron_programme import (
-    NODES, EulerNode, run, scored_measured, scored_novel_measured,
+from lakatos.demos.euler import (
+    NODES, EulerNode, closed_orientable_euler_characteristic, run,
+    scored_measured, scored_novel_measured,
 )
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def test_no_handfed_verdicts_in_node_schema():
@@ -18,6 +28,51 @@ def test_no_handfed_verdicts_in_node_schema():
     names = {f.name for f in fields(EulerNode)}
     assert "verdict" not in names
     assert "metric_verdict" not in names
+
+
+def test_packaged_module_main_matches_compatibility_script():
+    """`python -m` is runnable and preserves the historical example output."""
+    packaged = subprocess.run(
+        [sys.executable, "-m", "lakatos.demos.euler"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    compatibility = subprocess.run(
+        [sys.executable, "examples/euler_polyhedron_programme.py"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert packaged.stderr == ""
+    assert packaged.stdout == compatibility.stdout
+    assert len(packaged.stdout.splitlines()) == len(NODES) == 5
+    assert packaged.stdout.splitlines()[-1].endswith("→ progressive")
+
+
+def test_demo_package_is_selected_for_wheel_discovery():
+    """Wheel discovery and the public console command point at the packaged demo."""
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = config["tool"]["setuptools"]["packages"]["find"]["include"]
+    assert any(fnmatch.fnmatchcase("lakatos.demos", pattern) for pattern in patterns)
+    assert config["project"]["scripts"]["lakatotree-demo"] == "lakatos.demos.euler:main"
+    assert (ROOT / "lakatos/demos/__init__.py").is_file()
+    assert (ROOT / "lakatos/demos/euler.py").is_file()
+
+
+def test_compatibility_wrapper_reexports_canonical_objects():
+    """Old imports resolve to the packaged implementation, not a divergent copy."""
+    from examples.euler_polyhedron_programme import (
+        NODES as legacy_nodes,
+        EulerNode as LegacyEulerNode,
+        run as legacy_run,
+    )
+
+    assert legacy_nodes is NODES
+    assert LegacyEulerNode is EulerNode
+    assert legacy_run is run
 
 
 def test_judge_generates_each_metric_verdict_deterministically():
@@ -39,6 +94,21 @@ def test_euler_characteristics_are_exact_integers():
     assert by_tag["convex_conjecture"].euler_characteristic == 2     # 정육면체
     assert by_tag["hollow_cube"].euler_characteristic == 4           # 전역 반례
     assert by_tag["proofs_refutations"].euler_characteristic == 0    # 토러스(genus 1)
+
+
+def test_mature_formula_absorbs_the_hollow_cube_counterexample():
+    """The generalization must explain χ=4, not merely fit an unrelated torus."""
+    by_tag = {n.tag: n for n in NODES}
+    hollow = by_tag["hollow_cube"]
+    torus = by_tag["proofs_refutations"]
+
+    assert (hollow.components, hollow.genus_sum) == (2, 0)
+    assert hollow.classified_euler_characteristic == hollow.euler_characteristic == 4
+    assert closed_orientable_euler_characteristic(2, 0) == 4
+    assert (torus.components, torus.genus_sum) == (1, 1)
+    assert torus.classified_euler_characteristic == torus.euler_characteristic == 0
+    assert "2c" in torus.proof_generated_concept.name
+    assert "성분 2개" in torus.proof_generated_concept.incorporated_lemma
 
 
 def test_hollow_cube_is_refuted_by_engine():
@@ -71,6 +141,8 @@ def test_scoring_input_is_derived_from_topology_not_handset():
     assert hollow.measured is None                       # 노드에 손입력 상수 없음
     assert scored_measured(hollow) == abs(hollow.euler_characteristic - 2) == 2.0
     torus = by_tag["proofs_refutations"]
+    assert torus.measured is None
+    assert scored_measured(torus) == 0.0
     assert torus.novel_measured is None
     assert scored_novel_measured(torus) == float(torus.euler_characteristic) == 0.0
 

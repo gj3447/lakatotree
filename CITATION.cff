@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use LakatoTree in research, please cite the software using this metadata."
+title: "LakatoTree"
+type: software
+authors:
+  - given-names: "Gyeongjun"
+    family-names: "Ra"
+    alias: "라경준"
+abstract: >-
+  A deterministic verdict engine for research programmes that derives appraisal
+  outcomes from pre-registered predictions and measurement records instead of
+  accepting self-reported verdicts.
+repository-code: "https://github.com/gj3447/lakatotree"
+url: "https://github.com/gj3447/lakatotree"
+keywords:
+  - "research software"
+  - "philosophy of science"
+  - "Lakatos"
+  - "reproducibility"
+  - "research agents"
