@@ -399,8 +399,13 @@ class ProgrammeService:
         #    범위(과대주장 금지): 이 게이트는 run_cycle 표면의 *조기* 거부일 뿐이고, 강제 자체는
         #    judgement_service 초크포인트(submit_test_result/set_verdict)의 같은 게이트가 한다 —
         #    그래서 3-verb 경로로 갈아타도 채점은 안 된다(verb-교체 우회 없음). 단 '에이전트 자기판단과
-        #    독립'은 *무조건*이 아니라 KG 가용성에 조건부다: 예산 조회 실패 시 fail-safe 로 무제한이고,
-        #    add_node/register_prediction 은 애초에 예산 밖이라 소진 트리도 구조 write 는 계속 된다.
+        #    독립'은 *무조건*이 아니라 두 겹으로 조건부다: (1) KG 가용성 — 예산 조회 실패 시 fail-safe 로
+        #    무제한. (2) ★상한 불변성 — cycle_budget 에 단조 ratchet 이 없어(writer.py: plain
+        #    last-write-wins) 소진된 에이전트가 같은 트리에 create_tree(cycle_budget=N) 을 불러 자기
+        #    천장을 올릴 수 있고, 표면엔 운영자↔에이전트 구분이 없어 그걸 막는 것도 없다 ⇒ 이 정지는
+        #    *협조적* 에이전트에만 선다(적대적 에이전트엔 안 선다). 전체 목록: cycle_budget.py 모듈
+        #    docstring. 또 add_node/register_prediction 은 애초에 예산 밖이라 소진 트리도 구조 write 는
+        #    계속 된다.
         budget, used = self._cycle_budget_state(name)
         remaining = remaining_budget(budget, used)   # 미선언=None(무제한) · 음수는 0 clamp(TOCTOU 초과분)
         if remaining == 0:

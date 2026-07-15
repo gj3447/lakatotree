@@ -245,6 +245,9 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
     3-verb 경로의 submit_result 와 set_verdict 는 429 — verb 를 갈아타는 우회는 없다.
     ★단 add_node/register_prediction 은 예산 밖이라 소진 트리에도 계속 들어간다(판결만 안 남) — 0 은
     트리 동결이 아니라 판결 정지다. 예산 조회가 실패하면 fail-safe 로 무제한(soft bypass).
+    ★그리고 이 상한은 self-raisable 이다: assurance_tier 와 달리 cycle_budget 엔 단조 ratchet 이 없어
+    (last-write-wins) 소진된 에이전트가 *같은 트리*에 이 verb 를 cycle_budget=<더 큰 값> 으로 다시 불러
+    자기 천장을 올릴 수 있다 — 즉 이 정지는 협조적 에이전트에만 서고 적대적 에이전트엔 안 선다.
     생략=불변(미선언 트리는 무제한). 소모량은 *저장된 채점노드 count* 로 파생해 서버 재시작에도
     살아남는다(인메모리 카운터 아님)."""
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]

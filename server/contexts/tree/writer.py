@@ -235,6 +235,11 @@ class TreeKgWriter:
                     attestor_dids=(None if attestor_dids is None else list(attestor_dids)),
                     # PROM16: 예산도 tier/attestor 와 같은 非클로버 규율 — None(미선언)=기존값 불변
                     #   (예산 없는 upsert 가 선언된 상한을 조용히 지우면 루프 상한이 무력화된다).
+                    #   ★단 非클로버는 거기까지다 — tier 와 달리 단조 ratchet 이 *없다*(위 CASE 는 상향만
+                    #   관철하지만 이 CASE 는 선언값을 그대로 쓴다 = plain last-write-wins). 그래서 소진된
+                    #   에이전트가 같은 트리에 더 큰 cycle_budget 을 선언해 자기 천장을 올릴 수 있다
+                    #   (알려진 구멍, 협조 전제): ratchet 은 운영자↔에이전트 authn 구분이 전제인데 현
+                    #   표면엔 없어 설계 결정으로 남김. 잔여 비대칭 전체 = cycle_budget.py 모듈 docstring.
                     cycle_budget=cycle_budget,
                     ts=_utc_now(),
                 ),
