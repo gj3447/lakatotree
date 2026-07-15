@@ -24,9 +24,9 @@ from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
 from lakatos.programme.tradition import (ResearchTradition, TraditionCommitment, TraditionRevision,
                                          appraise_tradition_revision)
-from lakatos.verdicts import FORCEFUL_SOURCES as _FORCEFUL_SOURCES
 from lakatos import assurance
 from server.contexts.tree.advice import advice_for, with_advice
+from server.contexts.tree.cycle_budget import budget_state, remaining_budget
 from server.contexts.tree.diagnostics import diagnose_required_constraints
 from server.contexts.tree.schemas import (
     ArtifactIn,
@@ -358,31 +358,13 @@ class ProgrammeService:
 
     # ── PROM16 S1/S5: 루프-경계 사이클 예산 (내구 파생, 인메모리 카운터 아님) ────────────────
     def _cycle_budget_state(self, name: str) -> tuple[int | None, int]:
-        """(cycle_budget, used) — 트리 메타의 선언 예산과 *저장소서 파생한* 소모량.
+        """(cycle_budget, scored_nodes) — 정본은 cycle_budget 모듈(SSOT). 여기선 위임만 한다.
 
-        내구성이 요점(S5): 소모량을 인메모리 카운터로 세면 서버 재시작·워커 증설·다중 프로세스마다
-        0 으로 리셋돼 상한이 허구가 된다. 여기선 *이미 채점된 노드*(영수증 보유 = 이 트리가 실제로
-        소비한 사이클)를 세어 파생하므로 재시작 후 resume 이 fresh run 과 같은 답을 낸다.
-        판정 기준은 delete_tree 의 원장 프로브와 같은 술어(FORCEFUL verdict_source ∨ 영수증 sha).
-
-        ★fail-safe(정직한 한계): 조회 실패 = (None, 0) = *무제한*. fail-CLOSED 가 아니다 — KG
-          부분장애 때 예산이 조용히 우회되는 soft bypass 다. 근거: 이 경로는 fake-heavy 라
-          (CLAUDE.md §4) KG-less 테스트/오프라인 소비자가 실 neo4j 없이 돌아야 하고, 예산은
-          안전 게이트가 아니라 *루프 상한*이라 장애 때 연구를 멈추는 쪽이 더 해롭다고 판단.
-          hard bound 가 필요하면 이 read 를 fail-closed 로 뒤집을 것(그 땐 KG 가용성이 전제).
+        예산을 여기서 재유도하면 run_cycle 이 보는 술어와 judgement_service 초크포인트가 보는 술어가
+        갈라진다(그게 첫 구현이 무너진 자리다) — 세는 곳과 막는 곳은 같은 정의를 봐야 한다.
+        술어·fail-safe·잔여 비대칭의 정직한 서술 전부: server/contexts/tree/cycle_budget.py 참조.
         """
-        try:
-            rows = self.kg(
-                'MATCH (t:LakatosTree {name:$tree}) '
-                'OPTIONAL MATCH (t)-[:HAS_NODE]->(e) '
-                'WHERE e.verdict_source IN $forceful OR e.current_receipt_sha IS NOT NULL '
-                'RETURN t.cycle_budget AS cycle_budget, count(e) AS used',
-                tree=name, forceful=sorted(_FORCEFUL_SOURCES))
-            if not rows or rows[0].get('cycle_budget') is None:
-                return None, 0   # 미선언(기존 트리 전부) = 무제한 — 기본 비파괴
-            return int(rows[0]['cycle_budget']), int(rows[0].get('used') or 0)
-        except Exception:   # noqa: BLE001 — 조회/파싱 실패=예산 미상 → 무제한(위 fail-safe 계약)
-            return None, 0
+        return budget_state(self.kg, name)
 
     def _cycle_node_exists(self, name: str, tag: str) -> bool:
         """롤백 대상 판별용 존재 확인 — *삭제 결정* 입력이라 불확실은 '존재함'으로(fail-safe:
@@ -412,14 +394,22 @@ class ProgrammeService:
         4xx 엔 advice 레지스트리가 다음 명령을 제안(suggest-only, 게이트 우회 off-switch 없음).
         ⓪ 루프-경계 예산(PROM16 S1/S5, opt-in): 트리가 cycle_budget 을 선언했고 소진됐으면 *실행
            대신* 타입 거부(status='budget_exhausted') — 첫 write 전. 미선언=무제한(응답 shape 불변)."""
-        # ⓪ 예산 게이트 — trial(판정) 보다도 먼저. 못 도는 사이클은 미리보기조차 오도이고,
-        #    루프 드라이버는 이유코드로 즉시 멈춰야 한다(에이전트 자기판단과 독립된 정지).
+        # ⓪ 예산 게이트 — trial(판정) 보다도 먼저. 못 도는 사이클은 미리보기조차 오도이고, 루프
+        #    드라이버는 이유코드로 즉시 멈춰야 한다.
+        #    범위(과대주장 금지): 이 게이트는 run_cycle 표면의 *조기* 거부일 뿐이고, 강제 자체는
+        #    judgement_service 초크포인트(submit_test_result/set_verdict)의 같은 게이트가 한다 —
+        #    그래서 3-verb 경로로 갈아타도 채점은 안 된다(verb-교체 우회 없음). 단 '에이전트 자기판단과
+        #    독립'은 *무조건*이 아니라 KG 가용성에 조건부다: 예산 조회 실패 시 fail-safe 로 무제한이고,
+        #    add_node/register_prediction 은 애초에 예산 밖이라 소진 트리도 구조 write 는 계속 된다.
         budget, used = self._cycle_budget_state(name)
-        remaining = None if budget is None else max(0, budget - used)   # 음수 clamp(TOCTOU 초과분)
+        remaining = remaining_budget(budget, used)   # 미선언=None(무제한) · 음수는 0 clamp(TOCTOU 초과분)
         if remaining == 0:
             return {'tree': name, 'tag': c.tag, 'status': 'budget_exhausted',
-                    'remaining_budget': 0, 'cycle_budget': budget, 'cycles_used': used,
-                    'note': f'트리 사이클 예산 {budget} 소진(채점 {used}) — 실행 안 함(쓰기 0). '
+                    # 'scored_nodes' — 세는 대상의 정직한 이름. 이건 *판결받은 노드 수*이지 호출횟수가
+                    #   아니다(cycles_used 는 미채점 노드까지 세던 구 술어 시절의 거짓 이름이었다).
+                    'remaining_budget': 0, 'cycle_budget': budget, 'scored_nodes': used,
+                    'note': f'트리 채점 예산 {budget} 소진(채점노드 {used}) — 실행 안 함(쓰기 0). '
+                            f'submit_result/set_verdict 도 같은 예산으로 429 거부된다. '
                             f'예산을 올리거나(create_tree cycle_budget) 새 트리로 분기할 것'}
         trial = self._cycle_trial(c)
         if c.dry_run:

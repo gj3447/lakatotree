@@ -88,6 +88,18 @@ def test_exhausted_budget_returns_typed_refusal_and_writes_nothing():
     assert 'verdict' not in out, '거부가 판결처럼 보이면 안 됨(가짜 green)'
 
 
+def test_used_count_is_reported_under_its_true_name():
+    """응답 키는 *실제로 센 것*의 이름이어야 한다(적대검증 지적).
+
+    구현은 '판결받은 노드 수'를 센다 — 호출 횟수가 아니다. 옛 이름 'cycles_used' 는 그 위에 얹힌
+    거짓말이었다(구 술어는 미채점 예측 노드까지 셌다). 이름이 세는 것과 맞을 때만 소비/거부 비대칭이
+    독자에게 보인다.
+    """
+    out = _svc(_Cell(budget=3, scored=3)).run_cycle('T', _cycle())
+    assert out['scored_nodes'] == 3, '센 것(판결받은 노드 수)이 그 이름으로 안 나옴'
+    assert 'cycles_used' not in out, "'cycles_used' 는 세지 않은 것의 이름 — 재유입 금지"
+
+
 def test_overshot_budget_still_refuses_and_clamps_remaining_to_zero():
     """소모(4) > 예산(3) — TOCTOU 로 1 넘긴 상태(알려진 soft 한계)에서도 거부는 성립하고
     remaining 은 음수로 새지 않는다(0 clamp)."""

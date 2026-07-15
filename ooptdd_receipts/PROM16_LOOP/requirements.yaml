@@ -44,3 +44,18 @@ requirements:
     description: 음성 오라클 — timeout 타입화 제거 시 생 TimeoutExpired 가 샘이 검출됨(오라클 이빨)
     gate:
       - {event: bash_timeout_negative_oracle, op: ">=", count: 1}
+  - id: PROM16-8
+    description: >-
+      실 초크포인트 — 소진 트리는 3-verb 우회(register_prediction+submit_result)로도 채점 못 함(429,
+      판결 write 0). run_cycle 만 막던 예산은 agent-elective stop 이었다(적대검증 REJECT 사유).
+    gate:
+      - {event: cycle_budget_chokepoint_blocks_three_verb_path, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:PROM16:cycle_budget_chokepoint
+      source: prom16_loop_receipt.py
+      symbol: verify
+      must_emit: cycle_budget_chokepoint_blocks_three_verb_path
+  - id: PROM16-9
+    description: 음성 오라클 — 초크포인트 게이트 무력화 시 그 우회가 실제로 판결을 써버림이 검출됨(오라클 이빨)
+    gate:
+      - {event: cycle_budget_chokepoint_negative_oracle, op: ">=", count: 1}

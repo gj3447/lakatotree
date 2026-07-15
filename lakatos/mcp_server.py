@@ -186,7 +186,10 @@ def run_cycle(name: str, spec_json: str) -> str:
     + exit≠0 으로 나온다; 벽시계 예산은 LAKATOTREE_BASH_TIMEOUT, 기본 600초).
     루프 상한(PROM16): 트리가 cycle_budget 을 선언했고 소진됐으면 실행 대신 타입 거부
     {status:'budget_exhausted', remaining_budget:0} — 쓰기 0(노드 미생성). 선언 시 응답에
-    remaining_budget 동봉. 미선언(기본)=무제한이고 응답 shape 도 종전과 동일."""
+    remaining_budget 동봉. 미선언(기본)=무제한이고 응답 shape 도 종전과 동일.
+    이 거부는 run_cycle 표면만의 규칙이 아니다 — 같은 예산이 submit_result/set_verdict 에서도
+    429 로 발동하므로 3-verb 경로로 갈아타 채점을 이어갈 수 없다(add_node/register_prediction
+    자체는 예산 밖이라 계속 되지만 판결이 안 난다)."""
     try:
         spec = json.loads(spec_json or '{}')
     except json.JSONDecodeError as e:
@@ -237,9 +240,13 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
     assurance_tier(G6) = notebook|receipted|anchored — 생략 시 신규 트리는 anchored 기본(구조코어는 모든
     tier 무조건), 기존 트리는 무변경. 하향 선언은 409(단조 ratchet). attestor_dids_csv(G10) = 쉼표구분
     did:key allow-list — 선언하면 anchored tier 판결 쓰기에 write-cert(서명 명령) 강제, 생략=불변.
-    cycle_budget(PROM16 루프상한) = 이 트리가 소비할 채점 사이클 상한 — 소진되면 run_cycle 이 실행 대신
-    타입 거부(status='budget_exhausted', 쓰기 0)를 돌려준다. 생략=불변(미선언 트리는 무제한), 0=동결.
-    소모량은 *저장된 채점노드 count* 로 파생해 서버 재시작에도 살아남는다(인메모리 카운터 아님)."""
+    cycle_budget(PROM16 루프상한) = 이 트리가 받을 수 있는 *판결* 상한(세는 단위 = 판결받은 노드 수).
+    소진되면 판결 verb 가 전부 거부된다: run_cycle 은 타입 거부(status='budget_exhausted', 쓰기 0),
+    3-verb 경로의 submit_result 와 set_verdict 는 429 — verb 를 갈아타는 우회는 없다.
+    ★단 add_node/register_prediction 은 예산 밖이라 소진 트리에도 계속 들어간다(판결만 안 남) — 0 은
+    트리 동결이 아니라 판결 정지다. 예산 조회가 실패하면 fail-safe 로 무제한(soft bypass).
+    생략=불변(미선언 트리는 무제한). 소모량은 *저장된 채점노드 count* 로 파생해 서버 재시작에도
+    살아남는다(인메모리 카운터 아님)."""
     backlog = [b.strip() for b in coverage_backlog_csv.split(',') if b.strip()]
     return json.dumps(_post(f'/api/tree/{name}',
         dict(title=title, hard_core=hard_core, frontier_rule=frontier_rule,
@@ -367,7 +374,9 @@ def submit_result(name: str, tag: str, value: float, script: str,
     counterexample_response 와 ce_* 근거로 서버가 progressive/conditional/degenerating 을 재유도한다.
     touched_assumptions_csv 는 쉼표구분 가정이며 tree hard_core 보존을 서버가 구조적으로 판정한다.
     result_path = 산출물(영수증) 경로 — 서버가 노드에 비파괴 병합(coalesce). reproducible 게이트
-    (F-CON-1) 앵커: record_derivation 계보의 최종 output 과 일치, root 는 raw_root 안 실존 source."""
+    (F-CON-1) 앵커: record_derivation 계보의 최종 output 과 일치, root 는 raw_root 안 실존 source.
+    루프 상한(PROM16): 트리가 cycle_budget 을 선언했고 소진됐으면 여기서도 429 {error:429} —
+    이 verb 가 채점의 실 초크포인트라 run_cycle 우회로 쓸 수 없다(create_tree cycle_budget 참조)."""
     body = dict(metric_value=value, script=script,
                 data_branch=data_branch, data_replay_passed=data_replay_passed,
                 human_verdict_required=human_verdict_required,

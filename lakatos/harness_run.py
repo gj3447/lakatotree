@@ -22,10 +22,21 @@ TYPED_TERMINALS = {
     BuildFailed:     ('build_failed', 'permanent'),
     ScoringRefused:  ('scoring_refused', 'permanent'),
     BashConfigError: ('config_error', 'permanent'),
+    # 서버 부재(연결거부/DNS 실패) — _http 는 HTTPError(4xx/5xx)만 잡아 dict 로 접었고 URLError 는
+    #   그대로 샜다. 그런데 harness 는 build 게이트 *전에* _register_node 로 HTTP 를 친다(harness.py)
+    #   = 서버가 죽어 있으면 '타입화된 CLI' 라던 바로 그 표면이 생 스택트레이스로 터진다.
+    #   transient: 서버는 돌아올 수 있다(재시도+백오프 대상). ★HTTPError ⊂ URLError 라 등록 순서가
+    #   의미론이다 — 반드시 마지막(위 항목들이 먼저 매치). 실제로 HTTPError 는 _http 가 이미 흡수해
+    #   여기까지 안 오지만, isinstance 해석이므로 순서로 방어해 둔다.
+    urllib.error.URLError: ('server_unreachable', 'transient'),
 }
 
 
 def _http(method, path, body=None):
+    """HTTP 포트 — 4xx/5xx 는 {'error':code} dict 로 접어 하네스 채점게이트(M2)가 판정한다.
+    연결 자체가 안 되면(URLError) 삼키지 않고 올린다: 서버 부재는 '서버가 거부했다'와 다른 사건이라
+    error dict 로 위장하면 ScoringRefused(permanent)로 오분류된다 → run_typed 가 server_unreachable
+    (transient)로 종단(TYPED_TERMINALS)."""
     headers = {'Content-Type': 'application/json'}
     tok = os.environ.get('LAKATOS_API_TOKEN')   # 서버 auth 켜져 있으면 토큰 전달 (REG-1)
     if tok:

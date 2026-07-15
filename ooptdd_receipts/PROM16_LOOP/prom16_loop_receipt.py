@@ -17,10 +17,14 @@ _LKT = Path(__file__).resolve().parents[2].as_posix()
 if _LKT not in sys.path:
     sys.path.insert(0, _LKT)
 
+from fastapi import HTTPException  # noqa: E402
+
 from lakatos import cli, harness_run  # noqa: E402 — 실코드(재구현 금지)
 from lakatos.harness import BashTimeout  # noqa: E402
+from server.contexts.tree.judgement_service import JudgementService  # noqa: E402 — 실 초크포인트
 from server.contexts.tree.programme_service import ProgrammeService  # noqa: E402 — 실코드
-from server.contexts.tree.schemas import CycleIn  # noqa: E402
+from server.contexts.tree.schemas import CycleIn, PredictionIn  # noqa: E402
+from server.contexts.tree.schemas import TestResultIn  # noqa: E402
 
 
 def _ev(cid, name, **attrs):
@@ -80,6 +84,40 @@ def _cycle(**kw) -> CycleIn:
                       "direction": "lower", "measured": 1.0, "script": "inline", **kw})
 
 
+class _JudgeWorld:
+    """fake 세계 — 실 초크포인트(JudgementService)용. 예산 파생조회 + 판결 write 기록.
+
+    적대검증(2026-07-15)이 짚은 자리: run_cycle 만 막던 예산은 3-verb 경로(add_node +
+    register_prediction + submit_result)로 갈아타면 그대로 채점됐다 = agent-elective stop.
+    writes 가 그 우회의 증거다 — 소진 트리에서 비어 있어야 한다.
+    """
+
+    def __init__(self, budget=None, scored=0):
+        self.budget, self.scored = budget, scored
+        self.writes: list = []
+
+    def kg(self, q, **p):
+        if "cycle_budget" in q:
+            return [{"cycle_budget": self.budget, "used": self.scored}]
+        if "RETURN e.pred_metric" in q:
+            return [dict(m="p95", d="lower", b=0.5, nb=0.05, novel=None, vsrc=None, nmet=None,
+                         ndir=None, nthr=None, psha=None, closes=None, n_opened=0)]
+        if "rec.receipt_kind='prediction'" in q:   # 예측등록 write — 구조 write(판결 아님, 예산 밖)
+            return [{"tag": p.get("tag")}]
+        return []
+
+    def kg_tx(self, ops):
+        ops = list(ops)
+        self.writes.append(ops)
+        return [[{"claimed": "v"}]] + [[] for _ in ops[1:]]
+
+
+def _judge(w: _JudgeWorld) -> JudgementService:
+    return JudgementService(kg=w.kg, kg_tx=w.kg_tx, hist=lambda *a, **k: None,
+                            foundation=lambda *a, **k: None,
+                            reproducible_for_node=lambda *a, **k: None)
+
+
 def _spec_file(tmp: Path, **over) -> str:
     spec = dict(tree="T", tag="exp1", parent="root", metric="p95", baseline=0.5,
                 judge_cmd="echo metric=0.3")
@@ -99,6 +137,37 @@ def verify(backend, cid):
     assert w.pipeline == [] and w.nodes == {}, f"거부인데 write 발생: {w.pipeline}/{w.nodes}"
     backend.ship([_ev(cid, "cycle_budget_exhausted_refusal_zero_writes",
                       writes=len(w.pipeline), nodes=len(w.nodes), status=out["status"])])
+
+    # ①-b ★실 초크포인트 — 소진 트리는 3-verb 우회(submit_result 직행)로도 못 채점한다.
+    #     run_cycle 거부만으론 정지가 agent-elective 였다(적대검증 REJECT 사유).
+    w2 = _JudgeWorld(budget=1, scored=1)
+    j = _judge(w2)
+    j.register_prediction("T", "n2", PredictionIn(     # 구조 write 는 예산 밖(선언된 범위) — 통과
+        metric_name="p95", direction="lower", baseline_value=0.5, novel_prediction="x"))
+    try:
+        j.submit_test_result("T", "n2", TestResultIn(metric_value=0.4, script="judge.py"))
+        raise AssertionError("소진 트리가 3-verb 경로로 채점됨 — 예산 우회 가능")
+    except HTTPException as e:
+        assert e.status_code == 429, f"우회가 429 아닌 {e.status_code} 로 처리됨"
+    assert w2.writes == [], f"거부인데 판결 write 발생: {w2.writes}"
+    backend.ship([_ev(cid, "cycle_budget_chokepoint_blocks_three_verb_path",
+                      status_code=429, verdict_writes=len(w2.writes),
+                      surface="JudgementService.submit_test_result")])
+
+    # ①-c (음성 오라클) 초크포인트 게이트를 무력화하면 그 우회가 *실제로 채점을 뚫는가* — 이빨 증명.
+    #     여기서 판결 write 가 안 나오면 위 ①-b 는 항상-green(vacuous)이라는 뜻이다.
+    w3 = _JudgeWorld(budget=1, scored=1)
+    j3 = _judge(w3)
+    import server.contexts.tree.judgement_service as _js
+    _real_gate = _js.assert_scoring_budget
+    try:
+        _js.assert_scoring_budget = lambda *a, **k: None   # 결함 주입: 게이트 이전 상태 재현
+        j3.submit_test_result("T", "n2", TestResultIn(metric_value=0.4, script="judge.py"))
+    finally:
+        _js.assert_scoring_budget = _real_gate
+    assert w3.writes, "게이트 무력화에도 판결이 안 써짐 — 오라클이 vacuous(항상-green 위험)"
+    backend.ship([_ev(cid, "cycle_budget_chokepoint_negative_oracle",
+                      scored_without_gate=len(w3.writes))])
 
     # ② 내구성 — 소모는 *저장소*서 파생. 새 인스턴스(프로세스 재시작 재현)도 같은 거부.
     assert _svc(_World(budget=1, scored=1)).run_cycle("T", _cycle())["status"] == "budget_exhausted"

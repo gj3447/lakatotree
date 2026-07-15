@@ -135,6 +135,47 @@ def test_cli_cycle_success_path_unchanged(tmp_path, monkeypatch, capsys):
     assert out['verdict'] == 'progressive' and out['metric'] == 0.3
 
 
+def test_server_down_is_typed_terminal_not_traceback(tmp_path, monkeypatch, capsys):
+    """FIX-5(적대검증 제안): 서버가 죽어 있으면 CLI 표면이 *생 스택트레이스*로 터졌다.
+
+    _http 는 HTTPError(4xx/5xx)만 dict 로 접고 URLError(연결거부/DNS)는 흘렸는데, 하네스는 build
+    게이트 *전에* _register_node 로 HTTP 를 친다(harness.py) — 즉 '타입화된 CLI' 를 표방한 바로 그
+    표면이 서버 부재라는 가장 흔한 운영 사고에서 무타입으로 죽었다. 이제 server_unreachable/transient.
+    실 소켓을 쓴다(연결거부는 모킹할 대상이 아니라 관측할 사실).
+    """
+    import socket
+
+    from lakatos import cli
+
+    with socket.socket() as s:            # 방금 닫힌 포트 = 확실한 연결거부(hermetic: 네트워크 무관)
+        s.bind(('127.0.0.1', 0))
+        dead_port = s.getsockname()[1]
+    monkeypatch.setattr(harness_run, 'BASE', f'http://127.0.0.1:{dead_port}')
+    monkeypatch.setattr(harness_run, '_git_sha', lambda: 'abc1234')
+
+    with pytest.raises(SystemExit) as e:
+        cli.main(['cycle', _spec(tmp_path)])
+    assert e.value.code != 0, '서버 부재인데 exit 0(가짜 green)'
+    err = capsys.readouterr().err
+    assert 'Traceback' not in err, f'무타입 스택트레이스가 CLI 표면으로 샘: {err[:200]}'
+    term = json.loads(err.strip().splitlines()[-1])
+    assert term['status'] == 'server_unreachable'
+    assert term['class'] == 'transient', '서버는 돌아올 수 있다 — 재시도 대상(permanent 오분류 금지)'
+
+
+def test_http_error_still_maps_to_scoring_refused_not_unreachable(monkeypatch):
+    """등록 순서의 의미론 가드: HTTPError ⊂ URLError 라 URLError 를 먼저 등록하면 서버의 *거부*(4xx)가
+    '서버 부재'로 오분류된다(permanent → transient 오분류 = 무한 재시도). _http 가 HTTPError 를 dict 로
+    접어 ScoringRefused(permanent) 로 가는 경로가 살아 있어야 한다."""
+    from lakatos.harness import ScoringRefused
+
+    seen = harness_run.TYPED_TERMINALS
+    assert list(seen)[-1] is harness_run.urllib.error.URLError, \
+        'URLError 는 마지막이어야 — isinstance 첫 매치가 구체 클래스여야 한다'
+    assert seen[ScoringRefused] == ('scoring_refused', 'permanent')
+    assert seen[harness_run.urllib.error.URLError] == ('server_unreachable', 'transient')
+
+
 def test_engine_exceptions_stay_intact_for_library_callers(tmp_path, monkeypatch):
     """라이브러리 호출자 계약 보존: main() 은 여전히 *엔진 예외*를 raise 한다(타입화는 CLI 경계에서만).
     run_typed 가 main 을 삼키는 게 아니라 *감싸는* 것임을 못 박음."""
