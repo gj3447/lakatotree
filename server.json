@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.json",
+  "name": "io.github.gj3447/lakatotree",
+  "description": "Deterministic, receipt-backed verdicts for AI research programmes: pre-register, measure externally, never let agents grade themselves.",
+  "repository": {
+    "url": "https://github.com/gj3447/lakatotree",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "lakatotree",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "runtimeHint": "python -m lakatos.mcp_server (requires the 'server' extra: pip install 'lakatotree[server]')"
+    }
+  ]
+}
