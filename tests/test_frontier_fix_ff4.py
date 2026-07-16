@@ -57,3 +57,13 @@ def test_script_sha_uses_streaming_capped_file_hash():
         assert sha2 is None and info2.get("reason") == "too_large", info2
     finally:
         os.unlink(big)
+
+
+def test_command_like_oversized_script_is_rejected_without_oserror():
+    """경로가 아닌 긴 명령 문자열은 ENAMETOOLONG 을 누출하지 않고 정직하게 미검증 처리한다."""
+    command_like = "python -c '" + ("print(1);" * 64) + "'"
+
+    sha, info = _svc()._recompute_script_sha(command_like)
+
+    assert sha is None
+    assert info.get("reason") in {"unresolvable", "not_a_file"}, info

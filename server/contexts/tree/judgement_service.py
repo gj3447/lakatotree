@@ -75,11 +75,18 @@ def isolate_script_file(file_str: str, max_bytes: int = SCRIPT_MAX_BYTES) -> tup
         if not any(r == resolved or r in resolved.parents for r in _allowed_script_roots()):
             return None, {'reason': 'out_of_root', 'script': file_str}
     else:
-        resolved = (root / p).resolve()
+        try:
+            resolved = (root / p).resolve()
+        except OSError:
+            return None, {'reason': 'unresolvable', 'script': file_str}
         if root not in resolved.parents and resolved != root:   # ../ 탈출 = traversal 거부
             return None, {'reason': 'path_traversal', 'script': file_str}
-    if not resolved.is_file():   # 미존재/비정규 = 재계산 불가
-        return None, {'reason': 'not_a_file', 'script': file_str}
+    try:
+        if not resolved.is_file():   # 미존재/비정규 = 재계산 불가
+            return None, {'reason': 'not_a_file', 'script': file_str}
+    except OSError:
+        # ENAMETOOLONG 등 경로 자체를 stat 할 수 없는 입력은 client 오류지 서버 크래시가 아니다.
+        return None, {'reason': 'unresolvable', 'script': file_str}
     try:   # unbounded read 차단 — size cap (대용량 파일 RAM-exhaustion 방지)
         if resolved.stat().st_size > max_bytes:
             return None, {'reason': 'too_large', 'script': file_str, 'size': resolved.stat().st_size}

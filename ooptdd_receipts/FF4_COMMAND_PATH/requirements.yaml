@@ -1,0 +1,39 @@
+# Locked before the live all-green receipt run on 2026-07-16.
+# The adapter drives the real server.contexts.tree.judgement_service.isolate_script_file boundary.
+name: lakatotree-ff4-command-like-script-path-totality
+target:
+  mode: in_process
+  callable: ff4_command_path_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: FF4-CMD-1
+    description: command-like oversized judge_script input is rejected as unresolvable instead of leaking ENAMETOOLONG
+    gate:
+      - {event: oversized_command_path_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:FF4_COMMAND_PATH:oversized_command_path_rejected
+      source: ff4_command_path_receipt.py
+      symbol: verify
+      must_emit: oversized_command_path_rejected
+
+  - id: FF4-CMD-2
+    description: a normal script file inside an allowed runtime root still resolves after the OSError boundary is added
+    gate:
+      - {event: normal_script_path_preserved, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:FF4_COMMAND_PATH:normal_script_path_preserved
+      source: ff4_command_path_receipt.py
+      symbol: verify
+      must_emit: normal_script_path_preserved
+
+  - id: FF4-CMD-3
+    description: injected ENAMETOOLONG at the real pathlib stat boundary is contained and classified as unresolvable
+    gate:
+      - {event: filename_too_long_fault_contained, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:FF4_COMMAND_PATH:filename_too_long_fault_contained
+      source: ff4_command_path_receipt.py
+      symbol: verify
+      must_emit: filename_too_long_fault_contained
