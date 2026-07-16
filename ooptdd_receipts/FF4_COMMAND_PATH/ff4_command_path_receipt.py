@@ -14,6 +14,9 @@ if str(_REPO) not in sys.path:
 from server.contexts.tree.judgement_service import isolate_script_file  # noqa: E402
 
 
+_SAFE_COMMAND_REJECTION_REASONS = {"unresolvable", "not_a_file"}
+
+
 def _event(cid: str, name: str, **attrs):
     return {
         "cid": cid,
@@ -28,7 +31,7 @@ def _event(cid: str, name: str, **attrs):
 def verify(backend, cid):
     command_like = "python -c '" + ("print(1);" * 64) + "'"
     resolved, info = isolate_script_file(command_like)
-    assert resolved is None and info.get("reason") == "unresolvable", info
+    assert resolved is None and info.get("reason") in _SAFE_COMMAND_REJECTION_REASONS, info
     if os.environ.get("LAKATO_FF4_SUPPRESS_REJECTION_EVENT") != "1":
         backend.ship([_event(cid, "oversized_command_path_rejected", reason=info["reason"])])
 

@@ -40,7 +40,7 @@ def test_packaged_module_main_matches_compatibility_script():
         check=True,
     )
     compatibility = subprocess.run(
-        [sys.executable, "examples/euler_polyhedron_programme.py"],
+        [sys.executable, "-I", "examples/euler_polyhedron_programme.py"],
         cwd=ROOT,
         text=True,
         capture_output=True,
