@@ -213,6 +213,35 @@ def force_of_row(row: dict) -> str:
     return base
 
 
+def partition_unreceipted(nodes: list) -> tuple:
+    """(inconclusive_tags, refuted_tags) — 진보 credit 서 제외할 노드. SSOT: tree_metrics(표면)·
+    leaderboard(리더보드→패러다임 경로) 공용 술어(drift 방지). 파이드나 재감사 2026-07-21.
+      inconclusive = force_of_row=='INCONCLUSIVE' (영수증 미도래 + FORCEFUL 라벨인데 원장 부재 포함).
+      refuted = producer-replay 가 측정 반증(replay_status='mismatch')인데 여전히 COUNTS 될 노드.
+    """
+    inconclusive = [r['tag'] for r in nodes if force_of_row(r) == 'INCONCLUSIVE']
+    refuted = [r['tag'] for r in nodes
+               if r.get('replay_status') == 'mismatch' and force_of_row(r) == 'COUNTS']
+    return inconclusive, refuted
+
+
+def neutralize_unreceipted(nodes: list, *, lenient: bool = False) -> list:
+    """영수증 없는/측정-반증된 노드의 verdict+novel_confirmed 를 무력화한 *새* 리스트(비파괴).
+
+    fertility/eureka 가 novel_confirmed bool 을 직접 읽으므로 verdict 만 비우면 credit 이 샌다 → 둘 다 끈다.
+    novel_registered 는 보존(등록은 사실 — 분모에 남겨 fertility 를 *보수적으로* 낮춘다, 부풀림 방향 금지).
+    lenient=True = 옛 동작(집계 포함, append-only 존중 opt-out). '가짜 열매로 cross-pollinate 금지'(하네스=열매).
+    """
+    if lenient:
+        return nodes
+    inc, ref = partition_unreceipted(nodes)
+    neut = set(inc) | set(ref)
+    if not neut:
+        return nodes
+    return [r if r['tag'] not in neut
+            else {**r, 'verdict': '_inconclusive_unscored', 'novel_confirmed': False} for r in nodes]
+
+
 def is_self_report_blocked_verdict(verdict: str) -> bool:
     """노드 수동 작성으로 self-report 금지 어휘 — 채점(scripted/engine) ∪ 진보집계(PROGRESS_VERDICTS,
     CANONICAL/former_canonical 포함). 적대 재검증(2026-06-21): scripted/engine 만 막으면 정본급 진보어휘

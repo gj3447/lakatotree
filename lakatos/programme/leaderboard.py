@@ -18,6 +18,7 @@ from lakatos.quant.bayes import branch_credence
 from lakatos.quant.fertility import predictive_fertility
 from lakatos.grounding import wilson_lower_bound
 from lakatos.quant.laudan import branch_score
+from lakatos.verdicts import neutralize_unreceipted
 
 CRITERIA = ('laudan_score', 'credence', 'fertility_lb')
 
@@ -34,7 +35,10 @@ class Competitor:
 
 
 def score_competitor(c: Competitor) -> dict:
-    fert = predictive_fertility(c.nodes, scope='all_nodes')   # G5: 리더보드는 프로그램 전체(all_nodes) 발전성 — 명시 라벨
+    # 파이드나 재감사 2026-07-21: 리더보드→패러다임(kuhn)이 소비하는 fertility=열매. raw 노드 직접 호출은
+    #   영수증 없는/측정-반증된 노드를 credit 해 나무間 유일 실배선(supersession 제안)을 가짜 열매로 오염시켰다.
+    #   tree_metrics 와 *같은* SSOT neutralize 로 receipt-gate('가짜 열매로 cross-pollinate 금지', 하네스=열매).
+    fert = predictive_fertility(neutralize_unreceipted(c.nodes), scope='all_nodes')   # G5: all_nodes 발전성
     return {
         'name': c.name,
         'laudan_score': round(branch_score(c.metric_improvement_pct, c.closed, c.opened), 3),

@@ -75,3 +75,19 @@ def verify(backend, cid):
                       [], None)["fertility"]
     assert m4["confirmed"] == 1, f"clean 영수증 노드가 credit 안 됨(fix 가 vacuous?): {m4}"
     backend.ship([_ev(cid, "clean_receipted_still_credited", confirmed=m4["confirmed"])])
+
+    # (5) 열매(fertility)를 리더보드→패러다임 경로에서도 receipt-gate — score_competitor 가 SSOT
+    #     neutralize 를 거친다. 음성 오라클: 우회(옛 raw 호출)면 confirmed=9/fertility_lb≈0.7 로 새서 깨진다.
+    from lakatos.programme.leaderboard import Competitor, score_competitor
+    fake_fruit = [_node(f"n{i}", current_receipt_sha=None) for i in range(9)]
+    real_fruit = [_node(f"n{i}", current_receipt_sha=f"r{i}") for i in range(9)]
+    verdicts = [{"verdict": "progressive", "delta": -0.5, "noise_band": 0.05}] * 9
+    s_fake = score_competitor(Competitor("receiptless", verdicts, fake_fruit, 27.0, 5, 1))
+    s_real = score_competitor(Competitor("receipted", verdicts, real_fruit, 27.0, 5, 1))
+    assert s_fake["fertility_raw"]["confirmed"] == 0, f"영수증 없는 열매가 리더보드서 credit 됨: {s_fake}"
+    assert s_fake["fertility_lb"] == 0.0, f"가짜 열매가 fertility_lb 부풀림(kuhn 오염): {s_fake}"
+    assert s_real["fertility_raw"]["confirmed"] == 9, f"영수증 있는 열매가 credit 안 됨: {s_real}"
+    backend.ship([_ev(cid, "leaderboard_fruit_receipt_gated",
+                      fake_confirmed=s_fake["fertility_raw"]["confirmed"],
+                      fake_fertility_lb=s_fake["fertility_lb"],
+                      real_confirmed=s_real["fertility_raw"]["confirmed"])])

@@ -66,3 +66,25 @@ def test_tree_metrics_still_credits_clean_receipted_node():
     nodes = [_node('clean', current_receipt_sha='r1', replay_status='verified')]
     m = tree_metrics(nodes, [], None)
     assert m['fertility']['confirmed'] == 1, m['fertility']
+
+
+# ── 열매(fertility)를 리더보드→패러다임 경로에서도 receipt-gate (하네스=열매) ──────────────
+def test_leaderboard_score_excludes_receiptless_forceful_fruit():
+    # score_competitor 는 raw 노드에 predictive_fertility 직접 호출(tree_metrics neutralize 우회) —
+    # 영수증 없는 열매가 fertility_lb 를 부풀려 kuhn supersession 을 오염시키던 구멍.
+    from lakatos.programme.leaderboard import Competitor, score_competitor
+    fake_fruit = [_node(f'n{i}', current_receipt_sha=None) for i in range(9)]
+    c = Competitor('receiptless', [{'verdict': 'progressive', 'delta': -0.5, 'noise_band': 0.05}] * 9,
+                   fake_fruit, metric_improvement_pct=27.0, closed=5, opened=1)
+    s = score_competitor(c)
+    assert s['fertility_raw']['confirmed'] == 0, s['fertility_raw']   # 가짜 열매 credit 안 됨
+    assert s['fertility_lb'] == 0.0
+
+
+def test_leaderboard_score_still_credits_receipted_fruit():
+    from lakatos.programme.leaderboard import Competitor, score_competitor
+    real_fruit = [_node(f'n{i}', current_receipt_sha=f'r{i}') for i in range(9)]
+    c = Competitor('receipted', [{'verdict': 'progressive', 'delta': -0.5, 'noise_band': 0.05}] * 9,
+                   real_fruit, metric_improvement_pct=27.0, closed=5, opened=1)
+    s = score_competitor(c)
+    assert s['fertility_raw']['confirmed'] == 9, s['fertility_raw']   # 영수증 있는 열매는 credit

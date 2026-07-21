@@ -49,3 +49,13 @@ requirements:
       source: receipt_gated_credit_receipt.py
       symbol: verify
       must_emit: clean_receipted_still_credited
+
+  - id: RGC-5
+    description: 열매(fertility)를 리더보드→패러다임 경로에서도 receipt-gate — score_competitor 가 raw 노드에 predictive_fertility 직접 호출(tree_metrics neutralize 우회)하던 구멍을 SSOT neutralize 로 봉합. 영수증 없는 열매는 fertility_lb 를 부풀려 kuhn supersession 을 오염시키지 못한다(하네스=열매)
+    gate:
+      - {event: leaderboard_fruit_receipt_gated, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:leaderboard_fruit_receipt_gated
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: leaderboard_fruit_receipt_gated
