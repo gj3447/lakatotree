@@ -55,6 +55,22 @@ ArtifactInserter = Callable[[dict], Any]
 QuestionRanker = Callable[[list[dict], int], list[dict]]
 
 
+def issuer_calibration_annotation(cal: dict, min_n: int) -> dict:
+    """표시-only 투명성 (credence-loop 연구 CONDITIONAL_CLOSE, 2026-07-21): 랭킹 credence 를 *발급한*
+    판관의 측정 보정품질(ECE, n)을 랭킹 값 *옆에* 노출한다. ★융합 아님 — 이 값은 dominates()/
+    branch_credence/CRITERIA 에 절대 들어가지 않는다(realized ECE→랭킹 credence 융합은 범주오류[pred_credence
+    예보과신 ≠ verdict-라벨발 branch_credence] + tiny-n[n=0~10] + confirm_monotone 정리 RED 로 held-out
+    falsifier 뒤로 defer). n<min_n(=ece_gate_min_n) 은 고정-bin ECE 소표본 고분산 → abstain(날조 0 금지).
+    독자가 "이 랭킹 credence 는 ECE=X(n=Y) 판관이 발급"임을 *보게* 할 뿐, 보정됨을 주장하지 않는다.
+    """
+    if cal['n'] < min_n:
+        return dict(ece=None, n=cal['n'], status='abstain_small_n',
+                    note=f'보정표본 n={cal["n"]}<{min_n} — ECE noise(고정-bin 소표본 고분산), 인증 보류')
+    return dict(ece=cal.get('calibration_error'), n=cal['n'], status='surfaced',
+                note='이 랭킹 credence 를 발급한 판관의 측정 ECE(표시-only, 랭킹 값 미변경). '
+                     'ECE 높음=발급자 과신 — 보정됨 주장 아님.')
+
+
 class ProgrammeService:
     """Owns programme calibration, direction, cycle, foundation, and history operations."""
 
@@ -150,7 +166,18 @@ class ProgrammeService:
         for q in ranked:
             q['branch_from'] = (can or {}).get('tag')
             q['suggested_tag'] = q['name'].replace('q-', 'exp-') + '-try1'
+        from lakatos.grounding import GROUNDED
+        # 투명성 표시-only: 이 랭킹 credence 를 발급한 판관의 측정 ECE 를 값 *옆에* 노출(융합 아님 —
+        #   dominates/branch_credence 미변경, credence-loop CONDITIONAL_CLOSE 2026-07-21). ★display-only
+        #   fail-safe: 보정 조회 실패는 directions core 응답을 절대 깨지 않는다(pressure/reward 와 동일 규율).
+        try:
+            _issuer_cal = issuer_calibration_annotation(
+                self.calibration(name), GROUNDED['ece_gate_min_n']['value'])
+        except Exception:   # noqa: BLE001 — display-only: 보정 조회(KG/auth 등) 실패가 directions core 를 절대 못 깬다
+            _issuer_cal = dict(ece=None, n=0, status='unavailable',
+                               note='보정 조회 실패 — 표시 생략(display-only fail-safe)')
         return dict(canonical=(can or {}).get('tag'), canonical_credence=cred,
+                    issuer_calibration=_issuer_cal,
                     branch_pressure=round(pressure, 4), crisis_exploration=crisis,
                     ranked_directions=ranked,
                     protocol=['① prediction 사전등록(구조적 novel_metric/threshold + script_sha 권장)',
