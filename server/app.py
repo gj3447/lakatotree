@@ -25,7 +25,7 @@ from lakatos.programme.leaderboard import Competitor, leaderboard as build_leade
 from lakatos.programme.kuhn import assess_paradigm, propose_supersession
 from lakatos.programme.explore import rank_questions
 from lakatos.engine_identity import ENGINE_RULE_SHA as _ENGINE_RULE_SHA
-from lakatos.verdicts import receipt_content_sha
+from lakatos.verdicts import receipt_content_sha, neutralize_unreceipted
 from lakatos.programme.agm import (Belief, expansion, contraction, revision, demote_canonical,
                          HardCoreProtected)
 from lakatos.engine import FoundationMap, FoundationRequirement, KnowledgeKind
@@ -780,13 +780,19 @@ def series_view(name: str, leaf: str | None = None):
 def _competitor_for_tree(n: str) -> Competitor:
     td = tree_data(n)
     m = compute_metrics(td)
+    # 파이드나 재감사 2026-07-21 (PROM16 P0): credence·fertility 를 *같은 SSOT* 로 receipt-gate.
+    #   리더보드 dominates() 는 3기준(laudan/credence/fertility) 전부를 본다 — fertility 만 막고 credence 를
+    #   raw 로 두면 영수증 없는 progressive 가 credence=1.0 을 만들어 유일 실배선(kuhn supersession)을
+    #   가짜 열매로 오염시킨다(하네스=열매). 노드를 branch_inputs 前에 neutralize → credence 입력 verdicts
+    #   도, Competitor.nodes 의 fertility 도 한 곳에서 봉인. compute_metrics 는 tree_metrics 가 내부 neutralize.
+    nodes = neutralize_unreceipted(td['nodes'])
     try:
-        bi = branch_inputs(td['nodes'], td['frontier'])
+        bi = branch_inputs(nodes, td['frontier'])
         verdicts = bi['verdicts']
     except KeyError:                        # 정본 없음 — 빈 시퀀스(신뢰도 prior 유지)
         verdicts = []
     imp = (m.get('progress') or {}).get('improvement_pct') or 0.0
-    return Competitor(name=n, verdicts=verdicts, nodes=td['nodes'],
+    return Competitor(name=n, verdicts=verdicts, nodes=nodes,
                       metric_improvement_pct=imp,
                       closed=m['frontier']['closed'], opened=m['frontier']['open'])
 

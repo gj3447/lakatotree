@@ -196,9 +196,50 @@ def force_of(verdict: str, verdict_source=_SOURCE_ABSENT) -> str:
 
 
 def force_of_row(row: dict) -> str:
-    """노드 dict → force_of. verdict_source 키 부재(레거시)와 None(영수증 미도래)을 구분해 넘긴다."""
-    return force_of(row.get('verdict'),
+    """노드 dict → force_of. verdict_source 키 부재(레거시)와 None(영수증 미도래)을 구분해 넘긴다.
+
+    +영수증 실재 게이트(파이드나 재감사 2026-07-21): force_of 는 verdict_source *라벨*만 봤다 — 라벨이
+    FORCEFUL('scripted' 등)이면 실제 영수증(current_receipt_sha) 부재여도 COUNTS 를 냈다. fsck.
+    _check_forceful_receipt(FORCEFUL_SOURCE_WITHOUT_RECEIPT, 라이브 159건)와 *동일 술어*로 여기서 강등:
+    current_receipt_sha 키가 실려 있고(=실 KG read-model row, repository RETURN) present-but-empty 면
+    원장 우회/G1-이전 write → INCONCLUSIVE(영수증 미도래와 동급, 진보 credit 제외). judge 층이 fsck 의
+    구조지적을 *행동*으로 옮긴다('지적만 하면 정정 아님'). ★키 *부재*(레거시/테스트 픽스처)는 신뢰 유지
+    (_SOURCE_ABSENT 철학 비파괴 — 실 KG 읽기만 current_receipt_sha 키를 싣는다).
+    """
+    base = force_of(row.get('verdict'),
                     row['verdict_source'] if 'verdict_source' in row else _SOURCE_ABSENT)
+    if base == 'COUNTS' and 'current_receipt_sha' in row and not row['current_receipt_sha']:
+        return 'INCONCLUSIVE'   # FORCEFUL 라벨인데 원장 포인터 부재 = 재독 불가(영수증 미도래)
+    return base
+
+
+def partition_unreceipted(nodes: list) -> tuple:
+    """(inconclusive_tags, refuted_tags) — 진보 credit 서 제외할 노드. SSOT: tree_metrics(표면)·
+    leaderboard(리더보드→패러다임 경로) 공용 술어(drift 방지). 파이드나 재감사 2026-07-21.
+      inconclusive = force_of_row=='INCONCLUSIVE' (영수증 미도래 + FORCEFUL 라벨인데 원장 부재 포함).
+      refuted = producer-replay 가 측정 반증(replay_status='mismatch')인데 여전히 COUNTS 될 노드.
+    """
+    inconclusive = [r['tag'] for r in nodes if force_of_row(r) == 'INCONCLUSIVE']
+    refuted = [r['tag'] for r in nodes
+               if r.get('replay_status') == 'mismatch' and force_of_row(r) == 'COUNTS']
+    return inconclusive, refuted
+
+
+def neutralize_unreceipted(nodes: list, *, lenient: bool = False) -> list:
+    """영수증 없는/측정-반증된 노드의 verdict+novel_confirmed 를 무력화한 *새* 리스트(비파괴).
+
+    fertility/eureka 가 novel_confirmed bool 을 직접 읽으므로 verdict 만 비우면 credit 이 샌다 → 둘 다 끈다.
+    novel_registered 는 보존(등록은 사실 — 분모에 남겨 fertility 를 *보수적으로* 낮춘다, 부풀림 방향 금지).
+    lenient=True = 옛 동작(집계 포함, append-only 존중 opt-out). '가짜 열매로 cross-pollinate 금지'(하네스=열매).
+    """
+    if lenient:
+        return nodes
+    inc, ref = partition_unreceipted(nodes)
+    neut = set(inc) | set(ref)
+    if not neut:
+        return nodes
+    return [r if r['tag'] not in neut
+            else {**r, 'verdict': '_inconclusive_unscored', 'novel_confirmed': False} for r in nodes]
 
 
 def is_self_report_blocked_verdict(verdict: str) -> bool:

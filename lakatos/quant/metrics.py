@@ -20,7 +20,8 @@ from lakatos.verdicts import FORCEFUL_SOURCES
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
 from lakatos.verdicts import (PROGRESS_VERDICTS, CONFIRMED_NOVEL_PROGRESS,
-                              NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row)
+                              NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row,
+                              partition_unreceipted, neutralize_unreceipted)
 
 
 def _primary_parent(row: dict) -> str | None:
@@ -383,11 +384,13 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     #   provenance 로 surface(영수증 없는 green=거짓말; 울프람 '추측 말고 돌려라'→재검증으로 inconclusive 해소).
     #   비파괴(노드 보존)·가역: cfg.provenance_lenient=True 면 옛 동작(집계 포함)으로 opt-out(append-only 존중).
     #   ★key 부재=레거시/테스트 픽스처는 신뢰(집계 — 실 KG 읽기만 verdict_source 키를 싣는다, read_models RETURN).
-    inconclusive = [r['tag'] for r in nodes if force_of_row(r) == 'INCONCLUSIVE']   # SSOT: verdicts.force_of
+    # SSOT(verdicts.partition_unreceipted/neutralize_unreceipted, 파이드나 재감사 2026-07-21): 표면
+    #   (tree_metrics)과 리더보드(score_competitor→predictive_fertility)가 *같은* 술어를 쓴다 — 열매
+    #   (fertility)를 한 곳에서 receipt-gate('가짜 열매로 cross-pollinate 금지', 하네스=열매). inconclusive=
+    #   force_of_row=='INCONCLUSIVE'(영수증 미도래 + FORCEFUL 라벨 원장부재 포함), refuted=replay 반증인데 COUNTS.
+    inconclusive, refuted = partition_unreceipted(nodes)
     lenient = bool(cfg.get('provenance_lenient'))
-    if inconclusive and not lenient:
-        _inc = set(inconclusive)
-        nodes = [r if r['tag'] not in _inc else {**r, 'verdict': '_inconclusive_unscored'} for r in nodes]
+    nodes = neutralize_unreceipted(nodes, lenient=lenient)
     by = {r['tag']: r for r in nodes}
     n = len(nodes)
     path = _canonical_path(nodes, by)
@@ -430,6 +433,11 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개가 verdict_source 없이 self-report = inconclusive "
             + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
                else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
+    if refuted and not lenient:
+        alerts = [*alerts, (
+            f"측정 반증된 green: replay_status='mismatch' 노드 {len(refuted)}개(영수증은 있으나 서버 "
+            f"재실행이 값을 반증) → 진보/발전성 credit 서 제외(재실험·분기 권고). "
+            f"fsck MEASUREMENT_REFUTED_BUT_STANDING 대응")]
 
     if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
         _drift = anchored['novel_measured'] - anchored['server_anchored']
