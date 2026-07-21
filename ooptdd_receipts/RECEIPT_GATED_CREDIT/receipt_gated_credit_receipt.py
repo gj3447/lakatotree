@@ -107,3 +107,26 @@ def verify(backend, cid):
     gated_cred = round(branch_credence(branch_inputs(neutralize_unreceipted(chain), [])["verdicts"]), 3)
     assert gated_cred < raw_cred, f"credence 게이트 미작동(영수증 없는 progressive 가 credence 부풀림): gated={gated_cred} raw={raw_cred}"
     backend.ship([_ev(cid, "credence_receipt_gated", gated=gated_cred, raw=raw_cred)])
+
+    # (7) 감사 삼총사 완성 — neutralize 가 metric_value 도 끈다. 무영수증 belt 조상의 raw 측정값이
+    #     improvement_pct→laudan_score 를 못 움직인다. 음성 오라클: neutralize 가 metric_value 를 안 끄면
+    #     belt 측정값(50→10)이 improvement_pct=80.0 로 재출현(vacuous-green death).
+    belt = [dict(tag=f"b{i}", parent=(f"b{i-1}" if i else None), verdict="progressive",
+                 verdict_source="scripted", current_receipt_sha=None, metric_scope="belt",
+                 metric_value=v, pred_baseline=2.0, pred_noise_band=0.1,
+                 novel_registered=True, novel_confirmed=True) for i, v in enumerate([50.0, 30.0, 10.0])]
+    belt.append(dict(tag="leaf", parent="b2", verdict="CANONICAL", verdict_source="scripted",
+                     current_receipt_sha="r", metric_scope="final", metric_value=100.0,
+                     pred_baseline=2.0, pred_noise_band=0.1, novel_registered=True, novel_confirmed=True))
+    prog_leak = tree_metrics(belt, [], None)["progress"] or {}
+    # 양성 통제: 영수증 있는 실개선(50→25 same scope)은 보존.
+    pc = [dict(tag="q0", parent=None, verdict="progressive", verdict_source="scripted",
+               current_receipt_sha="r0", metric_scope="s", metric_value=50.0, pred_baseline=2.0, pred_noise_band=0.1),
+          dict(tag="q1", parent="q0", verdict="CANONICAL", verdict_source="scripted",
+               current_receipt_sha="r1", metric_scope="s", metric_value=25.0, pred_baseline=2.0, pred_noise_band=0.1)]
+    prog_real = tree_metrics(pc, [], None)["progress"]
+    assert prog_leak.get("improvement_pct") is None, f"무영수증 belt 측정값이 진보% 조종: {prog_leak}"
+    assert prog_real["improvement_pct"] == 50.0, f"영수증 있는 실개선이 지워짐(과잉방어): {prog_real}"
+    backend.ship([_ev(cid, "metric_value_receipt_gated",
+                      leak_improvement=prog_leak.get("improvement_pct"),
+                      real_improvement=prog_real["improvement_pct"])])
