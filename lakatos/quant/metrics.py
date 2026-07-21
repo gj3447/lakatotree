@@ -384,10 +384,20 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     #   비파괴(노드 보존)·가역: cfg.provenance_lenient=True 면 옛 동작(집계 포함)으로 opt-out(append-only 존중).
     #   ★key 부재=레거시/테스트 픽스처는 신뢰(집계 — 실 KG 읽기만 verdict_source 키를 싣는다, read_models RETURN).
     inconclusive = [r['tag'] for r in nodes if force_of_row(r) == 'INCONCLUSIVE']   # SSOT: verdicts.force_of
+    # AG6/측정주권(파이드나 재감사 2026-07-21): producer-replay 가 측정을 *반증*(replay_status='mismatch')
+    #   했는데 노드가 여전히 COUNT 될 verdict 을 든다 → 진보 credit 서 제외. fsck.MEASUREMENT_REFUTED_BUT_STANDING
+    #   (라이브 33건)이 flag 하던 부패를 judge 층이 실제로 act(fsck 비차단 WARN → 여기서 credit 제외).
+    #   force_of_row=='COUNTS' 조건이 이미 non-forceful(SELF_REPORT/INCONCLUSIVE)을 자연 제외.
+    refuted = [r['tag'] for r in nodes
+               if r.get('replay_status') == 'mismatch' and force_of_row(r) == 'COUNTS']
     lenient = bool(cfg.get('provenance_lenient'))
-    if inconclusive and not lenient:
-        _inc = set(inconclusive)
-        nodes = [r if r['tag'] not in _inc else {**r, 'verdict': '_inconclusive_unscored'} for r in nodes]
+    _neutralize = set(inconclusive) | set(refuted)
+    if _neutralize and not lenient:
+        # verdict 뿐 아니라 novel_confirmed 도 무력화 — fertility/eureka 가 novel_confirmed bool 을 *직접*
+        #   읽으므로(fertility.py:29) verdict 만 비우면 credit 이 샌다(재감사 LENS1/2 실증). novel_registered 는
+        #   보존(등록은 사실 — 분모에 남겨 fertility 를 *보수적으로* 낮춘다, 부풀림 방향 금지).
+        nodes = [r if r['tag'] not in _neutralize
+                 else {**r, 'verdict': '_inconclusive_unscored', 'novel_confirmed': False} for r in nodes]
     by = {r['tag']: r for r in nodes}
     n = len(nodes)
     path = _canonical_path(nodes, by)
@@ -430,6 +440,11 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개가 verdict_source 없이 self-report = inconclusive "
             + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
                else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
+    if refuted and not lenient:
+        alerts = [*alerts, (
+            f"측정 반증된 green: replay_status='mismatch' 노드 {len(refuted)}개(영수증은 있으나 서버 "
+            f"재실행이 값을 반증) → 진보/발전성 credit 서 제외(재실험·분기 권고). "
+            f"fsck MEASUREMENT_REFUTED_BUT_STANDING 대응")]
 
     if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
         _drift = anchored['novel_measured'] - anchored['server_anchored']

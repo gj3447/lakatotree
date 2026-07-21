@@ -196,9 +196,21 @@ def force_of(verdict: str, verdict_source=_SOURCE_ABSENT) -> str:
 
 
 def force_of_row(row: dict) -> str:
-    """노드 dict → force_of. verdict_source 키 부재(레거시)와 None(영수증 미도래)을 구분해 넘긴다."""
-    return force_of(row.get('verdict'),
+    """노드 dict → force_of. verdict_source 키 부재(레거시)와 None(영수증 미도래)을 구분해 넘긴다.
+
+    +영수증 실재 게이트(파이드나 재감사 2026-07-21): force_of 는 verdict_source *라벨*만 봤다 — 라벨이
+    FORCEFUL('scripted' 등)이면 실제 영수증(current_receipt_sha) 부재여도 COUNTS 를 냈다. fsck.
+    _check_forceful_receipt(FORCEFUL_SOURCE_WITHOUT_RECEIPT, 라이브 159건)와 *동일 술어*로 여기서 강등:
+    current_receipt_sha 키가 실려 있고(=실 KG read-model row, repository RETURN) present-but-empty 면
+    원장 우회/G1-이전 write → INCONCLUSIVE(영수증 미도래와 동급, 진보 credit 제외). judge 층이 fsck 의
+    구조지적을 *행동*으로 옮긴다('지적만 하면 정정 아님'). ★키 *부재*(레거시/테스트 픽스처)는 신뢰 유지
+    (_SOURCE_ABSENT 철학 비파괴 — 실 KG 읽기만 current_receipt_sha 키를 싣는다).
+    """
+    base = force_of(row.get('verdict'),
                     row['verdict_source'] if 'verdict_source' in row else _SOURCE_ABSENT)
+    if base == 'COUNTS' and 'current_receipt_sha' in row and not row['current_receipt_sha']:
+        return 'INCONCLUSIVE'   # FORCEFUL 라벨인데 원장 포인터 부재 = 재독 불가(영수증 미도래)
+    return base
 
 
 def is_self_report_blocked_verdict(verdict: str) -> bool:

@@ -1,0 +1,51 @@
+# LakatoTree 파이드나 충실도 재감사(2026-07-21) — 영수증 게이트(force_of=라벨→영수증) ooptdd 정식 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=receipt_gated_credit_receipt.verify 가 실제
+# lakatos.verdicts.force_of_row / lakatos.quant.metrics.tree_metrics 를 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: force_of 가 라벨만 보던 옛 거동(receipt 미확인)이 살아있으면 verify 의 첫 assert 가 깨진다.
+name: lakatotree-pidna-reaudit-receipt-gated-credit
+target:
+  mode: in_process
+  callable: receipt_gated_credit_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all / run_all 가 절대 root 로 오버라이드
+
+requirements:
+  - id: RGC-1
+    description: force_of_row 은 FORCEFUL 라벨('scripted')인데 current_receipt_sha 가 present-but-empty 면 INCONCLUSIVE 로 강등 (라이브 FORCEFUL_SOURCE_WITHOUT_RECEIPT=159 봉합; 옛 라벨-only 는 COUNTS 였다)
+    gate:
+      - {event: forceful_without_receipt_inconclusive, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:forceful_without_receipt_inconclusive
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: forceful_without_receipt_inconclusive
+
+  - id: RGC-2
+    description: tree_metrics 는 영수증 없는 forceful 노드를 fertility credit(confirmed)에서 제외 — verdict 뿐 아니라 novel_confirmed 도 무력화(옛 코드는 novel_confirmed bool 을 직접 읽어 credit 이 샜다)
+    gate:
+      - {event: receiptless_excluded_from_fertility, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:receiptless_excluded_from_fertility
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: receiptless_excluded_from_fertility
+
+  - id: RGC-3
+    description: tree_metrics 는 producer-replay 가 반증(replay_status='mismatch')한 standing 노드를 fertility credit 에서 제외 (라이브 MEASUREMENT_REFUTED_BUT_STANDING=33 봉합)
+    gate:
+      - {event: replay_refuted_excluded_from_fertility, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:replay_refuted_excluded_from_fertility
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: replay_refuted_excluded_from_fertility
+
+  - id: RGC-4
+    description: 이중가드(메커니즘 실재) — 영수증 있고 replay verified 인 clean 노드는 여전히 credit 된다(fix 가 전부 0 으로 뭉개는 vacuous 아님)
+    gate:
+      - {event: clean_receipted_still_credited, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:clean_receipted_still_credited
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: clean_receipted_still_credited
