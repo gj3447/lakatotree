@@ -114,3 +114,37 @@ def test_competitor_for_tree_gates_credence(monkeypatch):
     gated = score_competitor(app._competitor_for_tree('x'))['credence']
     raw = round(branch_credence(branch_inputs(chain, [])['verdicts']), 3)   # neutralize 없이 = 부풀림
     assert gated < raw, (gated, raw)   # 영수증 없는 progressive 가 credence 를 부풀리지 못한다
+
+
+# ── 감사 삼총사 완성 (metric-gate): 무영수증 노드의 raw metric_value 도 무력화 ────────────────
+#    neutralize 가 verdict+novel_confirmed 만 끄고 metric_value 를 살려두면, 무영수증 조상의 측정값이
+#    정본경로 improvement_pct→laudan_score(리더보드 Pareto·kuhn supersession) 를 여전히 움직인다.
+def _metric_leak_chain():
+    """무영수증 belt 조상(측정값 살아있으면 improvement_pct 조종) + 영수증 final CANONICAL leaf."""
+    belt = [dict(tag=f'b{i}', parent=(f'b{i-1}' if i else None), verdict='progressive',
+                 verdict_source='scripted', current_receipt_sha=None, metric_scope='belt',
+                 metric_value=v, pred_baseline=2.0, pred_noise_band=0.1,
+                 novel_registered=True, novel_confirmed=True)
+            for i, v in enumerate([50.0, 30.0, 10.0])]
+    belt.append(dict(tag='leaf', parent='b2', verdict='CANONICAL', verdict_source='scripted',
+                     current_receipt_sha='r_leaf', metric_scope='final', metric_value=100.0,
+                     pred_baseline=2.0, pred_noise_band=0.1, novel_registered=True, novel_confirmed=True))
+    return belt
+
+
+def test_tree_metrics_neutralizes_metric_value_of_receiptless():
+    # guard_defect(음성 오라클): 무영수증 belt 측정값이 진보%를 못 움직인다 (현재 +80.0 → RED).
+    prog = tree_metrics(_metric_leak_chain(), [], None)['progress'] or {}
+    assert prog.get('improvement_pct') is None, prog
+    assert prog.get('scope') != 'belt', prog   # belt scope 로 진보 계산 안 함
+
+
+def test_tree_metrics_credits_receipted_metric_improvement():
+    # guard_mechanism(양성 오라클): 영수증 있는 실개선은 보존 (과잉방어=정당 진보 지움 방지).
+    nodes = [dict(tag='q0', parent=None, verdict='progressive', verdict_source='scripted',
+                  current_receipt_sha='r0', metric_scope='s', metric_value=50.0,
+                  pred_baseline=2.0, pred_noise_band=0.1),
+             dict(tag='q1', parent='q0', verdict='CANONICAL', verdict_source='scripted',
+                  current_receipt_sha='r1', metric_scope='s', metric_value=25.0,
+                  pred_baseline=2.0, pred_noise_band=0.1)]
+    assert tree_metrics(nodes, [], None)['progress']['improvement_pct'] == 50.0

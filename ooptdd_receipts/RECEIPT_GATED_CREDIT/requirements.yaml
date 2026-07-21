@@ -69,3 +69,13 @@ requirements:
       source: receipt_gated_credit_receipt.py
       symbol: verify
       must_emit: credence_receipt_gated
+
+  - id: RGC-7
+    description: 감사 삼총사 완성 — neutralize 가 metric_value 도 무력화한다(연구 P0). _progress_metric 이 raw metric_value 를 직접 읽어 improvement_pct→laudan_score(리더보드 Pareto·kuhn) 로 흘리던 마지막 metric leak 봉합. 무영수증 belt 조상의 측정값이 진보%를 못 움직이고(gated=None), 영수증 있는 실개선은 보존(양성 통제)
+    gate:
+      - {event: metric_value_receipt_gated, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:metric_value_receipt_gated
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: metric_value_receipt_gated

@@ -228,9 +228,14 @@ def partition_unreceipted(nodes: list) -> tuple:
 def neutralize_unreceipted(nodes: list, *, lenient: bool = False) -> list:
     """영수증 없는/측정-반증된 노드의 verdict+novel_confirmed 를 무력화한 *새* 리스트(비파괴).
 
-    fertility/eureka 가 novel_confirmed bool 을 직접 읽으므로 verdict 만 비우면 credit 이 샌다 → 둘 다 끈다.
-    novel_registered 는 보존(등록은 사실 — 분모에 남겨 fertility 를 *보수적으로* 낮춘다, 부풀림 방향 금지).
-    lenient=True = 옛 동작(집계 포함, append-only 존중 opt-out). '가짜 열매로 cross-pollinate 금지'(하네스=열매).
+    감사 삼총사(verdict / novel_confirmed / metric_value)를 *셋 다* 끈다 — 소비자가 raw 값을 직접 읽는
+    필드는 verdict 만 비워선 credit 이 샌다: (1) fertility/eureka 는 novel_confirmed bool 을 직접 읽고,
+    (2) _progress_metric(metrics.py:166) 은 raw metric_value 를 직접 읽어 improvement_pct→laudan_score
+    (리더보드 Pareto·kuhn supersession) 로 무영수증 측정값을 흘린다. ∴ metric_value 도 None 으로 무력화하면
+    _progress_metric 의 `metric_value is not None` 필터가 그 노드를 진보계산에서 제외한다(SSOT neutralize 가
+    owner — metrics 에서 receipt 술어 재유도 금지). novel_registered 는 보존(등록은 사실 — 분모에 남겨
+    fertility 를 *보수적으로* 낮춘다, 부풀림 방향 금지). lenient=True = 옛 동작(집계 포함, append-only opt-out).
+    '가짜 열매로 cross-pollinate 금지'(하네스=열매). ★비-중화 노드의 metric_value 는 불변(양성 통제 보존).
     """
     if lenient:
         return nodes
@@ -239,7 +244,8 @@ def neutralize_unreceipted(nodes: list, *, lenient: bool = False) -> list:
     if not neut:
         return nodes
     return [r if r['tag'] not in neut
-            else {**r, 'verdict': '_inconclusive_unscored', 'novel_confirmed': False} for r in nodes]
+            else {**r, 'verdict': '_inconclusive_unscored', 'novel_confirmed': False, 'metric_value': None}
+            for r in nodes]
 
 
 def is_self_report_blocked_verdict(verdict: str) -> bool:
