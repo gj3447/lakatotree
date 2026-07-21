@@ -28,3 +28,9 @@ result
 ## AI assistance
 
 State where AI tools were used and how their output was reviewed or verified. Write `None` if no AI tools were used.
+
+## Contributor License Agreement (required)
+
+- [ ] I have read and agree to the Contributor License Agreement (CLA.md).
+
+I have read and agree to the Contributor License Agreement (CLA.md).
