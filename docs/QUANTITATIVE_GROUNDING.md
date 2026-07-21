@@ -9,7 +9,7 @@
 ## tier 별 정직성 요약
 
 - **literature** (4): `bf_partial_equivalent`, `default_prior`, `pagerank_damping`, `ucb_c`
-- **policy_in_scale** (12): `abandon_credence`, `abandon_k`, `bf_progressive`, `bf_rejected`, `ece_bins`, `eff_cap`, `eigentrust_alpha`, `fdr_q`, `log_score_eps`, `nobel_min_hitrate_lb`, `nobel_min_predictions`, `stack_quorum`
+- **policy_in_scale** (14): `abandon_credence`, `abandon_k`, `bf_progressive`, `bf_rejected`, `ece_bins`, `ece_gate_max`, `ece_gate_min_n`, `eff_cap`, `eigentrust_alpha`, `fdr_q`, `log_score_eps`, `nobel_min_hitrate_lb`, `nobel_min_predictions`, `stack_quorum`
 - **policy** (16): `abandon_b`, `abandon_budget`, `claim_min_confidence`, `claim_strong_confidence`, `credibility_extracted_trust`, `credibility_inferred_trust`, `crisis_exploration_scale`, `demote_canonical_penalty`, `effect_size_floor`, `evidence_action_confidence`, `evidence_realm_confidence`, `injection_high_risk_floor`, `lifecycle_stall_window`, `supersession_window`, `w_problem`, `weight_floor`
 
 ## 해석 척도 (raw 점수 → 문헌 등급)
@@ -50,6 +50,8 @@
 | `weight_floor` | 0.3 | policy | policy | log(BF) 가중 하한 (Jeffreys 스케일서 해석) | ★정직: 0.3 은 *경험적 정책값*(문헌 도출 아님). progressive 가 효과크기 0 에서도 사라지지 않게 하한. log(6)·0.3=0.54 → BF≈ |
 | `effect_size_floor` | 1e-06 | policy | policy | 효과크기 분모(noise_band) division-by-zero 가드 하한 | ★정직: 1e-6 은 *순수 수치 가드 정책값*(문헌 도출 아님). effect_size=|delta|/max(noise_band, floor) 의 분모가 0 이 |
 | `log_score_eps` | 1e-09 | policy_in_scale | good1952 | Good(1952) log score 의 log(0)=−∞ 클램프 하한 | ★정직: log_score=−log(q) 에서 q=0(완전 빗나간 확신)일 때 −∞ 가 되는 것을 막는 클램프. log score *방법* 은 Good(1952) |
+| `ece_gate_max` | 0.1 | policy_in_scale | guo2017 | temperature-scaled well-calibrated ECE(~0.02–0.05, Guo 2017 Table 1)의 한 자릿수 위 | ★정직: ECE *방법*=Guo et al. 2017(ICML, arXiv:1706.04599), τ=0.1 *값*=reliability 척도 위 엔지니어링 정책 |
+| `ece_gate_min_n` | 3 | policy_in_scale | wilson1927 | ECE 는 소표본서 noise — n<3 이면 게이트 abstain-closed(존재 스탬프 회귀 금지) | nobel_min_predictions 와 같은 Wilson(1927) 최소표본 근거(n=3). n<3 이면 ECE 추정이 불안정해 보정 인증을 발급하지 않는다  |
 | `abandon_credence` | 0.1 | policy_in_scale | policy | posterior odds 1:9 (BF 9 ∈ Jeffreys substantial) | 사후신뢰도 0.1 = odds 1:9 정책 문턱. odds→증거등급 해석은 Jeffreys 근거(9 ∈ substantial 상단), 0.1 임계 자체는 엔지니어 |
 | `abandon_k` | 3 | policy_in_scale | wald1945 | Wald SPRT 하한 lnB(α=β=0.05)=−2.944 의 정수 휴리스틱 | ★정직: K=3 은 *휴리스틱 정수*. SPRT 방법(Wald)은 문헌 근거지만 노드당 LLR 은 판결별로 다름(BF 모델: rejected=ln(1/6)=−1. |
 | `abandon_budget` | 5 | policy | policy | SPRT 평균표본수(ASN) 규모의 정책 예산 | ★정직: 예측 적중 0 노드 예산 5 = 정책값. 약증거 누적이 SPRT 하한 도달에 드는 표본수 규모(약 lnB/약한per-node)에서 *영감*받은 엔지니어링 |

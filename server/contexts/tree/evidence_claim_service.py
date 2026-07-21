@@ -553,11 +553,24 @@ class EvidenceClaimService:
         checks.append(gate_check('stands', bool(st['stands']),
                                  ','.join(st['grounded_extension']) if st['stands'] else '',
                                  '' if st['stands'] else '미해소 의문 존재'))
-        cal = self.calibration_provider(name)
-        checks.append(gate_check('calibrated', cal['n'] >= 1,
-                                 f"/api/tree/{name}/calibration n={cal['n']} (tree-level)" if cal['n'] >= 1 else '',
-                                 '' if cal['n'] >= 1 else 'novel 등록 예측의 보정 기록 0건(트리 수준)'))
         from lakatos.grounding import GROUNDED
+        cal = self.calibration_provider(name)
+        # verifier-rigor 연구 P0-#2 (2026-07-21): 옛 G4 는 판관이 이미 계산해 손에 쥔 ECE(provider dict 의
+        #   calibration_error)를 버리고 존재(n≥1)만 확인해 ECE=0.57 과신도 'calibrated' 인증했다(활성
+        #   name↔behavior lie: certify.py:9 는 'ECE 검사'라 주장). grounded ECE 상한 강제 — 방법=Guo2017,
+        #   고정-bin ECE=하한(Kumar2019)이라 BLOCK 방향 보수적(위양성 차단 없음), n<min_n 은 noise→abstain.
+        _ece_max = GROUNDED['ece_gate_max']['value']
+        _ece_min_n = GROUNDED['ece_gate_min_n']['value']
+        _ece = cal.get('calibration_error')
+        _cal_ok = cal['n'] >= _ece_min_n and _ece is not None and _ece <= _ece_max
+        checks.append(gate_check('calibrated', _cal_ok,
+                                 f"/api/tree/{name}/calibration n={cal['n']} ECE={_ece}≤{_ece_max} "
+                                 f"(tree-level, Guo2017; 고정-bin ECE=하한 Kumar2019)" if _cal_ok else '',
+                                 '' if _cal_ok else (
+                                     'novel 등록 예측의 보정 기록 0건(트리 수준)' if cal['n'] == 0 else
+                                     f'보정 표본 부족 n={cal["n"]}<{_ece_min_n}(ECE noise)' if cal['n'] < _ece_min_n else
+                                     'ECE 미제공' if _ece is None else
+                                     f'ECE={_ece}>{_ece_max}(과신/과소보정)')))
 
         valid_tiers = {'literature', 'policy_in_scale', 'policy'}
         grounded_ok = bool(GROUNDED) and all(g.get('tier') in valid_tiers for g in GROUNDED.values())

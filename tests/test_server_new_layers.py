@@ -254,11 +254,57 @@ def test_certificate_assembles_six_gates(monkeypatch):
     monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
     monkeypatch.setattr(app, 'standing', lambda n, t: dict(
         stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
-    monkeypatch.setattr(app, 'calibration', lambda n: dict(n=4))
+    monkeypatch.setattr(app, 'calibration', lambda n: dict(n=4, calibration_error=0.03))   # well-calibrated
     out = app.node_certificate('T', 'v22')
     assert out['certified'] is True
     assert [c['gate'] for c in out['checks']] == \
         ['preregistered', 'reproducible', 'stands', 'calibrated', 'grounded', 'measurement_owned']
+
+
+# ── G4 'calibrated' 게이트가 ECE 를 강제 (verifier-rigor 연구 P0-#2, 2026-07-21) ──────────────
+#    옛 게이트는 판관이 이미 계산한 ECE 를 버리고 존재(n≥1)만 확인 → ECE=0.57 과신도 'calibrated' 인증.
+def _six_gate_app(monkeypatch, cal):
+    app = load_app()
+    monkeypatch.setattr(app, 'kg', lambda q, **kw: [dict(
+        verdict='progressive', vsrc='scripted', pm='p95',
+        script='judges/x.py', sha='a' * 64, rp='out/final.json',
+        mg='server_regenerated', mv=0.9)])
+    monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
+    monkeypatch.setattr(app, 'standing', lambda n, t: dict(
+        stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
+    monkeypatch.setattr(app, 'calibration', lambda n: cal)
+    return app
+
+
+def _cal_gate(out):
+    return next(c for c in out['checks'] if c['gate'] == 'calibrated')
+
+
+def test_calibrated_gate_blocks_high_ece(monkeypatch):
+    # 음성 오라클: ECE=0.57 과신(BhgmanCeilingPierce) → calibrated 차단, 인증 실패.
+    out = _six_gate_app(monkeypatch, dict(n=20, calibration_error=0.57)).node_certificate('T', 'v22')
+    assert _cal_gate(out)['passed'] is False
+    assert out['certified'] is False
+
+
+def test_calibrated_gate_passes_low_ece(monkeypatch):
+    # 양성 통제: ECE=0.03 well-calibrated → 통과 (게이트를 전부에 대해 깨지 않음).
+    out = _six_gate_app(monkeypatch, dict(n=20, calibration_error=0.03)).node_certificate('T', 'v22')
+    assert _cal_gate(out)['passed'] is True
+    assert out['certified'] is True
+
+
+def test_calibrated_gate_abstains_on_small_n(monkeypatch):
+    # N-abstain: 완벽 ECE라도 n<min_n(=3) → 인증 불가(존재 스탬프 회귀 금지).
+    out = _six_gate_app(monkeypatch, dict(n=1, calibration_error=0.0)).node_certificate('T', 'v22')
+    assert _cal_gate(out)['passed'] is False
+
+
+def test_grounded_ece_gate_registered():
+    from lakatos.grounding import GROUNDED
+    assert GROUNDED['ece_gate_max']['tier'] == 'policy_in_scale'
+    assert GROUNDED['ece_gate_max']['source'] == 'guo2017'
+    assert GROUNDED['ece_gate_min_n']['tier'] == 'policy_in_scale'
 
 
 def test_certificate_blocks_without_lineage(monkeypatch):
