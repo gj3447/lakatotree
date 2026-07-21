@@ -88,3 +88,29 @@ def test_leaderboard_score_still_credits_receipted_fruit():
                    real_fruit, metric_improvement_pct=27.0, closed=5, opened=1)
     s = score_competitor(c)
     assert s['fertility_raw']['confirmed'] == 9, s['fertility_raw']   # 영수증 있는 열매는 credit
+
+
+# ── credence 도 열매와 같은 SSOT 로 receipt-gate (PROM16 P0 — fertility만 막고 credence raw면 ─────
+#    영수증 없는 progressive 가 credence=1.0 → dominates() → kuhn supersession 오염, Goodhart) ────
+def _receiptless_progressive_chain():
+    """영수증 없는 forceful progressive 조상들 + 영수증 있는 CANONICAL leaf (branch_inputs 가 leaf 찾음)."""
+    chain = [dict(tag=f'p{i}', parent=(f'p{i-1}' if i else None), verdict='progressive',
+                  verdict_source='scripted', current_receipt_sha=None,
+                  metric_value=float(10 + i), pred_baseline=2.0, pred_noise_band=0.1,
+                  novel_registered=True, novel_confirmed=True) for i in range(6)]
+    chain.append(dict(tag='leaf', parent='p5', verdict='CANONICAL', verdict_source='scripted',
+                      current_receipt_sha='r_leaf', metric_value=20.0, pred_baseline=2.0,
+                      pred_noise_band=0.1, novel_registered=True, novel_confirmed=True))
+    return chain
+
+
+def test_competitor_for_tree_gates_credence(monkeypatch):
+    import server.app as app
+    from lakatos.programme.leaderboard import score_competitor
+    from lakatos.quant.metrics import branch_inputs
+    from lakatos.quant.bayes import branch_credence
+    chain = _receiptless_progressive_chain()
+    monkeypatch.setattr(app, 'tree_data', lambda name: {'nodes': chain, 'frontier': []})
+    gated = score_competitor(app._competitor_for_tree('x'))['credence']
+    raw = round(branch_credence(branch_inputs(chain, [])['verdicts']), 3)   # neutralize 없이 = 부풀림
+    assert gated < raw, (gated, raw)   # 영수증 없는 progressive 가 credence 를 부풀리지 못한다

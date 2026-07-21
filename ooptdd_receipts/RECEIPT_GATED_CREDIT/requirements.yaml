@@ -59,3 +59,13 @@ requirements:
       source: receipt_gated_credit_receipt.py
       symbol: verify
       must_emit: leaderboard_fruit_receipt_gated
+
+  - id: RGC-6
+    description: credence 도 fertility 와 같은 SSOT 로 receipt-gate (PROM16 P0). 리더보드 dominates() 는 3기준(laudan/credence/fertility) 전부를 본다 — fertility 만 막고 credence 를 raw 로 두면 영수증 없는 progressive 가 credence=1.0 을 만들어 kuhn supersession 을 오염(Goodhart). 노드를 branch_inputs 前 neutralize 하면 credence 입력 verdicts 가 '_inconclusive_unscored'→BF=1.0 으로 무정보화되어 부풀지 않는다
+    gate:
+      - {event: credence_receipt_gated, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:RECEIPT_GATED_CREDIT:credence_receipt_gated
+      source: receipt_gated_credit_receipt.py
+      symbol: verify
+      must_emit: credence_receipt_gated

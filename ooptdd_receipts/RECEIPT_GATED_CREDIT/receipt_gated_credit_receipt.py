@@ -91,3 +91,19 @@ def verify(backend, cid):
                       fake_confirmed=s_fake["fertility_raw"]["confirmed"],
                       fake_fertility_lb=s_fake["fertility_lb"],
                       real_confirmed=s_real["fertility_raw"]["confirmed"])])
+
+    # (6) credence 도 같은 SSOT 로 receipt-gate (PROM16 P0). 영수증 없는 progressive 체인을
+    #     neutralize 하면 credence 입력 verdict 가 '_inconclusive_unscored'→BF=1.0 무정보화. 음성 오라클:
+    #     neutralize 가 identity(옛 거동)면 gated==raw==1.0 로 부풀어 assert 깨진다.
+    from lakatos.quant.metrics import branch_inputs
+    from lakatos.quant.bayes import branch_credence
+    from lakatos.verdicts import neutralize_unreceipted
+    chain = [dict(tag=f"p{i}", parent=(f"p{i-1}" if i else None), verdict="progressive",
+                  verdict_source="scripted", current_receipt_sha=None, metric_value=float(10 + i),
+                  pred_baseline=2.0, pred_noise_band=0.1) for i in range(6)]
+    chain.append(dict(tag="leaf", parent="p5", verdict="CANONICAL", verdict_source="scripted",
+                      current_receipt_sha="r", metric_value=20.0, pred_baseline=2.0, pred_noise_band=0.1))
+    raw_cred = round(branch_credence(branch_inputs(chain, [])["verdicts"]), 3)
+    gated_cred = round(branch_credence(branch_inputs(neutralize_unreceipted(chain), [])["verdicts"]), 3)
+    assert gated_cred < raw_cred, f"credence 게이트 미작동(영수증 없는 progressive 가 credence 부풀림): gated={gated_cred} raw={raw_cred}"
+    backend.ship([_ev(cid, "credence_receipt_gated", gated=gated_cred, raw=raw_cred)])
