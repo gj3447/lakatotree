@@ -229,6 +229,23 @@ GROUNDED = {
                      'log score *방법* 은 Good(1952) strictly proper(문헌), eps *값* 은 엔지니어링 선택 — '
                      'ece_bins(Guo 방법 + 정책 bin 수)와 동형(policy_in_scale). q 를 [eps,1] 로 하한.',
     },
+    'ece_gate_max': {
+        'value': 0.1, 'source': 'guo2017', 'tier': 'policy_in_scale',
+        'band': 'temperature-scaled well-calibrated ECE(~0.02–0.05, Guo 2017 Table 1)의 한 자릿수 위',
+        'rationale': '★정직: ECE *방법*=Guo et al. 2017(ICML, arXiv:1706.04599), τ=0.1 *값*=reliability 척도 위 '
+                     '엔지니어링 정책. 고정-bin ECE 는 진짜 calibration error 의 하한(Kumar et al. 2019 NeurIPS, '
+                     '"Verified Uncertainty Calibration") → 게이트는 BLOCK 방향 보수적(측정 ECE>τ ⟹ 진짜 ECE>τ ⟹ '
+                     '정당 차단, 위양성 차단 없음), PASS 방향 잔여한계(측정≤τ ⟹̸ calibrated)는 cert.limits 명시. '
+                     'Gneiting 2007 원리(sharpness *subject to* calibration): proper score 단독은 인증 못 함. '
+                     '도메인 전이(NN classifier ECE→tiny-n Lakatosian credence) caveat — novel_confirmed 은 PR#6 '
+                     '이후 receipt-gated 라 self-report 아닌 scripted/replay 영수증 위 채점.',
+    },
+    'ece_gate_min_n': {
+        'value': 3, 'source': 'wilson1927', 'tier': 'policy_in_scale',
+        'band': 'ECE 는 소표본서 noise — n<3 이면 게이트 abstain-closed(존재 스탬프 회귀 금지)',
+        'rationale': 'nobel_min_predictions 와 같은 Wilson(1927) 최소표본 근거(n=3). n<3 이면 ECE 추정이 '
+                     '불안정해 보정 인증을 발급하지 않는다 — "완벽 ECE=0.0 on n=1" 류 vacuous PASS 차단.',
+    },
     'abandon_credence': {
         'value': 0.1, 'source': 'policy', 'tier': 'policy_in_scale',
         'band': 'posterior odds 1:9 (BF 9 ∈ Jeffreys substantial)',

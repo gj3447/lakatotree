@@ -94,7 +94,8 @@ def next_actions(cert: Certificate) -> list:
         'preregistered': '예측 사전등록 후 스크립트 채점 (judge.Prediction → judge)',
         'reproducible': 'DatasetManifest 작성 + manifest-verify (lakatos manifest-verify)',
         'stands': '미해소 의문 해소 — 반박 제출 또는 판결 재검토 (argue.verdict_stands)',
-        'calibrated': '발급자 예측 이력으로 Brier/ECE 산출 (calibrate)',
+        'calibrated': '발급자 예측 이력의 ECE≤정책상한(GROUNDED.ece_gate_max) 확인 (calibrate; n≥min_n. '
+                      'PASS=고정-bin 해상도서 miscalibration 미검출일 뿐 보정 증명 아님, Kumar 2019)',
         'grounded': '인용 상수 tier 공개 (grounding.provenance)',
         'measurement_owned': '측정값 소유 — replay 재유도 활성화(LAKATOS_REPLAY_EXEC → server_regenerated) '
                              '또는 write-cert 서명(allow-list 신원 → attested). client float 봉인은 인증 불가.',
