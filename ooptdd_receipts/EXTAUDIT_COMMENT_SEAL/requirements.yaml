@@ -1,0 +1,31 @@
+# EXTAUDIT S4 (적대감사 2026-07-23) — 해석층 봉인(receipt v3 + 드리프트 검출) ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_comment_seal_receipt.verify 가 실제
+# lakatos.verdicts(canonical_receipt_blob/comment_seal_sha/comment_drift) + fsck.fsck_node 를 구동.
+# 음성 오라클: v3 봉인이 없거나(v2 로 조용히 mint) 드리프트가 침묵하면 assert 가 깨진다.
+name: lakatotree-extaudit-comment-seal
+target:
+  mode: in_process
+  callable: extaudit_comment_seal_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ECS-1
+    description: v3 봉인 — comment_sha non-null 이면 v3 헤더+15필드, 부재면 v2/v1 재유도 바이트동일(carve-out). v3 에서 필드 strip 하면 재유도 불일치(위조 검출 양방향)
+    gate:
+      - {event: v3_seal_and_carveout_hold, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_COMMENT_SEAL:v3_seal_and_carveout_hold
+      source: extaudit_comment_seal_receipt.py
+      symbol: verify
+      must_emit: v3_seal_and_carveout_hold
+
+  - id: ECS-2
+    description: 드리프트 검출 — 판정 이후 comment 개서(c6 장르)가 comment_drift=True + fsck COMMENT_DRIFT_AFTER_VERDICT(WARN) 로 감사 표면에 뜬다. 불변 comment 는 미발화, 봉인 이전 레거시는 판단 보류(부재≠반증)
+    gate:
+      - {event: drift_flagged_legacy_held, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_COMMENT_SEAL:drift_flagged_legacy_held
+      source: extaudit_comment_seal_receipt.py
+      symbol: verify
+      must_emit: drift_flagged_legacy_held

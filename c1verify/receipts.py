@@ -26,9 +26,13 @@ RECEIPT_FIELDS_V1 = (
     "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
     "measurement_grade",
 )
-RECEIPT_FIELDS = RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
+RECEIPT_FIELDS_V2 = RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
+#: S4 (EXTAUDIT 2026-07-23): v3 = v2 + comment_sha (interpretation-layer seal). Same presence-dispatch
+#: discipline — a non-null comment_sha selects v3; v2/v1 re-derivation stays byte-identical.
+RECEIPT_FIELDS = RECEIPT_FIELDS_V2 + ("comment_sha",)
 _RECEIPT_ENCODING_VERSION = "v1"
 _RECEIPT_ENCODING_VERSION_V2 = "v2"
+_RECEIPT_ENCODING_VERSION_V3 = "v3"
 
 
 def _coerce_metric_value(v):
@@ -56,9 +60,11 @@ def canonical_receipt_blob(fields: dict) -> bytes:
 
     jp1 presence-dispatch: a non-null engine_rule_sha selects v2 (14 fields + v2 header); otherwise
     the v1 path stays byte-identical to the pre-jp1 encoding (legacy carve-out by construction)."""
+    v3 = fields.get("comment_sha") is not None
     v2 = fields.get("engine_rule_sha") is not None
-    keys = RECEIPT_FIELDS if v2 else RECEIPT_FIELDS_V1
-    ver = _RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION
+    keys = RECEIPT_FIELDS if v3 else (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)
+    ver = (_RECEIPT_ENCODING_VERSION_V3 if v3
+           else (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))
     payload = {k: fields.get(k) for k in keys}
     payload["metric_value"] = _coerce_metric_value(payload.get("metric_value"))
     payload["judged_at"] = _coerce_judged_at(payload.get("judged_at"))

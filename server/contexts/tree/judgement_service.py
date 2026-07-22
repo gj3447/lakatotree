@@ -24,7 +24,7 @@ from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, ju
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
 from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
-from lakatos.verdicts import (ADMIN_VERDICTS, fold_receipt_chain, is_admin_verdict,
+from lakatos.verdicts import (ADMIN_VERDICTS, comment_seal_sha, fold_receipt_chain, is_admin_verdict,
                               prediction_content_sha, receipt_content_sha)
 from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
 from server.contexts.audit import fsck as audit_fsck
@@ -621,6 +621,7 @@ class JudgementService:
                             e.metric_value AS existing_metric_value,
                             e.verdict AS existing_verdict, e.lakatos_status AS existing_lstat,
                             e.current_receipt_sha AS prev_receipt_sha,
+                            e.comment AS node_comment,
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
                             t.hard_core AS hard_core,
@@ -895,12 +896,15 @@ class JudgementService:
         target_id = pr.get('closes')   # q_target_identity_scheme: 선언 의미키(pred_closes)
         # DE1: G1 receipt 봉인필드 조립을 순수 정책으로 추출 — AG3 measurement_grade 봉인(server_regenerated/
         #   client_asserted). metric_value 도 값소유 결과(effective_metric)를 봉인한다.
+        # EXTAUDIT S4: 판정 시점 해석층 봉인 — comment 의 sha 를 v3 봉인 필드로(사후 개서는 fsck 가 검출).
+        csha = comment_seal_sha(pr.get('node_comment'))
         receipt_fields = build_receipt_fields(
             tree=name, tag=tag, target_id=target_id, verdict=verdict, metric_name=pr['m'],
             metric_value=effective_metric, novel_confirmed=novel_independent, lakatos_status=lakatos_status,
             judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha,
             measurement_grade=measurement_grade,
-            engine_rule_sha=ENGINE_RULE_SHA)   # jp1: 판관 정체성 봉인(v2) — 명시 전달(가드가 핀)
+            engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성 봉인(v2) — 명시 전달(가드가 핀)
+            comment_sha=csha)   # S4: 해석층 봉인(v3) — 명시 전달
         rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
@@ -919,7 +923,7 @@ class JudgementService:
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
                        e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
-                       e.measurement_grade=$mg,
+                       e.measurement_grade=$mg, e.comment_sha_at_verdict=$csha,
                        e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
@@ -927,7 +931,8 @@ class JudgementService:
                        rec.verdict=$v, rec.verdict_source='scripted', rec.metric_name=$mn,
                        rec.metric_value=$mv, rec.novel_confirmed=$novel, rec.lakatos_status=$lstat,
                        rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha,
-                       rec.measurement_grade=$mg, rec.engine_rule_sha=$engine_rule_sha
+                       rec.measurement_grade=$mg, rec.engine_rule_sha=$engine_rule_sha,
+                       rec.comment_sha=$csha
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
                    RETURN e.tag AS claimed""",
@@ -943,6 +948,7 @@ class JudgementService:
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch/not_replayable)
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
+                     csha=csha,   # S4: 판정 시점 comment 봉인 미러 + receipt v3 필드 persist
                      efresh=efresh,                     # jp4: 판관 자기진단 관측화(unchecked/fresh/stale_code/incapable/indeterminate)
                      boot_sha=(fresh or {}).get('boot_git_sha'),   # jp4: 노드-레벨 판관 신원 provenance(영수증 봉인은 jp1 engine_rule_sha 가 정본)
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,

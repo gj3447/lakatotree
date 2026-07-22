@@ -321,6 +321,24 @@ def is_registered_verdict(verdict: str) -> bool:
     return verdict in VERDICT_REGISTRY
 
 
+# ── 해석층 봉인 (EXTAUDIT S4, 2026-07-23) — comment 는 자유텍스트이되 드리프트는 침묵 불가 ──────
+def comment_seal_sha(text) -> str:
+    """판정 시점 comment 의 봉인 해시 — None/빈문자 동일 정규화(sha256(b''))로 부재가 별도 상태가
+    되지 않게 한다(새 mint 는 항상 non-null → v3 presence-dispatch 안정)."""
+    return hashlib.sha256((text or '').encode('utf-8')).hexdigest()
+
+
+def comment_drift(row: dict) -> bool | None:
+    """판정 이후 comment 개서 여부 — True(드리프트)/False(불변)/None(봉인 이전 레거시, 판단 보류).
+
+    c6 장르(REJECTED 노드 comment 에 사후 승리 에세이) 검출 술어. 서사 자체는 자유(차단·삭제 없음,
+    Eilu va-Eilu) — 이 술어는 *바뀌었다는 사실*만 감사 가능하게 한다. fsck 가 소비(WARN)."""
+    seal = row.get('comment_sha_at_verdict')
+    if not seal:
+        return None
+    return comment_seal_sha(row.get('comment')) != seal
+
+
 # ── G1 (git-흡수 2026-07-02): 내용주소 verdict 영수증 — 발행층 SSOT ──────────────────────────
 #   git objects(odb/source-loose.c:614-621, object-file.c:408-472: hash-before-write · link(2) EEXIST
 #   first-write-wins)를 verdict 에 이식: verdict-bearing 사실을 *불변 내용주소 :VerdictReceipt* 로 발행하고
@@ -333,6 +351,7 @@ def is_registered_verdict(verdict: str) -> bool:
 #   (int 3 ↔ float 3.0, mixed judged_at 타입이 다른 blob 을 내는 것을 봉쇄).
 _RECEIPT_ENCODING_VERSION = 'v1'
 _RECEIPT_ENCODING_VERSION_V2 = 'v2'
+_RECEIPT_ENCODING_VERSION_V3 = 'v3'   # EXTAUDIT S4: comment_sha 봉인 세대 — 별도 헤더로 sha-space 도메인 분리
 # 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
 #   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
 #   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
@@ -349,7 +368,12 @@ RECEIPT_FIELDS_V1 = (
     #   (server_regenerated)와 client-운반(client_asserted) 노드가 같은 receipt_sha 를 든다('운반만' 구멍).
     'measurement_grade',
 )
-RECEIPT_FIELDS = RECEIPT_FIELDS_V1 + ('engine_rule_sha',)
+RECEIPT_FIELDS_V2 = RECEIPT_FIELDS_V1 + ('engine_rule_sha',)
+# EXTAUDIT S4 (2026-07-23): v3 = v2 + comment_sha(판정 시점 해석층 봉인 — c6 사후 승리 에세이 장르
+#   봉합). presence-dispatch 3단: comment_sha non-null → v3 / engine_rule_sha non-null → v2 / else v1.
+#   기존 코퍼스(v1/v2) 재유도 바이트동일 carve-out. 서사는 자유이되(삭제·차단 없음) *판정 이후 바뀜*이
+#   comment_sha_at_verdict 미러 + fsck COMMENT_DRIFT_AFTER_VERDICT 로 침묵 불가.
+RECEIPT_FIELDS = RECEIPT_FIELDS_V2 + ('comment_sha',)
 
 
 def _coerce_metric_value(v):
@@ -383,12 +407,15 @@ def canonical_receipt_blob(fields: dict, *, fieldset: tuple | None = None) -> by
     여부로 결정, 기본 None=presence-dispatch 그대로).
     """
     if fieldset is None:
+        v3 = fields.get('comment_sha') is not None
         v2 = fields.get('engine_rule_sha') is not None
-        keys = RECEIPT_FIELDS if v2 else RECEIPT_FIELDS_V1
+        keys = RECEIPT_FIELDS if v3 else (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)
     else:
+        v3 = 'comment_sha' in fieldset
         v2 = 'engine_rule_sha' in fieldset
         keys = fieldset
-    ver = _RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION
+    ver = (_RECEIPT_ENCODING_VERSION_V3 if v3
+           else (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))
     payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
     payload['judged_at'] = _coerce_judged_at(payload.get('judged_at'))

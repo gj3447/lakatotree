@@ -164,6 +164,7 @@ class TreeKgRepository:
              collect(DISTINCT q.name) AS questions
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
                e.result_path AS result_path, e.algorithm AS algorithm, e.comment AS comment,
+               e.comment_sha_at_verdict AS comment_sha_at_verdict,
                e.limitation AS limitation, e.open_question AS open_question,
                e.metric_name AS metric_name, e.metric_value AS metric_value,
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,

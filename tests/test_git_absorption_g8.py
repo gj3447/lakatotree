@@ -69,6 +69,10 @@ _CORRUPT = {
     # jp3: pre-ag3(12필드, 미선언 드리프트) *정직* mint — STALE WARN 이지 MISMATCH ERROR 아님.
     "RECEIPT_ENCODING_STALE": {"verdict": "proof", "current_receipt_sha": _STALE_ENC["receipt_sha"],
                                "receipts": [_STALE_ENC]},
+    # S4: 판정 시점 봉인 대비 comment 개서(c6 사후 승리 에세이 장르) — WARN, 'proof' 로 다른 체크 격리.
+    #   sha256(b'다른 내용') ≠ sha256(b'원본') 인 임의 불일치면 충분(순수 술어 comment_drift).
+    "COMMENT_DRIFT_AFTER_VERDICT": {"verdict": "proof", "comment": "원본 + 사후 승리 서사",
+                                    "comment_sha_at_verdict": "0" * 64},
 }
 
 

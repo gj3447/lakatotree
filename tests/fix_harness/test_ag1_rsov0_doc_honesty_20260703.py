@@ -66,10 +66,12 @@ def test_adr_code_anchors_hold():
     # jp1 착륙(2026-07-10): 판관 정체성(engine_rule_sha)이 봉인 필드셋에 실재 — v2. v1 13필드는
     #   RECEIPT_FIELDS_V1 로 동결(legacy carve-out). 이 set 리터럴은 의도된 tripwire: 한계선이
     #   움직이면 이 개정을 기계 강제한다.
+    # S4 착륙(EXTAUDIT 2026-07-23): 해석층 봉인(comment_sha)이 봉인 필드셋에 실재 — v3.
+    #   v2 14필드는 RECEIPT_FIELDS_V2 로 동결(presence-dispatch carve-out).
     assert set(RECEIPT_FIELDS) == {
         "tree", "tag", "target_id", "verdict", "verdict_source", "metric_name", "metric_value",
         "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
-        "measurement_grade", "engine_rule_sha"}
+        "measurement_grade", "engine_rule_sha", "comment_sha"}
     # 값소유 치환 코드 실재(verified∧regenerated → SSOT 치환).
     policy = (ROOT / "server" / "contexts" / "tree" / "judgement_policy.py").read_text(encoding="utf-8")
     assert "def resolve_measurement" in policy and "server_regenerated" in policy

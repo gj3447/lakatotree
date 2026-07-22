@@ -19,8 +19,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from lakatos.verdicts import (FORCEFUL_SOURCES, is_scripted_verdict, match_receipt_encoding,
-                              receipt_content_sha)
+from lakatos.verdicts import (FORCEFUL_SOURCES, comment_drift, is_scripted_verdict,
+                              match_receipt_encoding, receipt_content_sha)
 
 # 심각도 서열(단일 정본 — audit·boundary 가 공유). FATAL > ERROR > WARN > INFO.
 FATAL, ERROR, WARN, INFO = "FATAL", "ERROR", "WARN", "INFO"
@@ -38,6 +38,7 @@ _SEVERITY = {
     "MEASUREMENT_REFUTED_BUT_STANDING": WARN,   # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 관측(비차단)
     "RECEIPT_SHA_CONTENT_MISMATCH": ERROR,      # jp3: stored receipt_sha ≠ recompute(content) — 어느 인코딩과도 불일치(in-place 변조/원장우회 위조)
     "RECEIPT_ENCODING_STALE": WARN,             # jp3: 미선언 구-인코딩(pre-ag3) 정직 mint — 필드드리프트 가시화(변조 아님, 비차단)
+    "COMMENT_DRIFT_AFTER_VERDICT": WARN,        # S4: 판정 이후 comment 개서(c6 사후 승리 에세이 장르) — 서사는 자유, 침묵은 불가(비차단)
 }
 
 # AG6 값무결: 반증(mismatch)이 걸릴 때 '서있음'으로 보는 verdict 집합(positive claim).
@@ -184,10 +185,21 @@ def _check_measurement_refuted(rec: dict) -> Finding | None:
     return None
 
 
+def _check_comment_drift(rec: dict) -> Finding | None:
+    """S4(EXTAUDIT 2026-07-23): 판정 시점 봉인(comment_sha_at_verdict) 대비 현재 comment 가 개서됨 —
+    c6 장르(REJECTED/degenerating 노드에 사후 승리 에세이). 봉인 이전 레거시(None)는 판단 보류(부재≠반증).
+    차단 아님(WARN): 서사는 자유이되 *판정 이후 바뀌었다는 사실*이 감사 표면에 남는다."""
+    if comment_drift(rec) is True:
+        return Finding("COMMENT_DRIFT_AFTER_VERDICT", _SEVERITY["COMMENT_DRIFT_AFTER_VERDICT"],
+                       f"verdict='{rec.get('verdict')}' 판정 이후 comment 개서 — 봉인 "
+                       f"{str(rec.get('comment_sha_at_verdict'))[:12]}… ≠ 현재 comment sha (서사 드리프트)")
+    return None
+
+
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
            _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt,
            _check_receipt_sha_content, _check_receipt_encoding_stale,
-           _check_measurement_refuted)
+           _check_measurement_refuted, _check_comment_drift)
 
 
 def record_content_sha(rec: dict) -> str:

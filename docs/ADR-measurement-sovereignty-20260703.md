@@ -79,6 +79,12 @@
 (dead-σ)다. `return v.verified`(canonical 승격 floor 의 bool replay)와 fold 포인터 워크는 불변.
 라이브 값소유(σ0→1)는 **GO1**(exec 기본-ON, AG2 RCE 봉합 선행+도그푸드 실증 후 user GO) 대기.
 
+**해석층 봉인 (2026-07-23, EXTAUDIT S4):** 봉인 필드셋이 v3(15필드 = v2 + `comment_sha`)로 확장 —
+판정 시점 comment 의 sha 가 영수증에 봉인되고 노드 미러(`comment_sha_at_verdict`)와 fsck
+`COMMENT_DRIFT_AFTER_VERDICT`(WARN, 비차단)가 사후 개서를 감사 표면에 올린다. v1/v2 는
+presence-dispatch carve-out 으로 재유도 바이트동일(기존 코퍼스 무변경). 서사는 자유이되
+*판정 이후 바뀌었다는 사실*은 침묵 불가.
+
 **GO1 발효 (2026-07-22, EXTAUDIT S2):** 2단 flip 착지 — `LAKATOS_REPLAY_SANDBOXED` 선언 배포는
 EXEC unset 이 **기본 ON** 이 된다(무선언 배포는 위 한계선 서술 그대로). 짝 게이트(EXTAUDIT S1,
 `force_of_row` grade-gate)가 인센티브를 완성한다: 무선언 배포의 `client_asserted` 판결은 집계에서
