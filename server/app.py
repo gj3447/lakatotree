@@ -517,9 +517,18 @@ _replay_exec_warned = False
 
 def _replay_exec_enabled() -> bool:
     """LAKATOS_REPLAY_EXEC 을 *명시적 boolean* 으로 — '0'/'false'/'off' 도 truthy 라 켜지던 footgun 차단(review #2).
-    켜질 때 한 번 loud warning(서버가 client judge_script 를 재실행한다는 경고)."""
+    켜질 때 한 번 loud warning(서버가 client judge_script 를 재실행한다는 경고).
+
+    GO1 flip 2단(EXTAUDIT S2, 2026-07-22): EXEC *unset* 이면 LAKATOS_REPLAY_SANDBOXED 선언에 위임 —
+    운영자가 sandbox 보장을 선언한 배포는 기본 ON(발효), 무선언 배포는 기존 OFF 불변(소급 무회귀).
+    명시 EXEC 값(''/'0' 포함)은 항상 선언을 이긴다(일시 OFF 자유 보존). 근거: 재실행된 유일 표본
+    67건 중 51건 불일치 — 검증이 기본으로 돌지 않는 동안 쌓인 실측. AG2 rlimit 봉합은 상존."""
     global _replay_exec_warned
-    on = os.environ.get('LAKATOS_REPLAY_EXEC', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    raw = os.environ.get('LAKATOS_REPLAY_EXEC')
+    if raw is None:
+        sandboxed = os.environ.get('LAKATOS_REPLAY_SANDBOXED', '').strip().lower() in ('1', 'true', 'yes', 'on')
+        raw = '1' if sandboxed else ''
+    on = raw.strip().lower() in ('1', 'true', 'yes', 'on')
     if on and not _replay_exec_warned:
         logging.warning('LAKATOS_REPLAY_EXEC 활성 — 서버가 producer replay 로 client judge_script 를 재실행한다. '
                         'sandbox 격리(컨테이너/seccomp/rlimit)를 운영자가 보장할 것.')

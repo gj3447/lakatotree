@@ -13,6 +13,9 @@
 - **exec 게이트는 기본 OFF, 프로세스-전역.** `LAKATOS_REPLAY_EXEC` 미설정이면 스크립트를 실행하지
   않고 None(증명불가·비차단) — OFF 배포에서 replay 는 dead path 이고 판결에 남는 유일한 흔적은
   3값 `replay_status`(not_attempted/verified/mismatch)다.
+  *(갱신 2026-07-22, EXTAUDIT S2 — GO1 flip 2단: EXEC **unset** 이면 `LAKATOS_REPLAY_SANDBOXED`
+  선언에 위임한다. 선언 배포=기본 ON(발효), 무선언 배포=위 서술 그대로 OFF. 명시 EXEC 값은 항상
+  선언을 이긴다. 즉 이 절의 '기본 OFF'는 이제 **무선언 배포 한정** 서술이다.)*
 - **영수증은 client float 를 봉인·운반한다.** `:VerdictReceipt` 가 봉인하는 `RECEIPT_FIELDS` 는
   12필드(lakatos/verdicts.py)이고 **measurement_grade 류 출처등급 필드가 없다** — 진짜 외부검증
   값과 위조 float 가 같은 형식의 영수증을 받는다. `metric_value` 의 출처는 HTTP 입력
@@ -75,6 +78,12 @@
 는 None 을 돌려주고 라이브 grade 는 여전히 `client_asserted` — **값소유는 코드완료·라이브미발효**
 (dead-σ)다. `return v.verified`(canonical 승격 floor 의 bool replay)와 fold 포인터 워크는 불변.
 라이브 값소유(σ0→1)는 **GO1**(exec 기본-ON, AG2 RCE 봉합 선행+도그푸드 실증 후 user GO) 대기.
+
+**GO1 발효 (2026-07-22, EXTAUDIT S2):** 2단 flip 착지 — `LAKATOS_REPLAY_SANDBOXED` 선언 배포는
+EXEC unset 이 **기본 ON** 이 된다(무선언 배포는 위 한계선 서술 그대로). 짝 게이트(EXTAUDIT S1,
+`force_of_row` grade-gate)가 인센티브를 완성한다: 무선언 배포의 `client_asserted` 판결은 집계에서
+INCONCLUSIVE 로 강등되므로, "OFF 면 공짜 COUNTS" 였던 옛 균형이 "선언+재실행만 credit" 으로 역전됐다.
+가드: tests/test_extaudit_replay_default.py + tests/test_extaudit_grade_gate.py.
 
 ## 갱신 (AG4/R-SOV V2 재현성 천장, 2026-07-03)
 

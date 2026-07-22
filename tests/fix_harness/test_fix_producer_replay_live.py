@@ -45,6 +45,7 @@ def _app():
 def test_producer_replay_for_node_default_does_not_execute(monkeypatch):
     app = _app()
     monkeypatch.delenv("LAKATOS_REPLAY_EXEC", raising=False)        # 게이트 OFF(미설정)
+    monkeypatch.delenv("LAKATOS_REPLAY_SANDBOXED", raising=False)   # S2 2단: 선언도 없음 = 무선언 배포(허메틱)
     monkeypatch.setattr(app, "kg", lambda q, **p: [_node(0.99)])
     def _must_not_run(cmd):   # noqa: ARG001
         raise AssertionError("게이트 OFF 인데 client 스크립트가 실행됨(보안 위반)")

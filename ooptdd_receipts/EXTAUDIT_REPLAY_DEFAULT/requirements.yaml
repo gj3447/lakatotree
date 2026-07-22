@@ -1,0 +1,31 @@
+# EXTAUDIT S2 (적대감사 2026-07-22) — replay 기본 ON 2단(GO1 flip) ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_replay_default_receipt.verify 가 실제
+# server.app._replay_exec_enabled 를 env 조합별로 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: 옛 거동(unset=무조건 OFF, SANDBOXED 무시)이 살아있으면 첫 assert 가 깨진다.
+name: lakatotree-extaudit-replay-default
+target:
+  mode: in_process
+  callable: extaudit_replay_default_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ERD-1
+    description: LAKATOS_REPLAY_EXEC unset ∧ LAKATOS_REPLAY_SANDBOXED 선언(truthy) → _replay_exec_enabled()==True — sandbox 선언 배포는 replay 기본 ON (GO1 발효)
+    gate:
+      - {event: sandboxed_unset_defaults_on, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_REPLAY_DEFAULT:sandboxed_unset_defaults_on
+      source: extaudit_replay_default_receipt.py
+      symbol: verify
+      must_emit: sandboxed_unset_defaults_on
+
+  - id: ERD-2
+    description: 무선언 배포(둘 다 unset) → False 불변(소급 무회귀) + 명시 EXEC 값(''/'0'/'off')은 선언을 항상 이긴다(일시 OFF 자유 + boolean footgun 계약 유지)
+    gate:
+      - {event: undeclared_off_and_explicit_wins, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_REPLAY_DEFAULT:undeclared_off_and_explicit_wins
+      source: extaudit_replay_default_receipt.py
+      symbol: verify
+      must_emit: undeclared_off_and_explicit_wins
