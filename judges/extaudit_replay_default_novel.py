@@ -32,7 +32,8 @@ def probe() -> int:
     try:
         _req("POST", f"/api/tree/{TREE}", {
             "title": "S2 replay 기본 ON 발효 프로브 (NovelAnchorProbe 장르)",
-            "hard_core": "라이브 서버는 sandbox 선언 시 client 제출값을 재실행으로 재유도한다"})
+            "hard_core": "라이브 서버는 sandbox 선언 시 client 제출값을 재실행으로 재유도한다",
+            "frontier_rule": "프로브 노드 1개 — replay 발효 여부만 측정, 확장 없음"})
         _req("POST", f"/api/tree/{TREE}/node", {
             "tag": tag, "author": "claude-fable-5/extaudit-s2",
             "comment": "replay 발효 e2e 프로브 노드"})
