@@ -1073,6 +1073,10 @@ class JudgementService:
         if (isinstance(tx_result, list) and len(tx_result) == len(ops)
                 and isinstance(tx_result[0], list) and not tx_result[0]):
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
+        # EXTAUDIT S7b: 외부 증인 temporal witness — 예측 spec 앵커(T1, 외부 증인)가 검증됐고 판정 시각
+        #   ts(T2)가 T1 이후면 성립. 백데이트 공격은 예측 측이므로 T1 외부성 + judged_at 단조가 봉쇄한다.
+        temporal_witness = bool(pr.get('pred_anchor_verified')) and temporal_mod.anchor_ordering_ok(
+            str(pr.get('pred_anchor_gen_time') or ''), ts)
         # EXTAUDIT S8b: MeasurementLock mint — 측정 입력(cmd/deps서버해시/params/env)→outs 봉인(사이드카).
         #   receipt v3 불변. deps=judge script(서버 재계산 sha). S7b: temporal_witness_verified persist.
         try:
@@ -1101,10 +1105,6 @@ class JudgementService:
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
                                                  novel=v.novel, script_sha=stored_sha,
                                                  freshen=freshen_anchor))
-        # EXTAUDIT S7b: 외부 증인 temporal witness — 예측 spec 앵커(T1, 외부 증인)가 검증됐고 판정 시각
-        #   ts(T2)가 T1 이후면 성립. 백데이트 공격은 예측 측이므로 T1 외부성 + judged_at 단조가 봉쇄한다.
-        temporal_witness = bool(pr.get('pred_anchor_verified')) and temporal_mod.anchor_ordering_ok(
-            str(pr.get('pred_anchor_gen_time') or ''), ts)
         # EXTAUDIT S3b/S7b: VAL 재도출 — L3 은 attestation(allow-list)+engine floor+temporal witness 가 다 설 때.
         _display, _assur = response_assurance(
             verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
