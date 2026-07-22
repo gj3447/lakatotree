@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from lakatos.engine_identity import ENGINE_RULE_SHA
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.verdict.spine import reconcile_standing
-from lakatos.verdicts import receipt_content_sha
+from lakatos.verdicts import format_verdict_with_val, receipt_content_sha, verdict_assurance
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions, is_measurement_owned
 from lakatos.claim import ClaimStandingPolicy, evaluate_claim_standing
 from lakatos.engine import (
@@ -439,7 +439,10 @@ class EvidenceClaimService:
     def standing(self, name: str, tag: str) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
-                     RETURN e.verdict AS verdict, collect({id:a.id, attacks:a.attacks, kind:a.kind, by:a.by}) AS args""",
+                     RETURN e.verdict AS verdict, e.verdict_source AS verdict_source,
+                            e.current_receipt_sha AS current_receipt_sha,
+                            e.measurement_grade AS measurement_grade, e.replay_status AS replay_status,
+                            collect({id:a.id, attacks:a.attacks, kind:a.kind, by:a.by}) AS args""",
                        tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
@@ -447,7 +450,11 @@ class EvidenceClaimService:
         arguments, attacks = assemble_af(tag, rows[0]['args'])
         ext = grounded_extension(arguments, attacks)
         stands = verdict_arg in ext
-        return dict(tag=tag, verdict=rows[0]['verdict'], stands=stands,
+        # EXTAUDIT S3 (SLSA 흡수): 채점/진보 어휘는 bare 방출 금지 — VAL 등급을 표면에 강제 동봉.
+        # 도출은 읽기 시점(저장 금지) — armed/disarmed progressive 가 표면에서 구분된다(급소 #5).
+        assurance = verdict_assurance(rows[0])
+        return dict(tag=tag, verdict=format_verdict_with_val(rows[0]['verdict'], assurance),
+                    assurance=assurance, stands=stands,
                     grounded_extension=sorted(ext),
                     # A3: 어느 논증이 *패퇴*했는지(공격받고 grounded extension 밖) 명시 — 사람이 왜
                     # 판결이 서는지/안 서는지 본다. Dung 경로는 이미 e2e 배선됨, 이건 가시성 echo.

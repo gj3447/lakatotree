@@ -266,6 +266,56 @@ def is_self_report_blocked_verdict(verdict: str) -> bool:
             or verdict in PROGRESS_VERDICTS)
 
 
+# ── VAL (Verdict Assurance Level) — EXTAUDIT S3, SLSA 흡수 2026-07-22 ─────────────────────────
+# SLSA verifying-artifacts Step 1 전사: 레벨은 산출물에 *저장*되는 라벨이 아니라 검증(읽기) 시점에
+# 도출되는 판정이다 — 노드에 쓰는 순간 '생산자 자기신고'가 된다(저장 금지). 입력은 전부 서버가
+# 봉인·기록한 필드(measurement_grade/replay_status/receipt/tier)라 제출자가 레벨을 못 올린다.
+# tier(assurance.py)와 직교: tier=게이트 *무장 선언*, VAL=이 판정이 실제로 통과한 *검증 결과*.
+VAL_LEVELS = ('client_asserted', 'receipted', 'replay_verified', 'attested_witnessed')
+
+
+def verdict_assurance(row: dict, *, tree_attestors=None, chain_ok: bool | None = None,
+                      engine_rule_floor=None, temporal_witness: bool = False) -> dict:
+    """노드 row → {'val': 0..3, 'basis': tuple}. 순수·결정론·total — 저장 금지, 항상 읽기 재도출.
+
+    L0 하드캡은 *양성 반증*만(chain 깨짐/replay mismatch — 부재와 구분). None/미주입 입력은 강등
+    사유가 아니라 그 축의 승급 불가일 뿐(dead-σ: 부재≠반증). L1 게이트는 기존 SSOT 술어
+    force_of_row 재사용(재유도 금지 규율). L3 은 temporal_witness 실장(S7) 전까지 도달 불가 — 정직."""
+    if chain_ok is False:
+        return {'val': 0, 'basis': ('receipt_chain_broken',)}
+    if row.get('replay_status') == 'mismatch':
+        return {'val': 0, 'basis': ('replay_refuted',)}
+    if force_of_row(row) != 'COUNTS':
+        if 'verdict_source' not in row:
+            basis = 'legacy_no_receipt'
+        elif row.get('measurement_grade') == 'client_asserted':
+            basis = 'client_asserted_unverified'
+        else:
+            basis = 'no_receipt'
+        return {'val': 0, 'basis': (basis,)}
+    if not (row.get('measurement_grade') == 'server_regenerated'
+            and row.get('replay_status') == 'verified'):
+        b = ('attested_unreplayed',) if row.get('measurement_grade') == 'attested' else ()
+        return {'val': 1, 'basis': b}
+    if (row.get('assurance_tier_resolved') == 'anchored'
+            and row.get('attested_by_did') and tree_attestors
+            and row['attested_by_did'] in tree_attestors
+            and engine_rule_floor and row.get('engine_rule_sha') in engine_rule_floor
+            and temporal_witness):
+        return {'val': 3, 'basis': ()}
+    return {'val': 2, 'basis': ()}
+
+
+def format_verdict_with_val(verdict: str, assurance: dict) -> str:
+    """소비자 표면 강제 동봉: 'progressive@L2(replay_verified)'. 채점/진보 어휘(is_self_report_
+    blocked_verdict)만 — admin 어휘(proof 등)는 등급 무의미라 원문 유지(과잉 포맷 금지)."""
+    if not verdict or not is_self_report_blocked_verdict(verdict):
+        return verdict
+    label = VAL_LEVELS[assurance['val']]
+    extra = ',' + ','.join(assurance['basis']) if assurance.get('basis') else ''
+    return f"{verdict}@L{assurance['val']}({label}{extra})"
+
+
 def is_registered_verdict(verdict: str) -> bool:
     # 나생문 F-ARCH-2: 엔진/재빌드 판결도 등록 어휘 (분기 차단)
     return verdict in VERDICT_REGISTRY

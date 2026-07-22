@@ -1,0 +1,42 @@
+# EXTAUDIT S3 (적대감사 2026-07-22, SLSA 흡수) — VAL 등급 표면 동봉 ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_val_receipt.verify 가 실제
+# lakatos.verdicts.verdict_assurance / format_verdict_with_val + evidence_claim_service.standing
+# 을 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: grade 라벨만 믿는 옛 장르(replay mismatch 인데 L2)가 살아있으면 assert 가 깨진다.
+name: lakatotree-extaudit-val
+target:
+  mode: in_process
+  callable: extaudit_val_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: EVL-1
+    description: parity gap 봉합 — armed(server_regenerated+verified) progressive 와 disarmed(client_asserted) progressive 가 표면 문자열에서 구분된다('progressive@L2(...)' vs 'progressive@L0(...)'). 레벨은 읽기 시점 도출(저장 금지)
+    gate:
+      - {event: parity_gap_closed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_VAL:parity_gap_closed
+      source: extaudit_val_receipt.py
+      symbol: verify
+      must_emit: parity_gap_closed
+
+  - id: EVL-2
+    description: 결함주입 음성 오라클 — grade 라벨이 server_regenerated 여도 replay_status='mismatch'(양성 반증)면 L0(replay_refuted) 하드캡. 부재(None/미주입)는 강등 사유 아님(dead-σ 무회귀)
+    gate:
+      - {event: forged_grade_capped_l0, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_VAL:forged_grade_capped_l0
+      source: extaudit_val_receipt.py
+      symbol: verify
+      must_emit: forged_grade_capped_l0
+
+  - id: EVL-3
+    description: standing 표면 배선 — 채점/진보 어휘는 bare 방출 금지(@L 동봉 + assurance dict), admin 어휘(proof)는 원문 유지(과잉 포맷 금지)
+    gate:
+      - {event: standing_surface_embeds_val, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_VAL:standing_surface_embeds_val
+      source: extaudit_val_receipt.py
+      symbol: verify
+      must_emit: standing_surface_embeds_val
