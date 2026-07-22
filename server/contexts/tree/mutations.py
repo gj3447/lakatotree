@@ -60,18 +60,52 @@ class TreeMutationService:
 
     def add_node(self, name: str, node: NodeIn, tree_data: dict) -> dict:
         result = self.validator.validate_node_create_result(name, tree_data, node)
+        # EXTAUDIT S5 (2026-07-23): Laudan 폐기신호 배선 — 부모 가지에 should_abandon 이 발화하면
+        # 응답+영속 이력에 기록한다. 차단 아님(라카토스 철학상 자동 폐기는 인간 안건) — 확장은
+        # 자유이되 red light 를 지나갔다는 사실이 지워지지 않는다(전엔 server/ 호출 0건의 죽은 신호).
+        abandon = self._branch_abandon_signal(node, tree_data)
         try:
             self.writer.add_node(name, node, result.parent_edges)
         except TreeNotFound:
             raise HTTPException(404, f"나무 없음: {name}")
+        warnings = _finding_codes(result.policy_findings)
+        if abandon:
+            warnings = [*warnings, "ABANDON_SIGNAL_IGNORED"]
         self.hist(name, "node_create", node.tag, {
             **node.model_dump(),
-            "policy_warnings": _finding_codes(result.policy_findings),
+            "policy_warnings": warnings,
         })
         out = {"ok": True, "tag": node.tag}
-        if result.policy_findings:
-            out["policy_warnings"] = _finding_codes(result.policy_findings)
+        if abandon:
+            out["abandon_signal"] = abandon
+            self.hist(name, "abandon_override", node.tag, abandon)   # 영속 override 기록
+        if warnings:
+            out["policy_warnings"] = warnings
         return out
+
+    @staticmethod
+    def _branch_abandon_signal(node: NodeIn, tree_data: dict) -> dict | None:
+        """부모 가지의 Laudan 폐기 3규칙 판정 — branch_inputs(규칙①②③ 실입력) 재사용.
+
+        fail-open: 부모 없음/미지/계산 불가 = None (이건 차단 도구가 아니라 기록 도구다)."""
+        parent = node.parent or (node.parents[0] if node.parents else None)
+        if not parent:
+            return None
+        from lakatos.quant.laudan import should_abandon
+        from lakatos.quant.metrics import branch_inputs
+        try:
+            bi = branch_inputs(tree_data.get("nodes") or [], tree_data.get("frontier") or [],
+                               leaf=parent)
+        except (KeyError, TypeError):
+            return None
+        fired, reason = should_abandon(bi["consecutive_nonprogressive"], bi["nodes_spent"],
+                                       bi["prediction_hits"], bi["problem_balance_windowed"])
+        if not fired:
+            return None
+        return {"fired": True, "reason": reason, "branch_leaf": parent,
+                "consecutive_nonprogressive": bi["consecutive_nonprogressive"],
+                "nodes_spent": bi["nodes_spent"], "prediction_hits": bi["prediction_hits"],
+                "problem_balance_windowed": bi["problem_balance_windowed"]}
 
     def delete_tree(self, name: str) -> None:
         try:

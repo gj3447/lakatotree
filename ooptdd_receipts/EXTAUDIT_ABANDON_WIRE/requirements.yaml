@@ -1,0 +1,31 @@
+# EXTAUDIT S5 (적대감사 2026-07-23) — Laudan 폐기신호 배선+override 기록 ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_abandon_wire_receipt.verify 가 실제
+# TreeMutationService.add_node(스텁 writer/validator/hist 주입) + laudan.should_abandon 을 구동.
+# 음성 오라클: red 가지 확장이 침묵(신호·기록 없음)하면 assert 가 깨진다.
+name: lakatotree-extaudit-abandon-wire
+target:
+  mode: in_process
+  callable: extaudit_abandon_wire_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: EAW-1
+    description: 연속 비진보 ≥3 가지에 add_node 하면 응답 abandon_signal(fired/reason) + policy_warnings ABANDON_SIGNAL_IGNORED + hist abandon_override 영속 기록 — 침묵 진격 불가
+    gate:
+      - {event: red_branch_extension_recorded, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_ABANDON_WIRE:red_branch_extension_recorded
+      source: extaudit_abandon_wire_receipt.py
+      symbol: verify
+      must_emit: red_branch_extension_recorded
+
+  - id: EAW-2
+    description: 이중가드 — 건강한 가지는 무발화(과잉 경보 없음), 루트/미지 부모는 fail-open(차단 도구 아님)
+    gate:
+      - {event: healthy_and_rootless_silent, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_ABANDON_WIRE:healthy_and_rootless_silent
+      source: extaudit_abandon_wire_receipt.py
+      symbol: verify
+      must_emit: healthy_and_rootless_silent
