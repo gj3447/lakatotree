@@ -122,6 +122,7 @@ class TreeService:
             research_layout=spec.research_layout,
             layout_owner_did=spec.layout_owner_did,
             layout_sig=spec.layout_sig,
+            witness_dids=(None if spec.witness_dids is None else tuple(spec.witness_dids)),
             cycle_budget=spec.cycle_budget,
         ))
 

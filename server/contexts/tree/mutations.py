@@ -38,6 +38,7 @@ class TreeSpec:
     research_layout: str | None = None             # S6: 역할분리 layout(JCS) — None=불변, 선언=교체
     layout_owner_did: str | None = None
     layout_sig: str | None = None
+    witness_dids: tuple[str, ...] | None = None    # S7b: 시간증인 allow-list — None=불변, 선언=교체
     cycle_budget: int | None = None   # PROM16: 루프 경계 사이클 상한. None=불변/미선언(무제한)
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
@@ -155,6 +156,7 @@ class TreeMutationService:
                     research_layout=spec.research_layout,
                     layout_owner_did=spec.layout_owner_did,
                     layout_sig=spec.layout_sig,
+                    witness_dids=spec.witness_dids,
                     cycle_budget=spec.cycle_budget,
                 )
             )

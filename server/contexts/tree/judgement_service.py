@@ -13,7 +13,9 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from lakatos import assurance, layout as layout_mod, longinus
+from lakatos import assurance, layout as layout_mod, longinus, temporal as temporal_mod
+from lakatos import measurement_lock as mlock_mod
+from lakatos.io import envfp as envfp_mod
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.verdict.argue import assemble_af, grounded_extension
@@ -533,8 +535,40 @@ class JudgementService:
         return "anchored" if abs(float(p.baseline_value) - pm) <= float(p.noise_band or 0.0) else "unanchored"
 
     def register_prediction(self, name: str, tag: str, p: PredictionIn) -> dict:
-        meta = self.kg("MATCH (t:LakatosTree {name:$n}) RETURN t.ontology AS ontology", n=name)
-        onto = DomainOntology.from_json(meta[0].get("ontology")) if meta else None
+        meta = self.kg("""MATCH (t:LakatosTree {name:$n})
+                  RETURN t.ontology AS ontology, t.research_layout AS research_layout,
+                         t.layout_owner_did AS layout_owner_did, t.layout_sig AS layout_sig,
+                         t.witness_dids AS witness_dids""", n=name)
+        m0 = meta[0] if meta else {}
+        onto = DomainOntology.from_json(m0.get("ontology")) if meta else None
+        # EXTAUDIT S6b: layout 이 register_prediction step 을 선언하면 예측등록도 서명 필수(무서명 예측 봉합).
+        #   owner 서명 무효/만료면 layout 무시(dead-σ). step 미선언/layout 미선언 트리는 서명 불요(무회귀).
+        _rl = None
+        try:
+            _cand = layout_mod.parse_role_layout(m0.get("research_layout"))
+            if _cand is not None and not layout_mod.layout_expired(_cand) and layout_mod.verify_layout_sig(
+                    _cand, str(m0.get("layout_owner_did") or ''), str(m0.get("layout_sig") or '')):
+                _rl = _cand
+        except layout_mod.LayoutError:
+            _rl = None
+        _predict_keys = layout_mod.pubkeys_for_verb(_rl, 'register_prediction') if _rl else None
+        if _predict_keys is not None:
+            if p.write_cert is None:
+                raise HTTPException(403, 'write-cert 필수 — layout 이 register_prediction 역할을 선언한 '
+                                         '트리의 예측등록은 서명 명령만 인정(무서명 예측 봉합, S6b)')
+            _dv = layout_mod.disjoint_violation(_rl, p.write_cert.signer_did, 'register_prediction')
+            if _dv:
+                raise HTTPException(403, f'역할분리 위반: {_dv}')
+            _expected = dict(tree=name, tag=tag, prev_receipt_sha=None,
+                             metric_value=None, script_sha=p.judge_script_sha,
+                             verb='register_prediction')
+            try:
+                verify_write_cert(p.write_cert.model_dump(), expected_command=_expected,
+                                  allowlist=_predict_keys)
+            except CertSignerNotAllowed as e:
+                raise HTTPException(403, str(e))
+            except CertError as e:
+                raise HTTPException(422, str(e))
         baseline_lineage = self._baseline_lineage(name, tag, p)   # R12: 등록 전 계보 앵커 판정
         if onto is not None:   # 선언된 metric 어휘 강제(opt-in) — 개선 metric + novel metric 둘 다
             viols = (onto.metric_violations(p.metric_name, p.direction)
@@ -595,11 +629,38 @@ class JudgementService:
                        **spec)
         if not rows:
             raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
+        # EXTAUDIT S7b: 예측 spec 의 외부 증인 앵커(T1) persist — 사전등록 timestamp 의 외부성.
+        #   spec_digest(client 계산) 를 증인이 서명 → 서버가 받은 spec 에서 재계산 대조. 증인이 트리
+        #   witness_dids 안이고 앵커가 유효하면 :TemporalAnchor mint + e.pred_anchor_verified/gen_time.
+        #   무효/부재/무증인은 조용히 skip(앵커는 선택 — 없으면 L3 못 열 뿐, dead-σ).
+        witnesses = [str(d).strip() for d in (m0.get('witness_dids') or []) if d and str(d).strip()]
+        if p.temporal_anchor and witnesses:
+            try:
+                # 앵커는 예측 *spec* 만 커버(cert/anchor 운반 봉투 제외 — 순환·서명 불포함).
+                sdg = temporal_mod.spec_digest(
+                    {k: v for k, v in spec.items() if k not in ('write_cert', 'temporal_anchor')})
+                gt = temporal_mod.verify_temporal_anchor(
+                    p.temporal_anchor, expect_receipt_sha=sdg, witness_allowlist=witnesses)
+                adg = temporal_mod.anchor_digest(sdg)
+                self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                      MERGE (a:TemporalAnchor {digest:$adg})
+                        ON CREATE SET a.witness_did=$wd, a.gen_time=$gt, a.channel=$ch,
+                          a.signature=$sig, a.kind='prediction'
+                      MERGE (e)-[:PRED_ANCHORED_BY]->(a)
+                      SET e.pred_anchor_verified=true, e.pred_anchor_gen_time=$gt,
+                          e.pred_anchor_witness=$wd""",
+                        tree=name, tag=tag, adg=adg, wd=p.temporal_anchor.get('witness_did'),
+                        gt=gt, ch=p.temporal_anchor.get('channel'),
+                        sig=p.temporal_anchor.get('signature'))
+            except temporal_mod.AnchorInvalid as e:
+                raise HTTPException(422, f'temporal anchor 무효: {e}')
         if p.closes_question:
             self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$cq})
                   SET q.n_visits=coalesce(q.n_visits, 0) + 1''', tree=name, cq=p.closes_question)
         self.hist(name, 'prediction_register', tag, p.model_dump())
-        return {'ok': True, 'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}
+        return {'ok': True, 'pred_receipt_sha': rsha,
+                'pred_anchor_verified': bool(p.temporal_anchor and witnesses),
+                'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}
 
     def submit_test_result(self, name: str, tag: str, r: TestResultIn) -> dict:
         # ⓪ 루프-경계 예산(PROM16 S1/S5) — *진짜 초크포인트*. 채점은 결국 전부 여기로 들어온다
@@ -630,7 +691,9 @@ class JudgementService:
                             t.attestor_dids AS attestor_dids,
                             t.research_layout AS research_layout,
                             t.layout_owner_did AS layout_owner_did,
-                            t.layout_sig AS layout_sig""", tree=name, tag=tag)
+                            t.layout_sig AS layout_sig, t.witness_dids AS witness_dids,
+                            e.pred_anchor_verified AS pred_anchor_verified,
+                            e.pred_anchor_gen_time AS pred_anchor_gen_time""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
@@ -1010,14 +1073,44 @@ class JudgementService:
         if (isinstance(tx_result, list) and len(tx_result) == len(ops)
                 and isinstance(tx_result[0], list) and not tx_result[0]):
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
+        # EXTAUDIT S8b: MeasurementLock mint — 측정 입력(cmd/deps서버해시/params/env)→outs 봉인(사이드카).
+        #   receipt v3 불변. deps=judge script(서버 재계산 sha). S7b: temporal_witness_verified persist.
+        try:
+            _env_sha = envfp_mod.fingerprint_sha(envfp_mod.environment_fingerprint())
+            _lock = mlock_mod.build_measurement_lock(
+                cmd=replay_command(r.script, r.result_path),
+                deps=[{'path': r.script, 'sha256': stored_sha}],
+                params={'metric_name': pr['m'], 'noise_band': pr.get('nb')},
+                env_sha=_env_sha,
+                outs=[{'name': pr['m'], 'value': effective_metric}],
+                measurement_grade=measurement_grade, replay_status=replay_status)
+            _lsha, _lkey = mlock_mod.lock_sha(_lock), mlock_mod.lock_key(_lock)
+            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  MERGE (ml:MeasurementLock {lock_sha:$lsha})
+                    ON CREATE SET ml.lock_key=$lkey, ml.cmd=$cmd, ml.env_sha=$env,
+                      ml.measurement_grade=$mg, ml.replay_status=$rs
+                  MERGE (e)-[:HAS_LOCK]->(ml)
+                  SET e.measurement_lock_sha=$lsha, e.measurement_lock_key=$lkey,
+                      e.temporal_witness_verified=$tw""",
+                    tree=name, tag=tag, lsha=_lsha, lkey=_lkey,
+                    cmd=_lock['cmd'], env=_env_sha, mg=measurement_grade, rs=replay_status,
+                    tw=temporal_witness)
+        except Exception:   # noqa: BLE001 — 사이드카는 판정을 막지 않는다(fail-safe, 판정은 이미 mint 됨)
+            pass
         self.hist(name, 'test_result', tag, dict(value=effective_metric, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
                                                  novel=v.novel, script_sha=stored_sha,
                                                  freshen=freshen_anchor))
-        # EXTAUDIT S3b: 방금 봉인한 필드에서 VAL 재도출 — 제출자가 응답에서 보증 등급을 즉시 본다.
+        # EXTAUDIT S7b: 외부 증인 temporal witness — 예측 spec 앵커(T1, 외부 증인)가 검증됐고 판정 시각
+        #   ts(T2)가 T1 이후면 성립. 백데이트 공격은 예측 측이므로 T1 외부성 + judged_at 단조가 봉쇄한다.
+        temporal_witness = bool(pr.get('pred_anchor_verified')) and temporal_mod.anchor_ordering_ok(
+            str(pr.get('pred_anchor_gen_time') or ''), ts)
+        # EXTAUDIT S3b/S7b: VAL 재도출 — L3 은 attestation(allow-list)+engine floor+temporal witness 가 다 설 때.
         _display, _assur = response_assurance(
             verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
-            replay_status=replay_status, assurance_tier_resolved=tier, attested_by_did=attested_by_did)
+            replay_status=replay_status, assurance_tier_resolved=tier, attested_by_did=attested_by_did,
+            engine_rule_sha=ENGINE_RULE_SHA, tree_attestors=attestors,
+            engine_rule_floor=effective_floor(), temporal_witness=temporal_witness)
         return {'ok': True, 'freshen': freshen_anchor,
                 'verdict': verdict, 'verdict_display': _display, 'assurance': _assur,
                 'delta': round(v.delta, 4), 'novel': v.novel,

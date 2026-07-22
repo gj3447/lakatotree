@@ -151,14 +151,19 @@ def resolve_measurement(replay, client_metric, *, attested: bool = False, author
 
 def response_assurance(*, verdict: str, current_receipt_sha: str,
                        measurement_grade: str, replay_status: str,
-                       assurance_tier_resolved: str, attested_by_did: str | None) -> tuple[str, dict]:
-    """submit 응답용 VAL 도출 — (verdict_display, assurance). EXTAUDIT S3b (SLSA 흡수).
+                       assurance_tier_resolved: str, attested_by_did: str | None,
+                       engine_rule_sha: str | None = None, tree_attestors: list | None = None,
+                       engine_rule_floor=None, temporal_witness: bool = False) -> tuple[str, dict]:
+    """submit 응답용 VAL 도출 — (verdict_display, assurance). EXTAUDIT S3b (SLSA 흡수) + S7b(L3).
 
     방금 mint 한 봉인 필드에서 읽기 시점 재도출(저장 금지) — 제출자가 응답에서 즉시 자기 판정의
-    보증 등급을 본다. 순수함수(테스트 가능), 배선은 judgement_service submit 응답(소스 앵커가 핀)."""
+    보증 등급을 본다. 순수함수(테스트 가능), 배선은 judgement_service submit 응답(소스 앵커가 핀).
+    S7b: temporal_witness(외부 증인)+attestation+engine floor 가 다 서면 L3 개방(전엔 L2 천장)."""
     from lakatos.verdicts import format_verdict_with_val, verdict_assurance
     row = dict(verdict=verdict, verdict_source='scripted', current_receipt_sha=current_receipt_sha,
                measurement_grade=measurement_grade, replay_status=replay_status,
-               assurance_tier_resolved=assurance_tier_resolved, attested_by_did=attested_by_did)
-    assur = verdict_assurance(row)
+               assurance_tier_resolved=assurance_tier_resolved, attested_by_did=attested_by_did,
+               engine_rule_sha=engine_rule_sha)
+    assur = verdict_assurance(row, tree_attestors=tree_attestors, engine_rule_floor=engine_rule_floor,
+                              temporal_witness=temporal_witness)
     return format_verdict_with_val(verdict, assur), assur

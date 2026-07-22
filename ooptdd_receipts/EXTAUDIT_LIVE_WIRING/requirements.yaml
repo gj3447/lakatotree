@@ -1,0 +1,31 @@
+# EXTAUDIT S6b/S7b/S8b (적대감사 2026-07-23) — 라이브 persistence 배선 ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_live_wiring_receipt.verify 가 실제
+# JudgementService.register_prediction 을 스텁 KG 로 구동(역할서명·앵커 persist).
+# 음성 오라클: 무서명 예측이 통과하거나 앵커가 persist 안 되면 assert 가 깨진다.
+name: lakatotree-extaudit-live-wiring
+target:
+  mode: in_process
+  callable: extaudit_live_wiring_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ELW-1
+    description: S6b 예측등록 서명 강제 — layout 이 register_prediction step 선언한 트리는 무서명/역할밖 서명 예측을 거부(403), 역할 내 서명은 통과(pred_receipt_sha 반환)
+    gate:
+      - {event: register_cert_enforced, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_LIVE_WIRING:register_cert_enforced
+      source: extaudit_live_wiring_receipt.py
+      symbol: verify
+      must_emit: register_cert_enforced
+
+  - id: ELW-2
+    description: S7b 외부 증인 앵커 persist — 유효 spec 앵커(증인 witness_dids 안)로 register 하면 노드에 pred_anchor_verified=true + gen_time 봉인, digest 밀반입은 422
+    gate:
+      - {event: temporal_anchor_persisted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_LIVE_WIRING:temporal_anchor_persisted
+      source: extaudit_live_wiring_receipt.py
+      symbol: verify
+      must_emit: temporal_anchor_persisted

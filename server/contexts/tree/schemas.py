@@ -101,6 +101,9 @@ class CreateTreeIn(BaseModel):
     research_layout: str | None = None
     layout_owner_did: str | None = None
     layout_sig: str | None = None
+    # EXTAUDIT S7b: 외부 시간증인 allow-list(did:key) — 예측 spec 앵커를 서명하는 out-of-band k-of-N 증인.
+    #   비면 temporal witness 불성립(solo box, L3 불가). attestor_dids 와 동일 非클로버.
+    witness_dids: list[str] | None = None
     # PROM16 S1/S5(2026-07-15): 루프-경계 예산 — 이 트리가 받을 수 있는 *판결* 상한.
     #   세는 것 = scored_nodes(판결받은 노드 수) — 인메모리 카운터가 아니라 저장소 count 로 파생(재시작 내구).
     #   막는 것 = 판결을 민팅하는 verb 전부(run_cycle / submit_test_result / set_verdict) → verb 교체 우회 없음.
@@ -137,6 +140,11 @@ class PredictionIn(BaseModel):
     judge_script_sha: str | None = None
     closes_question: str = ""
     credence: float | None = Field(None, ge=0, le=1)
+    # EXTAUDIT S6b (2026-07-23): 예측등록 서명 — layout 이 register_prediction step 을 선언한 트리는
+    #   이 cert 필수(무서명 예측 봉합 — 역할분리의 첫 구멍). verb='register_prediction' 바인딩.
+    write_cert: WriteCertIn | None = None
+    # EXTAUDIT S7b: 예측 sha 에 대한 외부 증인 앵커(T1). witness_dids 선언 트리에서 L3 게이트 입력.
+    temporal_anchor: dict | None = None
 
 
 class CertCommandIn(BaseModel):

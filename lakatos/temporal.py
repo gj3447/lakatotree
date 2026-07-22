@@ -37,6 +37,16 @@ def anchor_digest(receipt_sha_hex: str) -> str:
     return hashlib.sha256(_ANCHOR_DOMAIN + (receipt_sha_hex or "").encode("utf-8")).hexdigest()
 
 
+def spec_digest(spec: dict) -> str:
+    """예측 spec 의 client-계산가능 정본 sha256 — 앵커가 커버하는 값. 서버가 받은 spec 에서 동일 재계산해
+    증인이 서명한 것이 *바로 이 예측*임을 못박는다(백데이트 방어의 핵: 커밋된 spec 의 외부 timestamp).
+
+    ★사전등록 timestamp 의 외부성은 여기 있다 — receipt sha(서버 계산)가 아니라 spec(client 계산)을
+    앵커하므로 register 왕복 없이 단일 호출로 증인 timestamp 를 붙일 수 있다."""
+    body = json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(_ANCHOR_DOMAIN + b"spec\n" + body.encode("utf-8")).hexdigest()
+
+
 def _signed_bytes(digest_hex: str, gen_time_iso: str) -> bytes:
     """증인 서명 대상 = 도메인 + JCS({digest, gen_time}). gen_time 을 봉인해 같은 서명을 다른 시각으로
     재사용 못 하게 한다(외부 시각의 무결성)."""

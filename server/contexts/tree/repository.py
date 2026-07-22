@@ -147,7 +147,7 @@ class TreeKgRepository:
             "t.require_certified_evidence AS require_certified_evidence, t.attestor_dids AS attestor_dids, "
             # S6 역할분리: layout 정책도 사전 공시(제출자가 역할 밖 403 을 맞기 전에 알 수 있어야).
             "t.research_layout AS research_layout, t.layout_owner_did AS layout_owner_did, "
-            "t.layout_sig AS layout_sig, "
+            "t.layout_sig AS layout_sig, t.witness_dids AS witness_dids, "
             # PROM16 루프상한: 선언된 사이클 예산도 사전 공시 — 드라이버가 budget_exhausted 를 맞기
             #   *전에* 남은 예산을 알 수 있어야(정책은 읽을 수 있어야 정책이다).
             "t.cycle_budget AS cycle_budget, "
@@ -168,6 +168,12 @@ class TreeKgRepository:
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
                e.result_path AS result_path, e.algorithm AS algorithm, e.comment AS comment,
                e.comment_sha_at_verdict AS comment_sha_at_verdict,
+               e.pred_anchor_verified AS pred_anchor_verified,
+               e.pred_anchor_gen_time AS pred_anchor_gen_time,
+               e.pred_anchor_witness AS pred_anchor_witness,
+               e.temporal_witness_verified AS temporal_witness_verified,
+               e.measurement_lock_sha AS measurement_lock_sha,
+               e.measurement_lock_key AS measurement_lock_key,
                e.limitation AS limitation, e.open_question AS open_question,
                e.metric_name AS metric_name, e.metric_value AS metric_value,
                e.metric_scope AS metric_scope, e.novel_registered AS novel_registered,
