@@ -31,7 +31,7 @@ from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.cycle_budget import assert_scoring_budget
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
                                                    engine_freshness_fires, qualitative_flags,
-                                                   resolve_measurement)
+                                                   resolve_measurement, response_assurance)
 from server.engine_freshness import freshness_provider_from_env
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
@@ -986,8 +986,13 @@ class JudgementService:
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
                                                  novel=v.novel, script_sha=stored_sha,
                                                  freshen=freshen_anchor))
+        # EXTAUDIT S3b: 방금 봉인한 필드에서 VAL 재도출 — 제출자가 응답에서 보증 등급을 즉시 본다.
+        _display, _assur = response_assurance(
+            verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
+            replay_status=replay_status, assurance_tier_resolved=tier, attested_by_did=attested_by_did)
         return {'ok': True, 'freshen': freshen_anchor,
-                'verdict': verdict, 'delta': round(v.delta, 4), 'novel': v.novel,
+                'verdict': verdict, 'verdict_display': _display, 'assurance': _assur,
+                'delta': round(v.delta, 4), 'novel': v.novel,
                 'lakatos': lakatos_status, 'metric_verdict': v.verdict,
                 'requires_human': bool(decided.get('requires_human')),
                 # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).

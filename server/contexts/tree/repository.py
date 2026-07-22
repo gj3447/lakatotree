@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from lakatos.node_state import derive_state_value
 from lakatos.coverage import resolve_coverage_status
+from lakatos.verdicts import format_verdict_with_val, verdict_assurance
 
 
 KgQuery = Callable[..., list[dict]]
@@ -71,6 +72,11 @@ def normalize_node_row(row: dict) -> dict:
         for edge in (out.get("parent_edges") or [])
         if (isinstance(edge, dict) and edge.get("tag")) or (not isinstance(edge, dict) and edge)
     ]
+    # EXTAUDIT S3b (SLSA 흡수): VAL 등급을 read-model 에 부착 — get_tree/metrics/leaderboard 가
+    # 자동 상속한다. 비파괴 계약: bare `verdict` 는 불변(내부 술어 전부 그걸 읽음), 표면 동봉은
+    # 추가 필드로만. 도출은 읽기 시점(저장 금지 — 저장하면 생산자 자기신고).
+    out["assurance"] = verdict_assurance(out)
+    out["verdict_display"] = format_verdict_with_val(out["verdict"], out["assurance"])
     return out
 
 

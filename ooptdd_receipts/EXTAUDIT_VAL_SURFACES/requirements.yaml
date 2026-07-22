@@ -1,0 +1,31 @@
+# EXTAUDIT S3b (적대감사 2026-07-22, SLSA 흡수) — VAL 표면 확장(read-model+submit 응답) ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_val_surfaces_receipt.verify 가 실제
+# repository.normalize_node_row / judgement_policy.response_assurance 를 구동하고 이벤트를 ship.
+# 음성 오라클: bare verdict 치환(내부 술어 파괴) 또는 표면 미부착이 살아있으면 assert 가 깨진다.
+name: lakatotree-extaudit-val-surfaces
+target:
+  mode: in_process
+  callable: extaudit_val_surfaces_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: EVS-1
+    description: read-model 부착 — normalize_node_row 가 verdict_display(@L 동봉)+assurance 를 추가 필드로 부착하되 bare verdict 는 불변(비파괴 계약 — 내부 술어 보존). admin 어휘는 display 도 원문
+    gate:
+      - {event: read_model_attaches_val_nondestructive, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_VAL_SURFACES:read_model_attaches_val_nondestructive
+      source: extaudit_val_surfaces_receipt.py
+      symbol: verify
+      must_emit: read_model_attaches_val_nondestructive
+
+  - id: EVS-2
+    description: submit 응답 헬퍼 — response_assurance 가 방금 봉인된 필드에서 (verdict_display, assurance) 를 재도출 (armed=@L2 vs disarmed=@L0 구분)
+    gate:
+      - {event: submit_response_assurance_derived, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_VAL_SURFACES:submit_response_assurance_derived
+      source: extaudit_val_surfaces_receipt.py
+      symbol: verify
+      must_emit: submit_response_assurance_derived
