@@ -210,6 +210,14 @@ def force_of_row(row: dict) -> str:
                     row['verdict_source'] if 'verdict_source' in row else _SOURCE_ABSENT)
     if base == 'COUNTS' and 'current_receipt_sha' in row and not row['current_receipt_sha']:
         return 'INCONCLUSIVE'   # FORCEFUL 라벨인데 원장 포인터 부재 = 재독 불가(영수증 미도래)
+    # +측정등급 게이트(EXTAUDIT S1, DVC lock 흡수 2026-07-22): 라벨('scripted')·포인터(receipt sha)에 이어
+    # 세 번째 축 — *값의 소유*. measurement_grade=='client_asserted' 는 서버가 값을 재유도한 적 없다는 뜻
+    # (judgement_policy.resolve_measurement)이라, replay 로 verified 되기 전엔 진보 credit 이 설 자리가 없다
+    # (재실행된 유일 표본 67건 중 51건 불일치 실측). 키 부재(레거시/픽스처)는 위와 동일하게 신뢰 유지.
+    # attested(서명)는 저자성·비부인이 실재하므로 이 게이트에선 비강등(VAL 사다리 세분은 후속).
+    if (base == 'COUNTS' and row.get('measurement_grade') == 'client_asserted'
+            and row.get('replay_status') != 'verified'):
+        return 'INCONCLUSIVE'   # 주장된 값(무검증) = 영수증 미도래와 동급 — credit 은 replay 가 산다
     return base
 
 

@@ -1,0 +1,41 @@
+# EXTAUDIT S1 (적대감사 2026-07-22, DVC lock 흡수) — 측정등급 게이트(force_of=라벨·포인터→값소유) ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_grade_gate_receipt.verify 가 실제
+# lakatos.verdicts.force_of_row / lakatos.quant.metrics.tree_metrics 를 구동하고 구조화 이벤트를 ship.
+# 음성 오라클: 옛 거동(client_asserted 무검증 값이 'scripted' 라벨로 COUNTS)이 살아있으면 첫 assert 가 깨진다.
+name: lakatotree-extaudit-grade-gate
+target:
+  mode: in_process
+  callable: extaudit_grade_gate_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."   # test_ooptdd_receipts_all / run_all 가 절대 root 로 오버라이드
+
+requirements:
+  - id: EGG-1
+    description: force_of_row 는 measurement_grade=='client_asserted' ∧ replay_status!='verified' 면 INCONCLUSIVE 로 강등 — 'scripted' 라벨·영수증 포인터가 있어도 서버가 값을 재유도한 적 없으면 진보 credit 없음 (재실행 표본 67건 중 51건 불일치 실측이 근거)
+    gate:
+      - {event: client_asserted_unreplayed_inconclusive, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_GRADE_GATE:client_asserted_unreplayed_inconclusive
+      source: extaudit_grade_gate_receipt.py
+      symbol: verify
+      must_emit: client_asserted_unreplayed_inconclusive
+
+  - id: EGG-2
+    description: 양성 통제 3종 — server_regenerated+verified 는 COUNTS 유지, attested 는 비강등(저자성 실재), grade 키 부재(레거시/픽스처)는 신뢰 유지(_SOURCE_ABSENT 철학, 기존 골든 비파괴)
+    gate:
+      - {event: grade_gate_positive_controls_hold, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_GRADE_GATE:grade_gate_positive_controls_hold
+      source: extaudit_grade_gate_receipt.py
+      symbol: verify
+      must_emit: grade_gate_positive_controls_hold
+
+  - id: EGG-3
+    description: 파급(SSOT) — tree_metrics fertility 가 client_asserted 무검증 노드를 credit 에서 제외하고, replay 로 verified 된 client 제출값은 credit 을 유지한다(검증이 credit 을 산다 — 인센티브 역전의 실증)
+    gate:
+      - {event: fertility_excludes_unverified_client_asserted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_GRADE_GATE:fertility_excludes_unverified_client_asserted
+      source: extaudit_grade_gate_receipt.py
+      symbol: verify
+      must_emit: fertility_excludes_unverified_client_asserted
