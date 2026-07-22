@@ -144,7 +144,7 @@ Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual mo
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal`
+`engine` `engine_identity` `verdicts` `node_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`

@@ -1,0 +1,31 @@
+# EXTAUDIT S8 (적대감사 2026-07-23, DVC lock 흡수) — MeasurementLock 입력봉인+run-cache ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_measurement_lock_receipt.verify 가 실제
+# lakatos.measurement_lock 을 구동.
+# 음성 오라클: lock_key 가 outs 값을 포함(주장을 키에 넣음)하거나 dirty-check 가 stale 을 놓치면 깨진다.
+name: lakatotree-extaudit-measurement-lock
+target:
+  mode: in_process
+  callable: extaudit_measurement_lock_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: EML-1
+    description: 입력 봉인 — lock_sha 는 deps sha/env_sha 변화에 이동(결정론·deps 정렬 정규화), lock_key 는 outs 값·grade·status 제외한 입력 지문(값은 재실행이 낳음, 키에 주장 금지)
+    gate:
+      - {event: lock_seals_inputs_key_excludes_outs, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_MEASUREMENT_LOCK:lock_seals_inputs_key_excludes_outs
+      source: extaudit_measurement_lock_receipt.py
+      symbol: verify
+      must_emit: lock_seals_inputs_key_excludes_outs
+
+  - id: EML-2
+    description: dirty-check + run-cache — deps sha 변화=stale_inputs, env_sha 변화=env_drift, 재계산 불가(None)=보수적 stale. 같은 lock_key 는 RunCache 히트(값만 다른 lock 도 재사용)
+    gate:
+      - {event: dirty_check_and_run_cache, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_MEASUREMENT_LOCK:dirty_check_and_run_cache
+      source: extaudit_measurement_lock_receipt.py
+      symbol: verify
+      must_emit: dirty_check_and_run_cache
