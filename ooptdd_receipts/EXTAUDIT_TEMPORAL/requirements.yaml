@@ -1,0 +1,31 @@
+# EXTAUDIT S7 (적대감사 2026-07-23, rekor/OTS 흡수) — temporal witness 양끝 앵커 ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_temporal_receipt.verify 가 실제
+# lakatos.temporal + verdicts.verdict_assurance 를 Ed25519 증인으로 구동.
+# 음성 오라클: 무증인/백데이트/digest 밀반입이 L3 를 열면 assert 가 깨진다.
+name: lakatotree-extaudit-temporal
+target:
+  mode: in_process
+  callable: extaudit_temporal_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ETW-1
+    description: 양끝 앵커 왕복 + 위조 거부 — 유효 증인 서명은 gen_time 반환, digest 밀반입(다른 receipt)/gen_time 개서/연구자≠증인/빈 allow-list(solo box)는 전부 AnchorInvalid
+    gate:
+      - {event: anchor_verify_and_forgery_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_TEMPORAL:anchor_verify_and_forgery_rejected
+      source: extaudit_temporal_receipt.py
+      symbol: verify
+      must_emit: anchor_verify_and_forgery_rejected
+
+  - id: ETW-2
+    description: VAL L3 개방 게이팅 — 유효 양끝 증인(T1≤T2)이면 L3, 백데이트(T1>T2)나 무증인이면 L2(정직 천장). L3 이 temporal witness 로 사상 처음 열린다
+    gate:
+      - {event: val_l3_gated_by_witness, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_TEMPORAL:val_l3_gated_by_witness
+      source: extaudit_temporal_receipt.py
+      symbol: verify
+      must_emit: val_l3_gated_by_witness
