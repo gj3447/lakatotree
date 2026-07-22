@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from lakatos import assurance, longinus
+from lakatos import assurance, layout as layout_mod, longinus
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.verdict.argue import assemble_af, grounded_extension
@@ -627,7 +627,10 @@ class JudgementService:
                             t.hard_core AS hard_core,
                             t.require_novel_anchor AS require_novel_anchor,
                             t.assurance_tier AS assurance_tier,
-                            t.attestor_dids AS attestor_dids""", tree=name, tag=tag)
+                            t.attestor_dids AS attestor_dids,
+                            t.research_layout AS research_layout,
+                            t.layout_owner_did AS layout_owner_did,
+                            t.layout_sig AS layout_sig""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
@@ -701,6 +704,18 @@ class JudgementService:
         #   → sign-X-execute-Y 불가 + replay 는 옛 포인터 서명이 되어 구조적으로 죽는다.
         #   author 는 client 문자열이 아니라 서명(signer_did)에서 유도되어 스탬프된다(Sybil 갭 봉합).
         attestors = [str(d).strip() for d in (pr.get('attestor_dids') or []) if d and str(d).strip()]
+        # EXTAUDIT S6 (역할분리, in-toto 흡수): layout 이 선언됐으면 이 verb 의 allow-list 를 그 verb 의
+        #   pubkeys 로 좁힌다(역할=다른 열쇠). owner 서명 무효/만료면 layout 무시(dead-σ: 위조된 정책은
+        #   적용 안 함, 폴백은 attestors). layout 미선언 트리는 attestors 그대로 — 라이브 무회귀.
+        role_layout = None
+        try:
+            _lo = layout_mod.parse_role_layout(pr.get('research_layout'))
+            if _lo is not None and not layout_mod.layout_expired(_lo) and layout_mod.verify_layout_sig(
+                    _lo, str(pr.get('layout_owner_did') or ''), str(pr.get('layout_sig') or '')):
+                role_layout = _lo
+        except layout_mod.LayoutError:
+            role_layout = None
+        submit_allowlist = layout_mod.role_allowlist(role_layout, 'submit_test_result', attestors)
         cert_required = (assurance.GATE_WRITE_CERT in assurance.gates_for('submit_test_result', tier)
                          and bool(attestors))
         attested_by_did = None
@@ -712,13 +727,20 @@ class JudgementService:
             expected_command = dict(tree=name, tag=tag, prev_receipt_sha=pr.get('prev_receipt_sha'),
                                     metric_value=r.metric_value, script_sha=stored_sha,
                                     verb='submit_test_result')   # AG5-IDENT: cert 를 이 verb 에 바인딩
+            # S6: disjoint_roles 위반(같은 서명자가 predict/attest 겸직) 선차단 — 급소 #2 직접 답.
+            if role_layout is not None:
+                _dv = layout_mod.disjoint_violation(role_layout, r.write_cert.signer_did,
+                                                    'submit_test_result')
+                if _dv:
+                    raise HTTPException(403, f'역할분리 위반: {_dv}')
             try:
                 attestation = verify_write_cert(
                     r.write_cert.model_dump(),
                     expected_command=expected_command,
                     # 자발적 cert(비강제 트리): allow-list 없으면 자기서명 검증만 — authorship 증명이지
-                    # 권위 주장이 아니다(권위 필터는 allow-list 가 정본).
-                    allowlist=attestors if attestors else [r.write_cert.signer_did])
+                    # 권위 주장이 아니다(권위 필터는 allow-list 가 정본). S6: layout 선언 트리는
+                    # submit_allowlist(verb 좁힘)가 attestors 를 대체 — 역할 밖 서명자는 403.
+                    allowlist=(submit_allowlist if attestors else [r.write_cert.signer_did]))
             except CertSignerNotAllowed as e:
                 raise HTTPException(403, str(e))
             except CertError as e:

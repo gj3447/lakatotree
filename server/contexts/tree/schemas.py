@@ -95,6 +95,12 @@ class CreateTreeIn(BaseModel):
     # G10: 서명자 allow-list(did:key, 키 실물) — None=불변(비클로버), 선언 시 교체(revocation 정당).
     #   anchored tier ∧ 이 목록 비어있지 않음 = 판결 쓰기에 write-cert 강제 발동.
     attestor_dids: list[str] | None = None
+    # EXTAUDIT S6 (역할분리, in-toto 흡수 2026-07-23): research_layout(JCS str) = owner 서명 정책 문서
+    #   — verb 별 pubkeys/threshold + disjoint_roles. layout_owner_did/layout_sig 는 owner 서명 봉투.
+    #   미선언(None)=역할 좁히기 없음(attestor_dids 폴백 불변). 셋 다 attestor_dids 와 동일 非클로버.
+    research_layout: str | None = None
+    layout_owner_did: str | None = None
+    layout_sig: str | None = None
     # PROM16 S1/S5(2026-07-15): 루프-경계 예산 — 이 트리가 받을 수 있는 *판결* 상한.
     #   세는 것 = scored_nodes(판결받은 노드 수) — 인메모리 카운터가 아니라 저장소 count 로 파생(재시작 내구).
     #   막는 것 = 판결을 민팅하는 verb 전부(run_cycle / submit_test_result / set_verdict) → verb 교체 우회 없음.

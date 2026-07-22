@@ -119,6 +119,9 @@ class TreeService:
             require_certified_evidence=spec.require_certified_evidence,
             assurance_tier=spec.assurance_tier,
             attestor_dids=(None if spec.attestor_dids is None else tuple(spec.attestor_dids)),
+            research_layout=spec.research_layout,
+            layout_owner_did=spec.layout_owner_did,
+            layout_sig=spec.layout_sig,
             cycle_budget=spec.cycle_budget,
         ))
 

@@ -188,6 +188,9 @@ class TreeKgWriter:
         require_certified_evidence: bool = False,
         assurance_tier: str | None = None,
         attestor_dids: Sequence[str] | None = None,
+        research_layout: str | None = None,
+        layout_owner_did: str | None = None,
+        layout_sig: str | None = None,
         cycle_budget: int | None = None,
     ) -> WriteSummary:
         # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
@@ -213,6 +216,15 @@ class TreeKgWriter:
                    SET t.attestor_dids = CASE
                          WHEN $attestor_dids IS NULL THEN t.attestor_dids
                          ELSE $attestor_dids END
+                   SET t.research_layout = CASE
+                         WHEN $research_layout IS NULL THEN t.research_layout
+                         ELSE $research_layout END,
+                       t.layout_owner_did = CASE
+                         WHEN $layout_owner_did IS NULL THEN t.layout_owner_did
+                         ELSE $layout_owner_did END,
+                       t.layout_sig = CASE
+                         WHEN $layout_sig IS NULL THEN t.layout_sig
+                         ELSE $layout_sig END
                    SET t.cycle_budget = CASE
                          WHEN $cycle_budget IS NULL THEN t.cycle_budget
                          ELSE $cycle_budget END
@@ -233,6 +245,9 @@ class TreeKgWriter:
                     declared_rank=assurance.tier_rank(assurance_tier),
                     default_tier=assurance.DEFAULT_NEW_TREE_TIER,
                     attestor_dids=(None if attestor_dids is None else list(attestor_dids)),
+                    research_layout=research_layout,
+                    layout_owner_did=layout_owner_did,
+                    layout_sig=layout_sig,
                     # PROM16: 예산도 tier/attestor 와 같은 非클로버 규율 — None(미선언)=기존값 불변
                     #   (예산 없는 upsert 가 선언된 상한을 조용히 지우면 루프 상한이 무력화된다).
                     #   ★단 非클로버는 거기까지다 — tier 와 달리 단조 ratchet 이 *없다*(위 CASE 는 상향만

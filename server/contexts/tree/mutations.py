@@ -35,6 +35,9 @@ class TreeSpec:
     #   기본 anchored 스탬프, 기존 트리는 tier 무변경(legacy 소급 스탬프 금지). 선언은 단조 ratchet(하향 409).
     assurance_tier: str | None = None
     attestor_dids: tuple[str, ...] | None = None   # G10: None=불변, 선언=교체
+    research_layout: str | None = None             # S6: 역할분리 layout(JCS) — None=불변, 선언=교체
+    layout_owner_did: str | None = None
+    layout_sig: str | None = None
     cycle_budget: int | None = None   # PROM16: 루프 경계 사이클 상한. None=불변/미선언(무제한)
     nodes: tuple[NodeIn, ...] = field(default_factory=tuple)
     questions: tuple[QuestionIn, ...] = field(default_factory=tuple)
@@ -149,6 +152,9 @@ class TreeMutationService:
                     require_certified_evidence=spec.require_certified_evidence,
                     assurance_tier=spec.assurance_tier,
                     attestor_dids=spec.attestor_dids,
+                    research_layout=spec.research_layout,
+                    layout_owner_did=spec.layout_owner_did,
+                    layout_sig=spec.layout_sig,
                     cycle_budget=spec.cycle_budget,
                 )
             )

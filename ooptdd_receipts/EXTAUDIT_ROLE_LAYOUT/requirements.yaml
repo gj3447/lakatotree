@@ -1,0 +1,31 @@
+# EXTAUDIT S6 (적대감사 2026-07-23, in-toto 흡수) — 역할분리 Research Layout ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_role_layout_receipt.verify 가 실제
+# lakatos.layout 순수함수 + write_cert Ed25519 를 구동.
+# 음성 오라클: layout 이 verb 를 안 좁히거나 disjoint 겸직을 허용하면 assert 가 깨진다.
+name: lakatotree-extaudit-role-layout
+target:
+  mode: in_process
+  callable: extaudit_role_layout_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ERL-1
+    description: verb 좁히기 + owner 서명(≠functionary) — role_allowlist 가 layout 선언 verb 를 그 pubkeys 로 좁히고(미선언 verb/트리는 attestors 폴백), owner 서명 위조(functionary 개서)는 verify_layout_sig=False
+    gate:
+      - {event: verb_narrowed_and_owner_sig_gated, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_ROLE_LAYOUT:verb_narrowed_and_owner_sig_gated
+      source: extaudit_role_layout_receipt.py
+      symbol: verify
+      must_emit: verb_narrowed_and_owner_sig_gated
+
+  - id: ERL-2
+    description: disjoint 겸직 차단 + Sybil dedup — 같은 DID 가 predict/attest 겸직하면 disjoint_violation, 같은 DID 다중서명은 distinct_signer_count 1(threshold Sybil 봉쇄)
+    gate:
+      - {event: disjoint_and_sybil_blocked, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_ROLE_LAYOUT:disjoint_and_sybil_blocked
+      source: extaudit_role_layout_receipt.py
+      symbol: verify
+      must_emit: disjoint_and_sybil_blocked
