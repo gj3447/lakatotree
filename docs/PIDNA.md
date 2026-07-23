@@ -34,6 +34,33 @@
 
 이 정의는 라카토트리 서버의 작동과 1:1이다: `submit_test_result` → `spine.py`/`pnr.py`가 메트릭·질적 판결을 단일화 → 가지/프로그램 신뢰 갱신. **PIDNA = 그 사이클의 기하학적 이름.**
 
+### 2.1 HSWM 네트워크에서 회전의 실행 의미
+
+PIDNA가 HSWM에 적용되었다는 것은 agent가 판결 서버에 결과를 한 번 제출한다는 뜻이 아니다.
+여러 agent가 HSWM의 현재 causal cut에 붙어, 푸른 가닥에서 다음 전이를 제안하고, 붉은
+가닥에서 외부 receipt와 LakatoTree 판결을 받은 뒤, 갱신된 cut 때문에 **다음 agent 행동이
+실제로 달라지는 것**을 뜻한다.
+
+```text
+G_t → agent proposal/action → world receipt → LakatoTree verdict → G_t+1
+ ↑                                                                  │
+ └────────────────────── changed next dispatch ─────────────────────┘
+```
+
+그러므로 회전의 실행 조건은 저장이 아니라 인과다. 동일한 `G_t`에서 verdict만 바꿨을 때
+다음 dispatch가 달라져야 한다. 달라지지 않으면 그것은 판결 원장 또는 지식그래프이지,
+행동을 바꾸는 HSWM 폐루프는 아니다.
+
+이 해석에서 HSWM은 network/runtime/protocol이고, LakatoTree는 연구 프로그램을 판정하고
+frontier를 갱신하는 과학적 정책이다. BHGMAN은 붙일 수 있는 executor 중 하나일 뿐 필수
+구성요소가 아니다. Python, Lean, 사람, 외부 측정기, 다른 agent도 같은 전이 계약으로
+붙을 수 있다. 역할은 분리하되 별도 제품으로 만들 필요는 없다.
+
+> **현재 구현 경계.** 위 문단은 목표 의미론이다. 현재 LakatoTree에는 판결·receipt·가지와
+> frontier 계산은 있으나, 범용 agent attachment, 불변 causal cut, verdict-driven 자동
+> redispatch는 기본 실행경로에 아직 없다. 구체 계약과 acceptance test는
+> [`HSWM_AGENT_NETWORK.md`](HSWM_AGENT_NETWORK.md)에 둔다.
+
 ---
 
 ## 3. 열린 질문 — PIDNA는 어떻게 트리로 갈라지며 나아가는가 (OPEN)

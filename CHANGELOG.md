@@ -27,6 +27,12 @@ distribution.
 
 ### Added
 
+- An explicit HSWM agent-network design contract: agents act through a shared
+  causal cut, observations reuse the verdict-free evidence record, LakatoTree
+  supplies scientific adjudication, and a changed verdict must causally change
+  the next dispatch. The document also records that generic attachment,
+  causal-cut commit, and automatic redispatch are design targets rather than
+  current default-runtime capabilities; BHGMAN remains an optional executor.
 - Citation metadata for the software and its author.
 - Contribution and security-reporting guidance.
 - Package discovery metadata, a `lakatos` console entry point, and the installed
@@ -36,6 +42,8 @@ distribution.
 
 ### Changed
 
+- Clarified that the README loop is the research-programme lifecycle, not a
+  claim that LakatoTree already runs a generic behavioural feedback network.
 - Reorganized the README around the public problem, 60-second first run, honest
   measurement and formal-verification limits, proof signals, and MetaHumotonic
   origin while retaining the machine-checked module roster.
