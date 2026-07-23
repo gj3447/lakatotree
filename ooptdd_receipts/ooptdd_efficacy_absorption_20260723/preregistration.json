@@ -1,0 +1,58 @@
+{
+  "schema_version": "lakatotree-preregistration/v1",
+  "programme": "ooptdd-efficacy-absorption",
+  "branch": "evidence-integrity-and-arrival-benchmark-v1",
+  "conjecture": "A prospectively frozen evidence-integrity layer plus a deterministic arrival benchmark will eliminate the four known self-certification gaps and will survive repeated positive, injected-negative, and recovery controls without replacing ooptdd's three-valued verdict kernel.",
+  "registered_at": "2026-07-23T06:23:53Z",
+  "registration_mechanism": "git commit in gj3447/lakatotree before candidate implementation and candidate measurement",
+  "prior_measurement_boundary": "All ooptdd trajectory measurements at or before git head 53e646a7756325f4050819d7e00add87988fca4a are exploratory or regression evidence only. They carry no confirmatory novelty weight in this programme.",
+  "sources": {
+    "ooptdd_repository": "https://github.com/gj3447/ooptdd",
+    "exploratory_baseline_head": "53e646a7756325f4050819d7e00add87988fca4a",
+    "lakatotree_repository": "https://github.com/gj3447/lakatotree",
+    "registration_parent_head": "abb9ce10b5665de6035fe2d8ebef5b4d0bd8ab9f"
+  },
+  "prediction": {
+    "metric": "unresolved_evidence_integrity_gaps",
+    "direction": "lower",
+    "baseline": 4.0,
+    "target": 0.0,
+    "noise_band": 0.0,
+    "scale_type": "ratio",
+    "guards": [
+      "trajectory-only mutation report derives at least one eligible mutant and never reports a vacuous perfect as measured evidence",
+      "evidence construction recomputes every aggregate from raw observations and rejects a forged summary",
+      "evidence construction enforces preregistered candidate head, baseline head, and specification hash",
+      "the real DeepEval held-out artifact is asserted in CI and an injected mismatch makes that assertion fail"
+    ]
+  },
+  "novel_target": {
+    "metric": "tier0_required_oracle_match_rate",
+    "direction": "higher",
+    "threshold": 1.0,
+    "repetitions": 20,
+    "required_scenarios": [
+      "silent evidence loss becomes absent, never green",
+      "ingestion inside the declared blind window does not become a false red",
+      "a late forbidden event is caught with confirm_rounds=1 and missed by the zero-round control",
+      "an unreachable store stays inconclusive and never renders as a JUnit failure",
+      "trajectory mutation has a non-zero eligible denominator and kills every frozen mutant",
+      "dependent-store evidence is demoted while a distinct external probe reaches external_verdict"
+    ],
+    "independent_artifact_required": true
+  },
+  "negative_controls": [
+    "forge a top-level aggregate while leaving raw observations unchanged",
+    "substitute an unregistered source head or specification hash",
+    "inject a forbidden tool name, forbidden argument shape, corrupt arguments, omitted required call, reordered dependency, and exact-mode extra call",
+    "flip one DeepEval probe's expected match",
+    "run a negative control, then rerun the unchanged positive control and bind both in chronological order"
+  ],
+  "kill_condition": "Reject the conjecture if any integrity guard remains open, any required Tier-0 scenario has oracle_match=false in any of 20 repetitions, the trajectory mutation denominator is zero, the injected negative does not fail, the restored positive does not pass, source/spec bindings are not enforced, or a report serializes inconclusive as success/failure instead of infrastructure uncertainty.",
+  "honesty_boundaries": [
+    "Tier 0 proves deterministic gate mechanics, not external arrival.",
+    "A real OpenObserve Tier 1 run is required before claiming store-level arrival efficacy.",
+    "DeepEval and Phoenix remain integration surfaces; no generic LLM judge is part of the ooptdd kernel.",
+    "The legacy 27-case battery remains regression evidence; it is not relabeled held-out or prospective."
+  ]
+}
