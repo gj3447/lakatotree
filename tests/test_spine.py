@@ -2,7 +2,7 @@
 # KG: span_lakatotree_spine / q-lkt-engine-unify
 """
 from lakatos.engine import LakatosEvidence, LakatosGate
-from lakatos.verdict.spine import reconcile_verdict, promotion_decision
+from lakatos.verdict.spine import reconcile_verdict
 
 GOOD = LakatosEvidence(theory_laden_anomaly=True, independent_testable_consequence=True,
                        excess_empirical_content=True, hard_core_preserved=True, implementation_complete=True)
@@ -40,17 +40,11 @@ def test_metric_nonprogressive_surfaces_qualitative_diagnosis():
     assert r['lakatos'] == 'different_programme'      # 질적 진단은 동봉 — 전엔 'n/a' 로 사라졌음
     assert any('hard_core' in q for q in r['qualitative_reasons'])
 
-def test_promotion_decision_composes_all_gates():
-    ok, reasons = promotion_decision(scripted_verdict='progressive', stands=True,
-                                     reproducible=False, foundation_gaps=('root-data-contract',),
-                                     credibility_reasons=('ambiguous_no_corroboration',))
-    assert not ok
-    assert 'not_reproducible' in reasons and any('foundation' in r for r in reasons)
-    assert 'ambiguous_no_corroboration' in reasons
-
-def test_promotion_decision_clean_passes():
-    ok, reasons = promotion_decision(scripted_verdict='progressive', stands=True)
-    assert ok and reasons == ()
+def test_promotion_decision_removed__single_promotion_authority():
+    # (engine-unify 2026-07-23) 사장 제2 composer promotion_decision + 그 고립 테스트 2건은 삭제됐다 —
+    # 승격 권위는 아래 synthesize_promotion 하나. 부활 방지 가드는 fix_harness/test_fix_2 가 담당.
+    import lakatos.verdict.spine as _spine
+    assert not hasattr(_spine, 'promotion_decision')
 
 
 # === 완전 합성: 모든 승격 게이트 (Foundation + Credibility + 헌법) ===

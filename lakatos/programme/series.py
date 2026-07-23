@@ -15,11 +15,19 @@ from typing import Iterable
 
 DIAGNOSTIC_ONLY_AUTHORITY = "diagnostic_only"
 
-PROGRESSIVE_VERDICTS = {"progressive"}
-NONPROGRESSIVE_VERDICTS = {"partial", "equivalent", "rejected", "degenerating"}
-OFF_AXIS_VERDICTS = {"different_programme", "withdrawn"}
-NEUTRAL_VERDICTS = {"progressive_unverified"}
-KNOWN_VERDICTS = PROGRESSIVE_VERDICTS | NONPROGRESSIVE_VERDICTS | OFF_AXIS_VERDICTS | NEUTRAL_VERDICTS
+# 어휘 정본은 verdicts.py (engine-unify 2026-07-23) — 아래 별칭은 하위호환용.
+# 신규 코드는 verdicts 의 SERIES_* 를 직접 import 할 것. ★주의: 이 모듈의
+# NONPROGRESSIVE_VERDICTS 는 verdicts.NONPROGRESSIVE_VERDICTS(넓은 축)와 멤버십이 다르다
+# (series 는 withdrawn/different_programme 를 OFF_AXIS 로 분류) — 정본 이름은 SERIES_NONPROGRESS_VERDICTS.
+from lakatos.verdicts import (SERIES_KNOWN_VERDICTS, SERIES_NEUTRAL_VERDICTS,
+                              SERIES_NONPROGRESS_VERDICTS, SERIES_OFF_AXIS_VERDICTS,
+                              SERIES_PROGRESS_VERDICTS)
+
+PROGRESSIVE_VERDICTS = SERIES_PROGRESS_VERDICTS
+NONPROGRESSIVE_VERDICTS = SERIES_NONPROGRESS_VERDICTS
+OFF_AXIS_VERDICTS = SERIES_OFF_AXIS_VERDICTS
+NEUTRAL_VERDICTS = SERIES_NEUTRAL_VERDICTS
+KNOWN_VERDICTS = SERIES_KNOWN_VERDICTS
 
 
 @dataclass(frozen=True)

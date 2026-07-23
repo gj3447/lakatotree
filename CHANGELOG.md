@@ -10,6 +10,25 @@ distribution.
 
 ## [Unreleased]
 
+### Changed
+
+- engine-unify 잔여 정리 (q-lkt-engine-unify 종결): verdict 어휘 *분류 집합*의
+  소비자측 재유도 15지점을 `lakatos/verdicts.py` SSOT 로 흡수
+  (`CANONICAL_STATE_VERDICTS`·`SCORED_PROGRESS_VERDICTS`·`FRONTIER_EXPLANATION_VERDICTS`·
+  `FRONTIER_PROGRESS_VERDICTS`·`TESTED_CORE_VERDICTS`·`DEMOTABLE_PROGRESS_VERDICTS`·
+  `SERIES_*`·`REJECTING_VERDICTS`·`STANDING_VERDICTS`·`SCRIPTED_DIALECTICAL_VERDICTS`·
+  `METRIC_IMPROVED_FAMILY_VERDICTS`·`DIALECTIC_OVERRIDE_VERDICTS`·
+  `PNR_CONDITIONAL_SOURCE_VERDICTS`). 거동 불변 — 멤버십 동일, 정의 위치만 정본으로.
+  `series.py` 의 기존 공개 이름은 하위호환 별칭으로 유지.
+
+### Removed
+
+- `lakatos.verdict.spine.promotion_decision` — 프로덕션 호출부 0인 사장 제2 승격
+  composer. 2026-06-27 fix-harness 가 floor drift 를 잡았던 이중 권위의 원천으로,
+  문서화된 선택지("delete OR route through floor") 중 삭제를 택해 승격 합성 권위를
+  `synthesize_promotion` 단일로 확정. 부활 방지 가드가
+  `tests/fix_harness/test_fix_2_promotion-decision-no-floor.py` 에 있다.
+
 ### Fixed
 
 - Scoped `OpenQuestion` identity per tree: the `MERGE` key was a global `{name}`,

@@ -20,6 +20,7 @@ from lakatos.verdicts import FORCEFUL_SOURCES
 from lakatos.quant.multiplicity import false_progressive_screen
 # verdict 어휘 SSOT — 자체 튜플 하드코딩 제거(lakatos/verdicts.py 가 단일 정본).
 from lakatos.verdicts import (PROGRESS_VERDICTS, CONFIRMED_NOVEL_PROGRESS,
+                              METRIC_IMPROVED_FAMILY_VERDICTS,
                               NONPROGRESSIVE_VERDICTS as NONPROGRESSIVE, force_of_row,
                               partition_unreceipted, neutralize_unreceipted)
 
@@ -322,7 +323,7 @@ def _multiplicity_screen(nodes: list) -> dict:
     """
     fam = defaultdict(list)
     for r in nodes:
-        if (r['verdict'] in ('progressive', 'progressive_unverified', 'partial')
+        if (r['verdict'] in METRIC_IMPROVED_FAMILY_VERDICTS
                 and r.get('metric_value') is not None and r.get('pred_baseline') is not None):
             fam[(r.get('metric_name'), r.get('metric_scope'))].append(dict(
                 tag=r['tag'], delta=r['metric_value'] - r['pred_baseline'],

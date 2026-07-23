@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-_PROGRESSIVE = ('progressive', 'progressive_conditional', 'progressive_unverified')
+from lakatos.verdicts import DEMOTABLE_PROGRESS_VERDICTS as _PROGRESSIVE
 
 
 @dataclass(frozen=True)

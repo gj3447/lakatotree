@@ -19,7 +19,10 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from lakatos.verdicts import (FORCEFUL_SOURCES, comment_drift, is_scripted_verdict,
+from lakatos.verdicts import (FORCEFUL_SOURCES,
+                              SCRIPTED_DIALECTICAL_VERDICTS as _SCRIPTED_DIALECTICAL_VERDICTS,
+                              STANDING_VERDICTS as _STANDING_VERDICTS,
+                              comment_drift, is_scripted_verdict,
                               match_receipt_encoding, receipt_content_sha)
 
 # 심각도 서열(단일 정본 — audit·boundary 가 공유). FATAL > ERROR > WARN > INFO.
@@ -41,13 +44,8 @@ _SEVERITY = {
     "COMMENT_DRIFT_AFTER_VERDICT": WARN,        # S4: 판정 이후 comment 개서(c6 사후 승리 에세이 장르) — 서사는 자유, 침묵은 불가(비차단)
 }
 
-# AG6 값무결: 반증(mismatch)이 걸릴 때 '서있음'으로 보는 verdict 집합(positive claim).
-_STANDING_VERDICTS = frozenset({
-    "progressive", "progressive_conditional", "progressive_unverified", "partial", "CANONICAL",
-})
-# Dialectical shadows are deliberately outside SCRIPTED_VERDICTS, but they still come from the
-# preregistered scripted-judgement path and must retain its structural fsck protections.
-_SCRIPTED_DIALECTICAL_VERDICTS = frozenset({"progressive_unverified"})
+# 어휘 집합은 verdicts.py 정본에서 import (engine-unify 2026-07-23):
+#   _STANDING_VERDICTS(AG6 값무결 positive-claim) / _SCRIPTED_DIALECTICAL_VERDICTS(변증법 그림자).
 
 
 def _is_scripted_judgement(rec: dict) -> bool:

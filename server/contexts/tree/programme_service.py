@@ -19,6 +19,8 @@ from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _
                                expected_progress_gain, realized_reward)
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.quant.metrics import branch_inputs
+from lakatos.verdicts import (FRONTIER_PROGRESS_VERDICTS, SCORED_PROGRESS_VERDICTS,
+                              TESTED_CORE_VERDICTS)
 from lakatos.programme.series import series_from_path
 from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
@@ -131,7 +133,7 @@ class ProgrammeService:
             return d if value is None else value
 
         # positive heuristic 신호 — 질문→연 노드 역매핑. 정본/진보 노드가 연 질문 = 살아있는 전선.
-        progressive = {'CANONICAL', 'progressive', 'progressive_conditional'}
+        progressive = FRONTIER_PROGRESS_VERDICTS   # verdicts.py SSOT (engine-unify 2026-07-23)
         front_qnames = {qn for r in td['nodes'] if r.get('verdict') in progressive
                         for qn in (r.get('questions') or [])}
         novel_qnames = {qn for r in td['nodes'] if r.get('novel_registered')
@@ -224,7 +226,7 @@ class ProgrammeService:
         else:
             hard_core = ()
         tested = tuple(r.get('metric_name') for r in td['nodes']
-                       if r.get('verdict') in ('CANONICAL', 'progressive') and r.get('metric_name'))
+                       if r.get('verdict') in TESTED_CORE_VERDICTS and r.get('metric_name'))
         return appraise_and_plan(nodes=td['nodes'], frontier=td['frontier'], branch=bi,
                                  hard_core=hard_core, tested_core=tested)
 
@@ -471,7 +473,7 @@ class ProgrammeService:
                 out['would_demote_to_partial'] = bool(
                     armed and cross_metric_novel and trial.get('novel_preview')
                     and not c.novel_script
-                    and trial.get('verdict_preview') in ('progressive', 'progressive_conditional'))
+                    and trial.get('verdict_preview') in SCORED_PROGRESS_VERDICTS)
             return out
         created = not self._cycle_node_exists(name, c.tag)
         try:

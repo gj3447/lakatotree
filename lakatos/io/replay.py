@@ -92,7 +92,11 @@ class LineageReplayGate:
 
 @dataclass(frozen=True)
 class ReproducibilityContract:
-    """프로젝트별 root 데이터에서 final artifact 를 다시 만들 수 있어야 한다."""
+    """프로젝트별 root 데이터에서 final artifact 를 다시 만들 수 있어야 한다.
+
+    ★권위 메모 (engine-unify 2026-07-23): 제2 판정 권위가 아니라 LineageReplayGate 로 위임하는
+    공개 편의 래퍼다(실 판정 로직 중복 없음 — evaluate = LineageReplayGate.evaluate 전사).
+    서버 write 경로는 _reproducible_for_node(app.py) 가 LineageReplayGate 를 직접 쓴다."""
 
     final_artifact: str
     root_artifacts: tuple[str, ...]

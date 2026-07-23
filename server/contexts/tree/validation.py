@@ -11,7 +11,9 @@ from typing import Literal
 from fastapi import HTTPException
 
 from lakatos.ontology import DomainOntology
-from lakatos.verdicts import is_registered_verdict, is_self_report_blocked_verdict
+from lakatos.verdicts import (CANONICAL_STATE_VERDICTS, FRONTIER_EXPLANATION_VERDICTS,
+                              SCORED_PROGRESS_VERDICTS,
+                              is_registered_verdict, is_self_report_blocked_verdict)
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn
 
 
@@ -33,17 +35,8 @@ def _enforce_ontology(tree_data: dict, node: NodeIn) -> None:
         raise HTTPException(422, f"온톨로지 위반(entity={entity}): {viols}")
 
 
-CANONICAL_VERDICTS = frozenset({"CANONICAL", "canonical_stage"})
-PROGRESS_VERDICTS = frozenset({"progressive", "progressive_conditional"})
-FRONTIER_EXPLANATION_VERDICTS = frozenset({
-    "partial",
-    "rejected",
-    "degenerating",
-    "ambiguous",
-    "metric_mismatch",
-    "env_drift",
-    "step_failed",
-})
+# 어휘 집합은 verdicts.py 정본에서만 (engine-unify 2026-07-23 — 동명이의 PROGRESS_VERDICTS 폐기):
+#   CANONICAL_STATE_VERDICTS / SCORED_PROGRESS_VERDICTS / FRONTIER_EXPLANATION_VERDICTS.
 
 
 @dataclass(frozen=True)
@@ -106,7 +99,7 @@ class LakatosPolicy:
         has_metric = _has_metric_triplet(node)
         has_provenance = _has_node_provenance(node)
 
-        if node.verdict in CANONICAL_VERDICTS:
+        if node.verdict in CANONICAL_STATE_VERDICTS:
             if not has_metric:
                 findings.append(self._finding("canonical_metric_required", "canonical nodes require metric_name/value/scope"))
             if not has_provenance:
@@ -114,7 +107,7 @@ class LakatosPolicy:
             if _text(node.open_question) or _text(node.limitation):
                 findings.append(self._finding("canonical_frontier_open", "canonical nodes cannot carry open frontier markers"))
 
-        if node.verdict in PROGRESS_VERDICTS:
+        if node.verdict in SCORED_PROGRESS_VERDICTS:
             if not has_metric:
                 findings.append(self._finding("progressive_metric_required", "progressive nodes require metric_name/value/scope"))
             if not has_provenance:

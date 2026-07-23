@@ -871,8 +871,8 @@
       "file": "lakatos/verdict/spine.py",
       "symbol": "reconcile_verdict",
       "kind": "def",
-      "line_hint": 6,
-      "sha256": "ea439b7a8454d950",
+      "line_hint": 60,
+      "sha256": "bc4d0c13390080c5",
       "layer": "verdict-authority",
       "serving": "wired",
       "frege_sinn": "metric+질적 게이트 합의 (★감사: metric 비진보면 질적진단 단락=bug)"
@@ -882,8 +882,8 @@
       "file": "lakatos/verdict/spine.py",
       "symbol": "synthesize_promotion",
       "kind": "def",
-      "line_hint": 151,
-      "sha256": "644f48e59081afa1",
+      "line_hint": 140,
+      "sha256": "bcbc5c426734cf81",
       "layer": "hard_core",
       "serving": "wired",
       "frege_sinn": "완전합성 승격 게이트 — 헌법+Foundation+Credibility"

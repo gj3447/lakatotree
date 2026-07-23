@@ -116,6 +116,79 @@ def is_engine_verdict(verdict: str) -> bool:
     return verdict in ENGINE_VERDICTS or verdict in REBUILD_VERDICTS
 
 
+# ── 소비자측 분류 집합 흡수 (engine-unify 어휘 drift 정리, 2026-07-23) ─────────────────────
+#   레지스트리가 어휘를 소유하고 PROGRESS/NONPROGRESS 가 넓은 의미축을 소유하듯, 소비자별 *좁은*
+#   정책 집합도 여기서만 정의한다(정본 밖 리터럴 재유도 금지 — judges/engine_unify_vocab.py 가 구조 감시).
+#   각 집합은同名 다의(同名異義)를 막기 위해 소비 축을 이름에 새긴다.
+#
+#   [enum↔registry 계약] engine.LakatosVerdict(5) ⊂ ENGINE_VERDICTS(7): 게이트 enum 이 뱉지 않는
+#   progressive_unverified·withdrawn 은 spine(reconcile/pnr)이 뱉는 합성 판결 — enum 은 게이트 출력의
+#   부분집합, registry 가 상위집합이다 (tests/test_verdict_registry.py 가 감시).
+
+# validation(LakatosSemanticValidator): 정본 상태 어휘 — metric+provenance 요구의 대상.
+CANONICAL_STATE_VERDICTS = frozenset({"CANONICAL", "canonical_stage"})
+
+# 채점 경로가 뱉는 (조걶부 포함) 진보 — validation(progressive_metric/provenance_required)과
+# programme_service(run_cycle demote preview)가 같은 멤버십을 쓴다. PROGRESS_VERDICTS(넓은 축)와 다르다:
+# CANONICAL/former_canonical 은 여기 없다(승격은 set_verdict 게이트 전용, 노드 write 정책 밖).
+SCORED_PROGRESS_VERDICTS = frozenset({"progressive", "progressive_conditional"})
+
+# validation: 비진보 frontier 노드는 limitation/open_question 설명을 요구하는 어휘.
+FRONTIER_EXPLANATION_VERDICTS = frozenset({
+    "partial",
+    "rejected",
+    "degenerating",
+    "ambiguous",
+    "metric_mismatch",
+    "env_drift",
+    "step_failed",
+})
+
+# heuristic/programme_service: 정본 전선(frontier)에 질문을 연 노드로 보는 진보 어휘
+# (CANONICAL 포함 — 살아있는 전선의 앵커).
+FRONTIER_PROGRESS_VERDICTS = frozenset({"CANONICAL", "progressive", "progressive_conditional"})
+
+# programme_service.heuristic_view: metric-검증된 hard core 시험 노드(tested_core).
+TESTED_CORE_VERDICTS = frozenset({"CANONICAL", "progressive"})
+
+# judgement_policy(apply_verdict_demotes): 구조적 강등 체인의 입력이 될 수 있는 진보 계열
+# (미확증 progressive_unverified 도 강등 대상 — 강등은 진보를 깎는 연산이라 비진보는 입력이 아니다).
+DEMOTABLE_PROGRESS_VERDICTS = ("progressive", "progressive_conditional", "progressive_unverified")
+
+# series(프로그램-시계열 진단): verdicts.py 의 넓은 PROGRESS/NONPROGRESS 축과 *다른* 진단 축.
+# withdrawn/different_programme 는 비진보가 아니라 축 이탈(OFF_AXIS), progressive_unverified 는 중립.
+SERIES_PROGRESS_VERDICTS = frozenset({"progressive"})
+SERIES_NONPROGRESS_VERDICTS = frozenset({"partial", "equivalent", "rejected", "degenerating"})
+SERIES_OFF_AXIS_VERDICTS = frozenset({"different_programme", "withdrawn"})
+SERIES_NEUTRAL_VERDICTS = frozenset({"progressive_unverified"})
+SERIES_KNOWN_VERDICTS = (SERIES_PROGRESS_VERDICTS | SERIES_NONPROGRESS_VERDICTS
+                         | SERIES_OFF_AXIS_VERDICTS | SERIES_NEUTRAL_VERDICTS)
+
+# node_state: 노드를 REJECTED 상태로 유도하는 어휘.
+REJECTING_VERDICTS = frozenset({"rejected", "degenerating", "withdrawn"})
+
+# fsck(AG6 값무결): 반증(mismatch)이 걸릴 때 '서있음'으로 보는 positive-claim 어휘.
+STANDING_VERDICTS = frozenset({
+    "progressive", "progressive_conditional", "progressive_unverified", "partial", "CANONICAL",
+})
+
+# fsck: SCRIPTED_VERDICTS 밖이지만 사전등록 scripted-judgement 경로에서 나오는 변증법 그림자 —
+# scripted 의 구조적 fsck 보호를 그대로 입는다.
+SCRIPTED_DIALECTICAL_VERDICTS = frozenset({"progressive_unverified"})
+
+# quant.metrics(gap8 다중비교): metric-improved family 스크린 후보 — progressive_unverified 는
+# 프로그램 진전축에선 중립이지만 metric-progress 자체는 실재, partial 도 개선 측정을 실었다.
+METRIC_IMPROVED_FAMILY_VERDICTS = ("progressive", "progressive_unverified", "partial")
+
+# spine(dialectical_verdict): PnR 변증법이 메트릭 진보를 우선 강등하는 어휘(안 배움/철회/핵이탈).
+DIALECTIC_OVERRIDE_VERDICTS = ("degenerating", "withdrawn", "different_programme")
+
+# spine(dialectical_verdict): PnR conditional 판정 시 메트릭 진보를 progressive_conditional 로
+# 내리는 대상 어휘.
+PNR_CONDITIONAL_SOURCE_VERDICTS = ("progressive", "progressive_unverified")
+
+
+
 # ── 정본 prom (Occam 통합 2026-06-21): "영수증 vs 자기보고"의 *단일 3치 술어* ──────────────────
 #   6라운드 동안 metrics·CANONICAL floor·credibility 가 이 술어를 각자 재유도하다 drift 했다(버그의 근원).
 #   레지스트리가 어휘를 소유하듯 이 술어도 한 곳에서 소유한다. verdict_source 가 *현실이 다시 끊을 수 있는

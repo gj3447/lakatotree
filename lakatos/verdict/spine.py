@@ -3,14 +3,18 @@
 문제: judge.py(메트릭 판결)와 engine.LakatosGate(질적 판결)가 따로 놀았다.
   서버는 judge 만 부르고 LakatosGate/FoundationGate/CredibilityPromotionGate 는 고아.
 해법: 이 spine 이 모든 게이트를 합성해 단일 결정을 낸다. 서버는 spine 만 부른다.
-  reconcile_verdict  = judge(메트릭) + LakatosGate(질적) → 둘 다 진보여야 진보
-  promotion_decision = promotion_gate + FoundationGate(준비도) + 재현성 + CredibilityPromotionGate
+  reconcile_verdict   = judge(메트릭) + LakatosGate(질적) → 둘 다 진보여야 진보
+  synthesize_promotion = promotion_gate + FoundationGate(준비도) + 재현성 + CredibilityPromotionGate + floor
+★단일 승격 권위 (engine-unify 2026-07-23): 사장(無호출) 제2 composer promotion_decision 은 삭제됐다 —
+  2026-06-27 fix-harness 가 floor drift 를 잡았던 이중 권위의 원천. 승격 합성은 synthesize_promotion 하나.
+  부활 방지 가드: tests/fix_harness/test_fix_2_promotion-decision-no-floor.py.
 # KG: span_lakatotree_spine / q-lkt-engine-unify
 라이선스(THEORY §8): hanson1958
 """
 from lakatos.verdict.compose import GateOutcome, compose_gates
 from lakatos.verdict.promote import promotion_gate
-from lakatos.verdicts import is_scripted_verdict, force_of
+from lakatos.verdicts import (DIALECTIC_OVERRIDE_VERDICTS, PNR_CONDITIONAL_SOURCE_VERDICTS,
+                              is_scripted_verdict, force_of)
 
 _UNSET = object()   # verdict_source 미전달(레거시 호출) — None(실 NULL-source 노드)과 구분
 from lakatos.engine import FoundationGate, CredibilityPromotionGate, CredibilityTier
@@ -116,14 +120,14 @@ def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None
     if pnr_appraisal is None:
         return base
     pv = pnr_appraisal.verdict
-    if pv in ('degenerating', 'withdrawn', 'different_programme'):   # 변증법 우선 강등 (안 배움/철회/핵이탈)
+    if pv in DIALECTIC_OVERRIDE_VERDICTS:   # 변증법 우선 강등 (안 배움/철회/핵이탈)
         return {'verdict': pv, 'lakatos': base.get('lakatos', 'n/a'),
                 'status': 'dialectic_overrides', 'pnr': pv,
                 'ad_hoc': pnr_appraisal.ad_hoc, 'reasons': tuple(pnr_appraisal.reasons)}
     if pv == 'conditional':   # 배웠으나 미확정 — 메트릭 진보를 조건부로 (라카토스 이론적≠경험적 진보)
         out = {**base, 'pnr': 'conditional', 'ad_hoc': pnr_appraisal.ad_hoc,
                'status': 'dialectic_conditional', 'reasons': tuple(pnr_appraisal.reasons)}
-        if base.get('verdict') in ('progressive', 'progressive_unverified'):
+        if base.get('verdict') in PNR_CONDITIONAL_SOURCE_VERDICTS:
             out['verdict'] = 'progressive_conditional'
         return out
     out = {**base, 'pnr': 'progressive', 'ad_hoc': pnr_appraisal.ad_hoc,
@@ -131,24 +135,6 @@ def dialectical_verdict(metric_verdict: str, pnr_appraisal: 'PnRAppraisal | None
     if base.get('verdict') == 'progressive_unverified':
         out['verdict'] = 'progressive'
     return out
-
-
-def promotion_decision(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,
-                       foundation_gaps: tuple = (), credibility_reasons: tuple = ()) -> tuple[bool, tuple]:
-    """모든 승격 게이트 합성 (F-CON-1/2/5 + Foundation + Credibility) → 단일 결정."""
-    _, reasons = promotion_gate(scripted_verdict=scripted_verdict, stands=stands, reproducible=reproducible)
-    # 나생문 #2: synthesize_promotion 과 동일한 CANONICAL floor — receipt-0 승격 차단(progressive_conditional
-    #   등 non-scripted PROMOTABLE 이 constitution-only 로 통과하던 잠재 fail-open 봉합; 두 composer 발산 제거).
-    judge_receipt = is_scripted_verdict(scripted_verdict)
-    floor = None if (judge_receipt or reproducible is True) else GateOutcome('floor', ('no_receipt_for_canonical',))
-    out = compose_gates(
-        GateOutcome('constitution', tuple(reasons)),
-        GateOutcome('foundation', ('foundation_gaps:' + ','.join(foundation_gaps),))
-        if foundation_gaps else None,
-        GateOutcome('credibility', tuple(credibility_reasons)),
-        floor,
-    )
-    return (out.passed, out.reasons)
 
 
 def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: bool | None = None,

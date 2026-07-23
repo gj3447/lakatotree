@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 from lakatos.quant.laudan import ABANDON_K, should_abandon
+from lakatos.verdicts import FRONTIER_PROGRESS_VERDICTS
 
 
 def _clamp01(x: float) -> float:
@@ -159,7 +160,7 @@ def _question_moves(nodes: list, open_qs: list, branch: dict,
 
     ★ 질문→연 노드 링크는 node['questions'] (KG RAISES_QUESTION) 로 역매핑 — frontier row 엔
     opened_by 가 없다(repository.py). directions 와 동일 규약. opened_by 명시 시 존중(in-memory 호환)."""
-    progressive = ("CANONICAL", "progressive", "progressive_conditional")
+    progressive = FRONTIER_PROGRESS_VERDICTS   # 정본 전선 진보 어휘 (verdicts.py SSOT)
     front_qnames = {qn for n in nodes if n.get("verdict") in progressive
                     for qn in (n.get("questions") or [])}
     novel_qnames = {qn for n in nodes if n.get("novel_registered")

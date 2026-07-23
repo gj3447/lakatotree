@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from enum import Enum
 
+from lakatos.verdicts import REJECTING_VERDICTS as _REJECTING_VERDICTS
 from lakatos.verdicts import force_of_row, is_progress_verdict
 
 
@@ -28,7 +29,6 @@ class NodeState(str, Enum):
     ADMINISTRATIVE = "ADMINISTRATIVE"
 
 
-_REJECTING_VERDICTS = frozenset({"rejected", "degenerating", "withdrawn"})
 _DRAFT_VERDICTS = frozenset({"", "proof", None})
 
 
