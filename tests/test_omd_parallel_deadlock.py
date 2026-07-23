@@ -46,9 +46,12 @@ import sys
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _find_cycle(graph):
     """Return a cycle path if the directed graph has one, else None.
@@ -229,6 +232,7 @@ OMD_PY = os.path.join(OMD_ROOT, ".venv", "bin", "python")
 OMD_D7_TEST = "tests/test_d7_dep_cycle.py"
 
 
+@_skip_omd
 def test_omd_d7_dep_cycle_dimension_test_passes_in_real_substrate():
     """Corroborate that the REAL OMD substrate implements the Havender acyclic
     gate: subprocess-run tests/test_d7_dep_cycle.py in OMD's own venv and assert
@@ -255,6 +259,7 @@ def test_omd_d7_dep_cycle_dimension_test_passes_in_real_substrate():
     assert "passed" in out, "expected pytest 'passed' summary:\n" + out[-2000:]
 
 
+@_skip_omd
 def test_omd_d7_test_file_actually_exercises_the_real_gate():
     """Cheap structural negative-control: the corroborated test file must really
     reference the real dep_cycle gate (not an empty/renamed stub), so the

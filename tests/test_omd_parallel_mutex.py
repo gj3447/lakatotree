@@ -53,9 +53,12 @@ _WILD = re.compile(r"[*?\[]")
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _naive_prefix(g: str) -> str:
     """소박한 탐지기: 첫 와일드카드 *앞* 디렉토리 prefix 만 본다.
@@ -259,6 +262,7 @@ def test_naive_prefix_conflict_check_misses_true_overlap_real_one_catches():
 # ═════════════════════════════════════════════════════════════════════════════
 # GUARD 2 (mechanism / positive novel oracle) — REAL OMD artifact, independent
 # ═════════════════════════════════════════════════════════════════════════════
+@_skip_omd
 def test_omd_sets_overlap_is_sound_and_tla_checks_no_overlapping_held():
     """실제 omd_server/disjoint.py 를 파일경로로 로드해 SOUNDNESS 를 검증:
     겹침 배터리 전부에서 globs_overlap/sets_overlap == True (false-negative 0).
@@ -315,6 +319,7 @@ def test_naive_overlap_is_genuinely_blind_regression():
     assert principled_overlap("src/**", "src/a.py") is True
 
 
+@_skip_omd
 def test_real_disjoint_loads_by_path_not_via_package():
     """omd_server 패키지 임포트(.core/SQLite)를 피해 파일경로 로드가 되는지."""
     mod = _load_real_disjoint()

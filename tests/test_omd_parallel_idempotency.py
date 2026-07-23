@@ -98,9 +98,12 @@ class _MergeHandler:
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _at_least_once_deliver(handler, task, request_id, copies=2):
     """Model an at-least-once transport: the SAME request is delivered ``copies`` times
@@ -175,6 +178,7 @@ _OMD_PY = os.path.join(_OMD_ROOT, ".venv", "bin", "python")
 _OMD_D9_TEST = "tests/test_d9_idempotency.py"
 
 
+@_skip_omd
 def test_omd_d9_idempotency_dimension_test_passes_in_real_substrate():
     """Independent corroboration: the REAL OMD D9 idempotency dimension test passes in OMD's
     own venv (request_id cache + intent_key dedup + connect-retry single merge commit). This
@@ -201,6 +205,7 @@ def test_omd_d9_idempotency_dimension_test_passes_in_real_substrate():
     assert "passed" in proc.stdout, proc.stdout[-2000:]
 
 
+@_skip_omd
 def test_real_omd_d9_test_module_exists_negative_control():
     """Negative control: the same subprocess oracle, pointed at a BOGUS test path, must FAIL
     to collect (rc != 0) — proving the mechanism oracle genuinely discriminates and would not

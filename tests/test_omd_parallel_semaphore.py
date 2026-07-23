@@ -103,9 +103,12 @@ class _ModelSemaphore:
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _run_crash_schedule(derive_from_leases):
     """max=2. 적대적 스케줄: 두 acquire → 하나 crash(release 없음) → reclaim 시도 → 3번째 waiter.
@@ -175,6 +178,7 @@ def test_lease_derivation_is_what_recovers_the_slot():
 # ─────────────────────────────────────────────────────────────────────────────
 # guard_mechanism — 긍정/신규 오라클 (실 OMD substrate, 독립 출처)
 # ─────────────────────────────────────────────────────────────────────────────
+@_skip_omd
 def test_omd_d4_semaphore_dimension_test_passes_in_real_substrate():
     """독립 corroboration: 실 OMD D4 차원 테스트를 OMD 자체 venv 에서 subprocess 실행, rc==0.
 

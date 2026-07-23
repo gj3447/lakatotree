@@ -115,9 +115,12 @@ class Barrier:
 
 import os as _os
 import pytest as _pytest
-pytestmark = _pytest.mark.skipif(
-    not _os.path.isdir("<WORKSPACE>/PROJECT/PI/omd"),
-    reason="OMD 자매 repo 미체크아웃(hermetic CI) — 크로스레포 도그푸드 가드는 로컬에서만 실측")
+_OMD_ROOT = _os.environ.get("OMD_ROOT", "<WORKSPACE>/PROJECT/PI/omd")
+_OMD_ABSENT = not _os.path.isdir(_OMD_ROOT)
+# audit un-gate: 자기완결 defect 오라클(naive-vs-fixed in-test 모델, OMD 불요)은 게이트 없이 CI 서 실행.
+# OMD-의존 mechanism 오라클(disjoint import / TLA 파싱 / OMD venv subprocess)만 부재 시 skip(아래 @_skip_omd).
+_skip_omd = _pytest.mark.skipif(
+    _OMD_ABSENT, reason="OMD 자매 repo 미체크아웃/OMD_ROOT 미설정 — 크로스레포 mechanism 오라클(로컬/CI-checkout 시만)")
 
 def _run_schedule(break_on_death):
     """적대 스케줄: N=3 중 t1,t2 도착, t3 사망(도착 전).
@@ -165,6 +168,7 @@ def test_naive_barrier_hangs_on_death_generation_broken_terminal_wakes_all():
 # --------------------------------------------------------------------------- #
 # guard_mechanism — 양성/신규 오라클 (실제 OMD 서브스트레이트, 행위 독립)
 # --------------------------------------------------------------------------- #
+@_skip_omd
 def test_omd_d5_barrier_dimension_test_passes_in_real_substrate():
     """실제 OMD D5 배리어 차원 테스트를 OMD 자기 .venv 로 실행해 rc==0 확인.
 
