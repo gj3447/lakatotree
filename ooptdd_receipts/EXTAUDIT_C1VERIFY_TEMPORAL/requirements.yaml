@@ -1,0 +1,31 @@
+# 심화 D2 (2026-07-23) — c1verify 독립 temporal 재검증(substrate-B Ed25519) ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_c1verify_temporal_receipt.verify 가 실제
+# c1verify._ed25519 + c1verify.gates.temporal 을 구동(엔진 서명 ↔ 독립 검증 골든 상호대조).
+# 음성 오라클: 위조/백데이트/정족수 미달이 ACCEPT 되거나 골든 대조가 어긋나면 assert 가 깨진다.
+name: lakatotree-extaudit-c1verify-temporal
+target:
+  mode: in_process
+  callable: extaudit_c1verify_temporal_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: CT-1
+    description: Ed25519 골든 상호대조 — c1verify._ed25519(독립 재구현)가 엔진 write_cert 서명을 바이트 동일하게 검증, did:key 디코드 일치, 타 키타입 거부
+    gate:
+      - {event: ed25519_golden_cross_check, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_C1VERIFY_TEMPORAL:ed25519_golden_cross_check
+      source: extaudit_c1verify_temporal_receipt.py
+      symbol: verify
+      must_emit: ed25519_golden_cross_check
+
+  - id: CT-2
+    description: temporal 게이트 재검증 — 정족수 통과 ACCEPT(residual 명시), 위조/밀반입/백데이트/미달/Sybil/비허가는 REJECT(fail-closed, total)
+    gate:
+      - {event: temporal_gate_reverifies, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_C1VERIFY_TEMPORAL:temporal_gate_reverifies
+      source: extaudit_c1verify_temporal_receipt.py
+      symbol: verify
+      must_emit: temporal_gate_reverifies

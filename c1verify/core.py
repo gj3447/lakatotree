@@ -17,7 +17,7 @@ from .jcs import JcsError, parse_canonical
 C1_BUNDLE_VERSION = 1
 
 #: The five certificate gates plus the cryptographic substrate. certified = AND over all of them.
-GATES = ("preregistered", "reproducible", "stands", "calibrated", "grounded", "substrate")
+GATES = ("preregistered", "reproducible", "stands", "calibrated", "grounded", "substrate", "temporal")
 
 #: Top-level bundle fields. evidence_window carries the {as_of, shas:{...}} pins that content-seal
 #: each gate's payload (a gate recomputes its sha over the sealed bytes and matches it here).
@@ -85,9 +85,11 @@ def verify(data: bytes) -> dict:
 from .gates.grounded import verify_grounded  # noqa: E402
 from .gates.preregistered import verify_preregistered  # noqa: E402
 from .gates.reproducible import verify_reproducible  # noqa: E402
+from .gates.temporal import verify_temporal  # noqa: E402
 from .gates.substrate import verify_substrate  # noqa: E402
 
 _GATE_REVERIFIERS["grounded"] = verify_grounded
 _GATE_REVERIFIERS["substrate"] = verify_substrate
 _GATE_REVERIFIERS["preregistered"] = verify_preregistered
 _GATE_REVERIFIERS["reproducible"] = verify_reproducible
+_GATE_REVERIFIERS["temporal"] = verify_temporal
