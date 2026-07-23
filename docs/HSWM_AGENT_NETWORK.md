@@ -171,6 +171,38 @@ append-only causal events
 | verdict가 다음 agent 행동을 자동 변경 | 미구현 | 폐루프의 결정적 조건 |
 | BHGMAN 결합 | 예제 adapter | 선택 사항 |
 
+## 구현 피드백 — 지금 가장 큰 문제
+
+지금 HSWM의 가장 큰 문제는 철학, 용어, 관련연구가 부족한 것이 아니다. **범용 agent
+attachment, causal event ledger, commit, dispatch를 실제로 소유하는 runtime code owner가
+없다.** 설계 문서가 정교해질수록 이 빈자리가 가려질 위험이 있으므로, 다음 gate를
+통과하기 전에는 문서의 완성도를 HSWM의 완성도로 세지 않는다.
+
+최소 구현의 Definition of Done은 아래 항목이 **모두** 저장소에 남는 것이다.
+
+1. agent 하나가 identity, capability, operator version으로 attach하고, 특정 `cut_id`와
+   read set을 발급받는다.
+2. 하나의 append-only owner가 `Proposal → Observation → Verdict → Commit` 사건을 기록하고,
+   재시작 뒤에도 같은 event log를 replay해 같은 cut hash를 만든다.
+3. dispatcher가 현재 cut과 독립 verdict만 입력받아 다음 operator를 결정한다. verdict를
+   저장만 하고 agent가 자의적으로 다음 행동을 고르면 완료가 아니다.
+4. 같은 초기 입력에서 verdict A/B만 바꾼 두 실행이 서로 다른 다음 dispatch를 만드는
+   causal A/B receipt를 남긴다.
+5. duplicate event는 exactly-once effect를 유지하고, stale parent와 self-authored verdict는
+   fail closed하는 자동 테스트가 있다.
+
+완료의 증거는 설명, 다이어그램, 콘솔 스크린샷이 아니라 **재실행 가능한 demo receipt와
+자동 테스트**다. 구현 파일의 이름이나 저장소 기술은 바꿀 수 있지만 위 행동 계약은
+줄일 수 없다.
+
+이 gate 전의 STOP 목록은 명확하다.
+
+- 새 철학자, 메타포, 판정층 또는 HSWM 동의어 추가
+- 분산 실행, 다수 agent orchestration, 범용 plugin 생태계
+- UI, graph database 교체, 추가 projection/KG mirror 정교화
+- hypergraph 성능 최적화와 HSWM 효과·우선권 주장
+- 설계 문서나 mock trace만으로 runtime gap을 `covered`로 승격
+
 첫 구현은 BHGMAN 없이 한 프로세스에서 닫는다. 하나의 `OpenQuestion`, 두 개의 작은
 operator, 하나의 evidence record, 하나의 LakatoTree verdict, 하나의 다음 dispatch만
 연결한다. 그 vertical slice가 위 반사실 검사와 replay 검사를 통과한 뒤에만 분산

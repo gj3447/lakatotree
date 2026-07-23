@@ -50,6 +50,10 @@ distribution.
 
 ### Changed
 
+- Turned the HSWM implementation critique into a CI-guarded execution contract:
+  the missing runtime owner is named as the current bottleneck, completion now
+  requires replayable causal A/B receipts and fail-closed tests, and distributed
+  agents, UI, graph changes, and further conceptual expansion stay behind that gate.
 - Clarified that the README loop is the research-programme lifecycle, not a
   claim that LakatoTree already runs a generic behavioural feedback network.
 - Reorganized the README around the public problem, 60-second first run, honest

@@ -28,6 +28,17 @@ def test_hswm_contract_defines_attachment_as_causal_feedback():
     assert "verdict가 다음 agent 행동을 자동 변경 | 미구현" in contract
 
 
+def test_hswm_feedback_freezes_runtime_done_and_stop_gates():
+    contract = (ROOT / "docs" / "HSWM_AGENT_NETWORK.md").read_text(encoding="utf-8")
+
+    assert "지금 HSWM의 가장 큰 문제" in contract
+    assert "runtime code owner" in contract
+    assert "causal A/B receipt" in contract
+    assert "재실행 가능한 demo receipt" in contract
+    assert "duplicate event는 exactly-once effect" in contract
+    assert "설계 문서나 mock trace만으로 runtime gap을 `covered`로 승격" in contract
+
+
 def test_pidna_marks_the_hswm_runtime_as_a_target_not_a_current_claim():
     pidna = (ROOT / "docs" / "PIDNA.md").read_text(encoding="utf-8")
 
