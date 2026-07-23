@@ -39,7 +39,7 @@ No scored node hand-types its verdict. The unscored administrative root is label
 
 The same installed demo is available as `python -m lakatos.demos.euler`; `examples/euler_polyhedron_programme.py` remains a source-checkout compatibility wrapper.
 
-## The loop
+## The verdict loop — and the HSWM boundary
 
 ```text
 Conjecture                    Verification
@@ -56,6 +56,14 @@ generate a question          read a measurement
 ```
 
 The conjecture side proposes experiments; the verification side scores them. A claim of novelty is not enough: `progressive` requires both improvement beyond the noise band and a corroborated structural `NovelTarget`. Improvement without novelty is `partial`. A refutation is `rejected`; movement within the declared noise band is `equivalent`.
+
+The diagram states the research-programme lifecycle, not a claim that the current default runtime is already a generic closed-loop agent network. LakatoTree currently derives verdicts and exposes programme, credence, lifecycle, and frontier calculations. It does **not yet** provide a generic agent-attachment protocol, an append-only causal-cut runtime, or automatic verdict-driven redispatch. Until a changed verdict causes a changed next action, the implemented surface is a judgement and audit engine rather than a complete behavioural feedback loop.
+
+### HSWM agent-network direction
+
+In the HSWM interpretation, applying HSWM means that agents attach to a shared causal-hypergraph network and act *through* it: an agent reads the current committed cut, proposes a versioned transition, executes an authorised operator, returns a producer-verdict-free receipt, receives an independently derived LakatoTree verdict, and is redispatched from the resulting cut. Merely writing results to Neo4j, Markdown, or an MCP server does not satisfy that definition.
+
+LakatoTree can host the scientific-policy part of that network and become its first reference implementation. BHGMAN is not required; it is one possible executor adapter. The minimal causal test is deliberately strict: with the same initial cut, changing only the verdict must change the next dispatch. The full design contract, current capability boundary, agent lifecycle, and vertical-slice acceptance tests are in [HSWM agent network](docs/HSWM_AGENT_NETWORK.md). The separate [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md) records why this direction is worth one bounded experiment, the equal-compute baselines, primary metric, ablations, and conditions for pruning it.
 
 Programme-level layers add context without weakening that kernel rule:
 
@@ -137,7 +145,7 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | `formal/` | machine-checked kernel model |
 | `server/` | optional HTTP/MCP surface and stores |
 
-Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual model](docs/PIDNA.md), [quantitative grounding](docs/QUANTITATIVE_GROUNDING.md), and the prose rationale [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md).
+Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual model](docs/PIDNA.md), the [HSWM agent-network design contract](docs/HSWM_AGENT_NETWORK.md), [quantitative grounding](docs/QUANTITATIVE_GROUNDING.md), and the prose rationale [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md).
 
 ## Module map
 
@@ -173,6 +181,8 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 
 - **Start integrating:** [Consuming LakatoTree](docs/CONSUMING_LAKATOTREE.md)
 - **Understand the design:** [THEORY.md](THEORY.md) and [PIDNA](docs/PIDNA.md)
+- **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)
+- **Evaluate, continue, or prune it:** [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md)
 - **Inspect formal claims:** [formal/Pidna.lean](formal/Pidna.lean)
 - **Review measurement limits:** [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md)
 - **Read the philosophical rationale:** [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md)
