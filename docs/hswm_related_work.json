@@ -1,0 +1,78 @@
+{
+  "name": "hswm-related-work-longinus-boundary",
+  "status": "grounding-boundary-not-priority-claim",
+  "reviewed_at": "2026-07-23",
+  "longinus_anchor": "span_lakatotree_hswm_related_work",
+  "policy": "Each reference records an overlap that HSWM must not claim as novel. The candidate contribution remains a hypothesis until a systematic review and the preregistered H1/H2 benchmarks support it. Absence from this registry is not evidence of priority.",
+  "candidate_contribution": {
+    "claim": "Lakatosian programme policy + receipt-separated authority + causal redispatch",
+    "status": "unverified-contribution-hypothesis",
+    "required_receipts": [
+      "systematic related-work search protocol",
+      "H1 equal-compute behavioural benchmark",
+      "H2 non-hypergraph ablation"
+    ]
+  },
+  "references": [
+    {
+      "source_ref": "external:nature-dynamic-kg-sdl-2024",
+      "title": "A dynamic knowledge graph approach to distributed self-driving laboratories",
+      "year": 2024,
+      "venue": "Nature Communications",
+      "evidence_tier": "peer-reviewed-primary",
+      "url": "https://www.nature.com/articles/s41467-023-44599-9",
+      "overlap": "A network of agents updates a dynamic knowledge graph while coordinating a physical closed-loop experiment.",
+      "non_novel_claim": "agent가 KG에 붙어 실험한다"
+    },
+    {
+      "source_ref": "external:nature-robin-2026",
+      "title": "A multi-agent system for automating scientific discovery",
+      "year": 2026,
+      "venue": "Nature",
+      "evidence_tier": "peer-reviewed-primary",
+      "url": "https://doi.org/10.1038/s41586-026-10652-y",
+      "overlap": "A lab-in-the-loop multi-agent system generates hypotheses, proposes follow-up experiments, interprets results, and updates hypotheses.",
+      "non_novel_claim": "과학 agent가 반복 실험한다"
+    },
+    {
+      "source_ref": "external:sciagents-2024",
+      "title": "SciAgents: Automating scientific discovery through multi-agent intelligent graph reasoning",
+      "year": 2024,
+      "venue": "arXiv",
+      "evidence_tier": "preprint",
+      "url": "https://arxiv.org/abs/2409.05556",
+      "overlap": "Knowledge graphs and multiple language-model agents generate, critique, and refine scientific hypotheses.",
+      "non_novel_claim": "graph 기반 multi-agent 과학추론을 한다"
+    },
+    {
+      "source_ref": "external:autolabs-2026",
+      "title": "AutoLabs: cognitive multi-agent systems with self-correction for autonomous chemical experimentation",
+      "year": 2026,
+      "venue": "Scientific Reports",
+      "evidence_tier": "peer-reviewed-primary",
+      "url": "https://www.nature.com/articles/s41598-026-45593-z",
+      "overlap": "Multiple agents plan, execute, monitor, and correct autonomous chemical experiments.",
+      "non_novel_claim": "multi-agent가 closed-loop 실험을 수행한다"
+    },
+    {
+      "source_ref": "external:shared-cognitive-substrates-2026",
+      "title": "Beyond Text-Passing: Shared Cognitive Substrates for Multi-Agent LLM Coordination",
+      "year": 2026,
+      "venue": "MALGAI OpenReview",
+      "evidence_tier": "workshop-position",
+      "url": "https://openreview.net/forum?id=RRIw2L4Z1g",
+      "overlap": "Agents coordinate through a typed shared world model and causal graph rather than text passing alone.",
+      "non_novel_claim": "agent가 shared world model에서 조정된다"
+    },
+    {
+      "source_ref": "external:continual-causal-refinement-2026",
+      "title": "Continual learning and refinement of causal models through dynamic predicate invention",
+      "year": 2026,
+      "venue": "UCRL@ICLR OpenReview",
+      "evidence_tier": "workshop-poster",
+      "url": "https://openreview.net/forum?id=jJbzfjODQt",
+      "overlap": "A symbolic causal world model is learned and repaired online inside an agent decision loop.",
+      "non_novel_claim": "world model이 계속 바뀐다"
+    }
+  ]
+}

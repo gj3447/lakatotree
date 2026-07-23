@@ -2414,11 +2414,27 @@
       "sha256": "3435f634e89e3d41",
       "layer": "verdict-authority",
       "frege_sinn": "DE1 순수 G1 receipt 봉인필드 조립 — RECEIPT_FIELDS 1:1. AG3 measurement_grade 봉인 착지대."
+    },
+    {
+      "sourceId": "test_hswm_related_work_longinus.test_related_work_registry_is_longinus_grounded_and_unique",
+      "file": "tests/test_hswm_related_work_longinus.py",
+      "symbol": "test_related_work_registry_is_longinus_grounded_and_unique",
+      "kind": "def",
+      "line_hint": 25,
+      "sha256": "a58e7525987e6a5f",
+      "layer": "research-grounding",
+      "frege_sinn": "HSWM 인접연구 6개 ↔ 사람 문서 ↔ grounding refs ↔ KG anchor ↔ 명시적 runtime gap 양방향 Longinus 드리프트 가드"
     }
   ],
   "accepted_grounding_refs": [
     "external:clean-coder-srp",
     "external:cucumber-bdd",
+    "external:nature-dynamic-kg-sdl-2024",
+    "external:nature-robin-2026",
+    "external:sciagents-2024",
+    "external:autolabs-2026",
+    "external:shared-cognitive-substrates-2026",
+    "external:continual-causal-refinement-2026",
     "external:nasa-traceability",
     "external:w3c-prov-o",
     "kg:finding_lkt_prov_external_evidence_20260618",
@@ -2482,6 +2498,7 @@
     "span_lakatotree_fertility",
     "span_lakatotree_grounding",
     "span_lakatotree_harness",
+    "span_lakatotree_hswm_related_work",
     "span_lakatotree_heuristic",
     "span_lakatotree_kuhn",
     "span_lakatotree_layer_flips",

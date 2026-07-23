@@ -37,6 +37,10 @@ distribution.
   validated-progress-per-cost hypothesis, equal-compute baselines, a
   non-hypergraph ablation, phased go/no-go gates, and explicit conditions for
   pruning HSWM, the hypergraph claim, or the LakatoTree scoring policy.
+- A Longinus-grounded, machine-readable HSWM related-work boundary covering
+  six adjacent systems, with reciprocal prose/URL/non-novelty checks, registered
+  grounding references and KG anchor, and an explicit Meaning-SRP runtime gap
+  instead of a fabricated code owner.
 - Citation metadata for the software and its author.
 - Contribution and security-reporting guidance.
 - Package discovery metadata, a `lakatos` console entry point, and the installed
