@@ -591,6 +591,26 @@ class JudgementService:
             baseline_lineage=baseline_lineage, registered_at=ts, prev_receipt_sha=prev_rsha,
             **spec)
         rsha = prediction_content_sha(pred_receipt_fields)
+        # validate-then-write (q-lkt-nonatomic-registration-anchor-20260723): 앵커 정족수 검증은
+        #   등록 SET 보다 *먼저* — 예전엔 write 이후 검증이라 422 나도 pred_registered_at 이 소비돼
+        #   노드가 stuck(재등록 409) 됐고, 무효 앵커 반복으로 노드 소진 어뷰징이 가능했다.
+        #   422 는 상태를 소비하지 않는다. persist(앵커 mint/플래그)는 write 성공 후에 계속한다.
+        witnesses = [str(d).strip() for d in (m0.get('witness_dids') or []) if d and str(d).strip()]
+        # 심화 D1: k-of-N 증인 정족수 — 단일 temporal_anchor 는 [temporal_anchor] 로 흡수(하위호환).
+        anchors = list(p.temporal_anchors or ([] if p.temporal_anchor is None else [p.temporal_anchor]))
+        threshold = int(m0.get('witness_threshold') or 1)
+        sdg = gt = None
+        if anchors and witnesses:
+            try:
+                # 앵커는 예측 *spec* 만 커버(cert/anchor 운송 봉투 제외 — 순환·서명 불포함).
+                sdg = temporal_mod.spec_digest(
+                    {k: v for k, v in spec.items()
+                     if k not in ('write_cert', 'temporal_anchor', 'temporal_anchors')})
+                # 정족수 검증: distinct 증인 ≥ threshold 가 같은 spec 을 서명해야(담합 저항). max(T1) 반환.
+                gt = temporal_mod.verify_temporal_quorum(
+                    anchors, expect_receipt_sha=sdg, witness_allowlist=witnesses, threshold=threshold)
+            except temporal_mod.AnchorInvalid as e:
+                raise HTTPException(422, f'temporal 정족수 무효: {e}')
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted')
                         AND e.pred_registered_at IS NULL
@@ -630,45 +650,30 @@ class JudgementService:
         if not rows:
             raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
         # EXTAUDIT S7b: 예측 spec 의 외부 증인 앵커(T1) persist — 사전등록 timestamp 의 외부성.
-        #   spec_digest(client 계산) 를 증인이 서명 → 서버가 받은 spec 에서 재계산 대조. 증인이 트리
-        #   witness_dids 안이고 앵커가 유효하면 :TemporalAnchor mint + e.pred_anchor_verified/gen_time.
+        #   검증은 write 이전에 완료(validate-then-write, 위) — 여기서는 persist 만.
         #   무효/부재/무증인은 조용히 skip(앵커는 선택 — 없으면 L3 못 열 뿐, dead-σ).
-        witnesses = [str(d).strip() for d in (m0.get('witness_dids') or []) if d and str(d).strip()]
-        # 심화 D1: k-of-N 증인 정족수 — 단일 temporal_anchor 는 [temporal_anchor] 로 흡수(하위호환).
-        anchors = list(p.temporal_anchors or ([] if p.temporal_anchor is None else [p.temporal_anchor]))
-        threshold = int(m0.get('witness_threshold') or 1)
         if anchors and witnesses:
-            try:
-                # 앵커는 예측 *spec* 만 커버(cert/anchor 운반 봉투 제외 — 순환·서명 불포함).
-                sdg = temporal_mod.spec_digest(
-                    {k: v for k, v in spec.items()
-                     if k not in ('write_cert', 'temporal_anchor', 'temporal_anchors')})
-                # 정족수 검증: distinct 증인 ≥ threshold 가 같은 spec 을 서명해야(담합 저항). max(T1) 반환.
-                gt = temporal_mod.verify_temporal_quorum(
-                    anchors, expect_receipt_sha=sdg, witness_allowlist=witnesses, threshold=threshold)
-                adg = temporal_mod.anchor_digest(sdg)
-                for a in anchors:                       # 유효 앵커 전부 persist(감사 가능)
-                    try:
-                        temporal_mod.verify_temporal_anchor(
-                            a, expect_receipt_sha=sdg, witness_allowlist=witnesses)
-                    except temporal_mod.AnchorInvalid:
-                        continue
-                    self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                          MERGE (an:TemporalAnchor {digest:$adg, witness_did:$wd})
-                            ON CREATE SET an.gen_time=$gt, an.channel=$ch, an.signature=$sig,
-                              an.kind='prediction'
-                          MERGE (e)-[:PRED_ANCHORED_BY]->(an)""",
-                            tree=name, tag=tag, adg=adg, wd=a.get('witness_did'),
-                            gt=a.get('gen_time'), ch=a.get('channel'), sig=a.get('signature'))
-                # 정족수 met — node 마크(gt=max T1, quorum_n=distinct 증인 수).
-                _qn = len({str(a.get('witness_did') or '').strip() for a in anchors
-                           if temporal_mod._safe_verify(a, sdg, witnesses)})
+            adg = temporal_mod.anchor_digest(sdg)
+            for a in anchors:                       # 유효 앵커 전부 persist(감사 가능)
+                try:
+                    temporal_mod.verify_temporal_anchor(
+                        a, expect_receipt_sha=sdg, witness_allowlist=witnesses)
+                except temporal_mod.AnchorInvalid:
+                    continue
                 self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                      SET e.pred_anchor_verified=true, e.pred_anchor_gen_time=$gt,
-                          e.pred_anchor_quorum=$qn, e.pred_anchor_threshold=$th""",
-                        tree=name, tag=tag, gt=gt, qn=_qn, th=threshold)
-            except temporal_mod.AnchorInvalid as e:
-                raise HTTPException(422, f'temporal 정족수 무효: {e}')
+                      MERGE (an:TemporalAnchor {digest:$adg, witness_did:$wd})
+                        ON CREATE SET an.gen_time=$gt, an.channel=$ch, an.signature=$sig,
+                          an.kind='prediction'
+                      MERGE (e)-[:PRED_ANCHORED_BY]->(an)""",
+                        tree=name, tag=tag, adg=adg, wd=a.get('witness_did'),
+                        gt=a.get('gen_time'), ch=a.get('channel'), sig=a.get('signature'))
+            # 정족수 met — node 마크(gt=max T1, quorum_n=distinct 증인 수).
+            _qn = len({str(a.get('witness_did') or '').strip() for a in anchors
+                       if temporal_mod._safe_verify(a, sdg, witnesses)})
+            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  SET e.pred_anchor_verified=true, e.pred_anchor_gen_time=$gt,
+                      e.pred_anchor_quorum=$qn, e.pred_anchor_threshold=$th""",
+                    tree=name, tag=tag, gt=gt, qn=_qn, th=threshold)
         if p.closes_question:
             self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$cq})
                   SET q.n_visits=coalesce(q.n_visits, 0) + 1''', tree=name, cq=p.closes_question)

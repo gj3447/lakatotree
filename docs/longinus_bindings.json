@@ -2519,7 +2519,9 @@
     "span_lakatotree_audit_fix_20260627",
     "span_lakatotree_longinus_ast_resolver",
     "span_lakatotree_runtime_lean_20260626",
-    "selfdev-mcp-surface-gates-20260703"
+    "selfdev-mcp-surface-gates-20260703",
+    "q-lkt-nonatomic-registration-anchor-20260723",
+    "q-extaudit-temporal-witness-20260722"
   ],
   "kg_anchors_note": "코드 # KG: anchor 토큰의 선언 레지스트리(reverse-orphan 가드). 새 # KG: 노드 추가 시 여기 등록 필수 → KG 노드 생성 강제. live-KG 존재확인은 longinus.audit(online)."
 }
