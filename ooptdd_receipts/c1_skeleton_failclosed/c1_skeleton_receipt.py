@@ -116,28 +116,38 @@ def negative_oracle_detects_injected_accept() -> bool:
     # inject into a gate that is NOT yet implemented so we never clobber a real reverifier (grounded
     # is real from S1); save/restore keeps this robust as more gates land. Reverifier signature is
     # (payload, ctx) — must match the real dispatch, else the injection would crash instead of leak.
+    # ★full-coverage 종단(2026-07-23, D3 WIP 가 7/7 게이트를 채움): 미구현 게이트 0 은 설계된 종단이
+    #   아니었다(assert 만). skip 은 커버리지 완성 순간에 가드를 은퇴시키는 vacuous-green 이라 금지 —
+    #   합성 canary 를 GATES 에 임시 주입해 같은 주입/탐지/복원 주기를 돌리고 finally 로 원복한다.
+    canary = "__vacuous_green_canary__"
+    saved_gates = _cv.GATES
     target = next((g for g in c1verify.GATES if g not in _cv._GATE_REVERIFIERS), None)
-    assert target is not None, "no unimplemented gate to host the injection"
-    well = jcs({"c1_bundle_version": 1, "gates": {target: {}}})
-    assert _all_reject(c1verify.verify(well)), "skeleton did not REJECT a well-formed bundle"
-    saved = _cv._GATE_REVERIFIERS.get(target)
-    _cv._GATE_REVERIFIERS[target] = lambda _payload, _ctx: {
-        "gate": target, "decision": c1verify.ACCEPT,
-        "reason": "FORGED unconditional ACCEPT", "residual_trust_surface": None}
+    if target is None:
+        target = canary
+        _cv.GATES = (*_cv.GATES, canary)   # verify() 가 모듈 전역을 호출 시점에 읽는다
     try:
-        forged = c1verify.verify(well)
-        leaked = any(g["gate"] == target and g["decision"] == c1verify.ACCEPT
-                     for g in forged["per_gate"])
-        detected = not _all_reject(forged)  # the all-REJECT guard must now fire
+        well = jcs({"c1_bundle_version": 1, "gates": {target: {}}})
+        assert _all_reject(c1verify.verify(well)), "skeleton did not REJECT a well-formed bundle"
+        saved = _cv._GATE_REVERIFIERS.get(target)
+        _cv._GATE_REVERIFIERS[target] = lambda _payload, _ctx: {
+            "gate": target, "decision": c1verify.ACCEPT,
+            "reason": "FORGED unconditional ACCEPT", "residual_trust_surface": None}
+        try:
+            forged = c1verify.verify(well)
+            leaked = any(g["gate"] == target and g["decision"] == c1verify.ACCEPT
+                         for g in forged["per_gate"])
+            detected = not _all_reject(forged)  # the all-REJECT guard must now fire
+        finally:
+            if saved is None:
+                _cv._GATE_REVERIFIERS.pop(target, None)   # revert the injection
+            else:
+                _cv._GATE_REVERIFIERS[target] = saved
+        restored = _all_reject(c1verify.verify(well))
+        assert leaked and detected, "injected unconditional ACCEPT slipped past the guard (vacuous green)"
+        assert restored, "removing the injection did not restore fail-closed (not revert-proof)"
+        return detected
     finally:
-        if saved is None:
-            _cv._GATE_REVERIFIERS.pop(target, None)   # revert the injection
-        else:
-            _cv._GATE_REVERIFIERS[target] = saved
-    restored = _all_reject(c1verify.verify(well))
-    assert leaked and detected, "injected unconditional ACCEPT slipped past the guard (vacuous green)"
-    assert restored, "removing the injection did not restore fail-closed (not revert-proof)"
-    return detected
+        _cv.GATES = saved_gates   # canary 주입 원복 (미주입 시 no-op)
 
 
 def verify(backend, cid):
