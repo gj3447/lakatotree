@@ -110,6 +110,61 @@ def anchor_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool:
         return False
 
 
+def _safe_verify(anchor: dict, expect_receipt_sha: str, witness_allowlist: list[str]) -> bool:
+    """예외 없이 앵커 유효성만 bool 로 (정족수 카운트용 헬퍼)."""
+    try:
+        verify_temporal_anchor(anchor, expect_receipt_sha=expect_receipt_sha,
+                               witness_allowlist=witness_allowlist)
+        return True
+    except AnchorInvalid:
+        return False
+
+
+def verify_temporal_quorum(anchors: list, *, expect_receipt_sha: str,
+                           witness_allowlist: list[str], threshold: int = 1) -> str:
+    """k-of-N 증인 정족수 (심화 D1, c1verify 'witness quorum' 실현) → 유효 앵커 max gen_time 반환.
+
+    담합 저항: 단일 증인이 아니라 *서로 다른* 증인 threshold 명이 각각 같은 digest 를 서명해야 성립.
+    같은 witness_did 중복서명은 1로만 계상(Sybil 봉쇄, distinct_signer_count 정신). 유효 서명이
+    threshold 미만이면 AnchorInvalid.
+
+    반환 = 유효 앵커들 gen_time 의 *최댓값*(가장 보수적 T1): k 증인 전원이 그 시각 이전에 예측이
+    존재했음에 독립 동의 → max(Ti) ≤ T2 여야 모두가 판정 이전 커밋을 확인한 것. 단일 증인이 이른
+    시각을 주장해도 정족수가 안 차면 소용없다(k 명 독립 동의 요구)."""
+    if threshold < 1:
+        raise AnchorInvalid("threshold 는 ≥1")
+    valid_by_witness: dict[str, str] = {}
+    for a in (anchors or []):
+        try:
+            gt = verify_temporal_anchor(a, expect_receipt_sha=expect_receipt_sha,
+                                        witness_allowlist=witness_allowlist)
+        except AnchorInvalid:
+            continue
+        w = str(a.get("witness_did") or "").strip()
+        # 같은 증인 다중서명 = 1 계상 (가장 이른 gen_time 유지는 무의미 — distinct 카운트가 핵심)
+        if w not in valid_by_witness:
+            valid_by_witness[w] = gt
+    if len(valid_by_witness) < threshold:
+        raise AnchorInvalid(
+            f"증인 정족수 미달: 유효 distinct 증인 {len(valid_by_witness)} < threshold {threshold}")
+    return max(valid_by_witness.values())
+
+
+def has_valid_temporal_quorum(pred_anchors: list, verdict_gen_time: str, *,
+                              pred_receipt_sha: str, witness_allowlist: list[str],
+                              threshold: int = 1) -> bool:
+    """VAL L3 정족수 게이트 (심화 D1) — 예측 앵커가 k-of-N 정족수를 채우고 max(T1) ≤ T2(verdict) 인가.
+
+    단일 증인(threshold=1)이면 기존 has_valid_temporal_witness 와 동치(하위호환). threshold≥2 는
+    담합 저항 강화. 어느 하나라도 실패 = False(부재≠반증이되 L3 승급 없음, dead-σ)."""
+    try:
+        t1 = verify_temporal_quorum(pred_anchors, expect_receipt_sha=pred_receipt_sha,
+                                    witness_allowlist=witness_allowlist, threshold=threshold)
+    except AnchorInvalid:
+        return False
+    return anchor_ordering_ok(t1, verdict_gen_time)
+
+
 def has_valid_temporal_witness(pred_anchor: dict | None, verdict_anchor: dict | None, *,
                                pred_receipt_sha: str, verdict_receipt_sha: str,
                                witness_allowlist: list[str]) -> bool:

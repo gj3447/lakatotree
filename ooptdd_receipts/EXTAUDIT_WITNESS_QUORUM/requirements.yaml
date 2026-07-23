@@ -1,0 +1,31 @@
+# 심화 D1 (2026-07-23) — k-of-N 증인 정족수 ooptdd 영수증.
+# hermetic: in_process(zero-infra). emit-adapter=extaudit_witness_quorum_receipt.verify 가 실제
+# lakatos.temporal.verify_temporal_quorum 을 Ed25519 증인으로 구동.
+# 음성 오라클: 단일 증인/Sybil 다중서명/비허가 증인이 threshold 를 채우면 assert 가 깨진다.
+name: lakatotree-extaudit-witness-quorum
+target:
+  mode: in_process
+  callable: extaudit_witness_quorum_receipt:verify   # verify(backend, cid)
+  backend: memory
+  root: "."
+
+requirements:
+  - id: WQ-1
+    description: 정족수 충족 — distinct 증인 ≥ threshold 가 같은 spec 서명 시 max(T1) 반환, threshold=1 하위호환
+    gate:
+      - {event: quorum_met_returns_max_t1, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_WITNESS_QUORUM:quorum_met_returns_max_t1
+      source: extaudit_witness_quorum_receipt.py
+      symbol: verify
+      must_emit: quorum_met_returns_max_t1
+
+  - id: WQ-2
+    description: 담합 저항 — 단일 증인/같은 증인 다중서명(Sybil=1 계상)/비허가 증인은 threshold 2 미달로 거부
+    gate:
+      - {event: collusion_resisted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EXTAUDIT_WITNESS_QUORUM:collusion_resisted
+      source: extaudit_witness_quorum_receipt.py
+      symbol: verify
+      must_emit: collusion_resisted

@@ -123,6 +123,7 @@ class TreeService:
             layout_owner_did=spec.layout_owner_did,
             layout_sig=spec.layout_sig,
             witness_dids=(None if spec.witness_dids is None else tuple(spec.witness_dids)),
+            witness_threshold=spec.witness_threshold,
             cycle_budget=spec.cycle_budget,
         ))
 

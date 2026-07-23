@@ -116,7 +116,7 @@ def test_s7b_temporal_anchor_persisted():
            "script_sha": None, "verb": "register_prediction"}
     cert = build_write_cert(_S[2], cmd); cert["signer_did"] = DID[2]
     spec = PredictionIn(metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0)
-    _sd = {k: v for k, v in spec.model_dump().items() if k not in ("write_cert", "temporal_anchor")}
+    _sd = {k: v for k, v in spec.model_dump().items() if k not in ("write_cert", "temporal_anchor", "temporal_anchors")}
     sdg = spec_digest(_sd)
     anchor = build_temporal_anchor(_S[3], sdg, "2026-07-23T05:00:00+00:00", DID[3])
     out = _svc(kg).register_prediction("T", "n", PredictionIn(

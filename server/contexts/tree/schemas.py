@@ -104,6 +104,8 @@ class CreateTreeIn(BaseModel):
     # EXTAUDIT S7b: 외부 시간증인 allow-list(did:key) — 예측 spec 앵커를 서명하는 out-of-band k-of-N 증인.
     #   비면 temporal witness 불성립(solo box, L3 불가). attestor_dids 와 동일 非클로버.
     witness_dids: list[str] | None = None
+    # 심화 D1: 증인 정족수 k — L3 은 distinct 증인 ≥k 가 예측 spec 을 서명해야(담합 저항). 기본 1(하위호환).
+    witness_threshold: int | None = Field(None, ge=1)
     # PROM16 S1/S5(2026-07-15): 루프-경계 예산 — 이 트리가 받을 수 있는 *판결* 상한.
     #   세는 것 = scored_nodes(판결받은 노드 수) — 인메모리 카운터가 아니라 저장소 count 로 파생(재시작 내구).
     #   막는 것 = 판결을 민팅하는 verb 전부(run_cycle / submit_test_result / set_verdict) → verb 교체 우회 없음.
@@ -145,6 +147,9 @@ class PredictionIn(BaseModel):
     write_cert: WriteCertIn | None = None
     # EXTAUDIT S7b: 예측 sha 에 대한 외부 증인 앵커(T1). witness_dids 선언 트리에서 L3 게이트 입력.
     temporal_anchor: dict | None = None
+    # 심화 D1: k-of-N 증인 정족수 — 서로 다른 증인 여러 명의 앵커 리스트(담합 저항). 단일 anchor 는
+    #   [temporal_anchor] 로 흡수(하위호환). tree.witness_threshold 만큼 distinct 증인 필요.
+    temporal_anchors: list[dict] | None = None
 
 
 class CertCommandIn(BaseModel):

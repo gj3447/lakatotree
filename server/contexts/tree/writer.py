@@ -192,6 +192,7 @@ class TreeKgWriter:
         layout_owner_did: str | None = None,
         layout_sig: str | None = None,
         witness_dids: Sequence[str] | None = None,
+        witness_threshold: int | None = None,
         cycle_budget: int | None = None,
     ) -> WriteSummary:
         # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
@@ -228,7 +229,10 @@ class TreeKgWriter:
                          ELSE $layout_sig END,
                        t.witness_dids = CASE
                          WHEN $witness_dids IS NULL THEN t.witness_dids
-                         ELSE $witness_dids END
+                         ELSE $witness_dids END,
+                       t.witness_threshold = CASE
+                         WHEN $witness_threshold IS NULL THEN t.witness_threshold
+                         ELSE $witness_threshold END
                    SET t.cycle_budget = CASE
                          WHEN $cycle_budget IS NULL THEN t.cycle_budget
                          ELSE $cycle_budget END
@@ -253,6 +257,7 @@ class TreeKgWriter:
                     layout_owner_did=layout_owner_did,
                     layout_sig=layout_sig,
                     witness_dids=(None if witness_dids is None else list(witness_dids)),
+                    witness_threshold=witness_threshold,
                     # PROM16: 예산도 tier/attestor 와 같은 非클로버 규율 — None(미선언)=기존값 불변
                     #   (예산 없는 upsert 가 선언된 상한을 조용히 지우면 루프 상한이 무력화된다).
                     #   ★단 非클로버는 거기까지다 — tier 와 달리 단조 ratchet 이 *없다*(위 CASE 는 상향만

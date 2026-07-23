@@ -100,7 +100,7 @@ def verify(backend, cid):
     # (2) S7b — 유효 앵커 persist / digest 밀반입 422.
     kg = _Kg(_tree())
     spec = PredictionIn(**base)
-    sd = {k: v for k, v in spec.model_dump().items() if k not in ("write_cert", "temporal_anchor")}
+    sd = {k: v for k, v in spec.model_dump().items() if k not in ("write_cert", "temporal_anchor", "temporal_anchors")}
     good = build_temporal_anchor(_S[3], spec_digest(sd), "2026-07-23T07:00:00+00:00", DID[3])
     out2 = _svc(kg).register_prediction("T", "n", PredictionIn(
         **base, write_cert=_cert(_S[2], DID[2]), temporal_anchor=good))
