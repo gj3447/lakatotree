@@ -10,6 +10,21 @@ distribution.
 
 ## [Unreleased]
 
+### Fixed
+
+- Scoped `OpenQuestion` identity per tree: the `MERGE` key was a global `{name}`,
+  so two trees opening the same `qname` silently shared one node (body
+  last-write-wins, close/`n_visits` leaking across trees — observed in production
+  as `judgment-ledger-repair-20260723`). Writers (`service.open_question`,
+  `writer.add_node` M4 edge materialization, `writer.upsert_questions`) and the
+  programme sync script now merge on the composite `(tree, name)`, and the
+  required constraint changes from `lkt_open_question_name_unique` (global
+  UNIQUE on `name`) to `lkt_open_question_tree_name_key` (NODE KEY on
+  `(tree, name)`). Existing graphs need
+  `scripts/migrate_open_question_tree_scope_20260723.cypher` (stamps `tree`,
+  splits shared nodes per tree, re-points `RAISES_QUESTION`, swaps the
+  constraint) before the new constraint can be created.
+
 ### Added
 
 - Citation metadata for the software and its author.

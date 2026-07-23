@@ -401,12 +401,13 @@ MERGE (c)-[:BRANCHED_FROM]->(p)
         dict(rows=_lineage_records(prog, node_prefix, rival_infix)),
     )
 
-    # 4) frontier — PrismFinding:OpenQuestion, MERGE on name, MERGE (h)-[:HAS_FRONTIER]->(q)
+    # 4) frontier — PrismFinding:OpenQuestion, MERGE on (hub tree, name), MERGE (h)-[:HAS_FRONTIER]->(q)
+    #   2026-07-23: name 전역 MERGE → (tree, name) 복합키(서버 writer 와 동일 수리 — 허브 간同名 충돌 봉쇄)
     b.add(
         """
 MATCH (h:KnowledgeHub:LakatosTree {name:$hub_name})
 UNWIND $rows AS row
-MERGE (q:PrismFinding:OpenQuestion {name:row.name})
+MERGE (q:PrismFinding:OpenQuestion {name:row.name, tree:$hub_name})
 SET q.status = row.status,
     q.body = row.body,
     q.domain = row.domain,

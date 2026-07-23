@@ -99,4 +99,4 @@ def test_mutation_service_upsert_tree_writes_tree_nodes_edges_and_questions():
     assert any("MERGE (t:LakatosTree {name:$tree})" in q for q in cyphers)
     assert any("MERGE (e:LakatosNode:PrismExperiment" in q for q in cyphers)
     assert any("MERGE (e)-[r:BRANCHED_FROM]->(p)" in q for q in cyphers)
-    assert any("MERGE (qn:OpenQuestion {name:row.qname})" in q for q in cyphers)
+    assert any("MERGE (qn:OpenQuestion {name:row.qname, tree:$tree})" in q for q in cyphers)

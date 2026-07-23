@@ -154,9 +154,12 @@ class TreeService:
         return {"ok": True, "tree": name, "deleted_nodes": n, "cascade": cascade}
 
     def open_question(self, name: str, question: QuestionIn) -> dict:
+        # 2026-07-23 트리-스코프 수리: MERGE 키를 (tree, name) 복합으로 — 종전 {name} 전역 MERGE 는
+        # 두 트리가 같은 qname 을 쓰면 *하나의* OpenQuestion 을 공유해 body last-write-wins 덮어씀·
+        # close/n_visits 오염이 트리를 걸쳐 새는 결함이었다(실충돌 관측: judgment-ledger-repair-20260723).
         self.kg(
             """MATCH (t:LakatosTree {name:$tree})
-          MERGE (qn:OpenQuestion {name:$qn})
+          MERGE (qn:OpenQuestion {name:$qn, tree:$tree})
           SET qn.body=$body, qn.status='OPEN', qn.created_at=$ts,
               qn.expected_gain=$expected_gain, qn.cost=$cost,
               qn.n_visits=coalesce(qn.n_visits, 0)

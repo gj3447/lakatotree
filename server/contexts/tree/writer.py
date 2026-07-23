@@ -142,7 +142,7 @@ class TreeKgWriter:
             ops.append(
                 (
                     """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                       MERGE (q:OpenQuestion {name:$qname})
+                       MERGE (q:OpenQuestion {name:$qname, tree:$tree})
                          ON CREATE SET q.status='OPEN', q.created_at=$ts
                        MERGE (e)-[:RAISES_QUESTION]->(q)
                        MERGE (t)-[:HAS_FRONTIER]->(q)""",
@@ -346,7 +346,7 @@ class TreeKgWriter:
                 (
                     """MATCH (t:LakatosTree {name:$tree})
                        UNWIND $rows AS row
-                       MERGE (qn:OpenQuestion {name:row.qname})
+                       MERGE (qn:OpenQuestion {name:row.qname, tree:$tree})
                        SET qn.body=row.body, qn.status='OPEN', qn.created_at=row.ts,
                            qn.expected_gain=row.expected_gain, qn.cost=row.cost,
                            qn.n_visits=coalesce(qn.n_visits, 0)
