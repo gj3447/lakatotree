@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -13,6 +14,11 @@ from examples import ooptdd_efficacy_20260723_programme as programme
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "examples" / "ooptdd_efficacy_20260723_programme.py"
+
+
+def _bound_input(name: str) -> dict:
+    path = ROOT / name
+    return {"name": name, "source": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
 def _record(*, measured: float = 0.0) -> dict:
@@ -37,13 +43,7 @@ def _record(*, measured: float = 0.0) -> dict:
         },
         "provenance": {
             "grounded": True,
-            "inputs": [
-                {
-                    "name": "recomputed-integrity-report",
-                    "source": "artifacts/integrity-report.json",
-                    "sha256": "digest-supplied-by-evidence-producer",
-                }
-            ],
+            "inputs": [_bound_input("README.md")],
         },
         "harness": {
             "script": "scripts/build_ooptdd_efficacy_evidence.py",
@@ -70,6 +70,7 @@ def test_unfavourable_engine_verdict_is_not_rewritten_or_treated_as_cli_failure(
     assert result["verdict"] == "rejected"
 
     path = tmp_path / "record.json"
+    (tmp_path / "README.md").write_bytes((ROOT / "README.md").read_bytes())
     path.write_text(json.dumps(record), encoding="utf-8")
     completed = subprocess.run(
         [sys.executable, str(SCRIPT), str(path)],
@@ -85,6 +86,7 @@ def test_unfavourable_engine_verdict_is_not_rewritten_or_treated_as_cli_failure(
 def test_cli_bytes_are_independent_of_input_path_and_json_formatting(tmp_path):
     compact = tmp_path / "compact.json"
     pretty = tmp_path / "pretty.json"
+    (tmp_path / "README.md").write_bytes((ROOT / "README.md").read_bytes())
     compact.write_text(json.dumps(_record(), separators=(",", ":")), encoding="utf-8")
     pretty.write_text(json.dumps(_record(), indent=4), encoding="utf-8")
 
@@ -159,14 +161,17 @@ def test_predicted_metric_may_be_supplied_by_finite_derived_measurement():
 
 def test_distinct_preregistered_novel_measurement_can_make_progressive():
     record = _record()
+    primary_sha = _bound_input("README.md")["sha256"]
+    novel_input = _bound_input("requirements.txt")
+    record["provenance"]["inputs"].append(novel_input)
     record["measurement"].update(
-        primary_source_sha256="a" * 64,
+        primary_source_sha256=primary_sha,
         novel_measurement={
             "metric": "tier0_required_oracle_match_rate",
             "direction": "higher",
             "threshold": 1.0,
             "value": 1.0,
-            "source_sha256": "b" * 64,
+            "source_sha256": novel_input["sha256"],
         },
     )
     result = programme.consume_record(record)
@@ -178,19 +183,36 @@ def test_distinct_preregistered_novel_measurement_can_make_progressive():
 
 def test_novel_measurement_must_be_a_distinct_bound_artifact():
     record = _record()
+    primary_sha = _bound_input("README.md")["sha256"]
     record["measurement"].update(
-        primary_source_sha256="a" * 64,
+        primary_source_sha256=primary_sha,
         novel_measurement={
             "metric": "tier0_required_oracle_match_rate",
             "direction": "higher",
             "threshold": 1.0,
             "value": 1.0,
-            "source_sha256": "a" * 64,
+            "source_sha256": primary_sha,
         },
     )
     result = programme.consume_record(record)
     assert result["status"] == "invalid"
     assert "distinct source SHA-256" in " ".join(result["errors"])
+
+
+def test_missing_or_hash_forged_provenance_never_reaches_judge(monkeypatch):
+    record = _record()
+    record["provenance"]["inputs"][0].update(
+        source="definitely-missing.json",
+        sha256="0" * 64,
+    )
+
+    def forbidden_call(_record):  # pragma: no cover - a call is the failure
+        raise AssertionError("unbound evidence reached record_judge")
+
+    monkeypatch.setattr(programme, "judge_record", forbidden_call)
+    result = programme.consume_record(record)
+    assert result["status"] == "invalid"
+    assert "does not exist" in " ".join(result["errors"])
 
 
 def test_non_finite_or_boolean_aligned_values_are_rejected():

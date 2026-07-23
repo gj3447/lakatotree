@@ -17,6 +17,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -119,7 +120,60 @@ def _novel_measurement_error(record: dict[str, Any]) -> str | None:
     return None
 
 
-def validation_errors(record: object) -> list[str]:
+def _artifact_binding_errors(record: dict[str, Any], artifact_root: Path) -> list[str]:
+    """Verify every provenance input from bytes, not the producer's grounded flag."""
+    errors: list[str] = []
+    root = artifact_root.resolve()
+    provenance = record.get("provenance") or {}
+    inputs = provenance.get("inputs") if isinstance(provenance, Mapping) else None
+    if not isinstance(inputs, list) or not inputs:
+        return ["provenance.inputs must be a non-empty list of bound artifacts"]
+    bound_hashes: set[str] = set()
+    for index, item in enumerate(inputs):
+        if not isinstance(item, Mapping):
+            errors.append(f"provenance.inputs[{index}] must be an object")
+            continue
+        source = item.get("source")
+        expected = item.get("sha256")
+        if not isinstance(source, str) or not source or Path(source).is_absolute():
+            errors.append(f"provenance.inputs[{index}].source must be a relative path")
+            continue
+        path = (root / source).resolve()
+        if path != root and root not in path.parents:
+            errors.append(f"provenance.inputs[{index}] escapes artifact root")
+            continue
+        if (
+            not isinstance(expected, str)
+            or len(expected) != 64
+            or any(char not in "0123456789abcdef" for char in expected)
+        ):
+            errors.append(f"provenance.inputs[{index}].sha256 must be lowercase 64-hex")
+            continue
+        if not path.is_file():
+            errors.append(f"provenance input does not exist: {source}")
+            continue
+        observed = hashlib.sha256(path.read_bytes()).hexdigest()
+        if observed != expected:
+            errors.append(f"provenance input hash mismatch: {source}")
+            continue
+        bound_hashes.add(observed)
+
+    measurement = record.get("measurement") or {}
+    if isinstance(measurement, Mapping):
+        primary_sha = measurement.get("primary_source_sha256")
+        novel = measurement.get("novel_measurement")
+        if primary_sha is not None and primary_sha not in bound_hashes:
+            errors.append("primary_source_sha256 does not bind a verified provenance input")
+        if isinstance(novel, Mapping):
+            novel_sha = novel.get("source_sha256")
+            if novel_sha not in bound_hashes:
+                errors.append("novel source_sha256 does not bind a verified provenance input")
+            if primary_sha == novel_sha:
+                errors.append("primary and novel sources resolve to the same artifact hash")
+    return errors
+
+
+def validation_errors(record: object, *, artifact_root: Path = _ROOT) -> list[str]:
     """Apply the canonical contract plus the programme's fail-closed guards."""
     if not isinstance(record, dict):
         return ["evidence record must be a JSON object"]
@@ -166,30 +220,38 @@ def validation_errors(record: object) -> list[str]:
     novelty_error = _novel_measurement_error(record)
     if novelty_error:
         errors.append(novelty_error)
+    errors.extend(_artifact_binding_errors(record, artifact_root))
 
     # Preserve first occurrence while keeping stable validator/path order.
     return list(dict.fromkeys(errors))
 
 
-def consume_record(record_or_path: Mapping[str, Any] | str | Path) -> dict[str, Any]:
+def consume_record(
+    record_or_path: Mapping[str, Any] | str | Path,
+    *,
+    artifact_root: Path | None = None,
+) -> dict[str, Any]:
     """Validate evidence and derive a timestamp-free engine judgement.
 
     Invalid evidence never reaches ``judge_record``.  ``status='judged'`` means
     the engine ran; the resulting verdict may still be rejected or equivalent.
     """
     if isinstance(record_or_path, (str, Path)):
+        record_path = Path(record_or_path)
         try:
-            record: object = load_record(record_or_path)
+            record: object = load_record(record_path)
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             return {
                 "schema": OUTPUT_SCHEMA,
                 "status": "invalid",
                 "errors": [f"unreadable evidence record: {type(exc).__name__}"],
             }
+        resolved_artifact_root = artifact_root or record_path.resolve().parent
     else:
         record = dict(record_or_path)
+        resolved_artifact_root = artifact_root or _ROOT
 
-    errors = validation_errors(record)
+    errors = validation_errors(record, artifact_root=resolved_artifact_root)
     if errors:
         result: dict[str, Any] = {
             "schema": OUTPUT_SCHEMA,
@@ -287,8 +349,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Fail-closed LakatoTree consumer for an ooptdd efficacy evidence record"
     )
     parser.add_argument("record", type=Path)
+    parser.add_argument("--artifact-root", type=Path)
     args = parser.parse_args(argv)
-    result = consume_record(args.record)
+    result = consume_record(args.record, artifact_root=args.artifact_root)
     print(canonical_json(result))
     # A rejected/equivalent verdict is still a successful, honest judgement.
     # Only malformed evidence or an engine abstention makes the adapter fail.
