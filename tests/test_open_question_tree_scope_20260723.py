@@ -110,3 +110,20 @@ def test_composite_unique_constraint_satisfies():
     ])
     assert "OpenQuestion.(tree+name)" in report["present"]
     assert "OpenQuestion.(tree+name)" not in report["missing"]
+
+
+def test_open_question_missing_tree_fails_loud():
+    """나무 미존재 시 404 — 종전엔 MATCH 0행 침묵 no-op 인데 ok:true (실관측:
+    SelfDev_20260612 오타 트리에 등록이 '성공' 으로 보고됐다가 KG에 무존재).
+    close_question 의 404 와 대칭으로 봉합."""
+    import pytest
+    from fastapi import HTTPException
+
+    class _EmptyKg:
+        def __call__(self, cypher, **params):
+            return []  # MATCH 0행 = 나무 미존재
+
+    svc = TreeService(kg=_EmptyKg(), kg_tx=None, hist=lambda *a, **k: None, pg=None)
+    with pytest.raises(HTTPException) as exc:
+        svc.open_question("NoSuchTree", QuestionIn(qname="q", body="b"))
+    assert exc.value.status_code == 404

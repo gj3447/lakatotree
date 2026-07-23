@@ -114,7 +114,9 @@ def test_outbox_status_endpoint_reports_pending_depth(monkeypatch):
 def test_auth_allows_get_and_correct_token(monkeypatch):
     app = load_app()
     monkeypatch.setenv('LAKATOS_API_TOKEN', 'secret')
-    monkeypatch.setattr(app, 'kg', lambda *a, **k: [])
+    monkeypatch.setattr(app, 'kg', lambda q, **k: [{'name': 'q1'}] if 'OpenQuestion' in q else [])
+    # 2026-07-23: open_question fail-loud(나무 미존재 404) — 이 테스트의 관심은 auth 라
+    # 질문 MERGE 만 성공 행을 돌려 트리 존재를 흉내(종전 범용 [] fake 는 404 를 유발)
     monkeypatch.setattr(app, 'hist', lambda *a, **k: None)
     c = TestClient(app.app)
     assert c.get('/api/trees').status_code == 200          # GET 은 무인증 통과
