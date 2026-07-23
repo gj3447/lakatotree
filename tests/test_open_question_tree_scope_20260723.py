@@ -6,8 +6,9 @@ close/n_visits 가 다른 트리 frontier 에 새어나감. 제약 lkt_open_ques
 UNIQUE)가 이 공유를 구조적으로 강제했다.
 
 수리: MERGE 키를 (tree, name) 복합으로 — service.open_question / writer.add_node(M4) /
-writer.upsert_questions / sync 스크립트 전부. 제약은 (tree, name) NODE KEY 로 교체(선행
+writer.upsert_questions / sync 스크립트 전부. 제약은 (tree, name) 복합 UNIQUE 로 교체(선행
 마이그레이션: scripts/migrate_open_question_tree_scope_20260723.cypher).
+NODE KEY 는 Enterprise 전용이라 Community 호환 UNIQUE — tree 세팅은 writer MERGE 키가 보장.
 
 읽기 경로(close_question, judgement_service closes, repository/metrics)는 원래 (t)-[:HAS_FRONTIER]->(q)
 엣지로 트리-스코프돼 있어 무수정 — writer 키만 문제였다.
@@ -98,11 +99,11 @@ def test_legacy_global_unique_constraint_no_longer_satisfies():
     ])
     assert report["ok"] is False
     assert "OpenQuestion.(tree+name)" in report["missing"]
-    assert any("IS NODE KEY" in c and "n.tree" in c for c in report["migration_cypher"])
+    assert any("IS UNIQUE" in c and "n.tree" in c for c in report["migration_cypher"])
 
 
-def test_composite_node_key_constraint_satisfies():
-    """(tree, name) NODE KEY 가 있으면 OpenQuestion 요구 제약 충족."""
+def test_composite_unique_constraint_satisfies():
+    """(tree, name) 복합 UNIQUE 가 있으면 OpenQuestion 요구 제약 충족."""
     report = diagnose_required_constraints([
         {"name": "lkt_open_question_tree_name_key", "labelsOrTypes": ["OpenQuestion"],
          "properties": ["tree", "name"]},

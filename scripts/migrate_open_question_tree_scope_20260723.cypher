@@ -46,10 +46,11 @@ MATCH (q:OpenQuestion)
 WHERE q.tree IS NULL AND NOT (:LakatosTree)-[:HAS_FRONTIER]->(q)
 SET q.tree = '__detached__';
 
-// 4) 제약 교체 — name 전역 UNIQUE 폐기, (tree, name) NODE KEY 도입
+// 4) 제약 교체 — name 전역 UNIQUE 폐기, (tree, name) 복합 UNIQUE 도입
+//    (NODE KEY 는 Enterprise 전용 — Community 에서는 복합 UNIQUE; tree 존재는 writer 가 보장)
 DROP CONSTRAINT lkt_open_question_name_unique IF EXISTS;
 CREATE CONSTRAINT lkt_open_question_tree_name_key IF NOT EXISTS
-FOR (n:OpenQuestion) REQUIRE (n.tree, n.name) IS NODE KEY;
+FOR (n:OpenQuestion) REQUIRE (n.tree, n.name) IS UNIQUE;
 
 // 5) 검증 (읽기 전용)
 // MATCH (q:OpenQuestion) WHERE q.tree IS NULL RETURN count(q) AS remaining_null;   // 0 이어야 함
