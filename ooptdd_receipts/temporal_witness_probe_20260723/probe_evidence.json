@@ -1,0 +1,199 @@
+{
+  "probe": "q-extaudit-temporal-witness-20260722 live quorum probe",
+  "tree": "LakatoTree_TemporalWitnessProbe_20260723",
+  "server": "http://localhost:55170",
+  "generated_at": "2026-07-23T06:13:04.873298+00:00",
+  "witness_dids": [
+    "did:key:z6MkjyorKWtzJs1GwibfkVyuCtbwTNqjfekUuZXLGsdQSkMB",
+    "did:key:z6MkvddnK1nqo5fDDgDqs94w59TpbkWmyZNTutZxiHuvzM5i"
+  ],
+  "outsider_did": "did:key:z6MkrepMiCKXCwdT59fJwnm6soxWuBCLEZkM4Zvgw17htMgS",
+  "witness_threshold": 2,
+  "honesty_boundary": "solo box 메커니즘 실증 — 시각의 진짜 외부성은 키 소유 구조 몫",
+  "scenarios": [
+    {
+      "name": "happy_2of2",
+      "tag": "n_happy_r3",
+      "ok": true,
+      "guards": [
+        {
+          "guard": "prediction_status",
+          "expected": 200,
+          "actual": 200,
+          "ok": true
+        },
+        {
+          "guard": "pred_anchor_verified",
+          "expected": true,
+          "actual": true,
+          "ok": true
+        },
+        {
+          "guard": "submit_status",
+          "expected": 200,
+          "actual": 200,
+          "ok": true
+        },
+        {
+          "guard": "node.pred_anchor_verified",
+          "expected": true,
+          "actual": true,
+          "ok": true
+        },
+        {
+          "guard": "node.pred_anchor_quorum",
+          "expected": 2,
+          "actual": 2,
+          "ok": true
+        },
+        {
+          "guard": "node.pred_anchor_threshold",
+          "expected": 2,
+          "actual": 2,
+          "ok": true
+        },
+        {
+          "guard": "node.temporal_witness_verified",
+          "expected": true,
+          "actual": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "sybil_same_witness",
+      "tag": "n_sybil_r3",
+      "ok": true,
+      "guards": [
+        {
+          "guard": "prediction_status",
+          "expected": 422,
+          "actual": 422,
+          "ok": true
+        },
+        {
+          "guard": "rejection_reason",
+          "expected": "4xx body",
+          "actual": "{'detail': 'temporal 정족수 무효: 증인 정족수 미달: 유효 distinct 증인 1 < threshold 2'}",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "outsider_witness",
+      "tag": "n_outsider_r3",
+      "ok": true,
+      "guards": [
+        {
+          "guard": "prediction_status",
+          "expected": 422,
+          "actual": 422,
+          "ok": true
+        },
+        {
+          "guard": "rejection_reason",
+          "expected": "4xx body",
+          "actual": "{'detail': 'temporal 정족수 무효: 증인 정족수 미달: 유효 distinct 증인 0 < threshold 2'}",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "digest_mismatch",
+      "tag": "n_digest_r3",
+      "ok": true,
+      "guards": [
+        {
+          "guard": "prediction_status",
+          "expected": 422,
+          "actual": 422,
+          "ok": true
+        },
+        {
+          "guard": "rejection_reason",
+          "expected": "4xx body",
+          "actual": "{'detail': 'temporal 정족수 무효: 증인 정족수 미달: 유효 distinct 증인 0 < threshold 2'}",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "future_gen_time",
+      "tag": "n_future_r3",
+      "ok": true,
+      "guards": [
+        {
+          "guard": "prediction_status",
+          "expected": 200,
+          "actual": 200,
+          "ok": true
+        },
+        {
+          "guard": "pred_anchor_verified",
+          "expected": true,
+          "actual": true,
+          "ok": true
+        },
+        {
+          "guard": "submit_status",
+          "expected": 200,
+          "actual": 200,
+          "ok": true
+        },
+        {
+          "guard": "node.pred_anchor_verified",
+          "expected": true,
+          "actual": true,
+          "ok": true
+        },
+        {
+          "guard": "node.temporal_witness_verified",
+          "expected": false,
+          "actual": false,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "no_anchor",
+      "tag": "n_noanchor_r3",
+      "ok": true,
+      "guards": [
+        {
+          "guard": "prediction_status",
+          "expected": 200,
+          "actual": 200,
+          "ok": true
+        },
+        {
+          "guard": "pred_anchor_verified",
+          "expected": false,
+          "actual": false,
+          "ok": true
+        },
+        {
+          "guard": "submit_status",
+          "expected": 200,
+          "actual": 200,
+          "ok": true
+        },
+        {
+          "guard": "node.pred_anchor_verified",
+          "expected": null,
+          "actual": null,
+          "ok": true
+        },
+        {
+          "guard": "node.temporal_witness_verified",
+          "expected": false,
+          "actual": false,
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "tree_create": {
+    "status": 200,
+    "ok": true
+  }
+}
