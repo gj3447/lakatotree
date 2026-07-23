@@ -30,7 +30,11 @@ fi
 
 set -a; . "$ENV_FILE"; set +a
 LOG="${LAKATOS_SERVER_LOG:-$HOME/.config/lakatotree/server.log}"
-nohup .venv/bin/python -m uvicorn --app-dir server app:app --host 127.0.0.1 --port 55170 \
+mkdir -p "$(dirname "$LOG")"   # 로그 디렉 부재 시 nohup 리다이렉트 실패(2026-07-23 LXC301 실측)
+# 바인드는 auth_posture 와 같은 LAKATOS_BIND_HOST 규약 — 기본 loopback(안전),
+# LXC/VM 처럼 외부 socat relay 가 붙는 배포는 env 에 0.0.0.0 선언(하드코딩 시 socat 경유 접속 사망).
+BIND_HOST="${LAKATOS_BIND_HOST:-127.0.0.1}"
+nohup .venv/bin/python -m uvicorn --app-dir server app:app --host "$BIND_HOST" --port 55170 \
   > "$LOG" 2>&1 &
 disown
 
