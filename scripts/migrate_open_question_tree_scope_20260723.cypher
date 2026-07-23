@@ -3,8 +3,9 @@
 // 복합키로 변경됨)에 따라, 기존 KG 의 OpenQuestion 노드에 tree 를 박고 제약을 교체한다.
 // 실충돌 관측: judgment-ledger-repair-20260723 (HSWM 2트리 공유 노드, body 덮어씀).
 //
-// 실행 순서: 0(전수조사, 읽기) → 1 → 2 → 3 → 4(제약 교체). 4 이전에 q.tree IS NULL 이 남아 있으면
-// NODE KEY 생성이 실패하므로 0을 다시 돌려 잔여를 확인할 것.
+// 실행 순서: 0(전수조사, 읽기) → 1 → 2 → 3(고아 귀속) → 4(제약 교체) → 5(검증).
+// 주의: NODE KEY(Enterprise)가 아니라 복합 UNIQUE(Community)를 쓰므로 tree 없는 노드가
+// 남아 있어도 4는 성공한다(제약 면제) — 무리하게 전원 마킹할 필요 없음. 실적용 교훈은 3번 주석.
 
 // 0) 전수조사 — tree 미보유 질문과 공유(충돌) 질문 목록 (읽기 전용)
 // MATCH (q:OpenQuestion) WHERE q.tree IS NULL
@@ -41,10 +42,16 @@ MATCH (q2:OpenQuestion {name: q.name, tree: t.name})
 CREATE (e)-[:RAISES_QUESTION]->(q2)
 DELETE r;
 
-// 3) 고아 질문(HAS_FRONTIER 없음) — NODE KEY 생성 가능하도록 마커 부여 (추후 수동 정리 대상)
-MATCH (q:OpenQuestion)
-WHERE q.tree IS NULL AND NOT (:LakatosTree)-[:HAS_FRONTIER]->(q)
-SET q.tree = '__detached__';
+// 3) 고아 처리 — ★교훈(2026-07-23 실적용): canonical KG 는 OpenQuestion 라벨을 여러 도메인이
+//    공유한다(Game/Lesson/Physics/UpperOntology 등 — question/displayName/mh_eid 스키마).
+//    이들에게 tree 를 박으면 외부 도메인 오염. 게다가 Community 복합 UNIQUE 는 tree 없는
+//    노드를 그냥 제약에서 면제하므로 일괄 마킹 자체가 불필요하다.
+//    따라서 고아는 두 갈래로만 처리:
+//    (a) 진짜 lakatotree 고아 — RAISES_QUESTION 으로 연결된 부모 노드의 트리를 귀속:
+MATCH (t:LakatosTree)-[:HAS_NODE]->(e:PrismExperiment)-[:RAISES_QUESTION]->(q:OpenQuestion)
+WHERE q.tree IS NULL
+SET q.tree = t.name;
+//    (b) 그 외(tree 없는 외부 도메인/무연결 노드)는 *건드리지 않는다* — 복합 UNIQUE 가 면제.
 
 // 4) 제약 교체 — name 전역 UNIQUE 폐기, (tree, name) 복합 UNIQUE 도입
 //    (NODE KEY 는 Enterprise 전용 — Community 에서는 복합 UNIQUE; tree 존재는 writer 가 보장)
@@ -53,6 +60,8 @@ CREATE CONSTRAINT lkt_open_question_tree_name_key IF NOT EXISTS
 FOR (n:OpenQuestion) REQUIRE (n.tree, n.name) IS UNIQUE;
 
 // 5) 검증 (읽기 전용)
-// MATCH (q:OpenQuestion) WHERE q.tree IS NULL RETURN count(q) AS remaining_null;   // 0 이어야 함
+// MATCH (q:OpenQuestion) RETURN count(q) AS total, count(q.tree) AS with_tree;
+// MATCH (q:OpenQuestion) WHERE q.tree IS NOT NULL
+//   WITH q.tree AS t, q.name AS n, count(*) AS c WHERE c > 1 RETURN t, n, c;   // 0 건이어야 함
 // SHOW CONSTRAINTS YIELD name, labelsOrTypes, properties
 //   WHERE 'OpenQuestion' IN labelsOrTypes RETURN name, properties;
