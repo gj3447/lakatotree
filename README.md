@@ -63,7 +63,7 @@ The diagram states the research-programme lifecycle, not a claim that the curren
 
 In the HSWM interpretation, applying HSWM means that agents attach to a shared causal-hypergraph network and act *through* it: an agent reads the current committed cut, proposes a versioned transition, executes an authorised operator, returns a producer-verdict-free receipt, receives an independently derived LakatoTree verdict, and is redispatched from the resulting cut. Merely writing results to Neo4j, Markdown, or an MCP server does not satisfy that definition.
 
-LakatoTree can host the scientific-policy part of that network and become its first reference implementation. BHGMAN is not required; it is one possible executor adapter. The minimal causal test is deliberately strict: with the same initial cut, changing only the verdict must change the next dispatch. The full design contract, current capability boundary, agent lifecycle, and vertical-slice acceptance tests are in [HSWM agent network](docs/HSWM_AGENT_NETWORK.md).
+LakatoTree can host the scientific-policy part of that network and become its first reference implementation. BHGMAN is not required; it is one possible executor adapter. The minimal causal test is deliberately strict: with the same initial cut, changing only the verdict must change the next dispatch. The full design contract, current capability boundary, agent lifecycle, and vertical-slice acceptance tests are in [HSWM agent network](docs/HSWM_AGENT_NETWORK.md). The separate [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md) records why this direction is worth one bounded experiment, the equal-compute baselines, primary metric, ablations, and conditions for pruning it.
 
 Programme-level layers add context without weakening that kernel rule:
 
@@ -182,6 +182,7 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 - **Start integrating:** [Consuming LakatoTree](docs/CONSUMING_LAKATOTREE.md)
 - **Understand the design:** [THEORY.md](THEORY.md) and [PIDNA](docs/PIDNA.md)
 - **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)
+- **Evaluate, continue, or prune it:** [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md)
 - **Inspect formal claims:** [formal/Pidna.lean](formal/Pidna.lean)
 - **Review measurement limits:** [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md)
 - **Read the philosophical rationale:** [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md)

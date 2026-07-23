@@ -176,6 +176,10 @@ operator, 하나의 evidence record, 하나의 LakatoTree verdict, 하나의 다
 연결한다. 그 vertical slice가 위 반사실 검사와 replay 검사를 통과한 뒤에만 분산
 agent와 외부 executor를 붙인다.
 
+왜 이 실험을 계속할 가치가 있는지, 무엇을 기존 연구와 구별해야 하는지, H1/H2,
+equal-compute 비교군, 단계별 go/no-go gate와 폐기 조건은
+[`HSWM_RESEARCH_PROGRAMME.md`](HSWM_RESEARCH_PROGRAMME.md)에 사전 명시한다.
+
 ## 범위 밖
 
 - agent의 모든 토큰이나 비공개 scratchpad를 그래프에 저장하는 것

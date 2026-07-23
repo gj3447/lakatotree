@@ -33,6 +33,10 @@ distribution.
   the next dispatch. The document also records that generic attachment,
   causal-cut commit, and automatic redispatch are design targets rather than
   current default-runtime capabilities; BHGMAN remains an optional executor.
+- A bounded HSWM research-programme decision contract with a primary
+  validated-progress-per-cost hypothesis, equal-compute baselines, a
+  non-hypergraph ablation, phased go/no-go gates, and explicit conditions for
+  pruning HSWM, the hypergraph claim, or the LakatoTree scoring policy.
 - Citation metadata for the software and its author.
 - Contribution and security-reporting guidance.
 - Package discovery metadata, a `lakatos` console entry point, and the installed
