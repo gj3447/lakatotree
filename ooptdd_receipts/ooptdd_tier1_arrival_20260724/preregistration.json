@@ -46,6 +46,6 @@
     "A Tier-1 pass authorizes only a narrow claim: OpenObserve v0.14.7 (compose), five fixed fault scenarios, 20-repetition seeded panel, candidate db5737d — not production-distribution generalization, not other backends.",
     "Repetitions share invariant mechanics; pass_hat_k and Wilson intervals describe the fixed panel, not a population.",
     "Sentences forbidden before this measurement (silent loss 100% in production / external arrival efficacy verified / battle-tested) remain forbidden outside these qualifiers.",
-    "Local OpenObserve (single binary v0.14.7, same version as the reference compose image, separate process on port 5081, throwaway data dir) is the Tier-1 judge of record; the shared dgx store is not used, avoiding cross-project pollution and credential-in-artifact risk. Amended 2026-07-24T17:20Z: Docker Desktop unavailable on the measurement host (dangling CLI symlink) — compose replaced by the equivalent single binary."
+    "Proxmox LXC openobserve-01 (192.168.0.27, vmid 302, single binary v0.14.7, separate HOST, :5081) is the Tier-1 judge of record; the shared dgx store is not used, avoiding cross-project pollution and credential-in-artifact risk. Amended 2026-07-24T18:10Z: store moved from Mac-local binary to the Proxmox host (stronger 'separate host' reading of the spec's minimal environment). Measurement re-run on the new judge follows; the Mac throwaway instance is decommissioned."
   ]
 }

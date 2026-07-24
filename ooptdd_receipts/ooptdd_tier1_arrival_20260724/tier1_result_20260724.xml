@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuite name="ooptdd.tier1-benchmark" tests="5" failures="0" errors="0" skipped="1">
+  <properties>
+    <property name="cid" value="ooptdd-tier1-arrival-v0-seed20260723"/>
+    <property name="backend" value="tier1-external-store"/>
+  </properties>
+  <testcase classname="ooptdd-tier1-arrival-v0-seed20260723" name="T1-loss-drop"></testcase>
+  <testcase classname="ooptdd-tier1-arrival-v0-seed20260723" name="T1-loss-401"></testcase>
+  <testcase classname="ooptdd-tier1-arrival-v0-seed20260723" name="T1-lag"></testcase>
+  <testcase classname="ooptdd-tier1-arrival-v0-seed20260723" name="T1-outage"><skipped message="INCONCLUSIVE: expected three-valued oracle outcome"/></testcase>
+  <testcase classname="ooptdd-tier1-arrival-v0-seed20260723" name="T1-restore"></testcase>
+</testsuite>
