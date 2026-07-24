@@ -43,9 +43,10 @@ The benchmark must preserve three distinct outcomes:
 - `inconclusive`: the store or probe could not supply a clean observation.
 
 JUnit and Markdown are projections of canonical JSON. They may not re-judge
-the run. A correct outage scenario is a benchmark pass because the expected
-engine verdict is `inconclusive`; only failure of the benchmark harness itself
-is reported as a JUnit infrastructure error.
+the run. A correct outage scenario is an overall oracle match because the
+expected engine verdict is `inconclusive`, while its own JUnit testcase remains
+`skipped`/inconclusive. A benchmark-harness failure is a separate infrastructure
+error and never an ordinary scenario pass or failure.
 
 ## Research absorption boundary
 
@@ -74,4 +75,3 @@ or an in-kernel LLM judge.
 5. Recompute aggregates from raw observations in a separate evidence step.
 6. Run the deterministic LakatoTree judge; never place a hand-entered verdict
    in the evidence record.
-
