@@ -1,0 +1,53 @@
+{
+  "schema": "lakato-evidence-record/v1",
+  "programme": "ooptdd-efficacy-absorption",
+  "branch": "tier1-external-store-arrival-v1",
+  "registered_before_measurement": true,
+  "preregistration": {
+    "path": "ooptdd_receipts/ooptdd_tier1_arrival_20260724/preregistration.json",
+    "sha256": "99cb1e208848458192d60c89975adf42ce686fc089944689670c7760152e94a3"
+  },
+  "measurement_lock": {
+    "path": "ooptdd_receipts/ooptdd_tier1_arrival_20260724/measurement_lock.json",
+    "sha256": "e825f1c1ead1ca848eebe6792963f04923d8330f30c181c5b9730300cb383412"
+  },
+  "candidate": {
+    "repository": "https://github.com/gj3447/ooptdd",
+    "head": "b8fb4f4583f6760439ea65f8c630cb616099aaff",
+    "dirty": false
+  },
+  "measured_metrics": {
+    "tier1_silent_loss_catch_rate": {"value": 1.0, "target": 1.0, "trials": 40, "wilson_95": {"low": 0.9124, "high": 1.0}},
+    "tier1_lag_false_red_rate": {"value": 0.0, "target": 0.0, "trials": 20, "wilson_95": {"low": 0.0, "high": 0.1611}},
+    "tier1_outage_inconclusive_honesty_rate": {"value": 1.0, "target": 1.0, "trials": 20, "wilson_95": {"low": 0.8389, "high": 1.0}},
+    "tier1_restore_rate": {"value": 1.0, "target": 1.0, "trials": 20, "wilson_95": {"low": 0.8389, "high": 1.0}}
+  },
+  "per_scenario_oracle_match_rate": {
+    "T1-loss-drop": 1.0,
+    "T1-loss-401": 1.0,
+    "T1-lag": 1.0,
+    "T1-outage": 1.0,
+    "T1-restore": 1.0
+  },
+  "artifacts": {
+    "canonical_json": {"file": "tier1_result_20260724.json", "sha256": "f80c172b75b412dc878e39bc525c065113784cdd899a53a5ec1b6717c57a0076"},
+    "junit": {"file": "tier1_result_20260724.xml", "sha256": "6f82bc6b83d7d32a012d03bca49cef56360db7bfad34a900b2d75ed3f60d64ef", "failures": 0, "skipped": 1, "note": "outage row renders skipped/inconclusive, never failure"},
+    "markdown": {"file": "tier1_result_20260724.md", "sha256": "7dfb493d7529ea0bc242148c6d92530182e6f41c7ca60a706b49ec1856686d2f"}
+  },
+  "harness": {
+    "runner": "scripts/run_tier1_benchmark.py",
+    "runner_sha256": "bfc952ad8ae26093f46afd1bfee9928630c07d327f647655d0c608ee9352802e",
+    "command": "OOPTDD_T1_OO_URL=http://localhost:5081 .venv/bin/python scripts/run_tier1_benchmark.py --lock <lock> --preregistration <prereg> --output tier1_result.json --junit-out tier1_result.xml --markdown-out tier1_result.md",
+    "exit_code": 0
+  },
+  "environment": {
+    "store": "OpenObserve v0.14.7 single binary (darwin-arm64), separate process, port 5081, throwaway data dir",
+    "backend_identity": "openobserve (independent=true, query_visibility_delay_ms=5000) — not MemoryBackend",
+    "seed": 20260723,
+    "repetitions": 20,
+    "lag_injection": "in-process DelayedIngestProxy, holds < declared 5000ms visibility window"
+  },
+  "claim_boundary": "External-store arrival evidence over the five fixed T1 scenarios against one OpenObserve (v0.14.7) endpoint, with seeded repetitions and Wilson intervals. Not a claim about other backends, other versions, or a production trace distribution.",
+  "measured_at": "2026-07-24",
+  "measured_by": "kimi-code-cli"
+}
