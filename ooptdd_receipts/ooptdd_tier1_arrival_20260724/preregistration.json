@@ -1,0 +1,51 @@
+{
+  "schema_version": "lakatotree-preregistration/v1",
+  "programme": "ooptdd-efficacy-absorption",
+  "branch": "tier1-external-store-arrival-v1",
+  "conjecture": "On a real external OpenObserve store (docker-compose public.ecr.aws/zinclabs/openobserve:v0.14.7, separate process/container), the shipped ooptdd engine catches silent evidence loss (catch rate 1.0), manufactures no false RED under declared ingestion lag (false-RED rate 0.0), stays inconclusive-honest under store outage (honesty rate 1.0), and restores to present after auth/store recovery (restore rate 1.0) — across 20 seeded repetitions per scenario, with valid candidate/preregistration/environment/registration bindings and a store identity distinct from MemoryBackend.",
+  "registered_at": "2026-07-24T17:06:30Z",
+  "registration_mechanism": "git commit in gj3447/lakatotree before candidate measurement",
+  "prior_measurement_boundary": "All ooptdd measurements at or before candidate db5737d02b64f45b8b47d7609721f1f168e21eba are Tier-0 mechanics-only or exploratory. Tier-0 results, demo scripts (demo_green/demo_silent_401/demo_inconclusive), and CI openobserve-demos jobs are not Tier-1 evidence and carry no external-arrival claim weight.",
+  "sources": {
+    "ooptdd_repository": "https://github.com/gj3447/ooptdd",
+    "candidate_head": "b8fb4f4583f6760439ea65f8c630cb616099aaff",
+    "lakatotree_repository": "https://github.com/gj3447/lakatotree",
+    "registration_parent_head": "0691773eee01e2d64a8dc1eeaae8923266701856"
+  },
+  "scenarios": [
+    {"id": "T1-loss-drop", "fault": "shipper suppresses the emit of one required event", "expected": "absent", "receipts": ["ship attempt record", "independent store query shows required event missing"]},
+    {"id": "T1-loss-401", "fault": "fire-and-forget shipper with wrong password swallows HTTP 401", "expected": "absent; no fake green", "receipts": ["observed HTTP 401 status", "store query empty"]},
+    {"id": "T1-lag", "fault": "ingest proxy holds POSTs for T ms, T <= declared query_visibility_delay_ms (5000)", "expected": "present; zero false RED; arrival stamp shows visibility extension", "receipts": ["delay config", "arrival stamp", "final readback"]},
+    {"id": "T1-outage", "fault": "unroutable endpoint (dead port)", "expected": "inconclusive with exit-2 semantics; JUnit renders skipped/inconclusive, never failure", "receipts": ["connection error classification", "JUnit projection"]},
+    {"id": "T1-restore", "fault": "401 negative first, then auth fixed and same spec replayed", "expected": "present; chronology negative < restored", "receipts": ["timestamps", "query rows"]}
+  ],
+  "prediction": {
+    "metrics": [
+      {"metric": "tier1_silent_loss_catch_rate", "direction": "higher", "baseline": 1.0, "target": 1.0},
+      {"metric": "tier1_lag_false_red_rate", "direction": "lower", "baseline": 0.0, "target": 0.0},
+      {"metric": "tier1_outage_inconclusive_honesty_rate", "direction": "higher", "baseline": 1.0, "target": 1.0},
+      {"metric": "tier1_restore_rate", "direction": "higher", "baseline": 1.0, "target": 1.0}
+    ],
+    "seed": 20260723,
+    "repetitions": 20,
+    "environment": {
+      "store": "openobserve v0.14.7 via examples/openobserve_demo/docker-compose.yml (separate container)",
+      "declared_visibility_delay_ms": 5000,
+      "variant_derivation": "sha256(seed:scenario_id:repeat)[:16]"
+    }
+  },
+  "kill_condition": "Reject the conjecture if any of the four rates misses its target; if any loss trial returns green (fake green); if any outage trial returns absent instead of inconclusive or renders as a JUnit failure; if any binding (candidate head, preregistration sha, environment, registration repository) is invalid; or if the store identity equals MemoryBackend.",
+  "negative_controls": [
+    "run with a dirty candidate worktree must be refused by the lock validator",
+    "run with a mismatched preregistration sha must be refused",
+    "an outage trial must not be recorded as absent",
+    "a suppressed-event trial must never be recorded as present",
+    "restored run must follow, never precede, its negative"
+  ],
+  "honesty_boundaries": [
+    "A Tier-1 pass authorizes only a narrow claim: OpenObserve v0.14.7 (compose), five fixed fault scenarios, 20-repetition seeded panel, candidate db5737d — not production-distribution generalization, not other backends.",
+    "Repetitions share invariant mechanics; pass_hat_k and Wilson intervals describe the fixed panel, not a population.",
+    "Sentences forbidden before this measurement (silent loss 100% in production / external arrival efficacy verified / battle-tested) remain forbidden outside these qualifiers.",
+    "Local OpenObserve (single binary v0.14.7, same version as the reference compose image, separate process on port 5081, throwaway data dir) is the Tier-1 judge of record; the shared dgx store is not used, avoiding cross-project pollution and credential-in-artifact risk. Amended 2026-07-24T17:20Z: Docker Desktop unavailable on the measurement host (dangling CLI symlink) — compose replaced by the equivalent single binary."
+  ]
+}
