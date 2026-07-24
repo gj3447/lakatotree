@@ -45,6 +45,12 @@ distribution.
   splits shared nodes per tree, re-points `RAISES_QUESTION`, swaps the
   constraint) before the new constraint can be created.
 
+- License documentation truth: `README.md` still claimed "No `LICENSE` file is
+  currently included" and `CONTRIBUTING.md` still claimed the license "has not
+  yet been selected" after the dual-license landing (`LICENSE` = AGPL-3.0,
+  `LICENSING.md` = AGPL-3.0-or-later or separate commercial). Both now state
+  the actual terms.
+
 ### Added
 
 - An explicit HSWM agent-network design contract: agents act through a shared
