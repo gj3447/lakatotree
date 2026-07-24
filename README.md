@@ -191,7 +191,7 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 
 GitHub can render the repository's [`CITATION.cff`](CITATION.cff) as a software citation for **Gyeongjun Ra (라경준)**. No DOI or tagged release exists yet, so include the repository URL, access date, and exact commit SHA when reproducibility depends on the current source revision.
 
-No `LICENSE` file is currently included. Public visibility does not by itself state reuse terms; review the repository status before copying, modifying, or redistributing the code. Contribution and vulnerability-reporting paths are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md); unreleased changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
+The project is **dual-licensed**: GNU AGPL-3.0-or-later (full text in [`LICENSE`](LICENSE)) **or** a separate commercial license — terms and obligations in [`LICENSING.md`](LICENSING.md). Contribution and vulnerability-reporting paths are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md); unreleased changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Theoretical references
 
