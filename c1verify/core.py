@@ -86,6 +86,8 @@ from .gates.grounded import verify_grounded  # noqa: E402
 from .gates.preregistered import verify_preregistered  # noqa: E402
 from .gates.reproducible import verify_reproducible  # noqa: E402
 from .gates.temporal import verify_temporal  # noqa: E402
+from .gates.stands import verify_stands  # noqa: E402
+from .gates.calibrated import verify_calibrated  # noqa: E402
 from .gates.substrate import verify_substrate  # noqa: E402
 
 _GATE_REVERIFIERS["grounded"] = verify_grounded
@@ -93,3 +95,5 @@ _GATE_REVERIFIERS["substrate"] = verify_substrate
 _GATE_REVERIFIERS["preregistered"] = verify_preregistered
 _GATE_REVERIFIERS["reproducible"] = verify_reproducible
 _GATE_REVERIFIERS["temporal"] = verify_temporal
+_GATE_REVERIFIERS["stands"] = verify_stands
+_GATE_REVERIFIERS["calibrated"] = verify_calibrated
