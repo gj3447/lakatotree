@@ -1,0 +1,26 @@
+{
+ "benchmark_definition_sha256": "d59f0d316db012f33be265e9fc89d713df4c53235268ff198eb569ad7e2aaaed",
+ "candidate_dirty": false,
+ "candidate_git_head": "b8fb4f4583f6760439ea65f8c630cb616099aaff",
+ "code_manifest_sha256": "442d2e6b92d737934b0d3d725f26e83dfcdb6921d1f084d85c87220b7d8f17ae",
+ "deepeval_spec_sha256": "289d08e7c7a202a4e3c82a04b31597605012971b35c8c589bb1dfee810142bfe",
+ "deepeval_version": "4.0.7",
+ "environment": {
+  "byteorder": "little",
+  "platform_machine": "arm64",
+  "platform_system": "Darwin",
+  "python_implementation": "CPython",
+  "python_version": "3.12.13",
+  "pyyaml_version": "6.0.3"
+ },
+ "events_sha256": "39a86c8139d6b8cf352113f854faaa34e5f78c676bff32c18d245731c01c7d91",
+ "gate_spec_sha256": "4979905c762aa63c1754d129dfda7d2e69c21ecd32ed8c69da8a3098917af5b7",
+ "manifest_sha256": "009dcdcc0f9cafa7248c61904433f92e3ac333e8b889efa3217fda49104b8880",
+ "preregistration_sha256": "99cb1e208848458192d60c89975adf42ce686fc089944689670c7760152e94a3",
+ "registration_repository": "https://github.com/gj3447/lakatotree",
+ "repetitions": 20,
+ "runner_sha256": "bfc952ad8ae26093f46afd1bfee9928630c07d327f647655d0c608ee9352802e",
+ "schema": "ooptdd-efficacy-measurement-lock/v1",
+ "seed": 20260723,
+ "tier": "tier1-external-store"
+}
