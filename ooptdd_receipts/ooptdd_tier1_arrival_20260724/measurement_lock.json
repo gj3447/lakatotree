@@ -16,7 +16,7 @@
  "events_sha256": "39a86c8139d6b8cf352113f854faaa34e5f78c676bff32c18d245731c01c7d91",
  "gate_spec_sha256": "4979905c762aa63c1754d129dfda7d2e69c21ecd32ed8c69da8a3098917af5b7",
  "manifest_sha256": "009dcdcc0f9cafa7248c61904433f92e3ac333e8b889efa3217fda49104b8880",
- "preregistration_sha256": "99cb1e208848458192d60c89975adf42ce686fc089944689670c7760152e94a3",
+ "preregistration_sha256": "44f2c1a8ce1a533ec3773c7462173848981eae4cd751abf000de733ac8269cc3",
  "registration_repository": "https://github.com/gj3447/lakatotree",
  "repetitions": 20,
  "runner_sha256": "bfc952ad8ae26093f46afd1bfee9928630c07d327f647655d0c608ee9352802e",
