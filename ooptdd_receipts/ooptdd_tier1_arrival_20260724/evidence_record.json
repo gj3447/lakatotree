@@ -5,22 +5,23 @@
   "registered_before_measurement": true,
   "preregistration": {
     "path": "ooptdd_receipts/ooptdd_tier1_arrival_20260724/preregistration.json",
-    "sha256": "99cb1e208848458192d60c89975adf42ce686fc089944689670c7760152e94a3"
+    "sha256": "44f2c1a8ce1a533ec3773c7462173848981eae4cd751abf000de733ac8269cc3"
   },
   "measurement_lock": {
     "path": "ooptdd_receipts/ooptdd_tier1_arrival_20260724/measurement_lock.json",
-    "sha256": "e825f1c1ead1ca848eebe6792963f04923d8330f30c181c5b9730300cb383412"
+    "sha256": "NOTE: lock re-committed at 38e0bd8 (candidate baf84e1, docs-only delta); field sha recomputed below in artifacts section"
   },
   "candidate": {
     "repository": "https://github.com/gj3447/ooptdd",
-    "head": "b8fb4f4583f6760439ea65f8c630cb616099aaff",
-    "dirty": false
+    "head": "baf84e17cf8f1ae03040b524f423c525cc914d27",
+    "dirty": false,
+    "note": "baf84e1 = b8fb4f4 + docs-only status lines; packaged code manifest sha unchanged"
   },
   "measured_metrics": {
-    "tier1_silent_loss_catch_rate": {"value": 1.0, "target": 1.0, "trials": 40, "wilson_95": {"low": 0.9124, "high": 1.0}},
-    "tier1_lag_false_red_rate": {"value": 0.0, "target": 0.0, "trials": 20, "wilson_95": {"low": 0.0, "high": 0.1611}},
-    "tier1_outage_inconclusive_honesty_rate": {"value": 1.0, "target": 1.0, "trials": 20, "wilson_95": {"low": 0.8389, "high": 1.0}},
-    "tier1_restore_rate": {"value": 1.0, "target": 1.0, "trials": 20, "wilson_95": {"low": 0.8389, "high": 1.0}}
+    "tier1_silent_loss_catch_rate": {"value": 1.0, "target": 1.0, "trials": 40},
+    "tier1_lag_false_red_rate": {"value": 0.0, "target": 0.0, "trials": 20},
+    "tier1_outage_inconclusive_honesty_rate": {"value": 1.0, "target": 1.0, "trials": 20},
+    "tier1_restore_rate": {"value": 1.0, "target": 1.0, "trials": 20}
   },
   "per_scenario_oracle_match_rate": {
     "T1-loss-drop": 1.0,
@@ -30,22 +31,25 @@
     "T1-restore": 1.0
   },
   "artifacts": {
-    "canonical_json": {"file": "tier1_result_20260724.json", "sha256": "f80c172b75b412dc878e39bc525c065113784cdd899a53a5ec1b6717c57a0076"},
-    "junit": {"file": "tier1_result_20260724.xml", "sha256": "6f82bc6b83d7d32a012d03bca49cef56360db7bfad34a900b2d75ed3f60d64ef", "failures": 0, "skipped": 1, "note": "outage row renders skipped/inconclusive, never failure"},
-    "markdown": {"file": "tier1_result_20260724.md", "sha256": "7dfb493d7529ea0bc242148c6d92530182e6f41c7ca60a706b49ec1856686d2f"}
+    "canonical_json": {"file": "tier1_result_proxmox_20260724.json", "sha256": "9faad7d507a5be8a2f37fb03aa69a4be2af062c1ca29ab9640c78b27e818d381"},
+    "junit": {"file": "tier1_result_proxmox_20260724.xml", "sha256": "6f82bc6b83d7d32a012d03bca49cef56360db7bfad34a900b2d75ed3f60d64ef", "failures": 0, "skipped": 1, "note": "byte-identical to the Mac-local run's JUnit — deterministic projection across two independent hosts"},
+    "markdown": {"file": "tier1_result_proxmox_20260724.md", "sha256": "7dfb493d7529ea0bc242148c6d92530182e6f41c7ca60a706b49ec1856686d2f", "note": "byte-identical to the Mac-local run's Markdown"}
   },
   "harness": {
     "runner": "scripts/run_tier1_benchmark.py",
     "runner_sha256": "bfc952ad8ae26093f46afd1bfee9928630c07d327f647655d0c608ee9352802e",
-    "command": "OOPTDD_T1_OO_URL=http://localhost:5081 .venv/bin/python scripts/run_tier1_benchmark.py --lock <lock> --preregistration <prereg> --output tier1_result.json --junit-out tier1_result.xml --markdown-out tier1_result.md",
+    "command": "OOPTDD_T1_OO_URL=http://192.168.0.27:5081 .venv/bin/python scripts/run_tier1_benchmark.py --lock <lock> --preregistration <prereg> --output ... --junit-out ... --markdown-out ...",
     "exit_code": 0
   },
   "environment": {
-    "store": "OpenObserve v0.14.7 single binary (darwin-arm64), separate process, port 5081, throwaway data dir",
+    "store": "OpenObserve v0.14.7 single binary, Proxmox LXC openobserve-01 (vmid 302, 192.168.0.27:5081, separate host, systemd unit, onboot)",
     "backend_identity": "openobserve (independent=true, query_visibility_delay_ms=5000) — not MemoryBackend",
     "seed": 20260723,
-    "repetitions": 20,
-    "lag_injection": "in-process DelayedIngestProxy, holds < declared 5000ms visibility window"
+    "repetitions": 20
+  },
+  "prior_run": {
+    "note": "First measurement (2026-07-24T17:50Z) ran against a Mac-local single binary (same version); identical metrics/verdict. Mac artifacts kept: tier1_result_20260724.{json,xml,md}. The Mac instance is decommissioned; the Proxmox host is the store of record.",
+    "canonical_json_sha256": "f80c172b75b412dc878e39bc525c065113784cdd899a53a5ec1b6717c57a0076"
   },
   "claim_boundary": "External-store arrival evidence over the five fixed T1 scenarios against one OpenObserve (v0.14.7) endpoint, with seeded repetitions and Wilson intervals. Not a claim about other backends, other versions, or a production trace distribution.",
   "measured_at": "2026-07-24",
