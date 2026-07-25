@@ -1,7 +1,7 @@
 {
  "benchmark_definition_sha256": "d59f0d316db012f33be265e9fc89d713df4c53235268ff198eb569ad7e2aaaed",
  "candidate_dirty": false,
- "candidate_git_head": "b8fb4f4583f6760439ea65f8c630cb616099aaff",
+ "candidate_git_head": "baf84e17cf8f1ae03040b524f423c525cc914d27",
  "code_manifest_sha256": "442d2e6b92d737934b0d3d725f26e83dfcdb6921d1f084d85c87220b7d8f17ae",
  "deepeval_spec_sha256": "289d08e7c7a202a4e3c82a04b31597605012971b35c8c589bb1dfee810142bfe",
  "deepeval_version": "4.0.7",
