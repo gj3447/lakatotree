@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -38,8 +39,13 @@ from lakatos.io.envfp import environment_fingerprint as default_environment_fing
 from lakatos.io.envfp import fingerprint_sha as default_fingerprint_sha
 from lakatos.io.lineage import by_output
 from lakatos.io.prov import replay_command
+from lakatos.measurement_lock import lock_sha as measurement_lock_content_sha
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate
+from server.contexts.audit import fsck as audit_fsck
+from server.contexts.tree.judgement_service import (RESULT_MAX_BYTES, SCRIPT_MAX_BYTES,
+                                                     isolate_script_file)
 from server.contexts.tree.schemas import CritiqueIn, ObservationIn, ResearchEventIn, WorldActionIn
+from server.file_hashing import file_sha
 from server.ports import HistoryAppend, KgQuery, KgTx
 
 
@@ -51,6 +57,58 @@ ReproducibleProvider = Callable[[str, str], bool | None]
 StandingProvider = Callable[[str, str], dict]
 CalibrationProvider = Callable[[str], dict]
 StoreResearchEvent = Callable[[str, str, str, str, str, str, Iterable[str] | None, dict], str]
+
+
+def _is_sha256(value) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and all(char in "0123456789abcdef" for char in value))
+
+
+def _is_canonical_absolute_path(value) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        path = Path(value)
+        return path.is_absolute() and str(path.resolve()) == value
+    except OSError:
+        return False
+
+
+def _bound_measurement_lock(head: dict, locks: list[dict]) -> dict | None:
+    """Return the one semantically bound lock payload; duplicate matching locks are corruption."""
+    sealed_sha = head.get("measurement_lock_sha")
+    if not _is_sha256(sealed_sha):
+        return None
+    matches = [lock for lock in locks
+               if isinstance(lock, dict) and lock.get("lock_sha") == sealed_sha]
+    if len(matches) > 1:
+        raise HTTPException(409, 'provenance 무결성 실패: duplicate current MeasurementLock')
+    if not matches:
+        return None
+    raw = matches[0].get("payload_json")
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else None
+        if not isinstance(payload, dict) or measurement_lock_content_sha(payload) != sealed_sha:
+            return None
+    except (TypeError, ValueError):
+        return None
+    if not audit_fsck.measurement_lock_payload_matches_head(head, payload):
+        return None
+    return payload
+
+
+def _rehash_current_artifact(path: str, expected_sha: str, max_bytes: int, label: str) -> None:
+    """Allowed-root, regular-file and size-capped read-time drift check."""
+    resolved, info = isolate_script_file(path, max_bytes)
+    if resolved is None or str(resolved) != path:
+        reason = info.get('reason') if isinstance(info, dict) else 'unresolvable'
+        raise HTTPException(409, f'provenance artifact drift: {label} unavailable ({reason})')
+    try:
+        current_sha = file_sha(str(resolved))
+    except OSError as exc:
+        raise HTTPException(409, f'provenance artifact drift: {label} rehash failed') from exc
+    if current_sha != expected_sha:
+        raise HTTPException(409, f'provenance artifact drift: {label} sha256 mismatch')
 
 
 class EvidenceClaimService:
@@ -87,16 +145,130 @@ class EvidenceClaimService:
 
     def provenance(self, name: str, tag: str) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                     OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt)
+                       WHERE hr.receipt_sha = e.current_receipt_sha
+                     WITH e, collect(hr {.*}) AS head_receipts
+                     OPTIONAL MATCH (e)-[:HAS_LOCK]->(ml:MeasurementLock)
+                     WITH e, head_receipts, collect(ml {.*}) AS measurement_locks
                      OPTIONAL MATCH (e)-[:HAS_PROV]->(p:ProvNode)
                      RETURN e.judge_script AS script, e.result_path AS rp, e.verdict AS verdict,
-                            e.judge_script_sha AS sha, collect({id:p.id,kind:p.kind,type:p.type}) AS prov""",
+                            e.judge_script_sha AS sha, e.result_sha256 AS result_sha256,
+                            e.source_judge_script_path AS source_script_path,
+                            e.source_result_path AS source_result_path,
+                            e.measurement_lock_sha AS measurement_lock_sha,
+                            e.replay_status AS replay_status, e.replay_reason AS replay_reason,
+                            e.regenerated_metric AS regenerated_metric,
+                            e.current_receipt_sha AS current_receipt_sha,
+                            head_receipts, measurement_locks,
+                            collect({id:p.id,kind:p.kind,type:p.type}) AS prov""",
                        tree=name, tag=tag)
-        if not rows or rows[0]['script'] is None:
+        if not rows:
             raise HTTPException(404, '채점 이력 없음')
+        if len(rows) != 1:
+            raise HTTPException(409, 'provenance 무결성 실패: node projection cardinality '
+                                f'{len(rows)} (exactly one required)')
         x = rows[0]
-        return dict(tag=tag, verdict=x['verdict'], script=x['script'], script_sha=x['sha'],
-                    result_path=x['rp'], prov_graph=[p for p in x['prov'] if p['id']],
-                    replay=replay_command(x['script'] or '', x['rp'] or ''))
+        head_sha = x.get('current_receipt_sha')
+        heads = x.get('head_receipts') or []
+        graph = [p for p in (x.get('prov') or []) if p.get('id')]
+
+        # No receipt pointer is a pre-ledger row.  It remains inspectable, but mutable node
+        # metadata cannot be presented as an authoritative replay recipe.
+        if not head_sha:
+            if x.get('script') is None:
+                raise HTTPException(404, '채점 이력 없음')
+            return dict(tag=tag, verdict=x.get('verdict'), script=x.get('script'),
+                        script_sha=x.get('sha'), result_path=x.get('rp'), prov_graph=graph,
+                        replay=None, authoritative=False,
+                        authority_reason='legacy_receipt_not_artifact_bound')
+        if len(heads) != 1:
+            raise HTTPException(409, 'provenance 무결성 실패: current receipt head cardinality '
+                                f'{len(heads)} (exactly one required)')
+        head = heads[0]
+
+        # A v1-v3 receipt is honest legacy but does not bind replay inputs.  Never synthesize an
+        # authoritative command from its mutable node cache.
+        if head.get('replay_status') is None:
+            return dict(tag=tag, verdict=x.get('verdict'), script=x.get('script'),
+                        script_sha=x.get('sha'), result_path=x.get('rp'), prov_graph=graph,
+                        replay=None, authoritative=False,
+                        authority_reason='legacy_receipt_not_artifact_bound')
+
+        record = dict(
+            verdict=x.get('verdict'), current_receipt_sha=head_sha,
+            judge_script=x.get('script'), judge_script_sha=x.get('sha'),
+            result_path=x.get('rp'),
+            source_judge_script_path=x.get('source_script_path'),
+            source_result_path=x.get('source_result_path'),
+            result_sha256=x.get('result_sha256'),
+            measurement_lock_sha=x.get('measurement_lock_sha'),
+            replay_status=x.get('replay_status'), replay_reason=x.get('replay_reason'),
+            regenerated_metric=x.get('regenerated_metric'), receipts=[head],
+            measurement_locks=x.get('measurement_locks') or [],
+        )
+        if audit_fsck.valid_replay_head(record) is None:
+            raise HTTPException(409, 'provenance 무결성 실패: current replay receipt 내용주소 불일치')
+        integrity_ids = {
+            'RECEIPT_SHA_CONTENT_MISMATCH', 'REPLAY_DIAGNOSTIC_CACHE_MISMATCH',
+            'REPLAY_INPUT_CACHE_MISMATCH', 'RECEIPT_CHAIN_MISMATCH',
+        }
+        failures = [f for f in audit_fsck.fsck_node(record) if f.check_id in integrity_ids]
+        if failures:
+            raise HTTPException(409, 'provenance 무결성 실패: '
+                                + ', '.join(sorted({f.check_id for f in failures})))
+
+        script, result_path = head.get('judge_script_path'), head.get('result_path')
+        if audit_fsck.valid_artifact_head(record) is None:
+            return dict(tag=tag, verdict=head.get('verdict'), script=None,
+                        script_sha=head.get('judge_script_sha'), result_path=None,
+                        result_sha256=None, measurement_lock_sha=None,
+                        receipt_sha=head_sha, prov_graph=graph, replay=None,
+                        authoritative=False, authority_reason='v4_receipt_not_artifact_bound')
+
+        locks = x.get('measurement_locks') or []
+        bound_lock = _bound_measurement_lock(head, locks)
+        fully_bound = (
+            _is_canonical_absolute_path(script)
+            and _is_canonical_absolute_path(result_path)
+            and _is_sha256(head.get('judge_script_sha'))
+            and _is_sha256(head.get('result_sha256'))
+            and bound_lock is not None
+        )
+        if not fully_bound:
+            return dict(tag=tag, verdict=head.get('verdict'), script=script,
+                        script_sha=head.get('judge_script_sha'), result_path=result_path,
+                        result_sha256=head.get('result_sha256'),
+                        measurement_lock_sha=head.get('measurement_lock_sha'),
+                        receipt_sha=head_sha, prov_graph=graph, replay=None,
+                        authoritative=False, authority_reason='v5_replay_inputs_unbound')
+
+        try:
+            current_env_sha = self.fingerprint_sha(self.environment_fingerprint())
+        except Exception:  # noqa: BLE001 — inability to establish the current env is non-authority
+            return dict(tag=tag, verdict=head.get('verdict'), script=script,
+                        script_sha=head.get('judge_script_sha'), result_path=result_path,
+                        result_sha256=head.get('result_sha256'),
+                        measurement_lock_sha=head.get('measurement_lock_sha'),
+                        receipt_sha=head_sha, prov_graph=graph, replay=None,
+                        authoritative=False,
+                        authority_reason='measurement_environment_unverifiable')
+        if bound_lock.get('env_sha') != current_env_sha:
+            return dict(tag=tag, verdict=head.get('verdict'), script=script,
+                        script_sha=head.get('judge_script_sha'), result_path=result_path,
+                        result_sha256=head.get('result_sha256'),
+                        measurement_lock_sha=head.get('measurement_lock_sha'),
+                        receipt_sha=head_sha, prov_graph=graph, replay=None,
+                        authoritative=False, authority_reason='measurement_environment_drift')
+
+        _rehash_current_artifact(script, head['judge_script_sha'], SCRIPT_MAX_BYTES, 'judge_script')
+        _rehash_current_artifact(result_path, head['result_sha256'], RESULT_MAX_BYTES, 'result')
+        return dict(tag=tag, verdict=head.get('verdict'), script=script,
+                    script_sha=head.get('judge_script_sha'), result_path=result_path,
+                    result_sha256=head.get('result_sha256'),
+                    measurement_lock_sha=head.get('measurement_lock_sha'),
+                    receipt_sha=head_sha, prov_graph=graph,
+                    replay=replay_command(script or '', result_path or ''),
+                    authoritative=True, authority_reason='content_valid_v5_receipt')
 
     def add_critique(self, name: str, tag: str, c: CritiqueIn) -> dict:
         # fail-loud(나생문 #13): MERGE 가 노드 부재 시 no-op 이면 형제 mutation 과 달리 200·history 를
@@ -473,7 +645,8 @@ class EvidenceClaimService:
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                      RETURN e.tag AS tag, e.verdict AS verdict, e.source_trust AS source_trust,
                             e.verdict_source AS verdict_source, e.judge_script AS judge_script,
-                            e.judge_script_sha AS judge_script_sha, e.result_path AS result_path,
+                            e.judge_script_sha AS judge_script_sha,
+                            coalesce(e.source_result_path, e.result_path) AS result_path,
                             collect({id:a.id, attacks:a.attacks, kind:a.kind, by:a.by}) AS args""",
                        tree=name, tag=tag)
         if not rows:
@@ -483,28 +656,9 @@ class EvidenceClaimService:
         frame = ResearchFrame(ResearchProject(name=name, goal='claim standing'))
         frame.open_possibility(Possibility(tag, f'claim standing for {name}/{tag}',
                                            evidence_refs=((result_path,) if result_path else ())))
-        if x.get('source_trust') is not None:
-            frame.record_event(ResearchEvent(
-                name=f'{tag}:source-trust',
-                realm=Realm.INTERNET,
-                actor='server:node',
-                action='source_trust',
-                target=tag,
-                evidence_refs=((result_path,) if result_path else ()),
-                payload=(('trust', str(x['source_trust'])),),
-            ))
-        if x.get('verdict_source') == 'scripted' or x.get('judge_script') or result_path:
-            action = 'test_failed' if x.get('verdict') == 'rejected' else 'test_passed'
-            refs = tuple(v for v in (result_path, x.get('judge_script_sha') or '') if v)
-            frame.record_event(ResearchEvent(
-                name=f'{tag}:scripted-result',
-                realm=Realm.BASH,
-                actor=x.get('judge_script') or 'server:judge',
-                action=action,
-                target=tag,
-                evidence_refs=refs,
-                payload=(('exit_code', '0'),) if action == 'test_passed' else (('exit_code', '1'),),
-            ))
+        # ``source_trust``, script and result_path are metadata, not observations.  Upper/lower
+        # standing consumes only append-only ResearchEvent rows below; a real BASH run enters via
+        # the gated world-action route, and internet evidence via the observation route.
         for arg in x.get('args') or []:
             event = self.event_from_argument(tag, arg)
             if event is not None:
@@ -537,14 +691,29 @@ class EvidenceClaimService:
 
     def node_certificate(self, name: str, tag: str) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                     OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt {receipt_sha:e.current_receipt_sha})
+                     OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt)
+                       WHERE hr.receipt_sha = e.current_receipt_sha
+                     WITH e, collect(hr {.*}) AS head_receipts
+                     OPTIONAL MATCH (e)-[:HAS_LOCK]->(ml:MeasurementLock)
                      RETURN e.verdict AS verdict, e.verdict_source AS vsrc,
                             e.pred_metric AS pm, e.judge_script AS script,
                             e.judge_script_sha AS sha, e.result_path AS rp,
+                            e.result_sha256 AS result_sha256,
+                            e.source_judge_script_path AS source_script_path,
+                            e.source_result_path AS source_result_path,
+                            e.measurement_lock_sha AS measurement_lock_sha,
+                            e.replay_status AS replay_status,
+                            e.replay_reason AS replay_reason,
+                            e.regenerated_metric AS regenerated_metric,
+                            e.current_receipt_sha AS current_receipt_sha,
                             e.measurement_grade AS mg, e.metric_value AS mv,
-                            hr.engine_rule_sha AS sealed_ers""", tree=name, tag=tag)
+                            head_receipts, collect(ml {.*}) AS measurement_locks""",
+                       tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
+        if len(rows) != 1:
+            raise HTTPException(409, 'certificate 무결성 실패: node projection cardinality '
+                                f'{len(rows)} (exactly one required)')
         x = rows[0]
         checks = []
         prereg = x['vsrc'] == 'scripted' and x['pm'] is not None and bool(x['script'])
@@ -588,18 +757,95 @@ class EvidenceClaimService:
         # G6 measurement_owned (측정주권 load-bearing, 2026-07-03): client_asserted(무replay·무서명) 측정값은
         # 인증 불가. 측정값 없는 노드(mv is None: 질적/problem)는 측정소유 무의미 → 자동통과(SCOPED).
         mg = x['mg']
-        owned = is_measurement_owned(mg, x['mv'] is not None)
+        has_metric = x['mv'] is not None
+        grade_owned = is_measurement_owned(mg, has_metric)
+        measurement_bound = not has_metric
+        binding_reason = ''
+        heads = x.get('head_receipts') or []
+        head = heads[0] if len(heads) == 1 else None
+        if has_metric and grade_owned:
+            if head is None:
+                binding_reason = (f'current receipt head cardinality={len(heads)} '
+                                  '(exactly one required)')
+            else:
+                record = dict(
+                    verdict=x.get('verdict'), current_receipt_sha=x.get('current_receipt_sha'),
+                    judge_script=x.get('script'), judge_script_sha=x.get('sha'),
+                    result_path=x.get('rp'), result_sha256=x.get('result_sha256'),
+                    source_judge_script_path=x.get('source_script_path'),
+                    source_result_path=x.get('source_result_path'),
+                    measurement_lock_sha=x.get('measurement_lock_sha'),
+                    replay_status=x.get('replay_status'), replay_reason=x.get('replay_reason'),
+                    regenerated_metric=x.get('regenerated_metric'), receipts=[head],
+                    measurement_locks=x.get('measurement_locks') or [],
+                )
+                integrity_ids = {
+                    'RECEIPT_SHA_CONTENT_MISMATCH', 'REPLAY_DIAGNOSTIC_CACHE_MISMATCH',
+                    'REPLAY_INPUT_CACHE_MISMATCH', 'MEASUREMENT_LOCK_CONTENT_MISMATCH',
+                    'RECEIPT_CHAIN_MISMATCH',
+                }
+                failures = [f for f in audit_fsck.fsck_node(record)
+                            if f.check_id in integrity_ids]
+                artifact_shape_valid = (
+                    _is_canonical_absolute_path(head.get('judge_script_path'))
+                    and _is_canonical_absolute_path(head.get('result_path'))
+                    and _is_sha256(head.get('judge_script_sha'))
+                    and _is_sha256(head.get('result_sha256'))
+                )
+                bound_lock = (_bound_measurement_lock(
+                    head, x.get('measurement_locks') or [])
+                    if (audit_fsck.valid_artifact_head(record) is not None
+                        and artifact_shape_valid and not failures)
+                    else None)
+                node_semantics_match = (
+                    head.get('measurement_grade') == mg
+                    and head.get('metric_value') == x.get('mv')
+                    and head.get('replay_status') == x.get('replay_status')
+                )
+                if failures:
+                    binding_reason = 'receipt/lock integrity: ' + ', '.join(
+                        sorted({f.check_id for f in failures}))
+                elif bound_lock is None:
+                    binding_reason = 'current v5 receipt has no content/semantic-valid bound lock'
+                elif not node_semantics_match:
+                    binding_reason = 'node measurement cache differs from current v5 receipt'
+                else:
+                    try:
+                        current_env_sha = self.fingerprint_sha(self.environment_fingerprint())
+                    except Exception:  # noqa: BLE001 — certificate must fail closed
+                        binding_reason = 'current measurement environment unavailable'
+                    else:
+                        if bound_lock.get('env_sha') != current_env_sha:
+                            binding_reason = 'measurement environment drift'
+                        else:
+                            try:
+                                _rehash_current_artifact(
+                                    head.get('judge_script_path'), head.get('judge_script_sha'),
+                                    SCRIPT_MAX_BYTES, 'judge_script')
+                                _rehash_current_artifact(
+                                    head.get('result_path'), head.get('result_sha256'),
+                                    RESULT_MAX_BYTES, 'result')
+                            except HTTPException as exc:
+                                binding_reason = str(exc.detail)
+                            else:
+                                measurement_bound = True
+        owned = grade_owned and measurement_bound
         checks.append(gate_check('measurement_owned', owned,
-                                 f"measurement_grade={mg or 'n/a(측정값 없음)'}" if owned else '',
+                                 (f"measurement_grade={mg or 'n/a(측정값 없음)'}"
+                                  + (f" lock={head.get('measurement_lock_sha')}" if has_metric else ''))
+                                 if owned else '',
                                  '' if owned else
-                                 f"측정값 grade={mg or 'client_asserted'} — 값소유(server_regenerated: "
-                                 'replay 재유도) 또는 attested(트리 attestor_dids 선언 allow-list 신원 서명) '
-                                 '필요; authored(자기서명)는 authorship 증명일 뿐 권위 아님(jp5)'))
+                                 ((binding_reason + '; ') if binding_reason else '')
+                                 + f"측정값 grade={mg or 'client_asserted'} — 값소유(server_regenerated: "
+                                   'replay 재유도) 또는 attested(트리 attestor_dids 선언 allow-list 신원 서명) '
+                                   '및 current v5 MeasurementLock 필요; authored(자기서명)는 authorship 증명일 뿐 '
+                                   '권위 아님(jp5)'))
         # jp1: 판관 정체성을 인증서 payload 에 동봉 — sealed(head receipt 봉인값; v1 legacy=None=익명 판관)
         #   vs current(이 프로세스의 규칙 정체성). 독자는 '누가 찍었고 지금 판관과 같은가'를 읽을 수 있다.
         cert = certify_claim(f'{name}/{tag}', checks, dict(
             as_of=datetime.now(timezone.utc).isoformat(),
-            engine_rule_sha=dict(sealed=x.get('sealed_ers'), current=ENGINE_RULE_SHA),
+            engine_rule_sha=dict(sealed=head.get('engine_rule_sha') if head else None,
+                                 current=ENGINE_RULE_SHA),
             shas={k: v for k, v in {(x['script'] or ''): (x['sha'] or '')}.items() if k and v}))
         return dict(claim_id=cert.claim_id, certified=cert.certified, missing=list(cert.missing),
                     checks=[dict(gate=c.gate, passed=c.passed, evidence_ref=c.evidence_ref,

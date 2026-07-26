@@ -35,6 +35,7 @@ def _ev(cid, name, **attrs):
 def _val(tw):
     row = dict(verdict="progressive", verdict_source="scripted", current_receipt_sha="r1",
                measurement_grade="server_regenerated", replay_status="verified",
+               measurement_lock_bound=True,
                assurance_tier_resolved="anchored", attested_by_did=WDID, engine_rule_sha="e1")
     return verdict_assurance(row, tree_attestors=[WDID], engine_rule_floor=frozenset({"e1"}),
                              temporal_witness=tw)["val"]

@@ -8,6 +8,7 @@ import pytest
 from psycopg2 import OperationalError as PgOperationalError
 
 from server.container import AppContainer
+from server.ports import GuardedKgOps, KgTxGuardFailed
 
 
 class _FakeSession:
@@ -48,6 +49,24 @@ def test_kg_tx_runs_all_ops_in_one_unit():
     c = AppContainer(neo=neo, mongo=_FakeMongo(), pg_kw={})
     c.kg_tx([("CREATE (a)", {"x": 1}), ("CREATE (b)", {"y": 2})])
     assert [q for q, _ in neo.queries] == ["CREATE (a)", "CREATE (b)"]   # 단일 트랜잭션 내 순차 실행
+
+
+def test_guarded_kg_tx_raises_inside_unit_before_later_ops():
+    class EmptyFirstSession(_FakeSession):
+        def run(self, q, **kw):
+            self._sink.append((q, kw))
+            rows = [] if q == "CLAIM" else [{"unexpected": True}]
+            return type("R", (), {"data": lambda _self: rows})()
+
+    class GuardNeo(_FakeNeo):
+        def session(self):
+            return EmptyFirstSession(self.queries)
+
+    neo = GuardNeo()
+    c = AppContainer(neo=neo, mongo=_FakeMongo(), pg_kw={})
+    with pytest.raises(KgTxGuardFailed):
+        c.kg_tx(GuardedKgOps([("CLAIM", {}), ("PROVENANCE", {})]))
+    assert [q for q, _ in neo.queries] == ["CLAIM"]
 
 
 def test_close_collects_per_resource_errors():

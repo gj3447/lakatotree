@@ -120,7 +120,7 @@ def test_negative_oracle_recompute_is_load_bearing(monkeypatch):
 
 
 def test_ops_fsck_include_receipts_wiring(monkeypatch):
-    """프로드 도달: ?include_receipts=1 이 배치 동봉으로 finding 표면화, 기본 off 는 현행 산출 동일,
+    """프로드 도달: 기본 감사가 receipt를 동봉해 finding 표면화, 명시적 off는 경량 구조 감사,
     skiplist 는 비동봉 base-sha 로 선-단락(면제 의미 보존 — total 은 계속 집계)."""
     from server import app
 
@@ -135,11 +135,11 @@ def test_ops_fsck_include_receipts_wiring(monkeypatch):
     base_row = {"tag": "n1", "verdict": "proof", "current_receipt_sha": head["receipt_sha"]}
     monkeypatch.setattr(app, "kg", _kg)
     monkeypatch.setattr(app, "tree_data", lambda n: {"nodes": [dict(base_row)]})
-    # 기본 off: recompute 체커 미발화(비동봉) — 현행 산출 동일
-    off = app.ops_fsck()
+    # 명시적 off: recompute 체커 미발화(비동봉) — 경량 구조 감사
+    off = app.ops_fsck(include_receipts=False)
     assert off["total_records"] == 1 and off["counts"].get("RECEIPT_SHA_CONTENT_MISMATCH") is None
-    # opt-in: 변조 표면화
-    on = app.ops_fsck(include_receipts=True)
+    # 기본값: 변조 표면화
+    on = app.ops_fsck()
     assert on["counts"].get("RECEIPT_SHA_CONTENT_MISMATCH") == 1
     # skiplist(비동봉 base-sha 열거)면 enriched 검사도 선-단락, total 은 여전히 집계
     import json as _json

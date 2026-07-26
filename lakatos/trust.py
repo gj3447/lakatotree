@@ -12,6 +12,11 @@ from urllib.parse import urlparse
 from lakatos.grounding import GROUNDED   # T-H-1: damping/alpha 단일 정본(하드코딩 금지 — drift/G5 우회 방지)
 
 
+# Internal execution evidence has no external source graph.  This neutral classifier input is
+# used by judgement/eureka only; it must never be converted into an INTERNET ResearchEvent.
+INTERNAL_SOURCE_TRUST = 1.0
+
+
 def trustrank(graph: dict, seeds: dict, damping: float = GROUNDED['pagerank_damping']['value'],
               iters: int = 50) -> dict:
     """TrustRank — 시드(신뢰 페이지)에서 biased PageRank 로 신뢰 전파.

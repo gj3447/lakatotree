@@ -16,8 +16,9 @@ LakatoTree 로 옮긴다:
     동형. 같은 (cmd,deps,params,env)면 재실행 결과도 같다(결정론 replay _REPLAY_TOL) → 재검증 1회.
   · dirty-check: deps sha 재계산 ≠ lock → stale_inputs, env_sha ≠ 현재 → env_drift (io.replay reason 어휘).
 
-전부 순수함수. receipt v3 필드셋은 불변(lock 은 사이드카 — verdict receipt 를 건드리지 않는다, S4 처럼
-소급 강등 0). 라이브 :MeasurementLock 노드 mint 는 S8b(submit 배선).
+전부 순수함수. 라이브 submit은 :MeasurementLock 전체 payload를 내용주소화하고,
+v5 verdict receipt가 그 lock_sha와 정규 script/result 경로·SHA를 봉인한다. 노드·receipt·lock은
+가드된 verdict CAS와 같은 Neo4j transaction에서 mint되며 fsck/provenance가 payload를 재해시한다.
 # KG: q-extaudit-replay-default-on-20260722 잔여 / crit-extaudit-receipt-seals-claims-not-experiments
 """
 from __future__ import annotations

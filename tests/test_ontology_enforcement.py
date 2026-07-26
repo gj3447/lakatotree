@@ -95,6 +95,8 @@ def _judge(ontology: str):
     def kg(query, **k):
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": ontology}]
+        if "RETURN e.current_receipt_sha AS prev_rsha" in query:
+            return [{"prev_rsha": None}]
         if "SET e.pred_metric" in query:
             return [{"tag": "n"}]
         return []

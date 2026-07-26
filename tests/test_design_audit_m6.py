@@ -30,6 +30,8 @@ def test_prediction_locked_rejects_post_measurement_edit():
         queries.append(query)
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": None}]              # 온톨로지 미선언 → metric 강제 skip
+        if "RETURN e.current_receipt_sha AS prev_rsha" in query:
+            return [{"prev_rsha": None}]
         if "SET e.pred_metric" in query:
             # 새 WHERE(pred_registered_at IS NULL) 의 의미를 모킹: 이미 등록됐으면 0행
             if state["registered"]:
@@ -57,6 +59,8 @@ def test_register_on_fresh_unregistered_node_still_ok():
     def kg(query, **k):
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": None}]
+        if "RETURN e.current_receipt_sha AS prev_rsha" in query:
+            return [{"prev_rsha": None}]
         if "SET e.pred_metric" in query:
             return [{"tag": "fresh"}]
         return []

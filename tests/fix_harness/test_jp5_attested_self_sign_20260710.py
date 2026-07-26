@@ -42,7 +42,8 @@ def test_authored_ladder_and_g6_teeth():
     # authored 생성: 서명은 있으나 트리 선언 allow-list 부재 → authorship 등급.
     assert resolve_measurement(None, 0.5, authored=True) == (0.5, "authored", "not_attempted")
     # server_regenerated(값소유)가 authored 를 이긴다.
-    assert resolve_measurement(ok, 0.5, authored=True) == (0.7, "server_regenerated", "verified")
+    assert resolve_measurement(ok, 0.5, authored=True, artifact_bound=True) == \
+        (0.7, "server_regenerated", "verified")
     # attested 는 authored 보다 우선(호출부가 상호배타 구성 — allow-list 존재가 분기).
     assert resolve_measurement(None, 0.5, attested=True) == (0.5, "attested", "not_attempted")
     # 기존 2단 무변경(ag5 진리표 보존).
@@ -89,8 +90,11 @@ def _svc(tree_props):
 
 
 def _cert(metric_value=1.0):
+    request = Result(metric_value=metric_value, script="inline")
     command = dict(tree="T", tag="seam", prev_receipt_sha=None, metric_value=metric_value, script_sha="",
-                   verb="submit_test_result")
+                   verb="submit_test_result", command_version="v4",
+                   operation_payload_sha256=W.operation_payload_sha256(
+                       "submit_test_result", request.model_dump(exclude={"write_cert"})))
     sig = W.ed25519_sign(_SK_A, W.canonical_cert_blob(command, _NOW))
     return WriteCertIn(signer_did=_DID_A, signature=sig.hex(), issued_at=_NOW,
                        command=CertCommandIn(**command))

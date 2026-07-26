@@ -21,7 +21,7 @@ requirements:
       must_emit: read_model_attaches_val_nondestructive
 
   - id: EVS-2
-    description: submit 응답 헬퍼 — response_assurance 가 방금 봉인된 필드에서 (verdict_display, assurance) 를 재도출 (armed=@L2 vs disarmed=@L0 구분)
+    description: submit 응답 헬퍼 — response_assurance 가 방금 봉인된 필드와 bound MeasurementLock 사실에서 (verdict_display, assurance) 를 재도출 (armed=@L2 vs disarmed=@L0 구분)
     gate:
       - {event: submit_response_assurance_derived, op: ">=", count: 1}
     longinus:

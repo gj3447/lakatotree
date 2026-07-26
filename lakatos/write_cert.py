@@ -3,8 +3,13 @@
 git push cert(builtin/receive-pack.c:2179-2199): 서명된 blob 이 *곧 명령 목록*이라 sign-X-execute-Y
 가 프로토콜에서 표현 불가하고, author 는 client 문자열이 아니라 서명에서 유도된다. 이식:
 
-  · 서명 대상 = canonical command blob(버전드 헤더 + JCS canonical JSON) — {tree, tag,
-    prev_receipt_sha, metric_value, script_sha}. prev_receipt_sha 가 G1 영수증 체인 포인터에
+  · 서명 대상 = canonical command blob(버전드 헤더 + JCS canonical JSON). v1은
+    {tree, tag, prev_receipt_sha, metric_value, script_sha, verb}; result artifact가 있는 submit은
+    v2의 {command_version, result_path, result_sha256}, v3의 실제 실행 snapshot
+    {judge_script_path, source_*_path}를 서명한다. v4는 host-independent content identity
+    {script_sha, result_sha256}와 검증된 전체 mutation payload digest를 서명하고, 실제 server cache
+    절대경로는 판결 receipt/MeasurementLock에서 봉인한다.
+    prev_receipt_sha가 G1 영수증 체인 포인터에
     CAS 바인딩되어 replay 가 구조적으로 죽는다(재제출=옛 포인터 서명=불일치; 같은 노드 재채점은
     어차피 409 — git 의 HMAC nonce 가 막던 창을 내용주소 체인이 대신 막는다).
   · 신원 = did:key(Ed25519, multicodec 0xed01). 검증은 순수 파이썬 RFC 8032(외부 의존 0 —
@@ -30,11 +35,26 @@ import hmac
 import json
 from datetime import datetime, timezone
 
-CERT_HEADER = b"lakatos-write-cert\x00v1\n"   # 버전드 타입헤더(G1 영수증 인코딩 규율과 동일 장르)
+CERT_HEADER = b"lakatos-write-cert\x00v1\n"   # legacy/canonical/register-prediction command
+CERT_HEADER_V2 = b"lakatos-write-cert\x00v2\n"  # submit-result artifact-bound command
+CERT_HEADER_V3 = b"lakatos-write-cert\x00v3\n"  # immutable replay path-bound command
+CERT_HEADER_V4 = b"lakatos-write-cert\x00v4\n"  # full validated operation-payload binding
 CERT_MAX_AGE_SECONDS = 900.0                  # 발급시각 신선도 창(±) — 코드 상수(요청 가변 금지, G9 규율)
 
 # command 의 고정 필드셋 — 서명이 덮는 범위가 곧 명령의 전부(필드 추가 = 인코딩 버전 bump).
-COMMAND_FIELDS = ("tree", "tag", "prev_receipt_sha", "metric_value", "script_sha", "verb")
+COMMAND_FIELDS_V1 = ("tree", "tag", "prev_receipt_sha", "metric_value", "script_sha", "verb")
+COMMAND_FIELDS_V2 = COMMAND_FIELDS_V1 + ("command_version", "result_path", "result_sha256")
+COMMAND_FIELDS_V3 = COMMAND_FIELDS_V2 + (
+    "judge_script_path", "source_script_path", "source_result_path")
+# v4 is intentionally host-independent.  The complete validated payload digest binds the
+# submitter-visible source paths and every mutation field; script_sha/result_sha256 bind bytes.
+# Server-owned cache paths are deployment details and are sealed later in the v5 verdict receipt
+# and MeasurementLock, not in a client-generated certificate.
+COMMAND_FIELDS_V4 = COMMAND_FIELDS_V1 + (
+    "command_version", "result_sha256", "operation_payload_sha256",
+)
+# Public legacy alias. Existing v1 callers and signature bytes remain unchanged.
+COMMAND_FIELDS = COMMAND_FIELDS_V1
 # AG5-IDENT (측정주권 2026-07-03): verb 판별자 — cert 를 특정 verb 에 바인딩해 submit 용 cert 를
 #   canonical 승격에 재생(sign-X-execute-Y)하지 못하게 봉인한다. 옛 verb-없는 cert 는 verb=None 으로
 #   읽혀 verb 를 요구하는 경로(canonical/submit 강제)와 자동 불일치(하위호환은 무-attestor 트리로 성립).
@@ -74,13 +94,43 @@ def _jcs(obj: object) -> bytes:
                       separators=(",", ":"), allow_nan=False).encode()
 
 
+def operation_payload_sha256(verb: str, payload: dict) -> str:
+    """Hash the complete validated write payload, excluding its recursive certificate envelope."""
+    clean = {key: value for key, value in dict(payload or {}).items() if key != "write_cert"}
+    domain = b"lakatos-write-operation\x00v1\n"
+    return hashlib.sha256(domain + _jcs({"verb": verb, "payload": clean})).hexdigest()
+
+
+def _fields_for_version(version: str | None) -> tuple[str, ...]:
+    return {
+        "v2": COMMAND_FIELDS_V2,
+        "v3": COMMAND_FIELDS_V3,
+        "v4": COMMAND_FIELDS_V4,
+    }.get(version, COMMAND_FIELDS_V1)
+
+
+def _header_for_version(version: str | None) -> bytes:
+    return {
+        "v2": CERT_HEADER_V2,
+        "v3": CERT_HEADER_V3,
+        "v4": CERT_HEADER_V4,
+    }.get(version, CERT_HEADER)
+
+
 def canonical_cert_blob(command: dict, issued_at: str) -> bytes:
     """서명 대상 바이트열 = 헤더 + JCS({command(고정 필드셋), issued_at}). 필드 과부족 = 에러."""
-    unknown = set(command) - set(COMMAND_FIELDS)
+    version = command.get("command_version")
+    fields = _fields_for_version(version)
+    # Pydantic may materialise future optional fields as None on an older command.  Those are
+    # harmless, but any populated field outside the selected generation would otherwise be
+    # silently dropped from the signature (field smuggling).
+    unknown = {key for key, value in command.items() if key not in fields and value is not None}
     if unknown:
         raise CertCommandMismatch(f"command 미지 필드 {sorted(unknown)} — 고정 필드셋 밖(서명 범위 불명)")
-    body = {k: command.get(k) for k in COMMAND_FIELDS}
-    return CERT_HEADER + _jcs({"command": body, "issued_at": issued_at})
+    body = {k: command.get(k) for k in fields}
+    header = _header_for_version(version)
+    return header + _jcs(
+        {"command": body, "issued_at": issued_at})
 
 
 # ── 순수 Ed25519 (RFC 8032) — hashlib 만 사용, 외부 의존 0 ──────────────────────────────────
@@ -287,7 +337,8 @@ def build_write_cert(secret32: bytes, command: dict, issued_at: str | None = Non
         'signer_did': did_key_encode(ed25519_public_key(secret32)),
         'signature': sig.hex(),
         'issued_at': ts,
-        'command': {k: command.get(k) for k in COMMAND_FIELDS},
+        'command': {k: command.get(k) for k in _fields_for_version(
+            command.get('command_version'))},
     }
 
 
@@ -317,8 +368,11 @@ def verify_write_cert(cert: dict, *, expected_command: dict, allowlist: list[str
         raise CertSignerNotAllowed(f"서명자 {signer[:24]}… 는 트리 attestor allow-list 밖")
     public = did_key_decode(signer)
     command = dict(cert.get("command") or {})
-    if _jcs({k: command.get(k) for k in COMMAND_FIELDS}) != \
-            _jcs({k: expected_command.get(k) for k in COMMAND_FIELDS}):
+    expected_version = expected_command.get("command_version")
+    command_version = command.get("command_version")
+    fields = _fields_for_version(expected_version)
+    if command_version != expected_version or _jcs({k: command.get(k) for k in fields}) != \
+            _jcs({k: expected_command.get(k) for k in fields}):
         raise CertCommandMismatch(
             f"서명된 명령 ≠ 실제 요청 (sign-X-execute-Y 거부): cert={command} req={expected_command}")
     issued_at = cert.get("issued_at") or ""

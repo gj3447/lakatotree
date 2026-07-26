@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from collections.abc import Callable
@@ -15,9 +16,12 @@ from fastapi import HTTPException
 
 from lakatos import assurance, layout as layout_mod, longinus, temporal as temporal_mod
 from lakatos import measurement_lock as mlock_mod
+from lakatos import replay_artifacts as replay_artifact_mod
 from lakatos.io import envfp as envfp_mod
+from lakatos.io.replay import ProducerReplayVerdict
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
+from lakatos.trust import INTERNAL_SOURCE_TRUST
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
@@ -28,7 +32,8 @@ from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
 from lakatos.verdicts import (ADMIN_VERDICTS, comment_seal_sha, fold_receipt_chain, is_admin_verdict,
                               prediction_content_sha, receipt_content_sha)
-from lakatos.write_cert import CertError, CertSignerNotAllowed, verify_write_cert
+from lakatos.write_cert import (CertError, CertSignerNotAllowed, operation_payload_sha256,
+                                verify_write_cert)
 from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.cycle_budget import assert_scoring_budget
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
@@ -37,7 +42,7 @@ from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_
 from server.engine_freshness import freshness_provider_from_env
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
 from server.file_hashing import file_sha
-from server.ports import HistoryAppend, KgQuery, KgTx
+from server.ports import GuardedKgOps, HistoryAppend, KgQuery, KgTx, KgTxGuardFailed
 
 
 FoundationProvider = Callable[[str], FoundationMap | None]
@@ -47,7 +52,8 @@ ReproducibleProvider = Callable[[str, str], bool | None]
 # FF4 (보안, deep-dive 2026-06-26): judge-script sha 재유도가 *임의* 절대파일을 읽지 않도록 허용 루트 안으로
 #   containment(relative traversal 거부와 대칭). 허용 = repo ROOT + OS temp(테스트/런타임 작업영역) + 선택 env.
 def _allowed_script_roots() -> list[Path]:
-    roots = [Path(longinus.ROOT).resolve(), Path(tempfile.gettempdir()).resolve()]
+    roots = [Path(longinus.ROOT).resolve(), Path(tempfile.gettempdir()).resolve(),
+             replay_artifact_mod.replay_cache_root()]
     for part in os.environ.get('LAKATOS_SCRIPT_ROOTS', '').split(os.pathsep):
         part = part.strip()
         if part:
@@ -61,6 +67,7 @@ def _allowed_script_roots() -> list[Path]:
 # FF4 판정의 단일 출처 — sha 재유도(JudgementService._isolate_script_file)와 AG2 replay 실행(app._replay_run)이
 #   *같은* 격리를 공유한다(보안 로직 이중화 = drift 위험). 통과=(resolved, {}) / 거부=(None, {'reason': ...}).
 SCRIPT_MAX_BYTES = 8 << 20   # FF4: 무제한 read/exec RAM-DoS 차단 (judge 스크립트는 작다)
+RESULT_MAX_BYTES = 64 << 20  # replay artifact hash 상한(대형 임의파일 read/DoS 차단)
 
 
 def isolate_script_file(file_str: str, max_bytes: int = SCRIPT_MAX_BYTES) -> tuple[Path | None, dict]:
@@ -125,6 +132,7 @@ class JudgementService:
     # KG: seed-lkt-engine-route-judgement-extract-20260616
 
     _SCRIPT_MAX_BYTES = SCRIPT_MAX_BYTES   # FF4 size cap — 모듈 정본(isolate_script_file 과 공유)
+    _RESULT_MAX_BYTES = RESULT_MAX_BYTES
 
     def __init__(
         self,
@@ -212,7 +220,7 @@ class JudgementService:
         tests/test_eureka_source_trust_eigentrust.py."""
         src, eigen, backed = self._node_eigentrust(name, tag)
         if src is None:
-            return 1.0
+            return INTERNAL_SOURCE_TRUST
         return float(eigen) if backed else 0.0
 
     def _isolate_script_file(self, file_str: str) -> tuple[Path | None, dict]:
@@ -254,6 +262,20 @@ class JudgementService:
         except OSError:
             return None, {'reason': 'read_error', 'script': s}
         return sha, {'reason': 'file_content_sha', 'path': str(resolved)}
+
+    def _recompute_result_sha(self, result_path: str) -> tuple[str | None, str, dict]:
+        """Resolve and hash a replay artifact within allowed roots and a bounded size."""
+        raw = (result_path or '').strip()
+        if not raw:
+            return None, '', {'reason': 'empty_result_path'}
+        resolved, info = isolate_script_file(raw, self._RESULT_MAX_BYTES)
+        if resolved is None:
+            return None, raw, info
+        try:
+            sha = file_sha(str(resolved))
+        except OSError:
+            return None, str(resolved), {'reason': 'read_error', 'result_path': raw}
+        return sha, str(resolved), {'reason': 'file_content_sha'}
 
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
         # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
@@ -306,7 +328,11 @@ class JudgementService:
                                              f'서명 명령만 인정(allow-list {len(attestors)}명). 비가역 verb '
                                              f'서명강제(AG5-IDENT).')
                 expected_command = dict(tree=name, tag=tag, prev_receipt_sha=cand.get('prev_receipt_sha'),
-                                        metric_value=None, script_sha=None, verb='set_verdict_canonical')
+                                        metric_value=None, script_sha=None,
+                                        verb='set_verdict_canonical', command_version='v4',
+                                        operation_payload_sha256=operation_payload_sha256(
+                                            'set_verdict_canonical',
+                                            v.model_dump(exclude={'write_cert'})))
                 try:
                     verify_write_cert(v.write_cert.model_dump(), expected_command=expected_command,
                                       allowlist=attestors if attestors else [v.write_cert.signer_did])
@@ -551,6 +577,13 @@ class JudgementService:
                 _rl = _cand
         except layout_mod.LayoutError:
             _rl = None
+        # Read the actual ledger tip before certificate verification.  The same value is signed,
+        # sealed into the PredictionReceipt, and CAS-checked by the write below.
+        head_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  RETURN e.current_receipt_sha AS prev_rsha""", tree=name, tag=tag)
+        if not head_rows:
+            raise HTTPException(404, f'노드 없음: {tag}')
+        prev_rsha = head_rows[0].get('prev_rsha')
         _predict_keys = layout_mod.pubkeys_for_verb(_rl, 'register_prediction') if _rl else None
         if _predict_keys is not None:
             if p.write_cert is None:
@@ -559,9 +592,12 @@ class JudgementService:
             _dv = layout_mod.disjoint_violation(_rl, p.write_cert.signer_did, 'register_prediction')
             if _dv:
                 raise HTTPException(403, f'역할분리 위반: {_dv}')
-            _expected = dict(tree=name, tag=tag, prev_receipt_sha=None,
+            _expected = dict(tree=name, tag=tag, prev_receipt_sha=prev_rsha,
                              metric_value=None, script_sha=p.judge_script_sha,
-                             verb='register_prediction')
+                             verb='register_prediction', command_version='v4',
+                             operation_payload_sha256=operation_payload_sha256(
+                                 'register_prediction',
+                                 p.model_dump(exclude={'write_cert'})))
             try:
                 verify_write_cert(p.write_cert.model_dump(), expected_command=_expected,
                                   allowlist=_predict_keys)
@@ -581,9 +617,6 @@ class JudgementService:
         #   read-write 사이 경합을 원자적으로 봉쇄(#M5/강등 receipt 의 CAS 패턴 답습 — 불일치=0행=409,
         #   오염된 mint 없음). submit 은 이미 e.current_receipt_sha 를 prev 로 봉인하므로 verdict receipt 가
         #   이 prediction sha 를 내용으로 커밋 → spec back-fit 은 체인이 표현 못 한다(ReceiptChainBroken).
-        head_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                  RETURN e.current_receipt_sha AS prev_rsha""", tree=name, tag=tag)
-        prev_rsha = head_rows[0].get('prev_rsha') if head_rows else None
         ts = datetime.now(timezone.utc).isoformat()
         spec = p.model_dump()
         pred_receipt_fields = dict(
@@ -700,6 +733,7 @@ class JudgementService:
                             e.pred_registered_at AS pred_registered_at,
                             e.node_state AS node_state, e.judged_at AS judged_at,
                             e.metric_value AS existing_metric_value,
+                            coalesce(e.source_result_path, e.result_path) AS existing_result_path,
                             e.verdict AS existing_verdict, e.lakatos_status AS existing_lstat,
                             e.current_receipt_sha AS prev_receipt_sha,
                             e.comment AS node_comment,
@@ -778,6 +812,30 @@ class JudgementService:
                 raise HTTPException(409, f"채점 스크립트 sha256 불일치 — 사전등록 {pr['psha'][:12]} ≠ 제출 {r.script_sha[:12]}")
         # 저장·prov 는 server_sha(파일 재유도) 우선; 재계산 불가면 client 값 보존(server-미검증 플래그와 함께).
         stored_sha = server_sha if sha_verified else (r.script_sha or '')
+        source_script_path = (sha_info.get('path') if sha_verified and sha_info.get('path')
+                              else r.script)
+        # ``file::symbol`` can have a server-derived body hash, but it is not an executable file
+        # identity.  Never turn that hash into replay authority or pass the symbol string to Python.
+        script_replay_bound = bool(
+            sha_verified and sha_info.get('reason') == 'file_content_sha'
+            and sha_info.get('path') and len(stored_sha) == 64)
+        requested_result_path = r.result_path or pr.get('existing_result_path') or ''
+        result_sha_before, source_result_path, result_info = self._recompute_result_sha(
+            requested_result_path)
+        replay_inputs_bound = bool(
+            script_replay_bound
+            and result_sha_before is not None and len(result_sha_before) == 64)
+        sealed_script_path = source_script_path
+        sealed_result_path = source_result_path
+        snapshot_script_path = snapshot_result_path = None
+        if replay_inputs_bound:
+            try:
+                snapshot_script_path = str(replay_artifact_mod.snapshot_path(
+                    kind='script', sha256=stored_sha, source_path=source_script_path))
+                snapshot_result_path = str(replay_artifact_mod.snapshot_path(
+                    kind='result', sha256=result_sha_before, source_path=source_result_path))
+            except replay_artifact_mod.ReplayArtifactError as exc:
+                raise HTTPException(422, f'replay snapshot identity 거부: {exc}')
         # G10(git-흡수): attestor 선언 트리의 판결 쓰기는 *서명 cert 가 유일한 명령원*(push-cert 이식,
         #   receive-pack.c:2179-2199 — cert 와 다른 명령의 동시 제출=프로토콜 에러). 발동 = tier 게이트
         #   무장(assurance.GATE_WRITE_CERT) ∧ attestor allow-list(키 실물) 선언 — on/off 플래그가 아니라
@@ -807,9 +865,26 @@ class JudgementService:
                 raise HTTPException(403, f'write-cert 필수 — attestor 선언 {tier} 트리의 판결 쓰기는 서명 '
                                          f'명령만 인정(allow-list {len(attestors)}명). client author 문자열은 '
                                          f'authorship 이 아니다(G10 Sybil 봉합)')
+            # Every new mutation uses v4 full-payload binding.  An explicitly supplied/pre-existing
+            # result additionally requires host-independent script/result content hashes; a truly
+            # result-less v4 attestation remains non-replay-authoritative.
+            artifact_command_required = bool(requested_result_path)
+            if artifact_command_required and not replay_inputs_bound:
+                raise HTTPException(
+                    422, 'artifact-bound write-cert 거부 — submit 스크립트와 result_path 모두 '
+                         f'허용 루트의 정규파일·서버 SHA여야 함 '
+                         f'(result={result_info.get("reason")}, script={sha_info.get("reason")})')
             expected_command = dict(tree=name, tag=tag, prev_receipt_sha=pr.get('prev_receipt_sha'),
                                     metric_value=r.metric_value, script_sha=stored_sha,
-                                    verb='submit_test_result')   # AG5-IDENT: cert 를 이 verb 에 바인딩
+                                    verb='submit_test_result', command_version='v4',
+                                    operation_payload_sha256=operation_payload_sha256(
+                                        'submit_test_result',
+                                        r.model_dump(exclude={'write_cert'})))
+            if artifact_command_required:
+                # v4 certificates bind host-independent content identity.  Absolute cache paths
+                # belong to this server deployment and are sealed only after materialisation in
+                # the verdict receipt/MeasurementLock; a remote CLI must not predict server HOME.
+                expected_command.update(result_sha256=result_sha_before)
             # S6: disjoint_roles 위반(같은 서명자가 predict/attest 겸직) 선차단 — 급소 #2 직접 답.
             if role_layout is not None:
                 _dv = layout_mod.disjoint_violation(role_layout, r.write_cert.signer_did,
@@ -955,7 +1030,41 @@ class JudgementService:
         #   e.metric_value=None 을 읽어 submit 시 항상 not_attempted 로 죽어 있었다). resolve_measurement 이
         #   verified∧regenerated 부분집합에서만 regenerated 를 SSOT 로 치환(SCOPED — 외부/반증값 파괴 금지).
         #   여기서 계산해 next_state·receipt·SET·hist 가 *같은* effective_metric/measurement_grade 를 봉인.
-        _vo = self.producer_replay_submit(r.script, r.result_path, r.metric_value)
+        if replay_inputs_bound:
+            # Copy both inputs into a server-private content-addressed cache *before* execution.
+            # The scorer never receives the submitter-writable source paths, closing the
+            # swap->execute->restore race that pre/post hashing alone cannot detect.
+            try:
+                sealed_script_path = replay_artifact_mod.materialize_snapshot(
+                    source_path=source_script_path, expected_sha256=stored_sha,
+                    kind='script', max_bytes=self._SCRIPT_MAX_BYTES)
+                sealed_result_path = replay_artifact_mod.materialize_snapshot(
+                    source_path=source_result_path, expected_sha256=result_sha_before,
+                    kind='result', max_bytes=self._RESULT_MAX_BYTES)
+            except (OSError, replay_artifact_mod.ReplayArtifactError) as exc:
+                raise HTTPException(409, f'replay immutable snapshot 실패 — 재제출 필요: {exc}')
+            _vo = self.producer_replay_submit(
+                sealed_script_path, sealed_result_path, r.metric_value)
+            # Private snapshots are still re-hashed after execution as corruption detection.
+            result_sha_after, result_path_after, _ = self._recompute_result_sha(
+                sealed_result_path)
+            script_sha_after, script_info_after = self._recompute_script_sha(sealed_script_path)
+            if (result_sha_before != result_sha_after
+                    or sealed_result_path != result_path_after
+                    or stored_sha != script_sha_after
+                    or sealed_script_path != script_info_after.get('path')):
+                raise HTTPException(
+                    409, 'replay input changed during producer replay (TOCTOU) — 재제출 필요')
+            result_sha = result_sha_after
+        else:
+            # Never pass an out-of-root/missing/unhashed result argument to a scorer.  A successful
+            # scorer without immutable input identity is not external verification.
+            unbound_reason = (f'unsealed_script:{sha_info.get("reason")}' if not script_replay_bound else
+                              f'unsealed_result:{result_info.get("reason")}')
+            _vo = ProducerReplayVerdict(
+                verified=None, regenerated=None, recorded=r.metric_value,
+                reason=unbound_reason)
+            result_sha = None
         # AG5/R-SOV V3 + jp5: 권위(attested)는 *트리가 선언한* non-empty allow-list 대비 서명만 —
         #   empty-attestor fallback 자기서명은 authorship('authored', OWNED_GRADES 밖 → G6 fail-closed)
         #   이지 attestation 이 아니다(버리는 키페어로 G6 를 사는 인센티브 역전 봉합). :654 의 fallback
@@ -963,7 +1072,40 @@ class JudgementService:
         attested_by_allowlist = attested_by_did is not None and bool(attestors)
         authored_self_signed = attested_by_did is not None and not attestors
         effective_metric, measurement_grade, replay_status = resolve_measurement(
-            _vo, r.metric_value, attested=attested_by_allowlist, authored=authored_self_signed)
+            _vo, r.metric_value, attested=attested_by_allowlist, authored=authored_self_signed,
+            artifact_bound=replay_inputs_bound)
+        # replay_status 는 요약 label 이다. 실제 조치(값 불일치 재실험 vs scorer 계약/실행 수리)를
+        # 결정할 수 있도록 서버 판정의 세부 원인과 재생성 값을 별도 진단 provenance 로 보존한다.
+        # 아래 v4 verdict receipt에도 함께 봉인해 node cache만 바꿔 운영 진단을 위조할 수 없게 한다.
+        replay_reason = _vo.reason if _vo is not None else None
+        regenerated_metric = _vo.regenerated if _vo is not None else None
+        # S7 temporal witness and S8 MeasurementLock are computed before the verdict receipt so
+        # the lock SHA can be sealed and minted atomically with the guarded verdict write.
+        temporal_witness = bool(pr.get('pred_anchor_verified')) and temporal_mod.anchor_ordering_ok(
+            str(pr.get('pred_anchor_gen_time') or ''), ts)
+        _lock = None
+        _lsha = _lkey = _lock_payload_json = _env_sha = None
+        if replay_inputs_bound:
+            try:
+                _env_sha = envfp_mod.fingerprint_sha(envfp_mod.environment_fingerprint())
+                deps = [
+                    {'path': sealed_script_path, 'sha256': stored_sha},
+                    {'path': sealed_result_path, 'sha256': result_sha},
+                ]
+                _lock = mlock_mod.build_measurement_lock(
+                    cmd=replay_command(sealed_script_path, sealed_result_path),
+                    deps=deps,
+                    params={'metric_name': pr['m'], 'noise_band': pr.get('nb')},
+                    env_sha=_env_sha,
+                    outs=[{'name': pr['m'], 'value': effective_metric}],
+                    measurement_grade=measurement_grade, replay_status=replay_status)
+                _lsha, _lkey = mlock_mod.lock_sha(_lock), mlock_mod.lock_key(_lock)
+                _lock_payload_json = json.dumps(
+                    _lock, sort_keys=True, separators=(',', ':'),
+                    ensure_ascii=False, allow_nan=False)
+            except Exception as exc:  # noqa: BLE001 — no verified grade may exist without its lock
+                raise HTTPException(
+                    503, f'MeasurementLock mint 실패 — 판결을 저장하지 않음: {type(exc).__name__}: {exc}')
         next_state = derive_node_state({
             'verdict': verdict,
             'verdict_source': 'scripted',
@@ -1009,27 +1151,39 @@ class JudgementService:
             judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha,
             measurement_grade=measurement_grade,
             engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성 봉인(v2) — 명시 전달(가드가 핀)
-            comment_sha=csha)   # S4: 해석층 봉인(v3) — 명시 전달
+            comment_sha=csha,   # S4: 해석층 봉인(v3) — 명시 전달
+            replay_status=replay_status, replay_reason=replay_reason,
+            regenerated_metric=regenerated_metric,
+            judge_script_path=sealed_script_path, result_path=sealed_result_path,
+            result_sha256=result_sha, measurement_lock_sha=_lsha,
+            source_script_path=source_script_path,
+            source_result_path=source_result_path)
         rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
                    WITH e
-                   WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
+                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                       OR ($freshen AND e.verdict = 'partial'
                           AND e.lakatos_status IN ['novel_not_server_anchored', 'provisional_stale_engine']
-                          AND e.metric_value = $mv)
+                          AND e.metric_value = $mv))
+                     AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.node_state=$node_state,
                        e.judge_script=$script, e.judge_script_sha=$sha,
-                       e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
+                       e.result_path=$rp, e.result_sha256=$result_sha256, e.judged_at=$ts,
+                       e.source_judge_script_path=$source_script,
+                       e.source_result_path=$source_rp,
                        e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
                        e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
                        e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
                        e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
+                       e.replay_reason=$replay_reason, e.regenerated_metric=$regenerated_metric,
                        e.measurement_grade=$mg, e.comment_sha_at_verdict=$csha,
-                       e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha
+                       e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha,
+                       e.measurement_lock_sha=$lsha, e.measurement_lock_key=$lkey,
+                       e.temporal_witness_verified=$tw
                    WITH e
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
@@ -1037,38 +1191,61 @@ class JudgementService:
                        rec.metric_value=$mv, rec.novel_confirmed=$novel, rec.lakatos_status=$lstat,
                        rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha,
                        rec.measurement_grade=$mg, rec.engine_rule_sha=$engine_rule_sha,
-                       rec.comment_sha=$csha
+                       rec.comment_sha=$csha, rec.replay_status=$replay_status,
+                       rec.replay_reason=$replay_reason, rec.regenerated_metric=$regenerated_metric,
+                       rec.judge_script_path=$script, rec.result_path=$rp,
+                       rec.result_sha256=$result_sha256, rec.measurement_lock_sha=$lsha,
+                       rec.source_script_path=$source_script,
+                       rec.source_result_path=$source_rp
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
+                   FOREACH (_ IN CASE WHEN $lsha IS NULL THEN [] ELSE [1] END |
+                     MERGE (ml:MeasurementLock {lock_sha:$lsha})
+                     SET ml.lock_key=$lkey, ml.cmd=$lock_cmd, ml.env_sha=$lock_env,
+                         ml.measurement_grade=$mg, ml.replay_status=$replay_status,
+                         ml.payload_json=$lock_payload_json
+                     MERGE (e)-[:HAS_LOCK]->(ml)
+                   )
                    RETURN e.tag AS claimed""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=effective_metric, v=verdict,
                      mg=measurement_grade,   # AG3: 측정 출처등급(server_regenerated/client_asserted) 봉인
                      freshen=freshen_anchor,   # novel-anchor freshen: CAS 탈출은 앵커-데모트 partial 동일값 재제출만
-                     script=r.script, sha=stored_sha, rp=r.result_path, ts=ts, novel=novel_independent,
+                     script=sealed_script_path, sha=stored_sha, rp=sealed_result_path,
+                     source_script=source_script_path, source_rp=source_result_path,
+                     result_sha256=result_sha, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
                      nsa=(novel_server_sha is not None),   # FF1 phase1: cross-metric novel 서버앵커 여부(가시성, 점수 불변)
                      atier=tier,   # G6 S5: 이 판결이 어느 tier 로 resolve 됐는지 스탬프(fsck tier-resolve 흔적)
                      attested_by_did=attested_by_did,   # G10: author=서명 유도(client 문자열 아님), 무cert=null
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch/not_replayable)
+                     replay_reason=replay_reason, regenerated_metric=regenerated_metric,
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
                      csha=csha,   # S4: 판정 시점 comment 봉인 미러 + receipt v3 필드 persist
+                     lsha=_lsha, lkey=_lkey,
+                     lock_cmd=(_lock or {}).get('cmd'), lock_env=_env_sha,
+                     lock_payload_json=_lock_payload_json, tw=temporal_witness,
                      efresh=efresh,                     # jp4: 판관 자기진단 관측화(unchecked/fresh/stale_code/incapable/indeterminate)
                      boot_sha=(fresh or {}).get('boot_git_sha'),   # jp4: 노드-레벨 판관 신원 provenance(영수증 봉인은 jp1 engine_rule_sha 가 정본)
                      eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
                      eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
-        for tr in prov_triples(name, tag, r.script, r.result_path, verdict, stored_sha, ts):
+        for tr in prov_triples(name, tag, sealed_script_path, sealed_result_path,
+                               verdict, stored_sha, ts):
             if tr.get('kind'):
-                ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->
+                                   (e {tag:$tag, current_receipt_sha:$rsha})
                       MERGE (p:ProvNode {id:$id}) SET p.kind=$kind, p.type=$type, p.sha256=$sha
                       MERGE (e)-[:HAS_PROV]->(p)""",
-                            dict(tree=name, tag=tag, id=tr['id'], kind=tr['kind'],
+                            dict(tree=name, tag=tag, rsha=rsha, id=tr['id'], kind=tr['kind'],
                                  type=tr.get('type'), sha=tr.get('sha256'))))
             else:
-                ops.append(("""MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
+                ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->
+                                   (e {tag:$tag, current_receipt_sha:$rsha})
+                      MERGE (a:ProvNode {id:$f}) MERGE (b:ProvNode {id:$to})
                       MERGE (a)-[rel:PROV_REL {kind:$rk}]->(b)""",
-                            dict(f=tr['from'], to=tr['to'], rk=tr['rel'])))
+                            dict(tree=name, tag=tag, rsha=rsha,
+                                 f=tr['from'], to=tr['to'], rk=tr['rel'])))
         # R6(후속 PROM): pre-commit fsck 시트 — 이제 쓸 record 를 *쓰기 전에* 같은 체커(boundary_fsck ==
         #   fsck_node == 감사)로 검사. 정상 경로는 by-construction 통과(prereg 필수·tier/receipt 스탬프
         #   동봉)라 이 시트의 가치는 활성 필터가 아니라 **드리프트 보험**: 미래의 어떤 write 경로 변경이
@@ -1086,51 +1263,37 @@ class JudgementService:
         if _seat:
             raise HTTPException(422, f'pre-commit fsck 거부(쓰기 전 — 원장/스탬프 드리프트): '
                                      f'{[(f.check_id, f.severity) for f in _seat]}')
-        tx_result = self.kg_tx(ops)
+        try:
+            tx_result = self.kg_tx(GuardedKgOps(ops))
+        except KgTxGuardFailed:
+            raise HTTPException(
+                409, '동시/재채점 차단 — receipt tip CAS 불일치(트랜잭션 전체 rollback)')
         # #M5: 원자 CAS claim 결과 판정 — 첫 op(가드된 판결 SET)이 0행이면 동시 submit 이 이미 점유 → 409.
         #   per-op 결과 shape(len==ops, 각 op 의 .data() 리스트)일 때만 검사(실제 KG 트랜잭션). 그 외(미모델
         #   테스트 더블/None)는 상단 read-check 가 권위 — 하위호환 보존(좁은 검사로 거짓 409 회피).
         if (isinstance(tx_result, list) and len(tx_result) == len(ops)
                 and isinstance(tx_result[0], list) and not tx_result[0]):
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
-        # EXTAUDIT S7b: 외부 증인 temporal witness — 예측 spec 앵커(T1, 외부 증인)가 검증됐고 판정 시각
-        #   ts(T2)가 T1 이후면 성립. 백데이트 공격은 예측 측이므로 T1 외부성 + judged_at 단조가 봉쇄한다.
-        temporal_witness = bool(pr.get('pred_anchor_verified')) and temporal_mod.anchor_ordering_ok(
-            str(pr.get('pred_anchor_gen_time') or ''), ts)
-        # EXTAUDIT S8b: MeasurementLock mint — 측정 입력(cmd/deps서버해시/params/env)→outs 봉인(사이드카).
-        #   receipt v3 불변. deps=judge script(서버 재계산 sha). S7b: temporal_witness_verified persist.
-        try:
-            _env_sha = envfp_mod.fingerprint_sha(envfp_mod.environment_fingerprint())
-            _lock = mlock_mod.build_measurement_lock(
-                cmd=replay_command(r.script, r.result_path),
-                deps=[{'path': r.script, 'sha256': stored_sha}],
-                params={'metric_name': pr['m'], 'noise_band': pr.get('nb')},
-                env_sha=_env_sha,
-                outs=[{'name': pr['m'], 'value': effective_metric}],
-                measurement_grade=measurement_grade, replay_status=replay_status)
-            _lsha, _lkey = mlock_mod.lock_sha(_lock), mlock_mod.lock_key(_lock)
-            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                  MERGE (ml:MeasurementLock {lock_sha:$lsha})
-                    ON CREATE SET ml.lock_key=$lkey, ml.cmd=$cmd, ml.env_sha=$env,
-                      ml.measurement_grade=$mg, ml.replay_status=$rs
-                  MERGE (e)-[:HAS_LOCK]->(ml)
-                  SET e.measurement_lock_sha=$lsha, e.measurement_lock_key=$lkey,
-                      e.temporal_witness_verified=$tw""",
-                    tree=name, tag=tag, lsha=_lsha, lkey=_lkey,
-                    cmd=_lock['cmd'], env=_env_sha, mg=measurement_grade, rs=replay_status,
-                    tw=temporal_witness)
-        except Exception:   # noqa: BLE001 — 사이드카는 판정을 막지 않는다(fail-safe, 판정은 이미 mint 됨)
-            pass
         self.hist(name, 'test_result', tag, dict(value=effective_metric, baseline=pr['b'],
-                                                 delta=round(v.delta, 4), verdict=verdict, script=r.script,
+                                                 delta=round(v.delta, 4), verdict=verdict,
+                                                 script=sealed_script_path,
+                                                 result_path=sealed_result_path,
+                                                 source_script_path=source_script_path,
+                                                 source_result_path=source_result_path,
+                                                 result_sha256=result_sha,
+                                                 measurement_lock_sha=_lsha,
                                                  novel=v.novel, script_sha=stored_sha,
-                                                 freshen=freshen_anchor))
+                                                 freshen=freshen_anchor,
+                                                 replay_status=replay_status,
+                                                 replay_reason=replay_reason,
+                                                 regenerated_metric=regenerated_metric))
         # EXTAUDIT S3b/S7b: VAL 재도출 — L3 은 attestation(allow-list)+engine floor+temporal witness 가 다 설 때.
         _display, _assur = response_assurance(
             verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
             replay_status=replay_status, assurance_tier_resolved=tier, attested_by_did=attested_by_did,
             engine_rule_sha=ENGINE_RULE_SHA, tree_attestors=attestors,
-            engine_rule_floor=effective_floor(), temporal_witness=temporal_witness)
+            engine_rule_floor=effective_floor(), temporal_witness=temporal_witness,
+            measurement_lock_bound=bool(_lsha))
         return {'ok': True, 'freshen': freshen_anchor,
                 'verdict': verdict, 'verdict_display': _display, 'assurance': _assur,
                 'delta': round(v.delta, 4), 'novel': v.novel,
@@ -1138,11 +1301,21 @@ class JudgementService:
                 'requires_human': bool(decided.get('requires_human')),
                 # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).
                 'script_sha_server_verified': sha_verified, 'judge_script_sha': stored_sha,
+                'judge_script_path': sealed_script_path,
+                'result_path': sealed_result_path, 'result_sha256': result_sha,
+                'source_script_path': source_script_path,
+                'source_result_path': source_result_path,
+                'measurement_lock_sha': _lsha,
+                'replay_status': replay_status, 'replay_reason': replay_reason,
+                'regenerated_metric': regenerated_metric,
                 # G10: authorship 은 서명에서 유도(무cert=None) — client 문자열이 아니다.
                 'attested_by': attested_by_did,
                 'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
                            'reasons': list(eu.reasons), 'bf': round(eu.bf, 3)},
-                'rule': v.reason, 'replay': replay_command(r.script, r.result_path)}
+                'rule': v.reason,
+                'replay_authoritative': replay_inputs_bound and _lsha is not None,
+                'replay': (replay_command(sealed_script_path, sealed_result_path)
+                           if replay_inputs_bound and _lsha is not None else None)}
 
     def load_receipt_chain(self, name: str, tag: str) -> dict:
         """노드의 :VerdictReceipt 체인 + 현 포인터 로드(G1). fold/verify 의 read 경로."""
@@ -1172,7 +1345,14 @@ class JudgementService:
                             r.metric_value AS metric_value, r.novel_confirmed AS novel_confirmed,
                             r.lakatos_status AS lakatos_status, r.judged_at AS judged_at,
                             r.measurement_grade AS measurement_grade,
-                            r.engine_rule_sha AS engine_rule_sha""", tree=name, tag=tag)
+                            r.engine_rule_sha AS engine_rule_sha, r.comment_sha AS comment_sha,
+                            r.replay_status AS replay_status, r.replay_reason AS replay_reason,
+                            r.regenerated_metric AS regenerated_metric,
+                            r.judge_script_path AS judge_script_path,
+                            r.result_path AS result_path, r.result_sha256 AS result_sha256,
+                            r.measurement_lock_sha AS measurement_lock_sha,
+                            r.source_script_path AS source_script_path,
+                            r.source_result_path AS source_result_path""", tree=name, tag=tag)
         return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
                 'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
 

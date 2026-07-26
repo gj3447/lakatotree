@@ -24,6 +24,13 @@ _H = {"tree": "T", "tag": "n", "target_id": None, "verdict": "progressive",
 _TAMPERED = {**_H, "receipt_sha": V.receipt_content_sha(_H), "verdict": "CANONICAL"}
 _STALE_ENC = {k: _H[k] for k in V.RECEIPT_FIELDS_PRE_AG3}
 _STALE_ENC["receipt_sha"] = V.receipt_content_sha(_STALE_ENC, fieldset=V.RECEIPT_FIELDS_PRE_AG3)
+_V5 = {
+    **_H, "engine_rule_sha": "e" * 64, "comment_sha": "c" * 64,
+    "replay_status": "not_attempted", "replay_reason": None, "regenerated_metric": None,
+    "judge_script_path": "/srv/score.py", "result_path": "/srv/result.json",
+    "result_sha256": "2" * 64, "measurement_lock_sha": "3" * 64,
+}
+_V5_REC = {**_V5, "receipt_sha": V.receipt_content_sha(_V5)}
 
 
 # ── guard_defect (개선축) — 착륙 ─────────────────────────────────────────────────────────
@@ -35,16 +42,26 @@ def test_corrupt_node_state_yields_finding_not_500():
     assert bf == 1.0, bf                                  # 무신뢰 출처 → BF 1(무정보), credence 불변
 
     # (2) 부패를 감사 발견으로: 500 이 아니라 열거된 check-id.
-    findings = F.fsck_node({"verdict": "progressive", "source_trust": None})
+    findings = F.fsck_node({"verdict": "progressive", "source": "https://example.test",
+                            "source_trust": None})
     ids = {f.check_id for f in findings}
     assert "SOURCE_TRUST_NULL" in ids, findings
+
+
+def test_new_null_result_sha_projection_preserves_reviewed_legacy_record_oid():
+    legacy = {"tag": "old", "verdict": "progressive", "result_path": "old.json"}
+    projected = {**legacy, "replay_reason": None, "regenerated_metric": None,
+                 "result_sha256": None}
+    assert F.record_content_sha(legacy) == F.record_content_sha(projected)
+    assert F.record_content_sha(legacy) != F.record_content_sha({**legacy, "result_sha256": "a" * 64})
 
 
 # ── guard_mechanism (novel축) — 착륙 ─────────────────────────────────────────────────────
 # 각 check-id 를 발동시키는 최소 부패 레코드(주입 코퍼스).
 _CORRUPT = {
     # 'proof'(비-scripted)로 두어 SOURCE_TRUST_NULL 만 단독 발동(순수 WARN 케이스 — prereg 검사 안 걸림).
-    "SOURCE_TRUST_NULL": {"verdict": "proof", "source_trust": None},
+    "SOURCE_TRUST_NULL": {"verdict": "proof", "source": "https://example.test",
+                           "source_trust": None},
     "MIXED_JUDGED_AT_TYPE": {"verdict": "proof", "judged_at": {"epoch": 1}},   # dict = 비-ISO
     "VERDICT_WITHOUT_PREREG": {"verdict": "rejected", "assurance_tier_resolved": "legacy"},   # scripted 인데 prereg 없음
     "SCRIPTED_WITHOUT_SOURCE": {"verdict": "progressive", "verdict_source": "conjecture",
@@ -69,6 +86,33 @@ _CORRUPT = {
     # jp3: pre-ag3(12필드, 미선언 드리프트) *정직* mint — STALE WARN 이지 MISMATCH ERROR 아님.
     "RECEIPT_ENCODING_STALE": {"verdict": "proof", "current_receipt_sha": _STALE_ENC["receipt_sha"],
                                "receipts": [_STALE_ENC]},
+    # v4 head receipt is valid but the mutable node projection disagrees with its sealed diagnosis.
+    "REPLAY_DIAGNOSTIC_CACHE_MISMATCH": (lambda sealed: {
+        "verdict": "proof", "current_receipt_sha": sealed["receipt_sha"],
+        "replay_status": "mismatch", "replay_reason": "scorer_nonzero_exit:1",
+        "regenerated_metric": None, "receipts": [sealed],
+    })((lambda fields: {**fields, "receipt_sha": V.receipt_content_sha(fields)})({
+        **_H, "engine_rule_sha": "e" * 64, "comment_sha": "c" * 64,
+        "replay_status": "mismatch", "replay_reason": "metric_mismatch",
+        "regenerated_metric": 7.0,
+    })),
+    "REPLAY_INPUT_CACHE_MISMATCH": {
+        "verdict": "proof", "current_receipt_sha": _V5_REC["receipt_sha"],
+        "replay_status": _V5["replay_status"], "replay_reason": None,
+        "regenerated_metric": None, "judge_script": _V5["judge_script_path"],
+        "judge_script_sha": _V5["judge_script_sha"],
+        "result_path": "/srv/forged.json", "result_sha256": _V5["result_sha256"],
+        "measurement_lock_sha": _V5["measurement_lock_sha"], "receipts": [_V5_REC],
+    },
+    "MEASUREMENT_LOCK_CONTENT_MISMATCH": {
+        "verdict": "proof", "current_receipt_sha": _V5_REC["receipt_sha"],
+        "replay_status": _V5["replay_status"], "replay_reason": None,
+        "regenerated_metric": None, "judge_script": _V5["judge_script_path"],
+        "judge_script_sha": _V5["judge_script_sha"],
+        "result_path": _V5["result_path"], "result_sha256": _V5["result_sha256"],
+        "measurement_lock_sha": _V5["measurement_lock_sha"], "receipts": [_V5_REC],
+        "measurement_locks": [],
+    },
     # S4: 판정 시점 봉인 대비 comment 개서(c6 사후 승리 에세이 장르) — WARN, 'proof' 로 다른 체크 격리.
     #   sha256(b'다른 내용') ≠ sha256(b'원본') 인 임의 불일치면 충분(순수 술어 comment_drift).
     "COMMENT_DRIFT_AFTER_VERDICT": {"verdict": "proof", "comment": "원본 + 사후 승리 서사",

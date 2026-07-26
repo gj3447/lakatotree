@@ -33,13 +33,18 @@ def test_resolve_measurement_truth_table():
     assert resolve_measurement(None, 0.5) == (0.5, 'client_asserted', 'not_attempted')
     # verified: regenerated 를 SSOT 로 치환(값소유), grade=server_regenerated, status=verified.
     ok = ProducerReplayVerdict(verified=True, regenerated=0.777, recorded=0.5, reason='externally_verified')
-    assert resolve_measurement(ok, 0.5) == (0.777, 'server_regenerated', 'verified')
+    assert resolve_measurement(ok, 0.5, artifact_bound=True) == \
+        (0.777, 'server_regenerated', 'verified')
+    # A successful scorer without a content-addressed result is not replay proof.
+    assert resolve_measurement(ok, 0.5) == (0.5, 'client_asserted', 'not_replayable')
     # mismatch(위조/크래시): SCOPED — client 값 유지(반증값 소유 안 함), grade=client_asserted, status=mismatch.
     bad = ProducerReplayVerdict(verified=False, regenerated=9.9, recorded=0.5, reason='mismatch')
-    assert resolve_measurement(bad, 0.5) == (0.5, 'client_asserted', 'mismatch')
+    assert resolve_measurement(bad, 0.5, artifact_bound=True) == \
+        (0.5, 'client_asserted', 'mismatch')
     # 방어: verified 인데 regenerated=None → 소유 불가, client 유지(외부값 null 파괴 금지).
     edge = ProducerReplayVerdict(verified=True, regenerated=None, recorded=0.5, reason='x')
-    assert resolve_measurement(edge, 0.5) == (0.5, 'client_asserted', 'verified')
+    assert resolve_measurement(edge, 0.5, artifact_bound=True) == \
+        (0.5, 'client_asserted', 'verified')
 
 
 # ── (B) submit 배선: KG fake 로 봉인되는 SET 파라미터 관측 ────────────────────────────
@@ -69,16 +74,25 @@ def _svc(kg, replay_verdict):
                             producer_replay_submit=lambda *a, **k: replay_verdict)
 
 
-def test_verified_replay_owns_value_not_client():
+def _artifacts(tmp_path: Path) -> tuple[str, str]:
+    script = tmp_path / 'score.py'
+    result = tmp_path / 'result.json'
+    script.write_text('print(0.123)\n', encoding='utf-8')
+    result.write_text('{"metric":0.123}\n', encoding='utf-8')
+    return str(script), str(result)
+
+
+def test_verified_replay_owns_value_not_client(tmp_path):
     """guard_defect: 서버 replay verified → sealed metric_value 는 server regenerated(값소유), client float 아님.
 
     mock 은 regenerated 를 client 값과 *멀리* 벌려(0.777 vs 0.123) 치환을 관측가능하게 한다 — 실 io.replay
     는 verified⟹within-tol 이나(그 불변식은 test_fix_producer_replay 가 커버), 여기 검증대상은 배선(치환이
     실제로 일어나나)이다. 치환을 r.metric_value 로 되돌리면 mv==0.123 → 이 가드 RED(revert-민감)."""
     kg = _SubmitKg()
+    script, result = _artifacts(tmp_path)
     vv = ProducerReplayVerdict(verified=True, regenerated=0.777, recorded=0.123, reason='externally_verified')
-    _svc(kg, vv).submit_test_result('T', 'seam', Result(metric_value=0.123, script='/x/score.py',
-                                                        result_path='/x/r.json'))
+    _svc(kg, vv).submit_test_result(
+        'T', 'seam', Result(metric_value=0.123, script=script, result_path=result))
     _q, params = kg.captured[0][0]
     assert params['mv'] == 0.777, f'값소유 실패 — client 0.123 이 봉인됨: {params["mv"]}'
     assert params['mg'] == 'server_regenerated', f'grade={params.get("mg")}'
@@ -87,21 +101,25 @@ def test_verified_replay_owns_value_not_client():
     assert 'rec.measurement_grade=$mg' in _q, ':VerdictReceipt 봉인에 measurement_grade 없음'
 
 
-def test_client_asserted_when_no_replay():
+def test_client_asserted_when_no_replay(tmp_path):
     """replay None(exec off): client 값 유지 + grade=client_asserted + not_attempted (dead-σ: 부재≠반증)."""
     kg = _SubmitKg()
-    _svc(kg, None).submit_test_result('T', 'seam', Result(metric_value=0.123, script='inline'))
+    script, result = _artifacts(tmp_path)
+    _svc(kg, None).submit_test_result(
+        'T', 'seam', Result(metric_value=0.123, script=script, result_path=result))
     _q, params = kg.captured[0][0]
     assert params['mv'] == 0.123
     assert params['mg'] == 'client_asserted'
     assert params['replay_status'] == 'not_attempted'
 
 
-def test_mismatch_does_not_own_value():
+def test_mismatch_does_not_own_value(tmp_path):
     """replay verified=False(위조): SCOPED — client 값 유지(반증값 소유 안 함) + status=mismatch."""
     kg = _SubmitKg()
+    script, result = _artifacts(tmp_path)
     bad = ProducerReplayVerdict(verified=False, regenerated=9.9, recorded=0.123, reason='mismatch')
-    _svc(kg, bad).submit_test_result('T', 'seam', Result(metric_value=0.123, script='/x/s.py'))
+    _svc(kg, bad).submit_test_result(
+        'T', 'seam', Result(metric_value=0.123, script=script, result_path=result))
     _q, params = kg.captured[0][0]
     assert params['mv'] == 0.123
     assert params['mg'] == 'client_asserted'

@@ -1,6 +1,8 @@
 """출처추적 TDD — W3C PROV-O 트리플 (판결의 검증가능 계보).
 # KG: span_lakatotree_prov
 """
+import shlex
+
 from lakatos.io.prov import prov_triples, replay_command
 
 def test_prov_triples_structure():
@@ -14,3 +16,8 @@ def test_prov_triples_structure():
 def test_replay_command_reproducible():
     cmd = replay_command(script='judges/bpc_loo_p95.py', result_path='r.json')
     assert 'judges/bpc_loo_p95.py' in cmd and 'r.json' in cmd
+
+
+def test_replay_command_omits_absent_result_argument():
+    assert shlex.split(replay_command('/tmp/score with spaces.py', '')) == [
+        'python', '/tmp/score with spaces.py']

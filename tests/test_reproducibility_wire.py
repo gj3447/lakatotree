@@ -70,6 +70,25 @@ def test_traceable_to_raw_source_is_reproducible(monkeypatch):
     assert app._reproducible_for_node("tree", "n1") is True
 
 
+def test_snapshot_node_traces_lineage_through_sealed_source_result_path(monkeypatch):
+    """The immutable replay snapshot is not itself a lineage output; its sealed source is."""
+    app = load_app()
+    queries = []
+
+    def kg(query, **_params):
+        queries.append(query)
+        return [{"rp": "final.json"}]
+
+    monkeypatch.setattr(app, "kg", kg)
+    monkeypatch.setattr(app, "_load_lineage", lambda: REPRODUCIBLE)
+    monkeypatch.setattr(app, "_path_sha", lambda path: {
+        d.output: d.output_sha for d in REPRODUCIBLE
+    }.get(path))
+
+    assert app._reproducible_for_node("tree", "n1") is True
+    assert "coalesce(e.source_result_path, e.result_path) AS rp" in queries[0]
+
+
 def test_dangling_intermediate_is_not_reproducible(monkeypatch):
     # 핵심: leaf-root 관대해석이 아니라 엄격 source — mid.json 갭이 차단으로 살아야
     app = load_app()

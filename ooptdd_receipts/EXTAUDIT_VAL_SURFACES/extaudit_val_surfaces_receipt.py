@@ -35,7 +35,8 @@ def verify(backend, cid):
     # (1) read-model: 부착 + 비파괴 + admin 원문.
     scored = normalize_node_row(dict(tag="n1", verdict="progressive", verdict_source="scripted",
                                      current_receipt_sha="r1",
-                                     measurement_grade="server_regenerated", replay_status="verified"))
+                                     measurement_grade="server_regenerated", replay_status="verified",
+                                     measurement_lock_bound=True))
     assert scored["verdict_display"] == "progressive@L2(replay_verified)", scored.get("verdict_display")
     assert scored["verdict"] == "progressive", "bare verdict 치환됨 — 내부 술어 파괴(비파괴 계약 위반)"
     admin = normalize_node_row(dict(tag="n2", verdict="proof"))
@@ -47,7 +48,8 @@ def verify(backend, cid):
     # (2) submit 응답 재도출: armed vs disarmed 구분.
     d2, a2 = response_assurance(verdict="progressive", current_receipt_sha="r1",
                                 measurement_grade="server_regenerated", replay_status="verified",
-                                assurance_tier_resolved="anchored", attested_by_did=None)
+                                assurance_tier_resolved="anchored", attested_by_did=None,
+                                measurement_lock_bound=True)
     d0, a0 = response_assurance(verdict="progressive", current_receipt_sha="r1",
                                 measurement_grade="client_asserted", replay_status="not_attempted",
                                 assurance_tier_resolved="anchored", attested_by_did=None)

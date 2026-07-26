@@ -19,6 +19,16 @@ HistoryAppend = Callable[[str, str, str | None, dict | None], None]
 PgFactory = Callable[[], AbstractContextManager[Any]]
 
 
+class KgTxGuardFailed(RuntimeError):
+    """The guarded first statement matched no row; raising inside the adapter rolls back the tx."""
+
+
+class GuardedKgOps(list[tuple[str, dict]]):
+    """Operation batch whose first result must contain a row or the managed transaction aborts."""
+
+    require_first_result = True
+
+
 class KgStore(Protocol):
     def query(self, cypher: str, **params: Any) -> list[dict]:
         ...

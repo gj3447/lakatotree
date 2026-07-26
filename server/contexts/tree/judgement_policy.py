@@ -86,7 +86,14 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                          metric_value: float, novel_confirmed: bool, lakatos_status: str,
                          judged_at: str, judge_script_sha: str, prev_receipt_sha,
                          measurement_grade: str, engine_rule_sha: str | None = None,
-                         comment_sha: str | None = None) -> dict:
+                         comment_sha: str | None = None, replay_status: str | None = None,
+                         replay_reason: str | None = None,
+                         regenerated_metric: float | None = None,
+                         judge_script_path: str | None = None,
+                         result_path: str | None = None, result_sha256: str | None = None,
+                         measurement_lock_sha: str | None = None,
+                         source_script_path: str | None = None,
+                         source_result_path: str | None = None) -> dict:
     """G1 :VerdictReceipt 봉인 필드 조립(godmethod L758-761 거동 불변 추출).
 
     lakatos.verdicts.RECEIPT_FIELDS 와 *정확히 1:1*(특성화 골든이 키 집합 동일성 고정). verdict_source
@@ -106,10 +113,21 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                 measurement_grade=measurement_grade, engine_rule_sha=engine_rule_sha,
                 # EXTAUDIT S4: 판정 시점 comment 봉인(v3 presence-dispatch — None 이면 v2 mint,
                 #   프로덕션 호출부는 comment_seal_sha 를 명시 전달. 키는 항상 포함 → 키집합 골든 자동 동시확장).
-                comment_sha=comment_sha)
+                comment_sha=comment_sha,
+                # LX3 remediation: operator action을 결정하는 replay 진단은 v4 receipt에 봉인한다.
+                # replay_status non-null이 presence discriminator라 legacy/admin mint는 v1-v3 그대로다.
+                replay_status=replay_status, replay_reason=replay_reason,
+                regenerated_metric=regenerated_metric,
+                # v5 replay input binding: the diagnosis and the exact artifact/lock are one receipt.
+                judge_script_path=judge_script_path,
+                result_path=result_path, result_sha256=result_sha256,
+                measurement_lock_sha=measurement_lock_sha,
+                source_script_path=source_script_path,
+                source_result_path=source_result_path)
 
 
-def resolve_measurement(replay, client_metric, *, attested: bool = False, authored: bool = False):
+def resolve_measurement(replay, client_metric, *, attested: bool = False, authored: bool = False,
+                        artifact_bound: bool = False):
     """AG3 값소유 + AG5 attested 등급 결정 seam — I/O-free 순수 (측정주권 2026-07-03).
 
     replay = ProducerReplayVerdict | None. submit 시 *들어온*(incoming) 값을 서버가 재유도한 결과이지
@@ -123,7 +141,8 @@ def resolve_measurement(replay, client_metric, *, attested: bool = False, author
       > authored            (자기서명 — 저자성 증명·비부인이나 *권위 아님*; OWNED_GRADES 밖 → G6 불가)
       > client_asserted     (무서명 client float — 최하)
 
-      replay.verified ∧ regenerated 존재 → server_regenerated(regenerated 를 SSOT 로 *SCOPED 치환*).
+      artifact_bound ∧ replay.verified ∧ regenerated 존재
+        → server_regenerated(regenerated 를 SSOT 로 *SCOPED 치환*).
       그 외(None / mismatch / regen None) → client 값 유지, grade = attested > authored > client_asserted.
                                             status = not_attempted(replay None) | verified | mismatch
                                                    | not_replayable(verdict 있으나 verified None —
@@ -135,13 +154,17 @@ def resolve_measurement(replay, client_metric, *, attested: bool = False, author
     jp5 인센티브 역전 봉합: 버리는 키페어 self-sign 이 attested(G6 PASS)를 사던 구멍 — 권위는 트리가
     선언한 allow-list 만 준다(호출부가 bool(attestors)로 상호배타 분기 — 동시 True 도달 불가, permissive).
     """
-    if replay is not None and replay.verified and replay.regenerated is not None:
+    if (artifact_bound and replay is not None and replay.verified
+            and replay.regenerated is not None):
         return replay.regenerated, 'server_regenerated', 'verified'
     if replay is None:
         status = 'not_attempted'
     elif replay.verified is None:
         # 재실행 *시도했으나 실행 불가*(CLI 계약 비호환 등) — 검증 불가 ≠ 반증(dead-σ).
         # 종전엔 falsy 로 'mismatch' 에 합쳐져 fsck MEASUREMENT_REFUTED 오발화(E16/E17 사건, 2026-07-13).
+        status = 'not_replayable'
+    elif replay.verified and not artifact_bound:
+        # A scorer result without a canonical, content-addressed input is an assertion, not replay proof.
         status = 'not_replayable'
     else:
         status = 'verified' if replay.verified else 'mismatch'
@@ -153,7 +176,8 @@ def response_assurance(*, verdict: str, current_receipt_sha: str,
                        measurement_grade: str, replay_status: str,
                        assurance_tier_resolved: str, attested_by_did: str | None,
                        engine_rule_sha: str | None = None, tree_attestors: list | None = None,
-                       engine_rule_floor=None, temporal_witness: bool = False) -> tuple[str, dict]:
+                       engine_rule_floor=None, temporal_witness: bool = False,
+                       measurement_lock_bound: bool = False) -> tuple[str, dict]:
     """submit 응답용 VAL 도출 — (verdict_display, assurance). EXTAUDIT S3b (SLSA 흡수) + S7b(L3).
 
     방금 mint 한 봉인 필드에서 읽기 시점 재도출(저장 금지) — 제출자가 응답에서 즉시 자기 판정의
@@ -163,7 +187,7 @@ def response_assurance(*, verdict: str, current_receipt_sha: str,
     row = dict(verdict=verdict, verdict_source='scripted', current_receipt_sha=current_receipt_sha,
                measurement_grade=measurement_grade, replay_status=replay_status,
                assurance_tier_resolved=assurance_tier_resolved, attested_by_did=attested_by_did,
-               engine_rule_sha=engine_rule_sha)
+               engine_rule_sha=engine_rule_sha, measurement_lock_bound=measurement_lock_bound)
     assur = verdict_assurance(row, tree_attestors=tree_attestors, engine_rule_floor=engine_rule_floor,
                               temporal_witness=temporal_witness)
     return format_verdict_with_val(verdict, assur), assur
