@@ -2,13 +2,15 @@
 
 The receipt drives real service and fsck seams.  It pins three load-bearing boundaries:
 metadata cannot manufacture evidence, replay diagnosis is v4 content-addressed with cache
-parity, and the CLI carries a concrete artifact path for managed replay.
+parity, v5 binds artifact identity without moving historical v4 hashes, and the CLI carries a
+concrete artifact path for managed replay.
 
 # KG: LakatosTree_LX3_Metrology_20260723 / lx3_provenance_replay_remediation_20260726
 """
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -17,7 +19,7 @@ if _REPO.as_posix() not in sys.path:
 
 import lakatos.cli as cli  # noqa: E402
 from lakatos.io.replay import ProducerReplayVerdict  # noqa: E402
-from lakatos.verdicts import receipt_content_sha  # noqa: E402
+from lakatos.verdicts import RECEIPT_FIELDS_V3, RECEIPT_FIELDS_V4, receipt_content_sha  # noqa: E402
 from server.contexts.audit import fsck as audit_fsck  # noqa: E402
 from server.contexts.tree.evidence_claim_service import EvidenceClaimService  # noqa: E402
 from server.contexts.tree.judgement_policy import build_receipt_fields  # noqa: E402
@@ -70,9 +72,14 @@ def _drive_submit():
         reproducible_for_node=lambda *_args, **_kwargs: None,
         producer_replay_submit=lambda *_args, **_kwargs: replay,
     )
-    out = svc.submit_test_result(
-        "T", "seam", Result(metric_value=1.0, script="/srv/scorer.py", result_path="/srv/out.json"),
-    )
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "scorer.py"
+        result = Path(tmp) / "out.json"
+        script.write_text("print(1.0)\n", encoding="utf-8")
+        result.write_text('{"metric":1.0}\n', encoding="utf-8")
+        out = svc.submit_test_result(
+            "T", "seam", Result(metric_value=1.0, script=str(script), result_path=str(result)),
+        )
     return kg.ops[0][0], out, history[-1][3]
 
 
@@ -86,6 +93,9 @@ def _receipt_fields(params):
         engine_rule_sha=params["engine_rule_sha"], comment_sha=params["csha"],
         replay_status=params["replay_status"], replay_reason=params["replay_reason"],
         regenerated_metric=params["regenerated_metric"],
+        judge_script_path=params["script"], result_path=params["rp"],
+        result_sha256=params["result_sha256"], measurement_lock_sha=params["lsha"],
+        source_script_path=params["source_script"], source_result_path=params["source_rp"],
     )
 
 
@@ -124,6 +134,11 @@ def _drive_result_cli():
     return calls[0]
 
 
+def _old_cache_only_failure_class(record: dict) -> str:
+    """Ablated pre-parity reader: trust the mutable node cache as the diagnosis source."""
+    return audit_fsck._replay_failure_class(record.get("replay_reason"))
+
+
 def verify(backend, cid):
     # (A) Metadata alone cannot synthesize upper/lower evidence.
     draft = _drive_draft_claim()
@@ -131,7 +146,7 @@ def verify(backend, cid):
     assert draft["upper_confidence"] == draft["lower_confidence"] == 0.0
     backend.ship([_event(cid, "lx3_claim_metadata_cannot_synthesize_evidence")])
 
-    # (B) Submit persists diagnostics and seals them in a v4 content address.
+    # (B) Submit persists v4-schema diagnostics; the artifact-bearing current mint is v5.
     (query, params), out, hist = _drive_submit()
     fields = _receipt_fields(params)
     assert params["rsha"] == receipt_content_sha(fields)
@@ -169,10 +184,48 @@ def verify(backend, cid):
     assert body["result_path"] == "results/lx3.json"
     backend.ship([_event(cid, "lx3_cli_result_path_forwarded")])
 
-    # (F) Negative oracle: removing parity and v4 fields recreates silent diagnosis substitution.
-    assert receipt_content_sha(fields) == params["rsha"]
-    forged_cache = {**tampered, "receipts": []}
-    old_findings = audit_fsck.fsck_node(forged_cache)
-    assert not any(f.check_id == "REPLAY_DIAGNOSTIC_CACHE_MISMATCH" for f in old_findings)
-    assert "result_path" not in {k: v for k, v in body.items() if k != "result_path"}
+    # (F) Genuine negative oracles: run the exact pre-remediation mechanisms, not an
+    # assertion that merely deletes the value under test.
+
+    # F1 — v3 omitted replay diagnostics.  Two verdict records that differ only in the
+    # operator-relevant diagnosis therefore occupied the same legacy content address.
+    forged_diagnostics = {
+        **fields,
+        "replay_reason": "scorer_nonzero_exit:1",
+        "regenerated_metric": None,
+    }
+    assert receipt_content_sha(fields, fieldset=RECEIPT_FIELDS_V3) == receipt_content_sha(
+        forged_diagnostics, fieldset=RECEIPT_FIELDS_V3,
+    )
+    assert receipt_content_sha(fields) != receipt_content_sha(forged_diagnostics)
+    backend.ship([_event(cid, "lx3_negative_v3_replay_collision")])
+
+    # F2 — the old cache-only reader accepts a forged node projection as scorer failure.
+    # The current fsck rejects cache parity and refuses to let that cache steer diagnosis.
+    assert _old_cache_only_failure_class(tampered) == "scorer_execution_failure"
+    assert "scorer_execution_failure" not in diagnostic.detail
+    assert "legacy_unclassified" in diagnostic.detail
+    backend.ship([_event(cid, "lx3_negative_cache_only_substitution")])
+
+    # F3 — historical v4 intentionally omitted replay artifact identity.  Changing the path,
+    # artifact digest and measurement lock was invisible there, while current v5 binds all three
+    # without retroactively moving the v4 sha-space.
+    artifact_a = {
+        **fields,
+        "result_path": "/srv/out.json",
+        "result_sha256": "a" * 64,
+        "measurement_lock_sha": "b" * 64,
+    }
+    artifact_b = {
+        **artifact_a,
+        "result_path": "/srv/forged.json",
+        "result_sha256": "c" * 64,
+        "measurement_lock_sha": "d" * 64,
+    }
+    assert receipt_content_sha(artifact_a, fieldset=RECEIPT_FIELDS_V4) == receipt_content_sha(
+        artifact_b, fieldset=RECEIPT_FIELDS_V4,
+    )
+    assert receipt_content_sha(artifact_a) != receipt_content_sha(artifact_b)
+    backend.ship([_event(cid, "lx3_negative_v4_artifact_collision")])
+
     backend.ship([_event(cid, "lx3_remediation_negative_oracle", defects_reproduced=3)])

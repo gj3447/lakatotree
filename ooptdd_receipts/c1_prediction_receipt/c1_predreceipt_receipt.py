@@ -136,7 +136,13 @@ class _Kg:
                                   # LX3 remediation: v4 replay diagnosis seal mirror.
                                   "replay_status": params["replay_status"],
                                   "replay_reason": params["replay_reason"],
-                                  "regenerated_metric": params["regenerated_metric"]})
+                                  "regenerated_metric": params["regenerated_metric"],
+                                  "judge_script_path": params["script"],
+                                  "result_path": params["rp"],
+                                  "result_sha256": params["result_sha256"],
+                                  "measurement_lock_sha": params["lsha"],
+                                  "source_script_path": params["source_script"],
+                                  "source_result_path": params["source_rp"]})
         return [[{"claimed": params.get("tag")}] for _ in ops]
 
 

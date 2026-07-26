@@ -370,6 +370,10 @@ def verdict_assurance(row: dict, *, tree_attestors=None, chain_ok: bool | None =
             and row.get('replay_status') == 'verified'):
         b = ('attested_unreplayed',) if row.get('measurement_grade') == 'attested' else ()
         return {'val': 1, 'basis': b}
+    # Grade/status are cache labels, not replay proof.  L2+ additionally requires the current
+    # receipt to bind exactly one content-, semantics-, and environment-valid MeasurementLock.
+    if row.get('measurement_lock_bound') is not True:
+        return {'val': 1, 'basis': ('measurement_lock_unbound',)}
     if (row.get('assurance_tier_resolved') == 'anchored'
             and row.get('attested_by_did') and tree_attestors
             and row['attested_by_did'] in tree_attestors
@@ -426,6 +430,7 @@ _RECEIPT_ENCODING_VERSION = 'v1'
 _RECEIPT_ENCODING_VERSION_V2 = 'v2'
 _RECEIPT_ENCODING_VERSION_V3 = 'v3'   # EXTAUDIT S4: comment_sha 봉인 세대 — 별도 헤더로 sha-space 도메인 분리
 _RECEIPT_ENCODING_VERSION_V4 = 'v4'   # replay 진단(status/reason/regenerated) 봉인 세대
+_RECEIPT_ENCODING_VERSION_V5 = 'v5'   # replay artifact identity 봉인 세대
 # 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
 #   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
 #   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
@@ -448,9 +453,24 @@ RECEIPT_FIELDS_V2 = RECEIPT_FIELDS_V1 + ('engine_rule_sha',)
 #   기존 코퍼스(v1/v2) 재유도 바이트동일 carve-out. 서사는 자유이되(삭제·차단 없음) *판정 이후 바뀜*이
 #   comment_sha_at_verdict 미러 + fsck COMMENT_DRIFT_AFTER_VERDICT 로 침묵 불가.
 RECEIPT_FIELDS_V3 = RECEIPT_FIELDS_V2 + ('comment_sha',)
-# v4: ``mismatch`` 원인이 실제 값 불일치인지 scorer 실행/출력 실패인지가 운영 조치를 바꾼다.
-# 노드 캐시에만 두면 같은 receipt_sha 아래에서 원인을 바꿀 수 있으므로 판결 영수증에 함께 봉인한다.
-RECEIPT_FIELDS = RECEIPT_FIELDS_V3 + ('replay_status', 'replay_reason', 'regenerated_metric')
+# LX3 diagnostics v4 is frozen: it sealed only the replay result.  Artifact identity was added
+# later and therefore MUST occupy a new header/field set; appending those fields to v4 silently
+# moved the historical v4 sha-space and made honest receipts impossible to re-derive.
+RECEIPT_FIELDS_V4 = RECEIPT_FIELDS_V3 + (
+    'replay_status', 'replay_reason', 'regenerated_metric',
+)
+# v5 seals the exact script/result/MeasurementLock identity that produced the v4 diagnosis.
+# Mutable node caches can no longer retarget a content-valid artifact-era receipt.
+RECEIPT_FIELDS_V5 = RECEIPT_FIELDS_V4 + (
+    'judge_script_path', 'result_path', 'result_sha256', 'measurement_lock_sha',
+    'source_script_path', 'source_result_path',
+)
+RECEIPT_FIELDS = RECEIPT_FIELDS_V5
+
+_RECEIPT_ARTIFACT_IDENTITY_FIELDS = (
+    'judge_script_path', 'result_path', 'result_sha256', 'measurement_lock_sha',
+    'source_script_path', 'source_result_path',
+)
 
 
 def _coerce_metric_value(v):
@@ -475,29 +495,35 @@ def _coerce_judged_at(v):
 def canonical_receipt_blob(fields: dict, *, fieldset: tuple | None = None) -> bytes:
     """verdict 영수증의 정본 바이트열 — 버전드 타입헤더 + JCS(sorted keys·compact·UTF-8) canonical JSON.
 
-    필드셋은 RECEIPT_FIELDS(_V1) 로 고정하고 metric_value/judged_at 는 내부 정규화. 언어이식성(git
+    필드셋은 세대별 RECEIPT_FIELDS_V1..V5 로 고정하고 metric_value/judged_at 는 내부 정규화. 언어이식성(git
     typed-object name==content 모델)과 재유도 안정성을 위해 Python repr/pickle·float 모호성을 배제한다.
 
-    jp1 presence-dispatch: engine_rule_sha 가 non-null 이면 v2(14필드+v2 헤더), 아니면 v1 경로
-    *바이트 동일*(legacy carve-out by-construction — 기존 코퍼스 재유도·골든 전부 무변경).
+    presence-dispatch는 봉인된 세대 판별 필드로 v1..v5를 고르며, artifact identity non-null은 v5를
+    선택한다. 그 필드가 없거나 null인 역사적 v4 replay 진단은 정확한 v4 바이트를 재유도한다.
     jp3 fieldset=: 명시 계보 필드셋으로 재유도(감사 recompute 전용 — 헤더는 engine_rule_sha 포함
     여부로 결정, 기본 None=presence-dispatch 그대로).
     """
     if fieldset is None:
+        # A non-null artifact identity member selects v5.  Historical v4 maps lack these
+        # properties (or project them as null), so their exact v4 bytes remain re-derivable.
+        v5 = any(fields.get(key) is not None for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
         v4 = fields.get('replay_status') is not None
         v3 = fields.get('comment_sha') is not None
         v2 = fields.get('engine_rule_sha') is not None
-        keys = (RECEIPT_FIELDS if v4 else
-                (RECEIPT_FIELDS_V3 if v3 else (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)))
+        keys = (RECEIPT_FIELDS_V5 if v5 else
+                (RECEIPT_FIELDS_V4 if v4 else
+                 (RECEIPT_FIELDS_V3 if v3 else
+                  (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1))))
     else:
+        v5 = any(key in fieldset for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
         v4 = 'replay_status' in fieldset
         v3 = 'comment_sha' in fieldset
         v2 = 'engine_rule_sha' in fieldset
         keys = fieldset
-    ver = (_RECEIPT_ENCODING_VERSION_V4 if v4 else
-           (_RECEIPT_ENCODING_VERSION_V3 if v3
-           else (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))
-           )
+    ver = (_RECEIPT_ENCODING_VERSION_V5 if v5 else
+           (_RECEIPT_ENCODING_VERSION_V4 if v4 else
+            (_RECEIPT_ENCODING_VERSION_V3 if v3 else
+             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))))
     payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
     if 'regenerated_metric' in payload:

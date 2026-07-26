@@ -45,7 +45,8 @@ def test_grade_ladder_truth_table():
     # 무서명 → client_asserted(AG3 그대로).
     assert resolve_measurement(None, 0.5, attested=False) == (0.5, "client_asserted", "not_attempted")
     # server_regenerated 가 attested 보다 최상 — 서명돼 있어도 재유도값 소유가 이긴다.
-    assert resolve_measurement(ok, 0.5, attested=True) == (0.7, "server_regenerated", "verified")
+    assert resolve_measurement(ok, 0.5, attested=True, artifact_bound=True) == \
+        (0.7, "server_regenerated", "verified")
     # 서명값이 replay 불일치 → 신원은 여전히 묶여있으니 attested(값 보존, status=mismatch).
     assert resolve_measurement(bad, 0.5, attested=True) == (0.5, "attested", "mismatch")
     # 무서명 불일치 → client_asserted.
@@ -93,8 +94,11 @@ def _svc(tree_props):
 
 
 def _cert(metric_value=1.0):
+    request = Result(metric_value=metric_value, script="inline")
     command = dict(tree="T", tag="seam", prev_receipt_sha=None, metric_value=metric_value, script_sha="",
-                   verb="submit_test_result")   # AG5-IDENT: submit cert 는 verb 바인딩 필수
+                   verb="submit_test_result", command_version="v4",
+                   operation_payload_sha256=W.operation_payload_sha256(
+                       "submit_test_result", request.model_dump(exclude={"write_cert"})))
     sig = W.ed25519_sign(_SK_A, W.canonical_cert_blob(command, _NOW))
     return WriteCertIn(signer_did=_DID_A, signature=sig.hex(), issued_at=_NOW,
                        command=CertCommandIn(**command))

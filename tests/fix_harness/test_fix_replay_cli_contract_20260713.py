@@ -87,7 +87,7 @@ def test_resolve_measurement_not_replayable_status():
     ok = ProducerReplayVerdict(verified=True, regenerated=9.0, recorded=9.0, reason="externally_verified")
     bad = ProducerReplayVerdict(verified=False, regenerated=1.0, recorded=9.0, reason="metric_mismatch")
     assert resolve_measurement(None, 9.0)[2] == "not_attempted"
-    assert resolve_measurement(ok, 9.0)[2] == "verified"
+    assert resolve_measurement(ok, 9.0, artifact_bound=True)[2] == "verified"
     assert resolve_measurement(bad, 9.0)[2] == "mismatch"
 
 
@@ -152,7 +152,10 @@ def test_e2e_argparse_only_scorer_incident_replica():
                 "ap.add_argument('--selftest', action='store_true')\n"
                 "ap.parse_args()\n"
                 "print('metric=9.0')\n")
-    v = producer_replay(score_cmd=f"python {scorer} result.json", recorded_metric=9.0,
+    result = os.path.join(tempfile.gettempdir(), "cli_contract_result_20260713.json")
+    with open(result, "w") as f:
+        f.write("{}\n")
+    v = producer_replay(score_cmd=f"python {scorer} {result}", recorded_metric=9.0,
                         run_bash=app._replay_run)
     assert v.verified is None, f"사건 복제가 여전히 반증으로 분류됨: {v}"
     assert v.reason == "cli_contract_incompatible", v

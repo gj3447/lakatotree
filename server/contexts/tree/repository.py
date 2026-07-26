@@ -167,7 +167,10 @@ class TreeKgRepository:
         WITH e, [pe IN raw_parent_edges WHERE pe.tag IS NOT NULL] AS parent_edges,
              collect(DISTINCT q.name) AS questions
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
-               e.result_path AS result_path, e.algorithm AS algorithm, e.comment AS comment,
+               e.result_path AS result_path, e.result_sha256 AS result_sha256,
+               e.source_judge_script_path AS source_judge_script_path,
+               e.source_result_path AS source_result_path,
+               e.algorithm AS algorithm, e.comment AS comment,
                e.comment_sha_at_verdict AS comment_sha_at_verdict,
                e.pred_anchor_verified AS pred_anchor_verified,
                e.pred_anchor_gen_time AS pred_anchor_gen_time,

@@ -12,6 +12,7 @@ from server.contexts.tree.schemas import PredictionIn
 from lakatos.layout import canonical_layout_blob
 from lakatos.temporal import build_temporal_anchor, spec_digest
 from lakatos.write_cert import (build_write_cert, did_key_encode, ed25519_public_key, ed25519_sign)
+from lakatos.write_cert import operation_payload_sha256
 
 _S = {n: bytes([150 + n]) * 32 for n in (1, 2, 3)}       # owner / predict-signer / witness
 DID = {n: did_key_encode(ed25519_public_key(_S[n])) for n in _S}
@@ -75,6 +76,16 @@ def _svc(kg):
                             foundation=lambda n: None, reproducible_for_node=lambda n, t: None)
 
 
+def _prediction_cert(secret, spec: PredictionIn, *, prev=None):
+    payload = spec.model_dump(exclude={"write_cert"})
+    cmd = {"tree": "T", "tag": "n", "prev_receipt_sha": prev, "metric_value": None,
+           "script_sha": spec.judge_script_sha, "verb": "register_prediction",
+           "command_version": "v4",
+           "operation_payload_sha256": operation_payload_sha256(
+               "register_prediction", payload)}
+    return build_write_cert(secret, cmd)
+
+
 # ── S6b: layout register step 선언 트리는 예측등록 서명 필수 ────────────────────────────────
 def test_s6b_unsigned_prediction_rejected():
     import pytest
@@ -88,40 +99,60 @@ def test_s6b_unsigned_prediction_rejected():
 def test_s6b_wrong_role_signer_rejected():
     import pytest
     svc = _svc(_Kg(_tree_props()))
-    cmd = {"tree": "T", "tag": "n", "prev_receipt_sha": None, "metric_value": None,
-           "script_sha": None, "verb": "register_prediction"}
-    cert = build_write_cert(_S[1], cmd)       # owner 키(predict 역할 밖)로 서명
+    spec = PredictionIn(metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0)
+    cert = _prediction_cert(_S[1], spec)       # owner 키(predict 역할 밖)로 서명
     cert["signer_did"] = DID[1]
     with pytest.raises(Exception):            # 403 allow-list 밖
         svc.register_prediction("T", "n", PredictionIn(
-            metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0,
-            write_cert=cert))
+            **spec.model_dump(exclude={"write_cert"}), write_cert=cert))
 
 
 def test_s6b_correct_role_signer_accepted():
     kg = _Kg(_tree_props())
-    cmd = {"tree": "T", "tag": "n", "prev_receipt_sha": None, "metric_value": None,
-           "script_sha": None, "verb": "register_prediction"}
-    cert = build_write_cert(_S[2], cmd)       # predict 역할 키
+    spec = PredictionIn(metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0)
+    cert = _prediction_cert(_S[2], spec)       # predict 역할 키
     cert["signer_did"] = DID[2]
-    out = _svc(kg).register_prediction("T", "n", PredictionIn(
-        metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0, write_cert=cert))
+    out = _svc(kg).register_prediction(
+        "T", "n", PredictionIn(**spec.model_dump(exclude={"write_cert"}), write_cert=cert))
     assert out["ok"] is True and out.get("pred_receipt_sha")
+
+
+def test_prediction_cert_binds_full_spec_and_actual_non_genesis_tip():
+    import pytest
+
+    tip = "f" * 64
+    kg = _Kg(_tree_props())
+    kg.node["current_receipt_sha"] = tip
+    spec = PredictionIn(metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0)
+
+    stale = _prediction_cert(_S[2], spec, prev=None)
+    with pytest.raises(Exception):
+        _svc(kg).register_prediction(
+            "T", "n", PredictionIn(**spec.model_dump(exclude={"write_cert"}), write_cert=stale))
+
+    valid = _prediction_cert(_S[2], spec, prev=tip)
+    mutated = spec.model_copy(update={"baseline_value": 2.0})
+    with pytest.raises(Exception):
+        _svc(kg).register_prediction(
+            "T", "n", PredictionIn(**mutated.model_dump(exclude={"write_cert"}), write_cert=valid))
+
+    out = _svc(kg).register_prediction(
+        "T", "n", PredictionIn(**spec.model_dump(exclude={"write_cert"}), write_cert=valid))
+    assert out["ok"] is True
 
 
 # ── S7b: 예측 spec 앵커(외부 증인) persist ────────────────────────────────────────────────
 def test_s7b_temporal_anchor_persisted():
     kg = _Kg(_tree_props())
-    cmd = {"tree": "T", "tag": "n", "prev_receipt_sha": None, "metric_value": None,
-           "script_sha": None, "verb": "register_prediction"}
-    cert = build_write_cert(_S[2], cmd); cert["signer_did"] = DID[2]
     spec = PredictionIn(metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0)
     _sd = {k: v for k, v in spec.model_dump().items() if k not in ("write_cert", "temporal_anchor", "temporal_anchors")}
     sdg = spec_digest(_sd)
     anchor = build_temporal_anchor(_S[3], sdg, "2026-07-23T05:00:00+00:00", DID[3])
-    out = _svc(kg).register_prediction("T", "n", PredictionIn(
-        metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0,
-        write_cert=cert, temporal_anchor=anchor))
+    anchored_spec = spec.model_copy(update={"temporal_anchor": anchor})
+    cert = _prediction_cert(_S[2], anchored_spec); cert["signer_did"] = DID[2]
+    out = _svc(kg).register_prediction(
+        "T", "n", PredictionIn(
+            **anchored_spec.model_dump(exclude={"write_cert"}), write_cert=cert))
     assert out["pred_anchor_verified"] is True
     assert kg.node.get("pred_anchor_verified") is True                    # persist 됨
     assert kg.node.get("pred_anchor_gen_time") == "2026-07-23T05:00:00+00:00"

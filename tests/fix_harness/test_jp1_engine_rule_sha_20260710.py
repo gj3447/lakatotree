@@ -51,12 +51,17 @@ _V1_CORPUS = {
 def test_receipt_fields_bind_engine_identity():
     """guard_defect(익명 판관 사망): engine_rule_sha 가 봉인 필드셋에 실재 + v1 13필드 동결.
     S4(2026-07-23): 현행 필드셋은 v3(= v2 + comment_sha) — v2 는 RECEIPT_FIELDS_V2 로 동결."""
-    from lakatos.verdicts import RECEIPT_FIELDS_V2, RECEIPT_FIELDS_V3
+    from lakatos.verdicts import (RECEIPT_FIELDS_V2, RECEIPT_FIELDS_V3,
+                                  RECEIPT_FIELDS_V4, RECEIPT_FIELDS_V5)
     assert "engine_rule_sha" in RECEIPT_FIELDS
     assert RECEIPT_FIELDS_V2 == RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
     assert RECEIPT_FIELDS_V3 == RECEIPT_FIELDS_V2 + ("comment_sha",)
-    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V3 + (
+    assert RECEIPT_FIELDS_V4 == RECEIPT_FIELDS_V3 + (
         "replay_status", "replay_reason", "regenerated_metric")
+    assert RECEIPT_FIELDS_V5 == RECEIPT_FIELDS_V4 + (
+        "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
+        "source_script_path", "source_result_path")
+    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V5
     assert len(RECEIPT_FIELDS_V1) == 13 and "engine_rule_sha" not in RECEIPT_FIELDS_V1
 
 
@@ -82,6 +87,30 @@ def test_v2_domain_separation_and_strip_forgery():
     # 정체성 값만 달라도 다른 봉인(판관이 sha 를 가른다 — ag3 grade 봉인 동형)
     assert receipt_content_sha(dict(_BASE, engine_rule_sha="a" * 64)) \
         != receipt_content_sha(dict(_BASE, engine_rule_sha="b" * 64))
+
+
+def test_historical_v4_replay_diagnostics_sha_space_is_byte_stable_in_both_engines():
+    """Artifact fields introduced by v5 must never move the already-minted v4 sha-space."""
+    from c1verify.receipts import (canonical_receipt_blob as c1_blob,
+                                   receipt_content_sha as c1_receipt_sha)
+    from lakatos.verdicts import RECEIPT_FIELDS_V4
+
+    fields = dict(
+        _BASE, engine_rule_sha="e" * 64, comment_sha="c" * 64,
+        replay_status="mismatch", replay_reason="metric_mismatch",
+        regenerated_metric=0.25,
+    )
+    historical_v4_sha = "0da238d0f9ab382756c7a90480c01d663afef671a326a61ac1b499ef618b6721"
+    assert receipt_content_sha(fields) == historical_v4_sha
+    assert receipt_content_sha(fields, fieldset=RECEIPT_FIELDS_V4) == historical_v4_sha
+    assert c1_receipt_sha(fields) == historical_v4_sha
+    assert canonical_receipt_blob(fields) == c1_blob(fields)
+    assert canonical_receipt_blob(fields).startswith(b"verdict-receipt\x00v4\n")
+
+    artifact_fields = dict(fields, judge_script_path="/srv/judge.py")
+    assert canonical_receipt_blob(artifact_fields).startswith(b"verdict-receipt\x00v5\n")
+    assert receipt_content_sha(artifact_fields) == c1_receipt_sha(artifact_fields)
+    assert receipt_content_sha(artifact_fields) != historical_v4_sha
 
 
 def test_engine_rule_sha_is_content_derived():
@@ -141,7 +170,11 @@ def test_production_submit_seals_identity():
                     prev_receipt_sha=params["prev_rsha"], measurement_grade=params["mg"],
                     engine_rule_sha=params["engine_rule_sha"], comment_sha=params["csha"],
                     replay_status=params["replay_status"], replay_reason=params["replay_reason"],
-                    regenerated_metric=params["regenerated_metric"])
+                    regenerated_metric=params["regenerated_metric"],
+                    judge_script_path=params["script"], result_path=params["rp"],
+                    result_sha256=params["result_sha256"], measurement_lock_sha=params["lsha"],
+                    source_script_path=params["source_script"],
+                    source_result_path=params["source_rp"])
     assert receipt_content_sha(refields) == params["rsha"]
 
 

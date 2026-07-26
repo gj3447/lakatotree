@@ -83,7 +83,7 @@ class _SubmitKg:
         return [[{"claimed": "seam"}] for _ in ops]
 
 
-def _submit_with_replay(replay: ProducerReplayVerdict):
+def _submit_with_replay(replay: ProducerReplayVerdict, tmp_path: Path):
     kg = _SubmitKg()
     history: list[tuple] = []
     svc = JudgementService(
@@ -94,18 +94,21 @@ def _submit_with_replay(replay: ProducerReplayVerdict):
         reproducible_for_node=lambda *_args, **_kwargs: None,
         producer_replay_submit=lambda *_args, **_kwargs: replay,
     )
-    out = svc.submit_test_result(
-        "T", "seam", Result(metric_value=1.0, script="/srv/scorer.py", result_path="/srv/out.json"),
-    )
+    script = tmp_path / "scorer.py"
+    result = tmp_path / "out.json"
+    script.write_text("print(1.0)\n", encoding="utf-8")
+    result.write_text('{"metric":1.0}\n', encoding="utf-8")
+    out = svc.submit_test_result("T", "seam", Result(
+        metric_value=1.0, script=str(script), result_path=str(result)))
     return kg.captured[0][0], out, history
 
 
-def test_submit_persists_and_discloses_replay_reason_and_regenerated_metric():
+def test_submit_persists_and_discloses_replay_reason_and_regenerated_metric(tmp_path):
     """Defect guard: status=mismatch is not the whole replay receipt."""
     replay = ProducerReplayVerdict(
         verified=False, regenerated=7.0, recorded=1.0, reason="metric_mismatch",
     )
-    (cypher, params), out, history = _submit_with_replay(replay)
+    (cypher, params), out, history = _submit_with_replay(replay, tmp_path)
 
     assert "e.replay_reason=$replay_reason" in cypher
     assert "e.regenerated_metric=$regenerated_metric" in cypher

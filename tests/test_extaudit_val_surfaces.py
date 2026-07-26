@@ -24,7 +24,8 @@ def _row(**kw):
 
 # ── read-model: verdict_display + assurance 부착 (get_tree/metrics/leaderboard 자동 상속) ────
 def test_read_model_attaches_display_and_assurance():
-    out = normalize_node_row(_row(measurement_grade='server_regenerated', replay_status='verified'))
+    out = normalize_node_row(_row(measurement_grade='server_regenerated', replay_status='verified',
+                                  measurement_lock_bound=True))
     assert out['verdict_display'] == 'progressive@L2(replay_verified)', out.get('verdict_display')
     assert out['assurance']['val'] == 2
 
@@ -52,7 +53,8 @@ def test_submit_response_assurance_helper():
     display, assur = response_assurance(
         verdict='progressive', current_receipt_sha='r1',
         measurement_grade='server_regenerated', replay_status='verified',
-        assurance_tier_resolved='anchored', attested_by_did=None)
+        assurance_tier_resolved='anchored', attested_by_did=None,
+        measurement_lock_bound=True)
     assert display == 'progressive@L2(replay_verified)' and assur['val'] == 2
     d0, a0 = response_assurance(
         verdict='progressive', current_receipt_sha='r1',

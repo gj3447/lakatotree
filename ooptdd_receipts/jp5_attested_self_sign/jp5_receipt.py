@@ -56,8 +56,11 @@ def _drive(tree_props, with_cert):
                            reproducible_for_node=lambda n, t: None)
     cert = None
     if with_cert:
+        payload = Result(metric_value=1.0, script="inline").model_dump(exclude={"write_cert"})
         command = dict(tree="T", tag="seam", prev_receipt_sha=None, metric_value=1.0, script_sha="",
-                       verb="submit_test_result")
+                       verb="submit_test_result", command_version="v4",
+                       operation_payload_sha256=W.operation_payload_sha256(
+                           "submit_test_result", payload))
         sig = W.ed25519_sign(_SK, W.canonical_cert_blob(command, _NOW))
         cert = WriteCertIn(signer_did=_DID, signature=sig.hex(), issued_at=_NOW,
                            command=CertCommandIn(**command))

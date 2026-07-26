@@ -6,6 +6,8 @@
 # KG: span_lakatotree_prov
 """
 
+import shlex
+
 
 def prov_triples(tree: str, tag: str, script: str, result_path: str, verdict: str,
                  script_sha: str, ts: str) -> list:
@@ -27,4 +29,10 @@ def prov_triples(tree: str, tag: str, script: str, result_path: str, verdict: st
 
 def replay_command(script: str, result_path: str) -> str:
     """재현 명령 — provenance 에서 판결을 재생하는 쉘 한 줄."""
-    return f'python {script} {result_path}'
+    # This string is both displayed to operators and parsed back with shlex.split(shell=False)
+    # by the replay sandbox.  Quote each argv component so spaces and shell metacharacters retain
+    # their literal identity instead of changing the scorer/artifact selected for replay.
+    argv = ['python', script or '']
+    if result_path:
+        argv.append(result_path)
+    return shlex.join(argv)

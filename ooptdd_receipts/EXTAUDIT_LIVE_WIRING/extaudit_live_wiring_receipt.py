@@ -20,7 +20,8 @@ if _LKT not in sys.path:
 from lakatos.layout import canonical_layout_blob                                   # noqa: E402
 from lakatos.temporal import build_temporal_anchor, spec_digest                    # noqa: E402
 from lakatos.write_cert import (build_write_cert, did_key_encode,                  # noqa: E402
-                                ed25519_public_key, ed25519_sign)
+                                ed25519_public_key, ed25519_sign,
+                                operation_payload_sha256)
 from server.contexts.tree.judgement_service import JudgementService               # noqa: E402
 from server.contexts.tree.schemas import PredictionIn                             # noqa: E402
 
@@ -67,11 +68,21 @@ def _svc(kg):
                             foundation=lambda n: None, reproducible_for_node=lambda n, t: None)
 
 
-def _cert(sec, did, verb="register_prediction", script_sha=None):
-    c = build_write_cert(sec, {"tree": "T", "tag": "n", "prev_receipt_sha": None,
-                               "metric_value": None, "script_sha": script_sha, "verb": verb})
+def _cert(sec, did, prediction, verb="register_prediction"):
+    payload = prediction.model_dump(exclude={"write_cert"})
+    c = build_write_cert(sec, {
+        "tree": "T", "tag": "n", "prev_receipt_sha": None,
+        "metric_value": None, "script_sha": prediction.judge_script_sha, "verb": verb,
+        "command_version": "v4",
+        "operation_payload_sha256": operation_payload_sha256(verb, payload),
+    })
     c["signer_did"] = did
     return c
+
+
+def _signed_prediction(sec, did, **payload):
+    unsigned = PredictionIn(**payload)
+    return PredictionIn(**payload, write_cert=_cert(sec, did, unsigned))
 
 
 def verify(backend, cid):
@@ -85,12 +96,12 @@ def verify(backend, cid):
     except Exception:
         unsigned_rejected = True
     try:
-        _svc(_Kg(_tree())).register_prediction("T", "n", PredictionIn(
-            **base, write_cert=_cert(_S[1], DID[1])))     # owner=역할밖
+        _svc(_Kg(_tree())).register_prediction(
+            "T", "n", _signed_prediction(_S[1], DID[1], **base))  # owner=역할밖
     except Exception:
         wrong_rejected = True
-    out = _svc(_Kg(_tree())).register_prediction("T", "n", PredictionIn(
-        **base, write_cert=_cert(_S[2], DID[2])))
+    out = _svc(_Kg(_tree())).register_prediction(
+        "T", "n", _signed_prediction(_S[2], DID[2], **base))
     right_ok = bool(out.get("pred_receipt_sha"))
     assert unsigned_rejected and wrong_rejected and right_ok, \
         (unsigned_rejected, wrong_rejected, right_ok)
@@ -102,14 +113,14 @@ def verify(backend, cid):
     spec = PredictionIn(**base)
     sd = {k: v for k, v in spec.model_dump().items() if k not in ("write_cert", "temporal_anchor", "temporal_anchors")}
     good = build_temporal_anchor(_S[3], spec_digest(sd), "2026-07-23T07:00:00+00:00", DID[3])
-    out2 = _svc(kg).register_prediction("T", "n", PredictionIn(
-        **base, write_cert=_cert(_S[2], DID[2]), temporal_anchor=good))
+    out2 = _svc(kg).register_prediction(
+        "T", "n", _signed_prediction(_S[2], DID[2], **base, temporal_anchor=good))
     assert out2.get("pred_anchor_verified") is True and kg.node.get("pred_anchor_verified") is True
     smuggled = build_temporal_anchor(_S[3], spec_digest({"other": 1}), "2026-07-23T07:00:00+00:00", DID[3])
     smuggle_rejected = False
     try:
-        _svc(_Kg(_tree())).register_prediction("T", "n", PredictionIn(
-            **base, write_cert=_cert(_S[2], DID[2]), temporal_anchor=smuggled))
+        _svc(_Kg(_tree())).register_prediction(
+            "T", "n", _signed_prediction(_S[2], DID[2], **base, temporal_anchor=smuggled))
     except Exception:
         smuggle_rejected = True
     assert smuggle_rejected, "digest 밀반입 앵커가 통과(밀반입 봉쇄 실패)"

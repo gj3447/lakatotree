@@ -41,7 +41,8 @@ def verify(backend, cid):
     """VAL 도출·표면 동봉 구동 — parity·결함주입·standing 배선 증언."""
     # (1) parity gap: armed vs disarmed 가 표면에서 달라야 한다.
     armed = format_verdict_with_val("progressive", verdict_assurance(
-        _row(measurement_grade="server_regenerated", replay_status="verified")))
+        _row(measurement_grade="server_regenerated", replay_status="verified",
+             measurement_lock_bound=True)))
     disarmed = format_verdict_with_val("progressive", verdict_assurance(
         _row(measurement_grade="client_asserted", replay_status="not_attempted")))
     assert armed != disarmed, f"armed/disarmed 표면 동일(급소 #5 잔존): {armed}"
@@ -52,7 +53,8 @@ def verify(backend, cid):
     forged = verdict_assurance(_row(measurement_grade="server_regenerated", replay_status="mismatch"))
     assert forged["val"] == 0 and forged["basis"] == ("replay_refuted",), \
         f"grade 라벨만 믿고 L2 부여(위조 통과): {forged}"
-    ok2 = verdict_assurance(_row(measurement_grade="server_regenerated", replay_status="verified"),
+    ok2 = verdict_assurance(_row(measurement_grade="server_regenerated", replay_status="verified",
+                                 measurement_lock_bound=True),
                             chain_ok=None)
     assert ok2["val"] == 2, f"부재(chain 미대조)가 강등을 일으킴(dead-σ 위반): {ok2}"
     backend.ship([_ev(cid, "forged_grade_capped_l0", forged_val=forged["val"], unknown_keeps=ok2["val"])])

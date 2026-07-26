@@ -121,15 +121,17 @@ def test_inline_or_symbol_script_is_inconclusive(monkeypatch):
 def test_replay_run_really_executes_a_path_script(tmp_path, monkeypatch):
     app = _app()
     script = tmp_path / "scorer.py"
+    result = tmp_path / "result.json"
     script.write_text("import sys\nprint('metric=0.50')\n")   # args 무시, metric 출력
+    result.write_text("{}\n")
     monkeypatch.setenv("LAKATOS_REPLAY_EXEC", "1")
     monkeypatch.setattr(app, "kg",
-                        lambda q, **p: [_node(0.50, judge_script=str(script), result_path="x")])
-    # _replay_run 은 monkeypatch 안 함 — 실 subprocess 가 'python <script> x' 를 돌린다.
+                        lambda q, **p: [_node(0.50, judge_script=str(script), result_path=str(result))])
+    # _replay_run 은 monkeypatch 안 함 — 실 subprocess 가 실존 artifact 를 인자로 돌린다.
     assert app._producer_replay_for_node("tree", "n1") is True
     # 위조면(recorded 다름) 같은 실행이 False — bare-path-as-command 결함이면 둘 다 False 라 못 구별.
     monkeypatch.setattr(app, "kg",
-                        lambda q, **p: [_node(0.99, judge_script=str(script), result_path="x")])
+                        lambda q, **p: [_node(0.99, judge_script=str(script), result_path=str(result))])
     assert app._producer_replay_for_node("tree", "n2") is False
 
 

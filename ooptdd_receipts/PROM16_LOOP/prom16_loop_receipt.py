@@ -99,6 +99,12 @@ class _JudgeWorld:
     def kg(self, q, **p):
         if "cycle_budget" in q:
             return [{"cycle_budget": self.budget, "used": self.scored}]
+        if "RETURN t.ontology AS ontology" in q:
+            return [{"ontology": None}]
+        if "RETURN e.current_receipt_sha AS prev_rsha" in q:
+            return [{"prev_rsha": None}]
+        if "SET e.pred_metric" in q:
+            return [{"tag": p.get("tag")}]
         if "RETURN e.pred_metric" in q:
             return [dict(m="p95", d="lower", b=0.5, nb=0.05, novel=None, vsrc=None, nmet=None,
                          ndir=None, nthr=None, psha=None, closes=None, n_opened=0)]

@@ -3,7 +3,9 @@
 DB는 monkeypatch 한 tree_data/kg/MONGO 포트로 대체 (test_server_contracts 동형).
 """
 import importlib
+import json
 import os
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -244,13 +246,54 @@ def test_paradigm_shift_after_sustained_snapshots(monkeypatch):
     assert out['requires_human_oracle'] is True
 
 
+def _locked_certificate_row(app, *, env_sha=None, measurement_grade='server_regenerated'):
+    from lakatos.io.prov import replay_command
+    from lakatos.measurement_lock import build_measurement_lock, lock_sha
+    from lakatos.verdicts import RECEIPT_FIELDS, receipt_content_sha
+
+    from server.file_hashing import file_sha
+    script = str(Path(__file__).resolve())
+    result = str((Path(__file__).resolve().parents[1] / 'README.md').resolve())
+    script_sha, result_sha = file_sha(script), file_sha(result)
+    current_env_sha = env_sha or app.fingerprint_sha(app.environment_fingerprint())
+    payload = build_measurement_lock(
+        cmd=replay_command(script, result),
+        deps=[{'path': script, 'sha256': script_sha},
+              {'path': result, 'sha256': result_sha}],
+        params={'metric_name': 'p95'}, env_sha=current_env_sha,
+        outs=[{'name': 'p95', 'value': 0.9}],
+        measurement_grade=measurement_grade, replay_status='verified',
+    )
+    lsha = lock_sha(payload)
+    fields = {key: None for key in RECEIPT_FIELDS}
+    fields.update(
+        tree='T', tag='v22', verdict='progressive', verdict_source='scripted',
+        metric_name='p95', metric_value=0.9, novel_confirmed=False,
+        lakatos_status='progressive', judged_at='2026-07-26T00:00:00+00:00',
+        judge_script_sha=script_sha, measurement_grade=measurement_grade,
+        engine_rule_sha='e' * 64, comment_sha='c' * 64,
+        replay_status='verified', judge_script_path=script, result_path=result,
+        result_sha256=result_sha, measurement_lock_sha=lsha,
+    )
+    rsha = receipt_content_sha(fields)
+    return dict(
+        verdict='progressive', vsrc='scripted', pm='p95', script=script,
+        sha=script_sha, rp=result, result_sha256=result_sha,
+        measurement_lock_sha=lsha, replay_status='verified', replay_reason=None,
+        regenerated_metric=None, current_receipt_sha=rsha,
+        mg=measurement_grade, mv=0.9,
+        head_receipts=[{**fields, 'receipt_sha': rsha}],
+        measurement_locks=[{
+            'lock_sha': lsha,
+            'payload_json': json.dumps(payload, sort_keys=True, separators=(',', ':')),
+        }],
+    )
+
+
 def test_certificate_assembles_six_gates(monkeypatch):
     app = load_app()
-    # mg=server_regenerated(값소유)+mv 존재 → G6 measurement_owned 통과 → 6게이트 전수 인증
-    monkeypatch.setattr(app, 'kg', lambda q, **kw: [dict(
-        verdict='progressive', vsrc='scripted', pm='p95',
-        script='judges/x.py', sha='a' * 64, rp='out/final.json',
-        mg='server_regenerated', mv=0.9)])
+    # Owned grade plus one current content/semantic/env-valid v5 lock passes G6.
+    monkeypatch.setattr(app, 'kg', lambda q, **kw: [_locked_certificate_row(app)])
     monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
     monkeypatch.setattr(app, 'standing', lambda n, t: dict(
         stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
@@ -265,10 +308,7 @@ def test_certificate_assembles_six_gates(monkeypatch):
 #    옛 게이트는 판관이 이미 계산한 ECE 를 버리고 존재(n≥1)만 확인 → ECE=0.57 과신도 'calibrated' 인증.
 def _six_gate_app(monkeypatch, cal):
     app = load_app()
-    monkeypatch.setattr(app, 'kg', lambda q, **kw: [dict(
-        verdict='progressive', vsrc='scripted', pm='p95',
-        script='judges/x.py', sha='a' * 64, rp='out/final.json',
-        mg='server_regenerated', mv=0.9)])
+    monkeypatch.setattr(app, 'kg', lambda q, **kw: [_locked_certificate_row(app)])
     monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
     monkeypatch.setattr(app, 'standing', lambda n, t: dict(
         stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
@@ -292,6 +332,65 @@ def test_calibrated_gate_passes_low_ece(monkeypatch):
     out = _six_gate_app(monkeypatch, dict(n=20, calibration_error=0.03)).node_certificate('T', 'v22')
     assert _cal_gate(out)['passed'] is True
     assert out['certified'] is True
+
+
+@pytest.mark.parametrize('corruption', [
+    'missing_lock', 'semantic_lock', 'env_drift', 'duplicate_head', 'artifact_missing'])
+def test_certificate_owned_metric_requires_current_bound_v5_lock(monkeypatch, corruption):
+    app = load_app()
+    row = _locked_certificate_row(app)
+    if corruption == 'missing_lock':
+        row['measurement_locks'] = []
+    elif corruption == 'semantic_lock':
+        payload = json.loads(row['measurement_locks'][0]['payload_json'])
+        payload['outs'][0]['value'] = 123.0
+        from lakatos.measurement_lock import lock_sha
+        from lakatos.verdicts import receipt_content_sha
+        lsha = lock_sha(payload)
+        row['measurement_locks'][0] = {
+            'lock_sha': lsha,
+            'payload_json': json.dumps(payload, sort_keys=True, separators=(',', ':')),
+        }
+        row['measurement_lock_sha'] = lsha
+        head = row['head_receipts'][0]
+        head['measurement_lock_sha'] = lsha
+        head['receipt_sha'] = receipt_content_sha(head)
+        row['current_receipt_sha'] = head['receipt_sha']
+    elif corruption == 'env_drift':
+        row = _locked_certificate_row(app, env_sha='9' * 64)
+    elif corruption == 'duplicate_head':
+        row['head_receipts'].append(dict(row['head_receipts'][0]))
+    else:
+        from lakatos.io.prov import replay_command
+        from lakatos.measurement_lock import lock_sha
+        from lakatos.verdicts import receipt_content_sha
+        head = row['head_receipts'][0]
+        missing_script, missing_result = '/definitely/missing/score.py', '/definitely/missing/result.json'
+        payload = json.loads(row['measurement_locks'][0]['payload_json'])
+        payload['cmd'] = replay_command(missing_script, missing_result)
+        payload['deps'][0]['path'] = missing_result
+        payload['deps'][1]['path'] = missing_script
+        payload['deps'] = sorted(payload['deps'], key=lambda dep: dep['path'])
+        lsha = lock_sha(payload)
+        row.update(script=missing_script, rp=missing_result, measurement_lock_sha=lsha)
+        head.update(judge_script_path=missing_script, result_path=missing_result,
+                    measurement_lock_sha=lsha)
+        head['receipt_sha'] = receipt_content_sha(head)
+        row['current_receipt_sha'] = head['receipt_sha']
+        row['measurement_locks'] = [{
+            'lock_sha': lsha,
+            'payload_json': json.dumps(payload, sort_keys=True, separators=(',', ':')),
+        }]
+
+    monkeypatch.setattr(app, 'kg', lambda q, **kw: [row])
+    monkeypatch.setattr(app, '_reproducible_for_node', lambda n, t: True)
+    monkeypatch.setattr(app, 'standing', lambda n, t: dict(
+        stands=True, grounded_extension=['verdict:v22'], verdict='progressive'))
+    monkeypatch.setattr(app, 'calibration', lambda n: dict(n=20, calibration_error=0.03))
+    out = app.node_certificate('T', 'v22')
+    gate = next(check for check in out['checks'] if check['gate'] == 'measurement_owned')
+    assert gate['passed'] is False
+    assert out['certified'] is False
 
 
 def test_calibrated_gate_abstains_on_small_n(monkeypatch):

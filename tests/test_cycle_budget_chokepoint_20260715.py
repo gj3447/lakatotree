@@ -54,6 +54,8 @@ class _World:
         self.queries.append(q)
         if 'cycle_budget' in q:
             return [{'cycle_budget': self.budget, 'used': self.scored}]
+        if 'RETURN e.current_receipt_sha AS prev_rsha' in q:
+            return [{'prev_rsha': None}]
         if 'RETURN e.pred_metric' in q:
             return [dict(_PRED_ROW)]
         if 'RETURN e.verdict AS verdict, e.verdict_source' in q:

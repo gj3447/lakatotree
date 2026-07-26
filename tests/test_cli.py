@@ -360,3 +360,258 @@ def test_rebuild_run_cli_surfaces_step_failed_on_nonzero_exit(monkeypatch, capsy
     assert out['regenerated'] is None                       # 실행 중단 — metric 재생성 안 함
     assert 'metric_compare' not in out['trace_events']      # 단계서 정직히 abort(대조까지 안 감)
     assert 'rebuild_verdict' in out['trace_events']
+
+
+def _schema_valid_field_mutation(model_cls, payload, field):
+    """Return a different, schema-valid payload whose selected field changed."""
+    value = payload[field]
+    if isinstance(value, bool):
+        candidates = [not value]
+    elif isinstance(value, (int, float)):
+        # Zero/one stays valid for constrained probabilities and non-negative bands; the second
+        # candidate covers a hypothetical field whose lower bound excludes zero.
+        candidates = [0.0 if value != 0 else 1.0, value + 1]
+    elif isinstance(value, str):
+        candidates = [value + '-tampered' if value else 'tampered']
+    elif isinstance(value, list):
+        extra = ({'tampered': True} if value and isinstance(value[0], dict) else 'tampered')
+        candidates = [value + [extra]]
+    elif isinstance(value, dict):
+        candidates = [{**value, 'tampered': True}]
+    else:  # Optional fields materialised as None need a candidate of their declared type.
+        candidates = [1.0, True, 'tampered', [], {}, [{}]]
+
+    for candidate in candidates:
+        raw = dict(payload, **{field: candidate})
+        try:
+            changed = model_cls(**raw).model_dump(exclude={'write_cert'})
+        except (TypeError, ValueError):
+            continue
+        if changed.get(field) != value:
+            return changed
+    raise AssertionError(f'{model_cls.__name__}.{field} 에 유효한 대체값을 만들지 못함')
+
+
+def test_cert_sign_v4_binds_exact_submit_predict_result_and_verdict_payloads(
+        monkeypatch, tmp_path, capsys):
+    """cert-sign and each CLI mutation must hash the same fully validated request.
+
+    This guards both sides of the hand-off: CLI defaults may not disappear from the signed payload,
+    and changing *any* schema field must make the certificate unusable for that changed request.
+    """
+    from datetime import datetime
+
+    from lakatos.write_cert import (COMMAND_FIELDS_V4, CertCommandMismatch,
+                                    operation_payload_sha256, verify_write_cert)
+    from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
+
+    head = 'h' * 64
+    secret_hex = bytes(range(32)).hex()
+    calls = []
+
+    def fake_call(method, path, body=None):
+        calls.append((method, path, body))
+        return {'head': head} if method == 'GET' and path.endswith('/receipts') else {'ok': True}
+
+    monkeypatch.setattr(cli, 'call', fake_call)
+
+    submit_payload = TestResultIn(
+        metric_value=0.75, script='inline-default', script_sha='a' * 64,
+    ).model_dump(exclude={'write_cert'})
+    predict_payload = PredictionIn(
+        metric_name='latency_ms', direction='lower', baseline_value=10.5,
+        noise_band=0.25, novel_metric='recall', novel_direction='higher',
+        novel_threshold=0.8, judge_script_sha='b' * 64, credence=0.7,
+    ).model_dump(exclude={'write_cert'})
+    result_payload = TestResultIn(
+        metric_value=0.4, script='inline-full', script_sha='c' * 64,
+        novel_measured=0.9, novel_script='novel.py', data_branch=True,
+        data_replay_passed=False, human_verdict_required=True,
+        lakatos_anomaly=True, lakatos_consequence=False, lakatos_excess=True,
+        lakatos_hardcore=False, touched_assumptions=['aux-a'],
+        implementation_complete=False, counterexample_response='lemma_incorporation',
+        counterexample_type='local', ce_excess_content=True,
+        ce_novel_corroborated=True, ce_in_heuristic_spirit=False,
+        ce_proof_concept_name='simple connectivity', ce_proof_born_from='hollow cube',
+        ce_proof_incorporated_lemma='Euler step',
+    ).model_dump(exclude={'write_cert'})
+    verdict_payload = VerdictIn(
+        verdict='CANONICAL', note='promote after replay', scope='lx3', human_verdict=True,
+    ).model_dump(exclude={'write_cert'})
+
+    cases = [
+        dict(
+            label='submit-default', verb='submit_test_result', model=TestResultIn,
+            payload=submit_payload,
+            sign_args=['--metric-value', '0.75', '--script', 'inline-default',
+                       '--script-sha', 'a' * 64],
+            mutate_args=['result', 'T', 'n', '--value', '0.75', '--script', 'inline-default',
+                         '--sha', 'a' * 64],
+            post_path='/api/tree/T/node/n/test_result',
+        ),
+        dict(
+            label='predict', verb='register_prediction', model=PredictionIn,
+            payload=predict_payload, sign_args=None,
+            mutate_args=['predict', 'T', 'n', '--metric', 'latency_ms', '--dir', 'lower',
+                         '--baseline', '10.5', '--noise', '0.25', '--novel-metric', 'recall',
+                         '--novel-dir', 'higher', '--novel-thr', '0.8', '--sha', 'b' * 64,
+                         '--credence', '0.7'],
+            post_path='/api/tree/T/node/n/prediction',
+        ),
+        dict(
+            label='result', verb='submit_test_result', model=TestResultIn,
+            payload=result_payload, sign_args=None,
+            mutate_args=[
+                'result', 'T', 'n', '--value', '0.4', '--script', 'inline-full',
+                '--sha', 'c' * 64, '--novel-measured', '0.9', '--novel-script', 'novel.py',
+                '--data-branch', '--no-data-replay', '--human-verdict',
+                '--lakatos-anomaly', '--no-lakatos-consequence', '--lakatos-excess',
+                '--no-lakatos-hardcore', '--touched-assumption', 'aux-a',
+                '--no-implementation-complete', '--counterexample-response', 'lemma_incorporation',
+                '--counterexample-type', 'local', '--ce-excess-content',
+                '--ce-novel-corroborated', '--no-ce-in-heuristic-spirit',
+                '--ce-proof-concept-name', 'simple connectivity',
+                '--ce-proof-born-from', 'hollow cube',
+                '--ce-proof-incorporated-lemma', 'Euler step',
+            ],
+            post_path='/api/tree/T/node/n/test_result',
+        ),
+        dict(
+            label='verdict', verb='set_verdict_canonical', model=VerdictIn,
+            payload=verdict_payload, sign_args=None,
+            mutate_args=['verdict', 'T', 'n', 'CANONICAL', '--note', 'promote after replay',
+                         '--scope', 'lx3', '--human'],
+            post_path='/api/tree/T/node/n/verdict',
+        ),
+    ]
+
+    for case in cases:
+        payload_path = tmp_path / f"{case['label']}-payload.json"
+        payload_path.write_text(json.dumps(case['payload']), encoding='utf-8')
+        sign_args = [
+            'cert-sign', 'T', 'n', '--secret-hex', secret_hex,
+        ]
+        if case['sign_args'] is not None:
+            sign_args += case['sign_args']  # exercises cert-sign's default submit constructor
+        else:
+            sign_args += ['--verb', case['verb'], '--payload-json', str(payload_path)]
+
+        calls.clear()
+        cli.main(sign_args)
+        cert = json.loads(capsys.readouterr().out)
+        assert calls == [('GET', '/api/tree/T/node/n/receipts', None)]
+
+        script_sha = (case['payload'].get('judge_script_sha')
+                      if case['verb'] == 'register_prediction'
+                      else case['payload'].get('script_sha')
+                      if case['verb'] == 'submit_test_result' else None)
+        command_values = dict(
+            tree='T', tag='n', prev_receipt_sha=head,
+            metric_value=(case['payload'].get('metric_value')
+                          if case['verb'] == 'submit_test_result' else None),
+            script_sha=script_sha, verb=case['verb'], command_version='v4',
+            result_sha256=None,
+            operation_payload_sha256=operation_payload_sha256(case['verb'], case['payload']),
+        )
+        expected_command = {field: command_values.get(field) for field in COMMAND_FIELDS_V4}
+        assert cert['command'] == expected_command
+        verify_write_cert(
+            cert, expected_command=expected_command, allowlist=[cert['signer_did']],
+            now=datetime.fromisoformat(cert['issued_at']),
+        )
+
+        # Every materialised schema field participates in operation_payload_sha256.
+        for field in case['payload']:
+            changed_payload = _schema_valid_field_mutation(
+                case['model'], case['payload'], field)
+            changed_command = dict(
+                expected_command,
+                operation_payload_sha256=operation_payload_sha256(
+                    case['verb'], changed_payload),
+            )
+            assert changed_command['operation_payload_sha256'] != \
+                expected_command['operation_payload_sha256'], field
+            with pytest.raises(CertCommandMismatch):
+                verify_write_cert(
+                    cert, expected_command=changed_command, allowlist=[cert['signer_did']],
+                    now=datetime.fromisoformat(cert['issued_at']),
+                )
+
+        # Feed that certificate through the real mutation parser/dispatcher and compare the exact
+        # validated POST payload to the one cert-sign hashed.
+        cert_path = tmp_path / f"{case['label']}-cert.json"
+        cert_path.write_text(json.dumps(cert), encoding='utf-8')
+        calls.clear()
+        cli.main(case['mutate_args'] + ['--write-cert-file', str(cert_path)])
+        capsys.readouterr()
+        method, path, posted = calls[-1]
+        assert (method, path) == ('POST', case['post_path'])
+        assert posted['write_cert'] == cert
+        normalized_post = case['model'](**posted).model_dump(exclude={'write_cert'})
+        assert normalized_post == case['payload']
+        assert operation_payload_sha256(case['verb'], normalized_post) == \
+            cert['command']['operation_payload_sha256']
+
+
+def test_cert_sign_v4_artifact_command_is_cache_root_independent(
+        monkeypatch, tmp_path, capsys):
+    """A client cert binds source bytes/payload, never a server-local immutable-cache pathname."""
+    from lakatos.write_cert import COMMAND_FIELDS_V4, operation_payload_sha256
+    from server.contexts.tree.schemas import TestResultIn
+    from server.file_hashing import file_sha
+
+    script = tmp_path / 'judge.py'
+    result = tmp_path / 'result.json'
+    script.write_text('print("metric=0.4")\n', encoding='utf-8')
+    result.write_text('{"metric":0.4}\n', encoding='utf-8')
+    payload = TestResultIn(
+        metric_value=0.4, script=str(script), result_path=str(result),
+    ).model_dump(exclude={'write_cert'})
+    payload_path = tmp_path / 'artifact-payload.json'
+    payload_path.write_text(json.dumps(payload), encoding='utf-8')
+
+    head = 'd' * 64
+    calls = []
+
+    def fake_call(method, path, body=None):
+        calls.append((method, path, body))
+        return {'head': head} if method == 'GET' else {'ok': True}
+
+    monkeypatch.setattr(cli, 'call', fake_call)
+    base_args = [
+        'cert-sign', 'T', 'n', '--secret-hex', bytes(range(32)).hex(),
+        '--verb', 'submit_test_result', '--payload-json', str(payload_path),
+    ]
+    commands = []
+    certs = []
+    for cache_name in ('server-a-cache', 'server-b-cache'):
+        monkeypatch.setenv('LAKATOS_REPLAY_CACHE_ROOT', str(tmp_path / cache_name))
+        calls.clear()
+        cli.main(base_args)
+        cert = json.loads(capsys.readouterr().out)
+        certs.append(cert)
+        commands.append(cert['command'])
+
+    assert commands[0] == commands[1]
+    assert set(commands[0]) == set(COMMAND_FIELDS_V4)
+    assert commands[0]['script_sha'] == file_sha(str(script))
+    assert commands[0]['result_sha256'] == file_sha(str(result))
+    assert commands[0]['operation_payload_sha256'] == operation_payload_sha256(
+        'submit_test_result', payload)
+    assert not ({'judge_script_path', 'result_path', 'source_script_path',
+                 'source_result_path'} & set(commands[0]))
+
+    # A cert created while client A names one cache root remains the exact cert attached by a
+    # client configured for another root; server-local snapshots are minted only after acceptance.
+    cert_path = tmp_path / 'cache-a-cert.json'
+    cert_path.write_text(json.dumps(certs[0]), encoding='utf-8')
+    monkeypatch.setenv('LAKATOS_REPLAY_CACHE_ROOT', str(tmp_path / 'server-b-cache'))
+    calls.clear()
+    cli.main([
+        'result', 'T', 'n', '--value', '0.4', '--script', str(script),
+        '--result-path', str(result), '--write-cert-file', str(cert_path),
+    ])
+    capsys.readouterr()
+    posted = calls[-1][2]
+    assert posted['write_cert']['command'] == commands[0]
+    assert TestResultIn(**posted).model_dump(exclude={'write_cert'}) == payload

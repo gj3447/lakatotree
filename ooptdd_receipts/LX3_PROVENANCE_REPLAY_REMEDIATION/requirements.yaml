@@ -13,7 +13,7 @@ requirements:
     longinus: {kg_anchor: "ref_site:LX3_PR:claim_metadata_boundary", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_claim_metadata_cannot_synthesize_evidence}
 
   - id: LX3-PR-2
-    description: replay status/reason/regenerated metric은 v4 verdict receipt에 내용주소로 봉인된다
+    description: replay status/reason/regenerated metric은 v4에서 도입되고 현 artifact mint v5에도 내용주소로 봉인된다
     gate:
       - {event: lx3_replay_diagnostics_v4_sealed, op: ">=", count: 1}
     longinus: {kg_anchor: "ref_site:LX3_PR:replay_v4_seal", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_replay_diagnostics_v4_sealed}
@@ -31,8 +31,11 @@ requirements:
     longinus: {kg_anchor: "ref_site:LX3_PR:source_trust_scope", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_source_trust_semantics_scoped}
 
   - id: LX3-PR-5
-    description: 음성 오라클은 v4/cache parity/result_path 계약 제거 시 구 결함을 재현해 vacuous green을 차단한다
+    description: 음성 오라클은 v3 진단 미봉인, 역사적 v4 artifact 미봉인, cache-only 분류를 실제 ablation으로 재현해 vacuous green을 차단한다
     gate:
+      - {event: lx3_negative_v3_replay_collision, op: ">=", count: 1}
+      - {event: lx3_negative_cache_only_substitution, op: ">=", count: 1}
+      - {event: lx3_negative_v4_artifact_collision, op: ">=", count: 1}
       - {event: lx3_remediation_negative_oracle, op: ">=", count: 1}
     longinus: {kg_anchor: "ref_site:LX3_PR:negative_oracle", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_remediation_negative_oracle}
 

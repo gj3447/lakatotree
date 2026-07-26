@@ -36,9 +36,13 @@ def test_confirmed_overclaims_are_dead():
     assert hits, "문장 자체가 사라짐 — 가드 재조준 필요(문서 리라이트?)"
     for end in hits:
         assert tts[end:end + 2] == "[^", "TTS '거짓말할 수 없는' 각주 없는 재발"
-    # ③ README 헤드라인 — 외부성 무단서 현재시제는 죽었고, 한계선 어휘가 들어옴
+    # ③ README 헤드라인 — 외부성 무단서 현재시제는 죽었고, 현행 v5
+    #    snapshot/lock 권위 계약과 그 비주장(non-claim) 경계가 같이 들어옴.
     assert "and an external measurement" not in readme
-    assert "reproduction-confirmation, not value-ownership" in readme
+    for needle in ("immutable snapshots", "MeasurementLock", "authoritative only while",
+                   "Legacy/unbound submits remain explicitly non-authoritative",
+                   "does **not** prove"):
+        assert needle in readme, f"README 현행 재생 권위/한계 어휘 누락: {needle}"
 
 
 def test_adr_exists_and_pins_code():
@@ -72,7 +76,9 @@ def test_adr_code_anchors_hold():
         "tree", "tag", "target_id", "verdict", "verdict_source", "metric_name", "metric_value",
         "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
         "measurement_grade", "engine_rule_sha", "comment_sha",
-        "replay_status", "replay_reason", "regenerated_metric"}
+        "replay_status", "replay_reason", "regenerated_metric",
+        "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
+        "source_script_path", "source_result_path"}
     # 값소유 치환 코드 실재(verified∧regenerated → SSOT 치환).
     policy = (ROOT / "server" / "contexts" / "tree" / "judgement_policy.py").read_text(encoding="utf-8")
     assert "def resolve_measurement" in policy and "server_regenerated" in policy

@@ -93,6 +93,27 @@ presence-dispatch carve-out 으로 재유도 바이트동일(기존 코퍼스 �
 legacy·무효 receipt·PredictionReceipt의 여분 필드는 `legacy_unclassified`로 보수 처리한다. fsck는
 기본적으로 receipt를 포함해 실행하며, 명시적 `include_receipts=false`는 상세 진단을 포기하는 경량 감사다.
 
+**아티팩트 재생 권위 (2026-07-26, LX3 v5):** v4 진단 sha-space는 동결하고, v5가 실행 입력의
+정체성을 별도 세대로 봉인한다. 서버는 허용 루트의 source script/result를 직접 해시한 뒤 private
+content-addressed cache에 immutable snapshot을 만들며, producer replay는 source 경로가 아니라 이
+snapshot 쌍을 실행한다. `MeasurementLock`은 snapshot command, 두 dependency SHA, 환경 지문, output,
+measurement grade, replay status를 내용주소화하고, v5 receipt는 snapshot/source 경로와 script/result
+SHA 및 lock SHA를 함께 봉인한다. source result 경로는 lineage 조회용으로 별도 보존되며 실행 권위는
+snapshot에만 있다.
+
+write-cert v4는 클라이언트와 서버의 `$HOME`, XDG state, container mount가 달라도 같은 명령을
+검증할 수 있도록 cache 절대경로를 서명하지 않는다. 대신 전체 검증 payload digest가 제출 source
+경로와 모든 mutation 필드를, `script_sha`/`result_sha256`가 입력 bytes를 묶는다. 실제 server-local
+snapshot 절대경로는 materialize 이후 v5 receipt와 MeasurementLock에서만 봉인한다. v2/v3의 역사적
+path-bound 서명 바이트는 그대로 보존한다.
+
+읽기 경계가 `authoritative=true`를 내는 조건은 좁다: current v5 receipt와 그 SHA에 해당하는 lock이
+각각 정확히 하나이고, 둘의 내용해시가 유효하며, node cache·lock command/deps/outs/grade/status가 receipt와
+일치하고, 현재 환경 지문이 lock과 같으며, snapshot 파일 두 개를 현재 다시 해시한 값도 봉인 SHA와 같아야
+한다. 하나라도 빠지면 legacy/unbound/env-drift로 명시적 비권위가 되거나 무결성 409가 난다. 이 계약은
+“어느 bytes와 환경이 이 측정값을 냈는가”를 묶지만 scorer의 타당성, source data의 외부 진실성,
+프로세스 sandbox를 증명하지 않는다.
+
 **ClaimStanding evidence 경계 (2026-07-26):** `source_trust`는 실제 internet 관측의 가중치이고,
 `script`/`result_path`는 실행 메타데이터다. 어느 것도 ResearchEvent 자체가 아니므로 상·하계 evidence를
 합성하지 않는다. ClaimStanding은 observation/world-action 게이트를 거쳐 저장된 append-only

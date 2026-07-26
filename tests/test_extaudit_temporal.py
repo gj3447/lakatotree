@@ -70,7 +70,8 @@ def test_two_ended_witness_predicate():
 def test_val_l3_opens_with_temporal_witness():
     row = dict(verdict="progressive", verdict_source="scripted", current_receipt_sha="r1",
                measurement_grade="server_regenerated", replay_status="verified",
-               assurance_tier_resolved="anchored", attested_by_did="did:key:zA", engine_rule_sha="e1")
+               assurance_tier_resolved="anchored", attested_by_did="did:key:zA", engine_rule_sha="e1",
+               measurement_lock_bound=True)
     kw = dict(tree_attestors=["did:key:zA"], engine_rule_floor=frozenset({"e1"}))
     assert verdict_assurance(row, temporal_witness=True, **kw)["val"] == 3    # 증인 있으면 L3
     assert verdict_assurance(row, temporal_witness=False, **kw)["val"] == 2   # 없으면 L2(정직 천장)
