@@ -36,6 +36,36 @@ def _delete(path):
     return r.json()
 
 
+# ── 로컬 preflight (2026-07-24, Mac↔Proxmox 동기화 하네스 Tier2) ─────────────
+# 서버(Proxmox lxc-301)는 bin/lakatotree-sync-now.sh MAPPINGS 동기화 루트 밑 파일만 읽을 수 있다.
+# 그 밖의 절대경로는 F-CON-1/R2-NOVEL 파일앵커 게이트에서 막히니 제출 전에 경고.
+SYNCED_ROOTS = (
+    '/opt/lakatotree',
+    '/Users/lagyeongjun/CD/spacegirl_tool',
+) + tuple(f'/Users/lagyeongjun/CD/SYMPOSIUM/{d}' for d in (
+    'PI', 'HSWM', 'THEORY', 'FINDINGS', 'METAHUMOTONIC', 'MATH', 'PAPERS', 'BIZ_IDEA',
+    'GAMES', 'GAME_IDEA', 'GROK', 'FEEDBACK', 'docs', 'bin', 'kg',
+    'methodology-resolver', 'REPRODUCTION', 'ONTOLOGY', 'mcp-server-symposium',
+    'GIT', '_archive', 'SKILLS'))
+
+
+def _preflight_paths(*paths):
+    bad = [p for p in paths if isinstance(p, str) and p.startswith('/')
+           and not p.startswith(SYNCED_ROOTS)]
+    if bad:
+        return ('local-preflight: 동기화 루트 밖 경로 — Proxmox 서버가 파일을 읽을 수 없어 '
+                '파일앵커 게이트(F-CON-1/R2-NOVEL)가 막힌다: ' + ', '.join(bad)
+                + ' — 동기화 루트 밑으로 옮기거나 bin/lakatotree-sync-now.sh MAPPINGS 에 추가할 것')
+    return ''
+
+
+def _with_preflight(resp, warn):
+    if warn and isinstance(resp, dict):
+        resp = dict(resp)
+        resp['local_preflight_warning'] = warn
+    return resp
+
+
 @mcp.tool()
 def list_trees() -> str:
     """모든 라카토스 나무 목록."""
@@ -194,7 +224,10 @@ def run_cycle(name: str, spec_json: str) -> str:
         spec = json.loads(spec_json or '{}')
     except json.JSONDecodeError as e:
         return json.dumps({'error': 'invalid_spec_json', 'detail': str(e)}, ensure_ascii=False)
-    return json.dumps(_post(f'/api/tree/{name}/cycle', spec), ensure_ascii=False)
+    warn = _preflight_paths(spec.get('novel_script', ''), spec.get('script', ''),
+                            spec.get('result_path', ''))
+    return json.dumps(_with_preflight(_post(f'/api/tree/{name}/cycle', spec), warn),
+                      ensure_ascii=False)
 
 
 @mcp.tool()
@@ -285,7 +318,8 @@ def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
     body = dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm, author=author)
     if result_path:
         body['result_path'] = result_path
-    return json.dumps(_post(f'/api/tree/{name}/node', body), ensure_ascii=False)
+    return json.dumps(_with_preflight(_post(f'/api/tree/{name}/node', body),
+                                      _preflight_paths(result_path)), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -407,7 +441,9 @@ def submit_result(name: str, tag: str, value: float, script: str,
         body['write_cert'] = json.loads(write_cert_json)
     if result_path:
         body['result_path'] = result_path
-    return json.dumps(_post(f'/api/tree/{name}/node/{tag}/test_result', body), ensure_ascii=False)
+    return json.dumps(_with_preflight(
+        _post(f'/api/tree/{name}/node/{tag}/test_result', body),
+        _preflight_paths(script, result_path, novel_script)), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -544,9 +580,11 @@ def record_derivation(output: str, output_sha: str, producer: str = '', producer
     inputs_csv = 'path:sha, path:sha' (쉼표구분). kind=source|intermediate|final."""
     inputs = [[p.rsplit(':', 1)[0].strip(), p.rsplit(':', 1)[1].strip()]
               for p in inputs_csv.split(',') if ':' in p]
-    return json.dumps(_post('/api/lineage/derivation',
-        dict(output=output, output_sha=output_sha, producer=producer,
-             producer_sha=producer_sha, inputs=inputs, kind=kind)), ensure_ascii=False)
+    return json.dumps(_with_preflight(
+        _post('/api/lineage/derivation',
+              dict(output=output, output_sha=output_sha, producer=producer,
+                   producer_sha=producer_sha, inputs=inputs, kind=kind)),
+        _preflight_paths(output, *[i[0] for i in inputs])), ensure_ascii=False)
 
 
 @mcp.tool()
@@ -630,7 +668,7 @@ def add_world_action(name: str, tag: str, event_id: str, command: str = '', cwd:
 @mcp.tool()
 def longinus_audit() -> str:
     """Longinus 바인딩 drift 감사 — 코드↔KG ReferenceSite 정합성(L4 심볼소멸/L6 시그니처변경).
-    로컬 파일(docs/longinus_bindings.json + 소스) 기반, 서버 불필요. 결과 JSON."""
+    로컬 파일(docs/data/longinus_bindings.json + 소스) 기반, 서버 불필요. 결과 JSON."""
     from lakatos.longinus import audit
     return json.dumps(audit(), ensure_ascii=False)
 
