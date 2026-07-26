@@ -71,7 +71,8 @@ def test_adr_code_anchors_hold():
     assert set(RECEIPT_FIELDS) == {
         "tree", "tag", "target_id", "verdict", "verdict_source", "metric_name", "metric_value",
         "novel_confirmed", "lakatos_status", "judged_at", "judge_script_sha", "prev_receipt_sha",
-        "measurement_grade", "engine_rule_sha", "comment_sha"}
+        "measurement_grade", "engine_rule_sha", "comment_sha",
+        "replay_status", "replay_reason", "regenerated_metric"}
     # 값소유 치환 코드 실재(verified∧regenerated → SSOT 치환).
     policy = (ROOT / "server" / "contexts" / "tree" / "judgement_policy.py").read_text(encoding="utf-8")
     assert "def resolve_measurement" in policy and "server_regenerated" in policy

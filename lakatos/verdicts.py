@@ -425,6 +425,7 @@ def comment_drift(row: dict) -> bool | None:
 _RECEIPT_ENCODING_VERSION = 'v1'
 _RECEIPT_ENCODING_VERSION_V2 = 'v2'
 _RECEIPT_ENCODING_VERSION_V3 = 'v3'   # EXTAUDIT S4: comment_sha 봉인 세대 — 별도 헤더로 sha-space 도메인 분리
+_RECEIPT_ENCODING_VERSION_V4 = 'v4'   # replay 진단(status/reason/regenerated) 봉인 세대
 # 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
 #   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
 #   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
@@ -446,7 +447,10 @@ RECEIPT_FIELDS_V2 = RECEIPT_FIELDS_V1 + ('engine_rule_sha',)
 #   봉합). presence-dispatch 3단: comment_sha non-null → v3 / engine_rule_sha non-null → v2 / else v1.
 #   기존 코퍼스(v1/v2) 재유도 바이트동일 carve-out. 서사는 자유이되(삭제·차단 없음) *판정 이후 바뀜*이
 #   comment_sha_at_verdict 미러 + fsck COMMENT_DRIFT_AFTER_VERDICT 로 침묵 불가.
-RECEIPT_FIELDS = RECEIPT_FIELDS_V2 + ('comment_sha',)
+RECEIPT_FIELDS_V3 = RECEIPT_FIELDS_V2 + ('comment_sha',)
+# v4: ``mismatch`` 원인이 실제 값 불일치인지 scorer 실행/출력 실패인지가 운영 조치를 바꾼다.
+# 노드 캐시에만 두면 같은 receipt_sha 아래에서 원인을 바꿀 수 있으므로 판결 영수증에 함께 봉인한다.
+RECEIPT_FIELDS = RECEIPT_FIELDS_V3 + ('replay_status', 'replay_reason', 'regenerated_metric')
 
 
 def _coerce_metric_value(v):
@@ -480,17 +484,24 @@ def canonical_receipt_blob(fields: dict, *, fieldset: tuple | None = None) -> by
     여부로 결정, 기본 None=presence-dispatch 그대로).
     """
     if fieldset is None:
+        v4 = fields.get('replay_status') is not None
         v3 = fields.get('comment_sha') is not None
         v2 = fields.get('engine_rule_sha') is not None
-        keys = RECEIPT_FIELDS if v3 else (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)
+        keys = (RECEIPT_FIELDS if v4 else
+                (RECEIPT_FIELDS_V3 if v3 else (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)))
     else:
+        v4 = 'replay_status' in fieldset
         v3 = 'comment_sha' in fieldset
         v2 = 'engine_rule_sha' in fieldset
         keys = fieldset
-    ver = (_RECEIPT_ENCODING_VERSION_V3 if v3
+    ver = (_RECEIPT_ENCODING_VERSION_V4 if v4 else
+           (_RECEIPT_ENCODING_VERSION_V3 if v3
            else (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))
+           )
     payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
+    if 'regenerated_metric' in payload:
+        payload['regenerated_metric'] = _coerce_metric_value(payload.get('regenerated_metric'))
     payload['judged_at'] = _coerce_judged_at(payload.get('judged_at'))
     body = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
     header = f'verdict-receipt\x00{ver}\n'

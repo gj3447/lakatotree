@@ -61,7 +61,7 @@ def test_fsck_verb_same_checker_and_seat_rejects_before_tx(monkeypatch, tmp_path
                                                      'frontier': []})
     sentinel = F.Finding('SENTINEL_CHECK', F.ERROR, 'callable-identity probe')
     monkeypatch.setattr(F, 'fsck_node', lambda rec, **kw: [sentinel])
-    out = app.ops_fsck()
+    out = app.ops_fsck(include_receipts=False)
     assert out['findings_count'] == 1 and out['findings'][0]['check_id'] == 'SENTINEL_CHECK', \
         f'verb 가 fsck_node 동일 callable 을 쓰지 않음: {out}'
     assert out['counts'] == {'SENTINEL_CHECK': 1}
@@ -70,21 +70,21 @@ def test_fsck_verb_same_checker_and_seat_rejects_before_tx(monkeypatch, tmp_path
     monkeypatch.setattr(app, 'kg', lambda q, **p: [{'name': 'T1'}])
     monkeypatch.setattr(app, 'tree_data', lambda n: {'nodes': [dict(_LEGACY_FORCEFUL, tag='legacy1')],
                                                      'frontier': []})
-    emitted = app.ops_fsck(emit_skiplist=True)
+    emitted = app.ops_fsck(emit_skiplist=True, include_receipts=False)
     assert emitted['findings_count'] >= 1 and emitted['skiplist_candidates'], emitted
     cand = emitted['skiplist_candidates'][0]
     skfile = tmp_path / 'fsck_skiplist.json'
     skfile.write_text(json.dumps({'entries': [{'sha': cand['sha'], 'tree': 'T1', 'tag': 'legacy1',
                                                'reason': 'pre-G1 legacy'}]}), encoding='utf-8')
     monkeypatch.setenv('LAKATOS_FSCK_SKIPLIST', str(skfile))
-    after = app.ops_fsck()
+    after = app.ops_fsck(include_receipts=False)
     assert after['findings_count'] == 0 and after['skiplist_size'] == 1, \
         f'skiplist 면제 미적용(감사 주입 실패): {after}'
     # 결정론/면제소멸: 레코드 1필드 변조 → sha 이탈 → 재발화.
     monkeypatch.setattr(app, 'tree_data',
                         lambda n: {'nodes': [dict(_LEGACY_FORCEFUL, tag='legacy1', verdict='rejected')],
                                    'frontier': []})
-    revived = app.ops_fsck()
+    revived = app.ops_fsck(include_receipts=False)
     assert revived['findings_count'] >= 1, '변조된 레코드가 여전히 면제됨(내용주소 소멸 규율 위반)'
     # (C) submit pre-commit 시트: boundary_fsck 거부 → 422 *그리고* kg_tx 호출 0(쓰기 전 거부).
     calls = {'tx': 0}

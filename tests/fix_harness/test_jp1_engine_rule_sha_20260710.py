@@ -51,10 +51,12 @@ _V1_CORPUS = {
 def test_receipt_fields_bind_engine_identity():
     """guard_defect(익명 판관 사망): engine_rule_sha 가 봉인 필드셋에 실재 + v1 13필드 동결.
     S4(2026-07-23): 현행 필드셋은 v3(= v2 + comment_sha) — v2 는 RECEIPT_FIELDS_V2 로 동결."""
-    from lakatos.verdicts import RECEIPT_FIELDS_V2
+    from lakatos.verdicts import RECEIPT_FIELDS_V2, RECEIPT_FIELDS_V3
     assert "engine_rule_sha" in RECEIPT_FIELDS
     assert RECEIPT_FIELDS_V2 == RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
-    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V2 + ("comment_sha",)
+    assert RECEIPT_FIELDS_V3 == RECEIPT_FIELDS_V2 + ("comment_sha",)
+    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V3 + (
+        "replay_status", "replay_reason", "regenerated_metric")
     assert len(RECEIPT_FIELDS_V1) == 13 and "engine_rule_sha" not in RECEIPT_FIELDS_V1
 
 
@@ -131,13 +133,15 @@ def test_production_submit_seals_identity():
     assert params.get("engine_rule_sha") == ENGINE_RULE_SHA, "프로덕션 mint 가 판관 정체성을 안 봉인(v1 퇴행)"
     # S4(2026-07-23): 프로덕션 mint 는 이제 v3 — comment_sha(해석층 봉인)도 실전달돼야 한다.
     assert params.get("csha"), "프로덕션 mint 가 comment_sha 를 안 봉인(v2 퇴행 — S4 붕괴)"
-    # rsha 가 실제로 v3 봉인값(파라미터로 실려간 필드들의 presence-dispatch 재유도와 일치)
+    # rsha 가 실제로 v4 봉인값(파라미터로 실려간 replay 진단까지 재유도와 일치)
     refields = dict(tree="T", tag="seam", target_id=params.get("target_id"), verdict=params["v"],
                     verdict_source="scripted", metric_name=params["mn"], metric_value=params["mv"],
                     novel_confirmed=params["novel"], lakatos_status=params["lstat"],
                     judged_at=params["ts"], judge_script_sha=params["sha"],
                     prev_receipt_sha=params["prev_rsha"], measurement_grade=params["mg"],
-                    engine_rule_sha=params["engine_rule_sha"], comment_sha=params["csha"])
+                    engine_rule_sha=params["engine_rule_sha"], comment_sha=params["csha"],
+                    replay_status=params["replay_status"], replay_reason=params["replay_reason"],
+                    regenerated_metric=params["regenerated_metric"])
     assert receipt_content_sha(refields) == params["rsha"]
 
 

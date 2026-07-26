@@ -85,6 +85,20 @@
 presence-dispatch carve-out 으로 재유도 바이트동일(기존 코퍼스 무변경). 서사는 자유이되
 *판정 이후 바뀌었다는 사실*은 침묵 불가.
 
+**재생 진단 봉인 (2026-07-26, LX3 remediation):** 봉인 필드셋 v4는 v3에
+`replay_status`, `replay_reason`, `regenerated_metric`을 더한다. 동일한 `mismatch`라도 실제 값
+불일치는 측정을 다시 해야 하고 scorer 비정상 종료/출력 부재는 실행 계약을 고쳐야 하므로, 이 진단을
+가변 노드 캐시에만 두지 않는다. fsck는 내용해시가 유효한 verdict-v4 head와 노드 캐시가 정확히
+일치할 때만 상세 원인을 신뢰한다. 불일치하면 `REPLAY_DIAGNOSTIC_CACHE_MISMATCH` ERROR이며, v1-v3
+legacy·무효 receipt·PredictionReceipt의 여분 필드는 `legacy_unclassified`로 보수 처리한다. fsck는
+기본적으로 receipt를 포함해 실행하며, 명시적 `include_receipts=false`는 상세 진단을 포기하는 경량 감사다.
+
+**ClaimStanding evidence 경계 (2026-07-26):** `source_trust`는 실제 internet 관측의 가중치이고,
+`script`/`result_path`는 실행 메타데이터다. 어느 것도 ResearchEvent 자체가 아니므로 상·하계 evidence를
+합성하지 않는다. ClaimStanding은 observation/world-action 게이트를 거쳐 저장된 append-only
+ResearchEvent만 소비한다. 내부 노드의 `source_trust=NULL`은 정상이며 실제 internet source가 매핑된
+노드의 NULL만 EigenTrust 재도출 경고 대상이다.
+
 **GO1 발효 (2026-07-22, EXTAUDIT S2):** 2단 flip 착지 — `LAKATOS_REPLAY_SANDBOXED` 선언 배포는
 EXEC unset 이 **기본 ON** 이 된다(무선언 배포는 위 한계선 서술 그대로). 짝 게이트(EXTAUDIT S1,
 `force_of_row` grade-gate)가 인센티브를 완성한다: 무선언 배포의 `client_asserted` 판결은 집계에서

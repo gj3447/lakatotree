@@ -158,6 +158,27 @@ def test_result_cli_passes_lakatos_and_pnr_evidence(monkeypatch, capsys):
     assert body['ce_proof_incorporated_lemma'] == 'Euler step'
 
 
+def test_result_cli_parser_exposes_result_path():
+    """Defect guard: successor CLI replay needs the scorer artifact path at parse time."""
+    args = cli._build_parser().parse_args([
+        'result', 'T', 'v', '--value', '0.4', '--script', 'judge.py',
+        '--result-path', 'results/lx3.json',
+    ])
+    assert args.result_path == 'results/lx3.json'
+
+
+def test_result_cli_forwards_result_path_to_test_result(monkeypatch, capsys):
+    """Mechanism guard: parsing alone is insufficient; the POST body must carry result_path."""
+    calls = _capture_calls(monkeypatch)
+    cli.main([
+        'result', 'T', 'v', '--value', '0.4', '--script', 'judge.py',
+        '--result-path', 'results/lx3.json',
+    ])
+    method, path, body = calls[0]
+    assert (method, path) == ('POST', '/api/tree/T/node/v/test_result')
+    assert body['result_path'] == 'results/lx3.json'
+
+
 def test_result_cli_preserves_explicit_negative_qualitative_evidence(monkeypatch, capsys):
     """Absent is unknown; --no-* is explicit false and must remain distinguishable."""
     calls = _capture_calls(monkeypatch)

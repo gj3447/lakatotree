@@ -181,6 +181,10 @@ def healthz():
         svc['pg'] = 'down'
     try:
         MONGO.command('ping')
+        # ``ping`` proves only server reachability and can succeed for an unauthenticated client
+        # even when every application collection operation is unauthorized.  Exercise one
+        # database-scoped read so readiness means the configured principal can use ``lakatos``.
+        MONGO.list_collection_names()
         svc['mongo'] = 'ok'
     except Exception:
         svc['mongo'] = 'down'
@@ -206,13 +210,14 @@ def version():
 
 
 @app.get('/api/ops/fsck')
-def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool = False):
+def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool = True):
     """R6 전수감사 verb(비변이) — fsck_node *같은 callable* 로 전 트리 노드 record 스캔(재구현 금지 —
     가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/fsck_skiplist.json, record
     content-sha)는 감사·경계 동일 주입. ?emit_skiplist=1 = 면제 후보 방출(사람 검토→git 커밋 파이프라인).
     projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도).
 
-    jp3 ?include_receipts=1 (opt-in, 기본 off=현행 바이트동일): 트리당 1회 배치 collect 로 노드별
+    jp3 receipt 검증은 안전한 기본값이다(명시적 ?include_receipts=0 만 경량 구조 감사): 트리당 1회
+    배치 collect 로 노드별
     :VerdictReceipt 체인을 동봉해 recompute 체커(RECEIPT_SHA_CONTENT_MISMATCH/ENCODING_STALE)를
     표면화. skiplist 면제·emit 후보 sha 는 *비동봉 base row* 기준(동봉이 sha 를 바꿔 기존 면제를
     전멸시키는 함정 회피 — 면제는 '레코드 열거' 의미론, 체인 성장과 무관하게 안정)."""

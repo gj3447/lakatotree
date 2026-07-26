@@ -31,7 +31,7 @@
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
-  result <name> <tag> --value V --script S [--sha S] [--novel-measured X] [질적/PnR 증거]
+  result <name> <tag> --value V --script S [--result-path P] [--sha S] [--novel-measured X] [질적/PnR 증거]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
   event <name> <tag> <event_id>  ClaimStanding 용 상계/하계 evidence event 기록
   events <name> <tag>            ClaimStanding 이 소비하는 evidence event 목록
@@ -165,6 +165,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--credence', type=float, help='예측 신뢰도[0,1] — calibration/certify G4 입력')
     sp = sub.add_parser('result'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
+    sp.add_argument('--result-path', default='',
+                    help='채점 산출물 경로(TestResultIn.result_path) — successor producer replay 입력')
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
     sp.add_argument('--novel-script', default='',
                     help='서버앵커 novel 측정 스크립트(file 또는 file::symbol) — cross-metric novel 독립성 영수증(FF1)')
@@ -407,6 +409,7 @@ def main(argv=None):
     elif a.cmd == 'result':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result',
                    dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured,
+                        **({'result_path': a.result_path} if a.result_path else {}),
                         novel_script=a.novel_script,
                         data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
                         human_verdict_required=a.human_verdict,

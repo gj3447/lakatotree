@@ -1,0 +1,43 @@
+name: lakatotree-lx3-provenance-replay-remediation
+target:
+  mode: in_process
+  callable: lx3_provenance_replay_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: LX3-PR-1
+    description: source_trust/script/result_path 메타데이터는 INTERNET/BASH evidence를 합성하지 않는다
+    gate:
+      - {event: lx3_claim_metadata_cannot_synthesize_evidence, op: ">=", count: 1}
+    longinus: {kg_anchor: "ref_site:LX3_PR:claim_metadata_boundary", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_claim_metadata_cannot_synthesize_evidence}
+
+  - id: LX3-PR-2
+    description: replay status/reason/regenerated metric은 v4 verdict receipt에 내용주소로 봉인된다
+    gate:
+      - {event: lx3_replay_diagnostics_v4_sealed, op: ">=", count: 1}
+    longinus: {kg_anchor: "ref_site:LX3_PR:replay_v4_seal", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_replay_diagnostics_v4_sealed}
+
+  - id: LX3-PR-3
+    description: node replay cache와 유효 v4 head receipt 불일치는 ERROR이며 untrusted cache가 운영 진단을 바꾸지 못한다
+    gate:
+      - {event: lx3_replay_cache_parity_enforced, op: ">=", count: 1}
+    longinus: {kg_anchor: "ref_site:LX3_PR:replay_cache_parity", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_replay_cache_parity_enforced}
+
+  - id: LX3-PR-4
+    description: internal NULL trust는 정상이고 실제 internet source가 있는 NULL만 EigenTrust 재도출 대상으로 경고한다
+    gate:
+      - {event: lx3_source_trust_semantics_scoped, op: ">=", count: 1}
+    longinus: {kg_anchor: "ref_site:LX3_PR:source_trust_scope", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_source_trust_semantics_scoped}
+
+  - id: LX3-PR-5
+    description: 음성 오라클은 v4/cache parity/result_path 계약 제거 시 구 결함을 재현해 vacuous green을 차단한다
+    gate:
+      - {event: lx3_remediation_negative_oracle, op: ">=", count: 1}
+    longinus: {kg_anchor: "ref_site:LX3_PR:negative_oracle", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_remediation_negative_oracle}
+
+  - id: LX3-PR-6
+    description: result CLI는 successor producer replay용 --result-path를 TestResultIn body로 전달한다
+    gate:
+      - {event: lx3_cli_result_path_forwarded, op: ">=", count: 1}
+    longinus: {kg_anchor: "ref_site:LX3_PR:cli_result_path", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_cli_result_path_forwarded}

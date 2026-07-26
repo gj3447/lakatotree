@@ -86,7 +86,9 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                          metric_value: float, novel_confirmed: bool, lakatos_status: str,
                          judged_at: str, judge_script_sha: str, prev_receipt_sha,
                          measurement_grade: str, engine_rule_sha: str | None = None,
-                         comment_sha: str | None = None) -> dict:
+                         comment_sha: str | None = None, replay_status: str | None = None,
+                         replay_reason: str | None = None,
+                         regenerated_metric: float | None = None) -> dict:
     """G1 :VerdictReceipt 봉인 필드 조립(godmethod L758-761 거동 불변 추출).
 
     lakatos.verdicts.RECEIPT_FIELDS 와 *정확히 1:1*(특성화 골든이 키 집합 동일성 고정). verdict_source
@@ -106,7 +108,11 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                 measurement_grade=measurement_grade, engine_rule_sha=engine_rule_sha,
                 # EXTAUDIT S4: 판정 시점 comment 봉인(v3 presence-dispatch — None 이면 v2 mint,
                 #   프로덕션 호출부는 comment_seal_sha 를 명시 전달. 키는 항상 포함 → 키집합 골든 자동 동시확장).
-                comment_sha=comment_sha)
+                comment_sha=comment_sha,
+                # LX3 remediation: operator action을 결정하는 replay 진단은 v4 receipt에 봉인한다.
+                # replay_status non-null이 presence discriminator라 legacy/admin mint는 v1-v3 그대로다.
+                replay_status=replay_status, replay_reason=replay_reason,
+                regenerated_metric=regenerated_metric)
 
 
 def resolve_measurement(replay, client_metric, *, attested: bool = False, authored: bool = False):

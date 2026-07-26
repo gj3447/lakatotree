@@ -18,6 +18,7 @@ from lakatos import measurement_lock as mlock_mod
 from lakatos.io import envfp as envfp_mod
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
+from lakatos.trust import INTERNAL_SOURCE_TRUST
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
 from lakatos.engine import FoundationMap, LakatosEvidence, LakatosGate
@@ -212,7 +213,7 @@ class JudgementService:
         tests/test_eureka_source_trust_eigentrust.py."""
         src, eigen, backed = self._node_eigentrust(name, tag)
         if src is None:
-            return 1.0
+            return INTERNAL_SOURCE_TRUST
         return float(eigen) if backed else 0.0
 
     def _isolate_script_file(self, file_str: str) -> tuple[Path | None, dict]:
@@ -964,6 +965,11 @@ class JudgementService:
         authored_self_signed = attested_by_did is not None and not attestors
         effective_metric, measurement_grade, replay_status = resolve_measurement(
             _vo, r.metric_value, attested=attested_by_allowlist, authored=authored_self_signed)
+        # replay_status 는 요약 label 이다. 실제 조치(값 불일치 재실험 vs scorer 계약/실행 수리)를
+        # 결정할 수 있도록 서버 판정의 세부 원인과 재생성 값을 별도 진단 provenance 로 보존한다.
+        # 아래 v4 verdict receipt에도 함께 봉인해 node cache만 바꿔 운영 진단을 위조할 수 없게 한다.
+        replay_reason = _vo.reason if _vo is not None else None
+        regenerated_metric = _vo.regenerated if _vo is not None else None
         next_state = derive_node_state({
             'verdict': verdict,
             'verdict_source': 'scripted',
@@ -1009,7 +1015,9 @@ class JudgementService:
             judged_at=ts, judge_script_sha=stored_sha, prev_receipt_sha=prev_rsha,
             measurement_grade=measurement_grade,
             engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성 봉인(v2) — 명시 전달(가드가 핀)
-            comment_sha=csha)   # S4: 해석층 봉인(v3) — 명시 전달
+            comment_sha=csha,   # S4: 해석층 봉인(v3) — 명시 전달
+            replay_status=replay_status, replay_reason=replay_reason,
+            regenerated_metric=regenerated_metric)
         rsha = receipt_content_sha(receipt_fields)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
@@ -1028,6 +1036,7 @@ class JudgementService:
                        e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
                        e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
+                       e.replay_reason=$replay_reason, e.regenerated_metric=$regenerated_metric,
                        e.measurement_grade=$mg, e.comment_sha_at_verdict=$csha,
                        e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha
                    WITH e
@@ -1037,7 +1046,8 @@ class JudgementService:
                        rec.metric_value=$mv, rec.novel_confirmed=$novel, rec.lakatos_status=$lstat,
                        rec.judged_at=$ts, rec.judge_script_sha=$sha, rec.prev_receipt_sha=$prev_rsha,
                        rec.measurement_grade=$mg, rec.engine_rule_sha=$engine_rule_sha,
-                       rec.comment_sha=$csha
+                       rec.comment_sha=$csha, rec.replay_status=$replay_status,
+                       rec.replay_reason=$replay_reason, rec.regenerated_metric=$regenerated_metric
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
                    RETURN e.tag AS claimed""",
@@ -1051,6 +1061,7 @@ class JudgementService:
                      atier=tier,   # G6 S5: 이 판결이 어느 tier 로 resolve 됐는지 스탬프(fsck tier-resolve 흔적)
                      attested_by_did=attested_by_did,   # G10: author=서명 유도(client 문자열 아님), 무cert=null
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch/not_replayable)
+                     replay_reason=replay_reason, regenerated_metric=regenerated_metric,
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
                      csha=csha,   # S4: 판정 시점 comment 봉인 미러 + receipt v3 필드 persist
@@ -1124,7 +1135,10 @@ class JudgementService:
         self.hist(name, 'test_result', tag, dict(value=effective_metric, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
                                                  novel=v.novel, script_sha=stored_sha,
-                                                 freshen=freshen_anchor))
+                                                 freshen=freshen_anchor,
+                                                 replay_status=replay_status,
+                                                 replay_reason=replay_reason,
+                                                 regenerated_metric=regenerated_metric))
         # EXTAUDIT S3b/S7b: VAL 재도출 — L3 은 attestation(allow-list)+engine floor+temporal witness 가 다 설 때.
         _display, _assur = response_assurance(
             verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
@@ -1138,6 +1152,8 @@ class JudgementService:
                 'requires_human': bool(decided.get('requires_human')),
                 # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).
                 'script_sha_server_verified': sha_verified, 'judge_script_sha': stored_sha,
+                'replay_status': replay_status, 'replay_reason': replay_reason,
+                'regenerated_metric': regenerated_metric,
                 # G10: authorship 은 서명에서 유도(무cert=None) — client 문자열이 아니다.
                 'attested_by': attested_by_did,
                 'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
@@ -1172,7 +1188,9 @@ class JudgementService:
                             r.metric_value AS metric_value, r.novel_confirmed AS novel_confirmed,
                             r.lakatos_status AS lakatos_status, r.judged_at AS judged_at,
                             r.measurement_grade AS measurement_grade,
-                            r.engine_rule_sha AS engine_rule_sha""", tree=name, tag=tag)
+                            r.engine_rule_sha AS engine_rule_sha, r.comment_sha AS comment_sha,
+                            r.replay_status AS replay_status, r.replay_reason AS replay_reason,
+                            r.regenerated_metric AS regenerated_metric""", tree=name, tag=tag)
         return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
                 'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
 

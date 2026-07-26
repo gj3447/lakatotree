@@ -483,28 +483,9 @@ class EvidenceClaimService:
         frame = ResearchFrame(ResearchProject(name=name, goal='claim standing'))
         frame.open_possibility(Possibility(tag, f'claim standing for {name}/{tag}',
                                            evidence_refs=((result_path,) if result_path else ())))
-        if x.get('source_trust') is not None:
-            frame.record_event(ResearchEvent(
-                name=f'{tag}:source-trust',
-                realm=Realm.INTERNET,
-                actor='server:node',
-                action='source_trust',
-                target=tag,
-                evidence_refs=((result_path,) if result_path else ()),
-                payload=(('trust', str(x['source_trust'])),),
-            ))
-        if x.get('verdict_source') == 'scripted' or x.get('judge_script') or result_path:
-            action = 'test_failed' if x.get('verdict') == 'rejected' else 'test_passed'
-            refs = tuple(v for v in (result_path, x.get('judge_script_sha') or '') if v)
-            frame.record_event(ResearchEvent(
-                name=f'{tag}:scripted-result',
-                realm=Realm.BASH,
-                actor=x.get('judge_script') or 'server:judge',
-                action=action,
-                target=tag,
-                evidence_refs=refs,
-                payload=(('exit_code', '0'),) if action == 'test_passed' else (('exit_code', '1'),),
-            ))
+        # ``source_trust``, script and result_path are metadata, not observations.  Upper/lower
+        # standing consumes only append-only ResearchEvent rows below; a real BASH run enters via
+        # the gated world-action route, and internet evidence via the observation route.
         for arg in x.get('args') or []:
             event = self.event_from_argument(tag, arg)
             if event is not None:

@@ -131,8 +131,12 @@ class _Kg:
                                   # 이로써 이 영수증이 c1verify v2 재유도의 교차검증 tripwire 가 된다
                                   # (미러 드리프트 = 여기서 REJECT/RED).
                                   "engine_rule_sha": params["engine_rule_sha"],
-                                  # S4: 실 서비스가 v3(해석층 봉인)로 mint — fake 도 충실 반영(v3 tripwire).
-                                  "comment_sha": params["csha"]})
+                                  # S4: 실 서비스가 v3(해석층 봉인)로 mint — fake 도 충실 반영.
+                                  "comment_sha": params["csha"],
+                                  # LX3 remediation: v4 replay diagnosis seal mirror.
+                                  "replay_status": params["replay_status"],
+                                  "replay_reason": params["replay_reason"],
+                                  "regenerated_metric": params["regenerated_metric"]})
         return [[{"claimed": params.get("tag")}] for _ in ops]
 
 
