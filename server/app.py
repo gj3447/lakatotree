@@ -208,7 +208,7 @@ def version():
 @app.get('/api/ops/fsck')
 def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool = False):
     """R6 전수감사 verb(비변이) — fsck_node *같은 callable* 로 전 트리 노드 record 스캔(재구현 금지 —
-    가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/fsck_skiplist.json, record
+    가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/data/fsck_skiplist.json, record
     content-sha)는 감사·경계 동일 주입. ?emit_skiplist=1 = 면제 후보 방출(사람 검토→git 커밋 파이프라인).
     projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도).
 
@@ -256,7 +256,7 @@ def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool
 @app.post('/api/ops/demote-stale-canonical')
 def ops_demote_stale_canonical(tree: str, dry_run: bool = True):
     """jp1 stale-CANONICAL 재심 스윕(opt-in) — head receipt 의 sealed engine_rule_sha 가 정직 floor
-    (docs/engine_rule_floor.json ∪ 현 ENGINE_RULE_SHA) 밖인 CANONICAL 을 재심 전까지 former_canonical
+    (docs/data/engine_rule_floor.json ∪ 현 ENGINE_RULE_SHA) 밖인 CANONICAL 을 재심 전까지 former_canonical
     강등(+v2 engine receipt). tree 필수(전수 스윕 금지), dry_run 기본 true(후보 열거만 — 첫 라이브
     실행은 반드시 열거 검토 후). mutating → LAKATOS_API_TOKEN Bearer(_bearer_auth); 단 open posture
     (무토큰)에선 dry_run=false 를 거부한다 — 무인증 파괴 verb 잔여구멍 봉쇄(FE5 관측 + fail-closed)."""

@@ -15,7 +15,7 @@
     재유도 금지: '이 프로세스의 판관이 누구인가'의 참값). current_engine_rule_sha() 는
     매호출 disk 재유도(스냅샷 대조로 규칙-코드 stale 검출).
 
-정직 floor(스윕 소비): docs/engine_rule_floor.json 의 선언 sha 집합(git-tracked, 사람 검토
+정직 floor(스윕 소비): docs/data/engine_rule_floor.json 의 선언 sha 집합(git-tracked, 사람 검토
 커밋으로만 등재 — KG 저장은 R6 확정결정대로 기각: writer 셀프등재 자기면제 구멍) ∪
 {현 ENGINE_RULE_SHA}. sha ∉ floor(v1 legacy 의 필드 부재 포함) = floor 이하. 집행(강등)은
 서버 opt-in verb 의 몫 — 이 모듈은 순수 계산만(IO=파일 읽기, KG/네트워크 0).
@@ -31,7 +31,7 @@ _PKG_ROOT = Path(__file__).resolve().parent          # lakatos/
 _SURFACE_DIR = _PKG_ROOT / 'verdict'
 _ENCODING_HEADER = b'engine-rule\x00v1\n'
 _FLOOR_ENV = 'LAKATOS_ENGINE_RULE_FLOOR'
-_FLOOR_DEFAULT = _PKG_ROOT.parent / 'docs' / 'engine_rule_floor.json'
+_FLOOR_DEFAULT = _PKG_ROOT.parent / 'docs' / 'data' / 'engine_rule_floor.json'
 
 
 def rule_surface_manifest() -> dict[str, str]:
@@ -57,7 +57,7 @@ def current_engine_rule_sha() -> str:
 
 
 def load_rule_floor(path: str | None = None) -> set[str]:
-    """docs/engine_rule_floor.json 의 선언 sha 집합. 부재/부패 = 선언분 0 (fsck load_skiplist 동형 —
+    """docs/data/engine_rule_floor.json 의 선언 sha 집합. 부재/부패 = 선언분 0 (fsck load_skiplist 동형 —
     floor 는 항상 effective_floor() 에서 현 ENGINE_RULE_SHA 와 합쳐지므로 부트스트랩 가능)."""
     p = Path(path or os.environ.get(_FLOOR_ENV) or _FLOOR_DEFAULT)
     try:

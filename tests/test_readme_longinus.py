@@ -82,6 +82,6 @@ def test_readme_theorem_count_matches_lean():
 
 def test_readme_primary_kg_anchor_is_registered():
     """README 의 주 span 앵커가 KG 레지스트리(kg_anchors)에 실재 — 유령 참조 차단."""
-    declared = set(json.loads((ROOT / "docs/longinus_bindings.json").read_text())["kg_anchors"])
+    declared = set(json.loads((ROOT / "docs/data/longinus_bindings.json").read_text())["kg_anchors"])
     assert "span_lakatotree_engine" in README.read_text(encoding="utf-8")
     assert "span_lakatotree_engine" in declared

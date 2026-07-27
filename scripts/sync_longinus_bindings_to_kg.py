@@ -6,7 +6,7 @@ verdict/quant/programme/io subpackage refactor): the KG ``ReferenceSite:Longinus
 mirror was **hand-pierced once and never regenerated**, so when symbols moved the KG
 rotted while nobody noticed. Hand-maintained mirrors drift. The fix is structural:
 
-    ``docs/longinus_bindings.json`` is the single source of truth (symbol-resolved,
+    ``docs/data/longinus_bindings.json`` is the single source of truth (symbol-resolved,
     def-line sha, drift-guarded every commit by ``tests/test_longinus_bindings.py``).
     The KG ReferenceSite set is a **GENERATED mirror of it** — produced by this script,
     never edited by hand — so it cannot drift independently of the tested SoT.
@@ -33,7 +33,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs" / "longinus_bindings.json"
+MANIFEST = ROOT / "docs" / "data" / "longinus_bindings.json"
 
 UPSERT = """
 UNWIND $sites AS s
@@ -42,7 +42,7 @@ MERGE (rs:ReferenceSite:Longinus {sourceId: s.sourceId})
 SET rs.repo = $repo, rs.sourcePath = s.path, rs.sha256 = s.sha, rs.layer = s.layer,
     rs.frege_sinn = s.sinn, rs.binding_state = 'PIERCED', rs.anchor_strategy = 'symbol_grep',
     rs.drift_count = 0, rs.commit = $commit, rs.last_validated = datetime(),
-    rs.generated_from = 'docs/longinus_bindings.json', rs.kg_mirror_of_sot = true
+    rs.generated_from = 'docs/data/longinus_bindings.json', rs.kg_mirror_of_sot = true
 RETURN count(rs) AS upserted
 """
 

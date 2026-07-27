@@ -19,7 +19,7 @@ from pathlib import Path
 from lakatos import longinus
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs" / "longinus_bindings.json"
+MANIFEST = ROOT / "docs" / "data" / "longinus_bindings.json"
 
 
 # #12: 중복 _resolve/_load 로직 제거 — lakatos.longinus 정본에 위임(single source). 전엔 이 파일이
@@ -53,7 +53,7 @@ def test_all_bindings_def_line_sha_unchanged():
         if cur != b["sha256"]:
             drift.append({"sourceId": b["sourceId"], "baseline": b["sha256"], "current": cur})
     assert not drift, (
-        "Longinus L6 drift — def-line 시그니처 변경. 의도된 변경이면 docs/longinus_bindings.json "
+        "Longinus L6 drift — def-line 시그니처 변경. 의도된 변경이면 docs/data/longinus_bindings.json "
         f"의 sha256 + KG ReferenceSite 를 재베이스라인하라:\n{drift}")
 
 
@@ -93,7 +93,7 @@ def test_no_undeclared_kg_anchor_in_code():
     undeclared = _code_anchor_tokens() - declared
     assert not undeclared, (
         f"미선언 # KG: anchor (reverse-orphan 위험): {sorted(undeclared)}. "
-        f"KG 노드 생성 후 docs/longinus_bindings.json 'kg_anchors' 에 등록할 것.")
+        f"KG 노드 생성 후 docs/data/longinus_bindings.json 'kg_anchors' 에 등록할 것.")
 
 
 def test_reverse_orphan_guard_catches_undeclared():

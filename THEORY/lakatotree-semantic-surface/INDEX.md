@@ -16,7 +16,7 @@ Artifacts:
 
 Repo outputs:
 
-- `docs/semantic_surface.json` now records `change_actor` and `source_refs`
+- `docs/data/semantic_surface.json` now records `change_actor` and `source_refs`
   for every high-level semantic unit.
 - `lakatos/semantic_surface.py` validates those fields locally.
 - `tests/test_semantic_surface.py` catches missing actor/source metadata.

@@ -8,7 +8,7 @@
         — ①전수감사 verb 가 fsck_node *같은 callable* 를 쓴다(monkeypatch 센티널 반사 — 재구현 배선
           차단, G8 'audit==ingest' 주장의 실배선) ②submit pre-commit 시트: boundary_fsck 가 거부하면
           kg_tx 호출 0(거부는 쓰기 *전* — 원자성 무훼손; 가치서사는 활성필터가 아닌 '드리프트 보험')
-          ③skiplist 는 git-추적 docs/fsck_skiplist.json 에서 로드되어 감사·경계에 동일 주입,
+          ③skiplist 는 git-추적 docs/data/fsck_skiplist.json 에서 로드되어 감사·경계에 동일 주입,
           record content-sha 결정론(1필드 변조=면제 소멸).
 
 # KG: LakatosTree_GitAbsorption_20260702 / followup-R6-fsck-wiring

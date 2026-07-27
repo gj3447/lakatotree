@@ -2,7 +2,7 @@
 
 Cycle: `cycle-prom-lakatotree-open-gaps-20260618`
 
-Purpose: triage the five declared `docs/meaning_units.json` gaps without
+Purpose: triage the five declared `docs/data/meaning_units.json` gaps without
 pretending that every philosophical gap should immediately become executable
 code.
 
@@ -17,6 +17,6 @@ Artifacts:
 
 Repo output:
 
-- `docs/meaning_units.json` gap rows now include `prom_cycle`,
+- `docs/data/meaning_units.json` gap rows now include `prom_cycle`,
   `prom_triage`, `next_action`, and `source_refs`.
 

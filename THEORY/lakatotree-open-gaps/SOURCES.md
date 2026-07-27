@@ -25,7 +25,7 @@ External sources:
 
 Repo evidence:
 
-- `docs/meaning_units.json`
+- `docs/data/meaning_units.json`
 - `lakatos/quant/laudan.py`
 - `lakatos/verdict/judge.py`
 - `lakatos/programme/lifecycle.py`

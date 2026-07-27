@@ -237,13 +237,13 @@ def boundary_fsck(rec: dict, *, min_severity: str = ERROR,
 def load_skiplist(path: str | None = None) -> frozenset[str]:
     """git-추적 skiplist 로드(R6 확정결정: KG 저장 기각 — writer 셀프등재 자기면제 구멍).
 
-    기본 = <repo>/docs/fsck_skiplist.json, env LAKATOS_FSCK_SKIPLIST 로 대체(테스트/운영 오버라이드).
+    기본 = <repo>/docs/data/fsck_skiplist.json, env LAKATOS_FSCK_SKIPLIST 로 대체(테스트/운영 오버라이드).
     형식 {"entries": [{"sha": <record_content_sha>, "tree": ..., "tag": ..., "reason": ...}]} —
     sha 외 필드는 사람 검토 기록. 파일 부재 = 빈 면제(fail-safe). 감사·경계가 *같은* 로더를 쓴다."""
     import os
     from pathlib import Path
     p = Path(path or os.environ.get("LAKATOS_FSCK_SKIPLIST")
-             or Path(__file__).resolve().parents[3] / "docs" / "fsck_skiplist.json")
+             or Path(__file__).resolve().parents[3] / "docs" / "data" / "fsck_skiplist.json")
     if not p.is_file():
         return frozenset()
     try:

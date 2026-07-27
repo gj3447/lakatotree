@@ -12,9 +12,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELATED = ROOT / "docs" / "hswm_related_work.json"
-LONGINUS = ROOT / "docs" / "longinus_bindings.json"
-MEANINGS = ROOT / "docs" / "meaning_units.json"
+RELATED = ROOT / "docs" / "data" / "hswm_related_work.json"
+LONGINUS = ROOT / "docs" / "data" / "longinus_bindings.json"
+MEANINGS = ROOT / "docs" / "data" / "meaning_units.json"
 PROGRAMME = ROOT / "docs" / "HSWM_RESEARCH_PROGRAMME.md"
 
 

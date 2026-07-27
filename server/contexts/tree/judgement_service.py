@@ -1191,7 +1191,7 @@ class JudgementService:
     def demote_stale_canonical(self, name: str, *, dry_run: bool = True) -> dict:
         """jp1 stale-CANONICAL 재심 스윕(opt-in ops verb) — '오늘 판관이면 이걸 여전히 CANONICAL 이라
         부를까?'를 원장 수준에서 집행. head receipt 의 sealed engine_rule_sha 가 유효 floor
-        (docs/engine_rule_floor.json 선언분 ∪ 현 ENGINE_RULE_SHA) 밖이면 — v1 legacy 의 필드 부재
+        (docs/data/engine_rule_floor.json 선언분 ∪ 현 ENGINE_RULE_SHA) 밖이면 — v1 legacy 의 필드 부재
         (익명 판관) 포함 — 재심 전까지 former_canonical 강등 + v2 engine receipt mint(원장 append,
         app.py AGM per-tag CAS 패턴 계승). dry_run 기본 true = 후보 열거만(비파괴 기본off).
         인간 잠금(valid_until_rebutted=false)은 강등하지 않고 skipped_locked 로 보고만.

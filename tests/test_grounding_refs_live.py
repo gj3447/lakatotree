@@ -23,7 +23,7 @@ def test_accepted_kg_refs_exist_in_live_kg():
     """allowlist 의 모든 kg: ref 가 라이브 KG 에 실재해야 — 없으면(=stale allowlist) RED."""
     import neo4j
 
-    manifest = json.loads((ROOT / "docs" / "longinus_bindings.json").read_text(encoding="utf-8"))
+    manifest = json.loads((ROOT / "docs" / "data" / "longinus_bindings.json").read_text(encoding="utf-8"))
     kg_nodes = [r.split("kg:", 1)[1] for r in manifest.get("accepted_grounding_refs", ())
                 if r.startswith("kg:")]
     assert kg_nodes, "검사할 kg: ref 가 없음 — allowlist 구성 확인"

@@ -1,6 +1,6 @@
 """Longinus 바인딩 — 사람이 "언제든지 열람"하는 정적 구조화 대시보드.
 
-코드↔KG Longinus 바인딩(docs/longinus_bindings.json)을 **의존성 0 인라인 HTML**로 구운
+코드↔KG Longinus 바인딩(docs/data/longinus_bindings.json)을 **의존성 0 인라인 HTML**로 구운
 정적 페이지로 만든다 — 서버·DB·graphviz·인터넷 전부 불필요, 브라우저로 열기만.
 three_d_dashboard.py 와 동일 철학(오프라인·재생성가능·결정적).
 
@@ -128,7 +128,7 @@ def build_html(audit_result: dict, bindings: list[dict],
  .hdr.kg{{background:#eff6ff}}
 </style></head><body>
 <h1>🔗 Longinus 바인딩 — 코드↔KG 관통</h1>
-<small>의존성0·오프라인·재생성 — <code>python -m lakatos.longinus_dashboard</code>. 정본=docs/longinus_bindings.json (symbol-resolved, 매 커밋 drift 가드).</small>
+<small>의존성0·오프라인·재생성 — <code>python -m lakatos.longinus_dashboard</code>. 정본=docs/data/longinus_bindings.json (symbol-resolved, 매 커밋 drift 가드).</small>
 {_summary_header(audit_result, len(layers), kg_line)}
 <h2>code-symbol bindings (layer 별)</h2>
 {body}

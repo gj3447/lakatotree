@@ -17,9 +17,9 @@ Primary or near-primary sources used in this Prometheus cycle:
 
 Repo evidence:
 
-- `docs/meaning_units.json`
-- `docs/semantic_surface.json`
-- `docs/longinus_bindings.json`
+- `docs/data/meaning_units.json`
+- `docs/data/semantic_surface.json`
+- `docs/data/longinus_bindings.json`
 - `lakatos/semantic_surface.py`
 - `tests/test_semantic_surface.py`
 

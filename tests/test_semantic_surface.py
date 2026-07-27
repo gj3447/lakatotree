@@ -12,8 +12,8 @@ from lakatos.semantic_surface import load_surface, validate_surface
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SURFACE = ROOT / "docs" / "semantic_surface.json"
-LONGINUS = ROOT / "docs" / "longinus_bindings.json"
+SURFACE = ROOT / "docs" / "data" / "semantic_surface.json"
+LONGINUS = ROOT / "docs" / "data" / "longinus_bindings.json"
 
 
 def test_semantic_surface_maps_meanings_to_code_tests_and_docs():

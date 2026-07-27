@@ -8,7 +8,7 @@
       "owner_sourceId": "world_gates.web_gate",
       "layer": "foundation",
       "change_actor": "evidence ingestion reviewer",
-      "source_refs": ["external:w3c-prov-o", "external:cucumber-bdd", "repo:docs/meaning_units.json"],
+      "source_refs": ["external:w3c-prov-o", "external:cucumber-bdd", "repo:docs/data/meaning_units.json"],
       "tests": ["tests/test_world_gates.py::test_web_gate_passes_complete_observation"],
       "docs": ["README.md#Internet observations as rival-programme evidence"]
     },
@@ -17,7 +17,7 @@
       "owner_sourceId": "world_gates.world_action_gate",
       "layer": "foundation",
       "change_actor": "world execution auditor",
-      "source_refs": ["external:nasa-traceability", "repo:docs/meaning_units.json"],
+      "source_refs": ["external:nasa-traceability", "repo:docs/data/meaning_units.json"],
       "tests": ["tests/test_world_gates.py::test_world_action_gate_passes_complete"],
       "docs": ["docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md#Gates"]
     },
@@ -35,7 +35,7 @@
       "owner_sourceId": "engine.RivalProgrammeLink",
       "layer": "foundation",
       "change_actor": "rival programme reviewer",
-      "source_refs": ["kg:finding_lkt_registry_scope_gap_20260618", "repo:docs/meaning_units.json"],
+      "source_refs": ["kg:finding_lkt_registry_scope_gap_20260618", "repo:docs/data/meaning_units.json"],
       "tests": ["tests/test_theory_embedding.py::test_observation_endpoint_wires_theory_rival_and_longinus"],
       "docs": ["docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md#Required Ontology"]
     },
@@ -53,7 +53,7 @@
       "owner_sourceId": "claim.evaluate_claim_standing",
       "layer": "foundation",
       "change_actor": "claim promotion reviewer",
-      "source_refs": ["external:nasa-traceability", "repo:docs/meaning_units.json"],
+      "source_refs": ["external:nasa-traceability", "repo:docs/data/meaning_units.json"],
       "tests": ["tests/test_claim_standing.py::test_claim_standing_stands_when_foundation_replay_and_upper_lower_evidence_pass"],
       "docs": ["README.md#Server contract"]
     },
@@ -62,7 +62,7 @@
       "owner_sourceId": "engine.LakatosGate",
       "layer": "foundation",
       "change_actor": "methodology gatekeeper",
-      "source_refs": ["external:clean-coder-srp", "repo:docs/meaning_units.json"],
+      "source_refs": ["external:clean-coder-srp", "repo:docs/data/meaning_units.json"],
       "tests": ["tests/test_engine.py::test_lakatos_gate_requires_progressive_content_and_replay_for_data_branch"],
       "docs": ["docs/ENGINE_DEVELOPMENT_KNOWLEDGE.md#Gates"]
     },
@@ -80,7 +80,7 @@
       "owner_sourceId": "leaderboard.leaderboard",
       "layer": "programme",
       "change_actor": "comparative programme analyst",
-      "source_refs": ["kg:finding_lkt_registry_scope_gap_20260618", "repo:docs/meaning_units.json"],
+      "source_refs": ["kg:finding_lkt_registry_scope_gap_20260618", "repo:docs/data/meaning_units.json"],
       "tests": ["tests/test_leaderboard_kuhn.py::test_leaderboard_exposes_criteria_not_single_score"],
       "docs": ["README.md#Why a tree, not a line"]
     },
@@ -107,9 +107,9 @@
       "owner_sourceId": "longinus.audit",
       "layer": "foundation",
       "change_actor": "traceability auditor",
-      "source_refs": ["external:nasa-traceability", "kg:finding_lkt_traceability_bidirectional_20260618", "repo:docs/longinus_bindings.json"],
+      "source_refs": ["external:nasa-traceability", "kg:finding_lkt_traceability_bidirectional_20260618", "repo:docs/data/longinus_bindings.json"],
       "tests": ["tests/test_longinus_bindings.py::test_all_bindings_symbol_resolves"],
-      "docs": ["docs/longinus_bindings.json"]
+      "docs": ["docs/data/longinus_bindings.json"]
     }
   ]
 }

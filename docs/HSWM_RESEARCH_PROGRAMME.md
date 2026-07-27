@@ -81,7 +81,7 @@ research-programme audit, benchmark와 negative result는 독립적으로 쓸 �
 따라서 연구의 중심은 hypergraph라는 명사나 closed loop라는 표어가 아니다. 평가할
 차이는 **Lakatosian programme policy + receipt-separated authority + causal redispatch**다.
 
-이 경계의 기계판독 정본은 [`hswm_related_work.json`](hswm_related_work.json)이다.
+이 경계의 기계판독 정본은 [`hswm_related_work.json`](data/hswm_related_work.json)이다.
 Longinus 가드는 각 reference의 URL·중복금지 주장·근거 tier가 이 문서와 함께 움직이는지,
 KG anchor와 grounding registry에 선언됐는지 검사한다. 이 목록에 경쟁 연구가 없다는
 사실은 우선권 증거가 아니며, systematic review receipt 없이는 “최초”를 주장하지 않는다.

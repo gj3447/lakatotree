@@ -1,6 +1,6 @@
 """Longinus — KG ReferenceSite ↔ 소스코드 바인딩 drift 감사 (자족, 서버 불필요).
 
-라카토트리의 코드↔KG 관통(貫通) 위상. docs/longinus_bindings.json 매니페스트의 각 바인딩
+라카토트리의 코드↔KG 관통(貫通) 위상. docs/data/longinus_bindings.json 매니페스트의 각 바인딩
 {sourceId, file, symbol, sha256} 을 *현재* 소스에서 심볼 재해석(re-resolve)해 판정한다:
   - L4 drift : 심볼 소멸/리네임 (sourceId 가 가리키던 def/class/assignment 가 사라짐)
   - L6 drift : def-line 시그니처 변경 (sha256[:16] 불일치 — 의도된 변경이면 재베이스라인)
@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs" / "longinus_bindings.json"
+MANIFEST = ROOT / "docs" / "data" / "longinus_bindings.json"
 
 
 def _load(manifest: Path | None = None) -> dict:
@@ -153,7 +153,7 @@ def report(result: dict | None = None) -> str:
         lines.append(f"  L4(심볼 소멸/리네임): {d['sourceId']}  [{d['file']}::{d['symbol']}]")
     for d in r["l6_drift"]:
         lines.append(f"  L6(시그니처 변경): {d['sourceId']}  {d['baseline']}→{d['current']}  "
-                     f"(재베이스라인: docs/longinus_bindings.json + KG ReferenceSite)")
+                     f"(재베이스라인: docs/data/longinus_bindings.json + KG ReferenceSite)")
     drifted = sum(1 for b in r["bindings_ok"] if b["line_drift"])
     if drifted:
         lines.append(f"  ℹ {drifted} 바인딩 line_hint stale(캐시) — 심볼 정본 유효, 무드리프트")

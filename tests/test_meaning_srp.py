@@ -1,4 +1,4 @@
-"""Meaning-SRP gate — SOLID SRP applied to the SEMANTIC layer (docs/meaning_units.json).
+"""Meaning-SRP gate — SOLID SRP applied to the SEMANTIC layer (docs/data/meaning_units.json).
 
 매 고수준 의미 단위는 *정확히 하나*의 owner sourceId + 테스트 ≥1 + 문서 ref 를 가져야 한다,
 아니면 *정직하게 gap 선언*(owner=null + reason). "의미를 LOC 로 부풀리기"가 아니라
@@ -14,7 +14,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REG = ROOT / "docs" / "meaning_units.json"
+REG = ROOT / "docs" / "data" / "meaning_units.json"
 _MODMAP = {p.stem: p for p in ROOT.glob("lakatos/**/*.py") if p.stem != "__init__"}
 
 
