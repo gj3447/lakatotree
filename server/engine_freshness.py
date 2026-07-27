@@ -5,8 +5,8 @@ FORCEFUL 서명 중이었다 — 어떤 write 경로도 staleness 를 안 읽었
 에는 G6 자체가 없었다(무능력). 이 모듈이 그 두 축을 판정 dict 로 조립해 judgement_service 가
 소비한다(발화 술어는 judgement_policy.engine_freshness_fires — 순수층 분리).
 
-3중 fail-open(dead-σ: 부재≠반증): ① env LAKATOS_JUDGE_FRESHNESS_GATE 미설정 → provider None =
-게이트 완전 사체(기존 스위트/KG-less 경로 무변경) ② 무장돼도 sha 미상/git 부재 → stale_code None
+3중 fail-open(dead-σ: 부재≠반증): ① 명시적 opt-out(=거짓 설정)만 provider None =
+게이트 완전 사체(2026-07-24 flip: 기본은 무장 — flip 전엔 env 미설정이 사체였음) ② 무장돼도 sha 미상/git 부재 → stale_code None
 = 무발화(단 'indeterminate' 로 관측화 — 침묵 아님) ③ 테스트는 명시 DI 주입으로만 무장.
 """
 from __future__ import annotations
@@ -46,8 +46,8 @@ def engine_freshness() -> dict:
 
 
 def freshness_provider_from_env():
-    """env opt-in(LAKATOS_JUDGE_FRESHNESS_GATE — 명시적 boolean, LAKATOS_REPLAY_EXEC 답습).
-    미설정/거짓 = None = 게이트 사체. staleness/capability 는 트리 속성이 아니라 *서버 프로세스*
-    속성이라 tier 디스패치가 아닌 env 가 정확한 스위치다."""
-    on = os.environ.get('LAKATOS_JUDGE_FRESHNESS_GATE', '').strip().lower() in ('1', 'true', 'yes', 'on')
-    return engine_freshness if on else None
+    """기본 ON(2026-07-24 flip, PEP 476) — stale 판관의 progressive 발행을 구조적으로 봉쇄.
+    명시적 거짓('0'/'false'/'no'/'off')만 opt-out(None = 게이트 사체). staleness/capability 는
+    트리 속성이 아니라 *서버 프로세스* 속성이라 tier 디스패치가 아닌 env 가 정확한 스위치다."""
+    raw = os.environ.get('LAKATOS_JUDGE_FRESHNESS_GATE', '').strip().lower()
+    return None if raw in ('0', 'false', 'no', 'off') else engine_freshness

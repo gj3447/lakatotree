@@ -1,11 +1,16 @@
 """jp4-ca-fail-closed — 판관 자기고유수용감각 게이트 (JP 캠페인 LakatosTree_JudgeProprioception_20260708).
 
 결함(q_ca_authority): stale CA(1845b4e, 30커밋 뒤)가 stale:true 를 자백하면서도 FORCEFUL 서명 중 —
-어떤 submit/certificate/writer 경로도 staleness 를 안 읽었다. 봉합: 주입형 provider(env opt-in,
-기본 OFF)가 자기신원(boot vs disk, lakatos/·server/ 코드경로 한정 diff)과 자기능력(러닝 프로세스
-live-object 에 G6/resolve_measurement 실재)을 판정 — 발화 시 progressive 는 partial
+어떤 submit/certificate/writer 경로도 staleness 를 안 읽었다. 봉합: 주입형 provider가 자기신원
+(boot vs disk, lakatos/·server/ 코드경로 한정 diff)과 자기능력(러닝 프로세스 live-object 에
+G6/resolve_measurement 실재)을 판정 — 발화 시 progressive 는 partial
 ('provisional_stale_engine') 강등(봉인 거부 아님 — 채점 흐름 유지, 재기동 후 동일값 freshen 승급),
 CANONICAL 승격만 하드 409. 3중 fail-open(dead-σ: 부재≠반증).
+
+기본값 flip(2026-07-24, PEP 476 패턴): 게이트는 이제 **기본 ON** — 명시적 거짓
+('0'/'false'/'no'/'off')만 opt-out. Phase 0 "built-then-disarmed" 소탕: verdict-affecting
+게이트의 기본 사체화는 결함(CISA secure-by-default). 사체 의미론은 DI None 주입이 아니라
+**명시 opt-out**이 담당한다.
 
   guard_defect    = test_stale_engine_cannot_mint_progressive (fix 전 RED: stale provider 에도 progressive 봉인)
   guard_mechanism = test_fresh_engine_passthrough_and_boot_sha_stamp (무변경 통과 + 판관 신원 스탬프 —
@@ -101,8 +106,10 @@ def test_fresh_engine_passthrough_and_boot_sha_stamp():
 
 
 # ── fail-open 3종 (부재≠반증) ─────────────────────────────────────────────────────
-def test_unwired_provider_no_demote_unchecked():
-    """미주입(None) = 게이트 완전 사체 — 'unchecked' 스탬프만(1699 스위트 호환의 뿌리)."""
+def test_unwired_provider_no_demote_unchecked(monkeypatch):
+    """명시 opt-out(env=0) = 게이트 완전 사체 — 'unchecked' 스탬프만(스위트 호환의 뿌리).
+    flip 후 DI None 은 env 기본 ON 에 위임되므로, 사체 경로는 env 로 무장 해제한다."""
+    monkeypatch.setenv('LAKATOS_JUDGE_FRESHNESS_GATE', '0')
     cap: list = []
     _svc(cap, provider=None).submit_test_result('T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0))
     p = _params(cap)
@@ -120,11 +127,13 @@ def test_indeterminate_staleness_no_fire():
     assert engine_freshness_fires(ind()) is False and engine_freshness_fires(None) is False
 
 
-def test_env_provider_off_by_default(monkeypatch):
-    """env 미설정 → provider None(게이트 사체); 명시적 boolean 파싱(LAKATOS_REPLAY_EXEC 답습)."""
+def test_env_provider_on_by_default_with_explicit_optout(monkeypatch):
+    """2026-07-24 flip: 기본 ON(무장) — 명시적 거짓 설정만 opt-out(PEP 476 패턴)."""
     monkeypatch.delenv('LAKATOS_JUDGE_FRESHNESS_GATE', raising=False)
-    assert freshness_provider_from_env() is None
+    assert freshness_provider_from_env() is not None   # 기본 무장
     monkeypatch.setenv('LAKATOS_JUDGE_FRESHNESS_GATE', '0')
+    assert freshness_provider_from_env() is None       # 명시적 opt-out
+    monkeypatch.setenv('LAKATOS_JUDGE_FRESHNESS_GATE', 'false')
     assert freshness_provider_from_env() is None
     monkeypatch.setenv('LAKATOS_JUDGE_FRESHNESS_GATE', 'true')
     assert freshness_provider_from_env() is not None
