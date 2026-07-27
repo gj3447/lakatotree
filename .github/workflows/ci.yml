@@ -82,7 +82,7 @@ jobs:
         run: PY=python bash scripts/mutation_kernel.sh
 
   formal:
-    name: formal — lake build (Lean 4, sorry=0)
+    name: formal — lake build + axiom audit (Lean 4, sorry=0, Ω-only)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +94,9 @@ jobs:
       - name: lake build (toolchain pinned by formal/lean-toolchain → v4.27.0)
         working-directory: formal
         run: lake build   # ground-truth gate: error=0, sorry=0
+      - name: axiom audit (Ω={propext, Classical.choice, Quot.sound} 외 공리 차단)
+        working-directory: formal
+        run: bash axiom_audit.sh   # "verified" = kernel check + axiom audit 세트일 때만
 
   ooptdd-receipts:
     # ooptdd-loop 영수증 전체를 자동발견해 상시 재검증 — pytest 가 아니라 R02(구조화 이벤트
