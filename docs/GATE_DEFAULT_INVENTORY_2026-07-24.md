@@ -41,6 +41,7 @@
 | `LAKATOS_ANCHOR_CYPHER_SHELL` | cypher-shell | OTS 앵커용 cypher-shell 경로 오버라이드 |
 | `LAKATOS_ANCHOR_OUTBOX` | docs/data/ots_anchors | OTS 앵커 사이드카 outbox 디렉토리 |
 | `LAKATOS_ANCHOR_CALENDARS` | a.pool,b.pool.opentimestamps.org | OTS 캘린더 풀 CSV (2-풀 정족) |
+| `LAKATOS_REPLAY_CACHE_ROOT` | `$XDG_STATE_HOME/lakatotree/replay-artifacts/v1` (기본 `~/.local/state/...`) | replay 불변 아티팩트 스냅샷 캐시 루트 (PR#15 lx3-remediation, `lakatos/replay_artifacts.py:22-29`) |
 
 ## D. 테스트 티어 플래그 (운영 무관)
 
