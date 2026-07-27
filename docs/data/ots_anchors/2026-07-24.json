@@ -1,0 +1,20 @@
+{
+ "date": "2026-07-24",
+ "root_digest": "ad9d48a775a4149cb55f95117cbab7e58517bdc8911815c35227e5ca27cf0798",
+ "receipt_count": 680,
+ "computed_at": "2026-07-24T09:13:54.699552+00:00",
+ "calendars": {
+  "a.pool": {
+   "status": "pending",
+   "ots_file": "2026-07-24.a.pool.ots",
+   "attestation_b64": "8AgHSO7lOpouVwjwEH5jDky4Dp5lWjh3Iqa6XncI8SBEEyrr0GYUSEVaDesXkcyYzZDeOAD4I+ekRodLCXHlGAjwIEUyuxiuBlUNwNsI07YDjVyzV7ms7/ZB+WP9aYNXOW/WCPEEamMs1PAIn0zGM4ijjNoAg9/jDS75DI4uLWh0dHBzOi8vYWxpY2UuYnRjLmNhbGVuZGFyLm9wZW50aW1lc3RhbXBzLm9yZw=="
+  },
+  "b.pool": {
+   "status": "pending",
+   "ots_file": "2026-07-24.b.pool.ots",
+   "attestation_b64": "8AjA/PAkxLCGnwjwEKXEzIQgchggCCMGykrU5EoI8SBXHFddTaeYlUhpyqmN2fh+1l9gIvoobQ59r1+ZoNY8UAjxBGpjLNXwCKUedLK2wvJrAIPf4w0u+QyOLCtodHRwczovL2JvYi5idGMuY2FsZW5kYXIub3BlbnRpbWVzdGFtcHMub3Jn"
+  }
+ },
+ "status": "pending",
+ "upgraded_this_run": []
+}
