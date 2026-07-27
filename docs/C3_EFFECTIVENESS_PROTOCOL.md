@@ -1,5 +1,10 @@
 # C3 — 엔진 효과성 실험 프로토콜 (falsifiable)
 
+> **SUPERSEDED (2026-07-24)**: 이 문서는 `docs/BACKTEST_PROTOCOL_2026-07-24.md` 로 계승됐다.
+> n=9/팔 설계는 검정력 26%(40pp 차이, Fisher exact)로 무정보 판명 — 페어드 McNemar + 합성 날조 코퍼스로 교체.
+> 계승된 골격: 사전등록/순환성 차단/null 출판/임계 동결. 결정 근거: SYMPOSIUM `THEORY/lakatotree/DECISION_PROM16_4ITEMS_2026-07-24.md` D1.
+> 아래 본문은 이력 보존용으로 유지(삭제 금지 — supersession 원칙).
+
 > 외부 리뷰 B-5: *"euler/HALCON 도그푸딩은 신호일 뿐, 엔진으로 검증한 연구가 미검증 연구보다 낫다는 증거는 없다."*
 > 이 문서는 그 주장을 **반증 가능한 사전등록 실험**으로 만든다. 측정은 corpus 확보 후(Phase 0) — 지금은 *설계 정본*.
 > C2(`tests/test_layer_flip_audit.py`)가 이미 입증: 현 dogfood 6개는 층 대립을 0회 자극 = **corpus 가 얕다**. C3 는 그 위에서 출발한다.

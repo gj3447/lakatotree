@@ -1,20 +1,18 @@
 # lakatotree — 에이전트 작업 규율
 
-이 repo 는 **여러 Claude 세션이 같은 워크트리를 동시에** 만진다(실증: 2026-07-02 G6/G7·G10 병렬).
-기본 개발 스택은 3층: **OMD(조율) × ooptdd/LTDD(측정) × judge(진보 판정)** — 아래는 그 채택 규율.
+이 repo 는 SYMPOSIUM canonical `main`의 **단일 writer**가 순차적으로 변경한다.
+기본 개발 스택은 2층: **ooptdd/LTDD(측정) × judge(진보 판정)** — 아래는 그 채택 규율.
 
-## 1. 병렬 세션 규율 (OMD — 편집 전 필수)
+## 1. 단일 writer 규율 (OMD RETIRED — 2026-07-26 사용자 승인)
 
-1. **편집 시작 전** OMD lease: `mcp__omd__declare(task, writes=[...])` → `claim` → **HELD 확인**.
-   다른 세션의 untracked/미커밋 파일이 내 write-set 과 겹치면 **손 떼고 분리 태스크로 전환**.
-2. claim 직후 **페이스 선언**: `heartbeat(agent, ttl=3600)` — 인터랙티브 세션의 per-agent 생존창.
-   미선언이면 기계 물방울 기본(agent_ttl 90s)이라 verb 간 침묵 중 RETIRED 된다(F2, 실전 재현됨).
-2b. lease-only 흐름(start/connect 미경유)을 닫을 땐 `cancel(task, reason)` — PENDING 잔류 방지(F4).
+1. OMD MCP, lease, heartbeat, coordination DB 쓰기와 자동 linked worktree/session branch는 금지한다.
+   과거 OMD 코드·DB·테스트는 읽기 전용 연구 자료다.
+2. root/parent 세션 하나만 canonical checkout의 writer token을 보유한다. 다른 세션과 subagent는
+   read-only이며, writer가 끝나기 전 별도 쓰기 레인으로 분산하지 않는다.
 3. **커밋은 반드시 pathspec**: `git add <내파일들> && git commit -- <내파일들>`.
    맨 `git commit` 은 남이 스테이징한 파일까지 인덱스 전체를 쓸어담는다(사고 전례 0691263).
 4. 전체회귀 판정 시 남의 in-flight RED 파일은 `--ignore=<파일>` 후 판정하고, 내 커밋에 절대 포함 금지.
-5. 종료 시 `release`. (lease-only 사용(start/connect 미경유) 시 태스크가 PENDING 잔류 — 알려진 한계.)
-6. 커밋하면 **곧바로 push** (공유 브랜치 규율).
+5. 커밋하면 **곧바로 push**하고 remote readback으로 같은 SHA를 확인한다.
 
 ## 2. 방법론 (RED-first 이중가드 + ooptdd 영수증 + judge 채점)
 
@@ -29,7 +27,7 @@
 
 ```bash
 .venv/bin/python -m pytest -q                    # 전체 0 회귀 (uv run 금지 — 이 repo 는 .venv 직접)
-.venv/bin/python -m lakatos.longinus audit       # 코어 def-line 변경 시 docs/longinus_bindings.json 재베이스라인
+.venv/bin/python -m lakatos.longinus audit       # 코어 def-line 변경 시 docs/data/longinus_bindings.json 재베이스라인
 ```
 
 ## 4. 함정 (실전 비용 지불됨 — 반복 금지)
