@@ -31,7 +31,7 @@
   node <name> <tag> [--parent P] [--parent P2] 노드 생성
   predict <name> <tag> --metric M --baseline B [--dir lower|higher]
           [--noise N] [--novel-metric M --novel-dir D --novel-thr T] [--sha S]
-  result <name> <tag> --value V --script S [--sha S] [--novel-measured X] [질적/PnR 증거]
+  result <name> <tag> --value V --script S [--result-path P] [--sha S] [--novel-measured X] [질적/PnR 증거]
   provenance <name> <tag>        판결 PROV 계보 + 재현명령
   event <name> <tag> <event_id>  ClaimStanding 용 상계/하계 evidence event 기록
   events <name> <tag>            ClaimStanding 이 소비하는 evidence event 목록
@@ -44,6 +44,7 @@
 # KG: span_lakatotree_cli
 """
 import argparse, json, os, sys
+from pathlib import Path
 import urllib.request, urllib.error
 
 BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
@@ -112,6 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('verdict'); sp.add_argument('name'); sp.add_argument('tag'); sp.add_argument('verdict')
     sp.add_argument('--note', default=''); sp.add_argument('--scope', default='')
     sp.add_argument('--human', action='store_true', help='인간이 직접 vouch')
+    sp.add_argument('--write-cert-file', default='', help='cert-sign 출력 JSON 파일')
     sp = sub.add_parser('critique'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('arg_id'); sp.add_argument('attacks')
     sp.add_argument('--by', default=''); sp.add_argument('--body', default='')
@@ -147,8 +149,16 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('name')
     sp.add_argument('tag')
     sp.add_argument('--secret-hex', required=True, help='cert-keygen 의 secret_hex')
-    sp.add_argument('--metric-value', type=float, required=True)
+    sp.add_argument('--verb', default='submit_test_result',
+                    choices=['submit_test_result', 'register_prediction', 'set_verdict_canonical'])
+    sp.add_argument('--metric-value', type=float)
     sp.add_argument('--script-sha', default='', help='채점 스크립트 sha256(서버 재계산과 일치해야)')
+    sp.add_argument('--script', default='',
+                    help='result artifact 서명 시 필수: 서버 immutable snapshot으로 복사할 채점 스크립트')
+    sp.add_argument('--result-path', default='',
+                    help='제공 시 v4 cert에 봉인할 결과 파일(실존 정규파일)')
+    sp.add_argument('--payload-json', default='',
+                    help='서버에 보낼 verb payload JSON. 비-default submit 및 다른 verb는 필수')
     sp = sub.add_parser('tree-delete'); sp.add_argument('name')
     sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
@@ -163,9 +173,13 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--novel-metric'); sp.add_argument('--novel-dir', choices=['lower', 'higher'])
     sp.add_argument('--novel-thr', type=float); sp.add_argument('--sha')
     sp.add_argument('--credence', type=float, help='예측 신뢰도[0,1] — calibration/certify G4 입력')
+    sp.add_argument('--write-cert-file', default='', help='cert-sign 출력 JSON 파일')
     sp = sub.add_parser('result'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--value', type=float, required=True); sp.add_argument('--script', required=True)
+    sp.add_argument('--result-path', default='',
+                    help='채점 산출물 경로(TestResultIn.result_path) — successor producer replay 입력')
     sp.add_argument('--sha'); sp.add_argument('--novel-measured', type=float)
+    sp.add_argument('--write-cert-file', default='', help='cert-sign 출력 JSON 파일')
     sp.add_argument('--novel-script', default='',
                     help='서버앵커 novel 측정 스크립트(file 또는 file::symbol) — cross-metric novel 독립성 영수증(FF1)')
     sp.add_argument('--data-branch', action='store_true', help='데이터 재생성 의존 분기(ENG-DU-2)')
@@ -327,8 +341,10 @@ def main(argv=None):
         q = ('?' + up.urlencode({'closed_by': a.by})) if a.by else ''
         out = call('POST', f'/api/tree/{a.name}/question/{a.qname}/close{q}')
     elif a.cmd == 'verdict':
-        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/verdict',
-                   dict(verdict=a.verdict, note=a.note, scope=a.scope, human_verdict=a.human))
+        payload = dict(verdict=a.verdict, note=a.note, scope=a.scope, human_verdict=a.human)
+        if a.write_cert_file:
+            payload['write_cert'] = json.loads(Path(a.write_cert_file).read_text(encoding='utf-8'))
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/verdict', payload)
     elif a.cmd == 'critique':
         out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/critique',
                    dict(arg_id=a.arg_id, attacks=a.attacks, by=a.by, kind=a.kind, body=a.body))
@@ -380,11 +396,65 @@ def main(argv=None):
         out = dict(secret_hex=secret_hex, did=did,
                    note='secret 은 출력물 밖에 저장하지 말 것 — 트리 attestor_dids 에 did 를 등록하면 강제 발동')
     elif a.cmd == 'cert-sign':
-        from lakatos.write_cert import build_write_cert
+        from server.file_hashing import file_sha
+        from lakatos.write_cert import build_write_cert, operation_payload_sha256
         chain = call('GET', f'/api/tree/{a.name}/node/{a.tag}/receipts')   # prev 포인터 회수(CAS 바인딩)
+        if a.payload_json:
+            raw_payload = json.loads(Path(a.payload_json).read_text(encoding='utf-8'))
+            raw_payload.pop('write_cert', None)
+            from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
+            payload_model = {
+                'submit_test_result': TestResultIn,
+                'register_prediction': PredictionIn,
+                'set_verdict_canonical': VerdictIn,
+            }[a.verb]
+            operation_payload = payload_model(**raw_payload).model_dump(exclude={'write_cert'})
+        elif a.verb == 'submit_test_result':
+            if a.metric_value is None or not a.script:
+                sys.exit('default submit cert에는 --metric-value와 --script 필수')
+            from server.contexts.tree.schemas import TestResultIn
+            operation_payload = TestResultIn(
+                metric_value=a.metric_value, script=a.script,
+                script_sha=(a.script_sha or None), result_path=a.result_path,
+            ).model_dump(exclude={'write_cert'})
+        else:
+            sys.exit('register_prediction/set_verdict_canonical cert에는 --payload-json 필수')
+        metric_value = (operation_payload.get('metric_value')
+                        if a.verb == 'submit_test_result' else None)
+        if a.verb == 'register_prediction':
+            command_script_sha = operation_payload.get('judge_script_sha')
+        elif a.verb == 'submit_test_result':
+            script_token = str(operation_payload.get('script') or '')
+            script_candidate = Path(script_token).expanduser()
+            if script_token and script_candidate.is_file():
+                command_script_sha = file_sha(str(script_candidate.resolve()))
+                supplied_sha = operation_payload.get('script_sha') or a.script_sha
+                if supplied_sha and supplied_sha != command_script_sha:
+                    sys.exit(f'script_sha 불일치: 파일={command_script_sha} 제출={supplied_sha}')
+            else:
+                command_script_sha = operation_payload.get('script_sha') or a.script_sha or ''
+        else:
+            command_script_sha = None
         command = dict(tree=a.name, tag=a.tag, prev_receipt_sha=chain.get('head'),
-                       metric_value=a.metric_value, script_sha=a.script_sha,
-                       verb=(getattr(a, 'verb', None) or 'submit_test_result'))   # AG5-IDENT: verb 바인딩
+                       metric_value=metric_value, script_sha=(command_script_sha or None),
+                       verb=a.verb, command_version='v4',
+                       operation_payload_sha256=operation_payload_sha256(
+                           a.verb, operation_payload))
+        source_result_arg = (a.result_path or operation_payload.get('result_path') or '')
+        source_script_arg = (a.script or operation_payload.get('script') or '')
+        if source_result_arg:
+            if not source_script_arg:
+                sys.exit('--result-path cert에는 --script 필수 (immutable replay content 서명)')
+            script_path = str(Path(source_script_arg).resolve(strict=True))
+            result_path = str(Path(source_result_arg).resolve(strict=True))
+            script_sha = file_sha(script_path)
+            if a.script_sha and a.script_sha != script_sha:
+                sys.exit(f'--script-sha 불일치: 파일={script_sha} 제출={a.script_sha}')
+            result_sha = file_sha(result_path)
+            # v4 signs content and the full validated operation payload, not this client's
+            # prediction of a server-local cache path.  The server seals its actual immutable
+            # snapshot paths in the v5 verdict receipt and MeasurementLock after materialisation.
+            command.update(script_sha=script_sha, result_sha256=result_sha)
         out = build_write_cert(bytes.fromhex(a.secret_hex), command)
     elif a.cmd == 'tree-delete':
         out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
@@ -399,31 +469,37 @@ def main(argv=None):
                    dict(tag=a.tag, parents=a.parent, parent_edges=parent_edges,
                         comment=a.comment, algorithm=a.algorithm, author=a.author))
     elif a.cmd == 'predict':
-        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/prediction',
-                   dict(metric_name=a.metric, direction=a.dir, baseline_value=a.baseline,
-                        noise_band=a.noise, novel_metric=a.novel_metric,
-                        novel_direction=a.novel_dir, novel_threshold=a.novel_thr,
-                        judge_script_sha=a.sha, credence=a.credence))
+        payload = dict(metric_name=a.metric, direction=a.dir, baseline_value=a.baseline,
+                       noise_band=a.noise, novel_metric=a.novel_metric,
+                       novel_direction=a.novel_dir, novel_threshold=a.novel_thr,
+                       judge_script_sha=a.sha, credence=a.credence)
+        if a.write_cert_file:
+            payload['write_cert'] = json.loads(Path(a.write_cert_file).read_text(encoding='utf-8'))
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/prediction', payload)
     elif a.cmd == 'result':
-        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result',
-                   dict(metric_value=a.value, script=a.script, script_sha=a.sha, novel_measured=a.novel_measured,
-                        novel_script=a.novel_script,
-                        data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
-                        human_verdict_required=a.human_verdict,
-                        lakatos_anomaly=a.lakatos_anomaly,
-                        lakatos_consequence=a.lakatos_consequence,
-                        lakatos_excess=a.lakatos_excess,
-                        lakatos_hardcore=a.lakatos_hardcore,
-                        touched_assumptions=a.touched_assumption,
-                        implementation_complete=a.implementation_complete,
-                        counterexample_response=a.counterexample_response,
-                        counterexample_type=a.counterexample_type,
-                        ce_excess_content=a.ce_excess_content,
-                        ce_novel_corroborated=a.ce_novel_corroborated,
-                        ce_in_heuristic_spirit=a.ce_in_heuristic_spirit,
-                        ce_proof_concept_name=a.ce_proof_concept_name,
-                        ce_proof_born_from=a.ce_proof_born_from,
-                        ce_proof_incorporated_lemma=a.ce_proof_incorporated_lemma))
+        payload = dict(metric_value=a.value, script=a.script, script_sha=a.sha,
+                       novel_measured=a.novel_measured,
+                       **({'result_path': a.result_path} if a.result_path else {}),
+                       novel_script=(a.novel_script or None),
+                       data_branch=a.data_branch, data_replay_passed=not a.no_data_replay,
+                       human_verdict_required=a.human_verdict,
+                       lakatos_anomaly=a.lakatos_anomaly,
+                       lakatos_consequence=a.lakatos_consequence,
+                       lakatos_excess=a.lakatos_excess,
+                       lakatos_hardcore=a.lakatos_hardcore,
+                       touched_assumptions=a.touched_assumption,
+                       implementation_complete=a.implementation_complete,
+                       counterexample_response=a.counterexample_response,
+                       counterexample_type=a.counterexample_type,
+                       ce_excess_content=a.ce_excess_content,
+                       ce_novel_corroborated=a.ce_novel_corroborated,
+                       ce_in_heuristic_spirit=a.ce_in_heuristic_spirit,
+                       ce_proof_concept_name=(a.ce_proof_concept_name or None),
+                       ce_proof_born_from=(a.ce_proof_born_from or None),
+                       ce_proof_incorporated_lemma=(a.ce_proof_incorporated_lemma or None))
+        if a.write_cert_file:
+            payload['write_cert'] = json.loads(Path(a.write_cert_file).read_text(encoding='utf-8'))
+        out = call('POST', f'/api/tree/{a.name}/node/{a.tag}/test_result', payload)
     elif a.cmd == 'provenance':
         out = call('GET', f'/api/tree/{a.name}/node/{a.tag}/provenance')
     elif a.cmd == 'element':

@@ -16,11 +16,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 
 import pytest
 from fastapi import HTTPException
 
 from lakatos import write_cert as W
+from server.file_hashing import file_sha
 from server.contexts.tree.judgement_service import JudgementService
 from server.contexts.tree.schemas import CertCommandIn, TestResultIn as Result, WriteCertIn
 
@@ -35,6 +37,11 @@ _DID_B = W.did_key_encode(_PK_B)
 # 프로덕션 경로가 실시간으로 신선도를 재므로, 테스트 cert 는 실제 현재시각으로 발급(결정론: 창 ±15분 ≫ 실행시간).
 _NOW = datetime.now(timezone.utc).isoformat()
 _STALE = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+
+
+@pytest.fixture(autouse=True)
+def _private_replay_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("LAKATOS_REPLAY_CACHE_ROOT", str(tmp_path / "server-replay-cache"))
 
 
 class _SubmitKg:
@@ -67,10 +74,20 @@ def _svc(tree_props: dict):
 
 
 def _cert(sk: bytes, did: str, *, tag='seam', metric_value=1.0, script_sha='',
-          prev=None, issued_at=_NOW, tamper_after_sign=None) -> WriteCertIn:
+          prev=None, issued_at=_NOW, tamper_after_sign=None,
+          script_path=None, result_path=None, result_sha256=None,
+          payload_overrides=None) -> WriteCertIn:
+    request = Result(
+        metric_value=metric_value, script=(script_path or 'inline'),
+        result_path=(result_path or ''), **(payload_overrides or {}))
     command = dict(tree='T', tag=tag, prev_receipt_sha=prev,
                    metric_value=metric_value, script_sha=script_sha,
-                   verb='submit_test_result')   # AG5-IDENT: cert 를 submit verb 에 바인딩
+                   verb='submit_test_result', command_version='v4',
+                   operation_payload_sha256=W.operation_payload_sha256(
+                       'submit_test_result', request.model_dump(exclude={'write_cert'})))
+    if result_path is not None:
+        assert script_path is not None
+        command.update(result_sha256=result_sha256)
     sig = W.ed25519_sign(sk, W.canonical_cert_blob(command, issued_at))
     if tamper_after_sign:
         command.update(tamper_after_sign)   # 서명 후 명령 변조 = sign-X-execute-Y 시도
@@ -160,6 +177,95 @@ def test_author_derived_from_signature_not_client_string():
     assert 'attested_by_did' in kg.captured[0][0][0], '스탬프가 #M5 원자 op 밖'
 
 
+def test_v4_submit_cert_binds_full_request_and_immutable_execution_content(tmp_path):
+    script = tmp_path / 'score.py'
+    result = tmp_path / 'result.json'
+    script.write_text('print(1.0)\n', encoding='utf-8')
+    result.write_text('{"metric":1.0}\n', encoding='utf-8')
+    script_path, result_path = str(script.resolve()), str(result.resolve())
+    script_sha, result_sha = file_sha(script_path), file_sha(result_path)
+
+    svc, kg = _svc(_ANCHORED)
+    cert = _cert(_SK_A, _DID_A, script_sha=script_sha, script_path=script_path,
+                 result_path=result_path, result_sha256=result_sha)
+    out = svc.submit_test_result('T', 'seam', Result(
+        metric_value=1.0, script=script_path, result_path=result_path, write_cert=cert))
+    assert out['attested_by'] == _DID_A
+    assert out['result_sha256'] == result_sha and out['measurement_lock_sha']
+
+    # A v1 signature cannot authorize a supplied artifact.
+    svc_v1, kg_v1 = _svc(_ANCHORED)
+    with pytest.raises(HTTPException) as v1_exc:
+        svc_v1.submit_test_result('T', 'seam', Result(
+            metric_value=1.0, script=script_path, result_path=result_path,
+            write_cert=_cert(_SK_A, _DID_A, script_sha=script_sha)))
+    assert v1_exc.value.status_code == 422 and kg_v1.captured == []
+
+    # Changing bytes after signing changes the server-derived expected command.
+    result.write_text('{"metric":9.0}\n', encoding='utf-8')
+    svc_tampered, kg_tampered = _svc(_ANCHORED)
+    with pytest.raises(HTTPException) as tampered_exc:
+        svc_tampered.submit_test_result('T', 'seam', Result(
+            metric_value=1.0, script=script_path, result_path=result_path, write_cert=cert))
+    assert tampered_exc.value.status_code == 422 and kg_tampered.captured == []
+
+    # Same bytes at another allowed source path cannot reuse the certificate: source identity is
+    # signed even though execution itself always happens from the private content-addressed copy.
+    copied_script = tmp_path / 'copy.py'
+    copied_script.write_bytes(script.read_bytes())
+    result.write_text('{"metric":1.0}\n', encoding='utf-8')
+    svc_moved, kg_moved = _svc(_ANCHORED)
+    with pytest.raises(HTTPException) as moved_exc:
+        svc_moved.submit_test_result('T', 'seam', Result(
+            metric_value=1.0, script=str(copied_script), result_path=result_path,
+            write_cert=cert))
+    assert moved_exc.value.status_code == 422 and kg_moved.captured == []
+
+    # All verdict-affecting fields are covered, not just metric/artifact identity.
+    svc_payload, kg_payload = _svc(_ANCHORED)
+    with pytest.raises(HTTPException) as payload_exc:
+        svc_payload.submit_test_result('T', 'seam', Result(
+            metric_value=1.0, script=script_path, result_path=result_path,
+            touched_assumptions=['unsigned-change'], write_cert=cert))
+    assert payload_exc.value.status_code == 422 and kg_payload.captured == []
+
+
+def test_v4_artifact_cert_is_independent_of_client_and_server_cache_roots(
+        tmp_path, monkeypatch):
+    script = tmp_path / 'score.py'
+    result = tmp_path / 'result.json'
+    script.write_text('print(1.0)\n', encoding='utf-8')
+    result.write_text('{"metric":1.0}\n', encoding='utf-8')
+    script_path, result_path = str(script.resolve()), str(result.resolve())
+    script_sha, result_sha = file_sha(script_path), file_sha(result_path)
+
+    monkeypatch.setenv('LAKATOS_REPLAY_CACHE_ROOT', str(tmp_path / 'client-cache'))
+    cert = _cert(_SK_A, _DID_A, script_sha=script_sha, script_path=script_path,
+                 result_path=result_path, result_sha256=result_sha)
+    assert cert.command.judge_script_path is None and cert.command.result_path is None
+
+    monkeypatch.setenv('LAKATOS_REPLAY_CACHE_ROOT', str(tmp_path / 'server-cache'))
+    svc, _kg = _svc(_ANCHORED)
+    out = svc.submit_test_result('T', 'seam', Result(
+        metric_value=1.0, script=script_path, result_path=result_path, write_cert=cert))
+    assert out['attested_by'] == _DID_A
+    assert str(tmp_path / 'server-cache') in out['judge_script_path']
+    assert str(tmp_path / 'server-cache') in out['result_path']
+
+
+def test_v4_command_blob_has_a_host_independent_golden_sha():
+    command = {
+        'tree': 'T', 'tag': 'n', 'prev_receipt_sha': None,
+        'metric_value': 1.25, 'script_sha': 'a' * 64,
+        'verb': 'submit_test_result', 'command_version': 'v4',
+        'result_sha256': 'b' * 64, 'operation_payload_sha256': 'c' * 64,
+    }
+    blob = W.canonical_cert_blob(command, '2026-07-26T00:00:00+00:00')
+    assert hashlib.sha256(blob).hexdigest() == \
+        'aaa4234b8ff8b665a7f1337c60f53a69c4265eee9318845b8faed3a0cef1dd36'
+    assert b'judge_script_path' not in blob and b'source_result_path' not in blob
+
+
 # ── 보조 가드 — nonce 헬퍼(무상태 HMAC)·canonical blob 결정론 ──────────────────────────────
 def test_nonce_and_blob_are_deterministic_and_constant_time_shaped():
     n1 = W.issue_nonce(b'seed', 'T', '2026-07-02T14:00:00+00:00')
@@ -168,3 +274,17 @@ def test_nonce_and_blob_are_deterministic_and_constant_time_shaped():
     assert not W.verify_nonce(b'seed2', 'T', '2026-07-02T14:00:00+00:00', n1)   # 다른 seed = 위조
     cmd = dict(tree='T', tag='n', prev_receipt_sha=None, metric_value=1.0, script_sha='s')
     assert W.canonical_cert_blob(cmd, _NOW) == W.canonical_cert_blob(dict(reversed(list(cmd.items()))), _NOW)
+
+
+def test_older_cert_generations_reject_populated_future_fields():
+    v1 = dict(tree='T', tag='n', prev_receipt_sha=None, metric_value=1.0,
+              script_sha='a' * 64, verb='submit_test_result',
+              judge_script_path='/tmp/unsigned-by-v1.py')
+    with pytest.raises(W.CertCommandMismatch):
+        W.canonical_cert_blob(v1, _NOW)
+    v2 = dict(tree='T', tag='n', prev_receipt_sha=None, metric_value=1.0,
+              script_sha='a' * 64, verb='submit_test_result', command_version='v2',
+              result_path='/tmp/r.json', result_sha256='b' * 64,
+              source_script_path='/tmp/unsigned-by-v2.py')
+    with pytest.raises(W.CertCommandMismatch):
+        W.canonical_cert_blob(v2, _NOW)

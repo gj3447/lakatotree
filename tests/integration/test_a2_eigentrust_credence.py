@@ -7,10 +7,11 @@ mock 으로는 못 떨군 영수증: 실 Neo4j 에 트리+노드+다출처 inter
 *크기 있는 이동*을 불변식으로 본다(저신뢰 출처가 항상 credence 를 낮추는 건 아니다 — 증거가 prior 아래로
 끌었으면 가중 감소가 credence 를 prior 쪽으로 *복귀*시킨다).
 
-★전제(서빙 형상): 정본경로 progress/CANONICAL 노드는 verdict_source 영수증을 들어야 한다. 실 KG 서빙 로더는
-verdict_source 키를 항상 싣고(미설정=None), tree_metrics 의 prom-honesty 가 영수증 없는 진보를 inconclusive 로
-강등해 canonical_path 를 비운다(키 생략한 옛 픽스처는 trusted 라 통과=fake-green). seed 가 verdict_source 를
-달아 이 drift 를 닫는다. 항-drift 가드: ooptdd_receipts/A2 (hermetic, R02+R10).
+★전제(서빙 형상): 정본경로 progress/CANONICAL 노드는 verdict_source와 실제 receipt-tip 포인터를 들어야 한다.
+실 KG 서빙 로더는 두 키를 항상 싣고, tree_metrics의 prom-honesty가 원장 포인터 없는 진보를 inconclusive로
+강등해 canonical_path를 비운다(키 생략한 옛 픽스처는 trusted라 통과=fake-green). seed가 두 판결의
+VerdictReceipt 관계와 current_receipt_sha를 함께 만들어 이 drift를 닫는다. 항-drift 가드:
+ooptdd_receipts/A2 (hermetic, R02+R10).
 """
 import pytest
 
@@ -40,13 +41,21 @@ def _seed_tree(c, name):
             MERGE (t)-[:HAS_NODE]->(root)
             MERGE (p1:LakatosNode {tag:'p1'}) SET p1.verdict='progressive', p1.metric_value=0.5,
                   p1.metric_scope='s', p1.pred_baseline=1.0, p1.pred_noise_band=0.02, p1.pred_closes='q1',
-                  p1.verdict_source='engine'
+                  p1.verdict_source='engine', p1.current_receipt_sha=$p1_rsha
             MERGE (t)-[:HAS_NODE]->(p1)
             MERGE (top:LakatosNode {tag:'top'}) SET top.verdict='CANONICAL', top.metric_value=0.4,
-                  top.metric_scope='s', top.verdict_source='engine'
+                  top.metric_scope='s', top.verdict_source='engine',
+                  top.current_receipt_sha=$top_rsha
             MERGE (t)-[:HAS_NODE]->(top)
+            MERGE (p1r:VerdictReceipt {receipt_sha:$p1_rsha})
+              SET p1r.tree=$n, p1r.tag='p1', p1r.verdict='progressive'
+            MERGE (p1)-[:HAS_RECEIPT]->(p1r)
+            MERGE (topr:VerdictReceipt {receipt_sha:$top_rsha})
+              SET topr.tree=$n, topr.tag='top', topr.verdict='CANONICAL'
+            MERGE (top)-[:HAS_RECEIPT]->(topr)
             MERGE (p1)-[:BRANCHED_FROM]->(root)
-            MERGE (top)-[:BRANCHED_FROM]->(p1)""", {"n": name}),
+            MERGE (top)-[:BRANCHED_FROM]->(p1)""", {
+                "n": name, "p1_rsha": "1" * 64, "top_rsha": "2" * 64}),
         # 정본경로 노드 p1 을 받치는 두 internet 관측: 블로그(먼저=노드 source) + peer_reviewed(seed).
         # co-support(같은 노드 2관측) → eigentrust 가 블로그 신뢰를 1.0 미만으로 정규화.
         ("""MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(p1 {tag:'p1'})

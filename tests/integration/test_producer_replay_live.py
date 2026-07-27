@@ -23,16 +23,17 @@ class _DummyMongo:
         pass
 
 
-def _seed_candidate(kg, *, tag, judge_script, recorded_metric):
+def _seed_candidate(kg, *, tag, judge_script, result_path, recorded_metric):
     """CANONICAL_CANDIDATE 후보 노드 직접 셋업 — progressive/scripted, 실 scorer 경로 + recorded metric.
     (submit→judge 전 과정 대신 후보 상태를 그래프에 직접 둬 set_verdict 승격경로만 e2e 한다.)"""
     kg('''MERGE (t:LakatosTree {name:'T'})
           MERGE (t)-[:HAS_NODE]->(e {tag:$tag})
           SET e.verdict='progressive', e.verdict_source='scripted', e.node_state=$st,
-              e.judge_script=$js, e.metric_value=$mv, e.result_path='x', e.pred_noise_band=0.0,
+              e.judge_script=$js, e.metric_value=$mv, e.result_path=$rp, e.pred_noise_band=0.0,
               e.qualitative_self_report=false, e.novel_confirmed=true, e.author='',
               e.measurement_externally_anchored=null''',
-       tag=tag, st=NodeState.CANONICAL_CANDIDATE.value, js=judge_script, mv=recorded_metric)
+       tag=tag, st=NodeState.CANONICAL_CANDIDATE.value, js=judge_script,
+       rp=result_path, mv=recorded_metric)
 
 
 def _service(container, monkeypatch):
@@ -55,8 +56,11 @@ def test_live_producer_replay_persists_true_for_honest_metric(neo4j_driver, tmp_
     """정직: 실 scorer 가 recorded 와 같은 metric 을 재생성 → 재실행 검증 → anchored=True 가 노드에 persist."""
     c = AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw={})
     scorer = tmp_path / "scorer.py"
+    result = tmp_path / "result.json"
     scorer.write_text("import sys\nprint('metric=0.50')\n")   # args 무시, recorded 와 동일
-    _seed_candidate(c.kg, tag='honest', judge_script=str(scorer), recorded_metric=0.50)
+    result.write_text("{}\n")
+    _seed_candidate(c.kg, tag='honest', judge_script=str(scorer),
+                    result_path=str(result), recorded_metric=0.50)
     svc = _service(c, monkeypatch)
 
     svc.set_verdict('T', 'honest', VerdictIn(verdict='CANONICAL'))
@@ -69,8 +73,11 @@ def test_live_producer_replay_persists_false_for_forged_metric(neo4j_driver, tmp
     이것이 #1 forge 의 런타임 봉합: 서버가 숫자를 신뢰하지 않고 현실(재실행)이 끊는다."""
     c = AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw={})
     scorer = tmp_path / "scorer.py"
+    result = tmp_path / "result.json"
     scorer.write_text("import sys\nprint('metric=0.50')\n")   # 실제값 0.50
-    _seed_candidate(c.kg, tag='forged', judge_script=str(scorer), recorded_metric=0.99)   # client 위조 0.99
+    result.write_text("{}\n")
+    _seed_candidate(c.kg, tag='forged', judge_script=str(scorer),
+                    result_path=str(result), recorded_metric=0.99)   # client 위조 0.99
     svc = _service(c, monkeypatch)
 
     svc.set_verdict('T', 'forged', VerdictIn(verdict='CANONICAL'))

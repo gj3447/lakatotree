@@ -81,14 +81,18 @@ def _svc(kg, replay):
                             producer_replay_submit=lambda *a, **k: replay)
 
 
-def test_p0a_replay_status_persisted_and_disclosed():
+def test_p0a_replay_status_persisted_and_disclosed(tmp_path):
     from lakatos.io.replay import ProducerReplayVerdict
     ok = ProducerReplayVerdict(verified=True, regenerated=1.0, recorded=1.0, reason='externally_verified')
     bad = ProducerReplayVerdict(verified=False, regenerated=None, recorded=1.0, reason='mismatch')
+    script, result = tmp_path / 'score.py', tmp_path / 'result.json'
+    script.write_text('print(1.0)\n', encoding='utf-8')
+    result.write_text('{"metric":1.0}\n', encoding='utf-8')
     # replay 미시도(None)/일치(verified verdict)/불일치(mismatch verdict) → label persist.
     for replay, expect in [(None, 'not_attempted'), (ok, 'verified'), (bad, 'mismatch')]:
         kg = _SubmitKg()
-        _svc(kg, replay).submit_test_result('T', 'seam', Result(metric_value=1.0, script='inline'))
+        _svc(kg, replay).submit_test_result(
+            'T', 'seam', Result(metric_value=1.0, script=str(script), result_path=str(result)))
         _q, params = kg.captured[0][0]
         assert params.get('replay_status') == expect, f"replay={replay} → {params.get('replay_status')}"
         assert 'e.replay_status=$replay_status' in _q, 'SET 절에 replay_status 없음(persist 누락)'

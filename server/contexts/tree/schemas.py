@@ -164,6 +164,15 @@ class CertCommandIn(BaseModel):
     metric_value: float | None = None   # AG5-IDENT: canonical 승격 cert 는 measurement 없음(null-spec)
     script_sha: str | None = None        # AG5-IDENT: canonical 은 script 없음(submit 은 sha 실음)
     verb: str | None = None             # AG5-IDENT: cert 를 verb 에 바인딩(sign-X-execute-Y 봉인)
+    # v2/v3 legacy submit path binding. v4 binds host-independent script/result content plus the
+    # full validated mutation payload; server cache paths are sealed in the verdict receipt/lock.
+    command_version: str | None = None
+    judge_script_path: str | None = None
+    source_script_path: str | None = None
+    source_result_path: str | None = None
+    result_path: str | None = None
+    result_sha256: str | None = None
+    operation_payload_sha256: str | None = None
 
 
 class WriteCertIn(BaseModel):

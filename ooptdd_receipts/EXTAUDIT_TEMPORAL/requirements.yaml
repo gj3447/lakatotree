@@ -21,7 +21,7 @@ requirements:
       must_emit: anchor_verify_and_forgery_rejected
 
   - id: ETW-2
-    description: VAL L3 개방 게이팅 — 유효 양끝 증인(T1≤T2)이면 L3, 백데이트(T1>T2)나 무증인이면 L2(정직 천장). L3 이 temporal witness 로 사상 처음 열린다
+    description: content/semantic/env-valid MeasurementLock이 선행된 VAL에서 유효 양끝 증인(T1≤T2)이면 L3, 백데이트(T1>T2)나 무증인이면 L2(정직 천장)
     gate:
       - {event: val_l3_gated_by_witness, op: ">=", count: 1}
     longinus:

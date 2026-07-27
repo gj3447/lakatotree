@@ -74,6 +74,8 @@ class _PredKg:
     def __call__(self, q, **p):
         if 'ontology' in q:
             return [{'ontology': None}]
+        if 'RETURN e.current_receipt_sha AS prev_rsha' in q:
+            return [{'prev_rsha': None}]
         if 'parent' in q.lower() and 'metric_value' in q:   # R12 부모 measured 조회
             return [{'parent_measured': self.parent_measured}] if self.parent_measured is not None else []
         if 'SET e.pred_metric' in q:

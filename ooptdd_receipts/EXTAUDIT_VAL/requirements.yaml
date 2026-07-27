@@ -12,7 +12,7 @@ target:
 
 requirements:
   - id: EVL-1
-    description: parity gap 봉합 — armed(server_regenerated+verified) progressive 와 disarmed(client_asserted) progressive 가 표면 문자열에서 구분된다('progressive@L2(...)' vs 'progressive@L0(...)'). 레벨은 읽기 시점 도출(저장 금지)
+    description: parity gap 봉합 — armed(server_regenerated+verified+bound MeasurementLock) progressive 와 disarmed(client_asserted) progressive 가 표면 문자열에서 구분된다('progressive@L2(...)' vs 'progressive@L0(...)'). 레벨은 읽기 시점 도출(저장 금지)
     gate:
       - {event: parity_gap_closed, op: ">=", count: 1}
     longinus:

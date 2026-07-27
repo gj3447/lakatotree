@@ -32,6 +32,7 @@ def _all_up(monkeypatch, app):
     monkeypatch.setattr(app, 'kg', lambda *a, **k: [{'ok': 1}])
     monkeypatch.setattr(app, 'pg', lambda: _Conn())
     monkeypatch.setattr(app.MONGO, 'command', lambda *a, **k: {})
+    monkeypatch.setattr(app.MONGO, 'list_collection_names', lambda *a, **k: [])
 
 
 # ── DEPLOY-1: /healthz ──
@@ -54,6 +55,20 @@ def test_healthz_503_when_neo4j_down(monkeypatch):
     r = TestClient(app.app).get('/healthz')
     assert r.status_code == 503
     assert 'down' in r.json()['services']['neo4j'] and r.json()['status'] == 'degraded'
+
+
+def test_healthz_503_when_mongo_ping_works_but_database_read_is_unauthorized(monkeypatch):
+    """Readiness must catch the common false-green where unauthenticated ping still succeeds."""
+    app = load_app()
+    _all_up(monkeypatch, app)
+
+    def unauthorized(*_a, **_k):
+        raise RuntimeError('not authorized on lakatos')
+
+    monkeypatch.setattr(app.MONGO, 'list_collection_names', unauthorized)
+    r = TestClient(app.app).get('/healthz')
+    assert r.status_code == 503
+    assert r.json()['services']['mongo'] == 'down'
 
 
 # ── ROB-4: opt-in bearer auth (mutating only) ──

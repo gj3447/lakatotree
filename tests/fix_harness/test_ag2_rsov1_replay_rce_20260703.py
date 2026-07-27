@@ -72,12 +72,15 @@ def test_honest_replay_runs_under_finite_rlimits():
             "inf = resource.RLIM_INFINITY\n"
             "bounded = memory != inf and fs != inf and cpu != inf\n"
             "print('metric=%d' % (1 if bounded else 0))\n")
-    out, code = app._replay_run(f"python {probe} ignored_arg")
+    artifact = os.path.join(tempfile.gettempdir(), "ag2_result.json")
+    with open(artifact, "w") as f:
+        f.write("{}\n")
+    out, code = app._replay_run(f"python {probe} {artifact}")
     assert code == 0, (out, code)
     assert "metric=1" in out, f"자식이 유한 rlimit 을 못 봄(rlimit 미적용): {out!r}"
 
     # 하드닝이 정상 재현확인을 유지하는지 — 게이트 ON + 일치 → verified True (기존 계약 보존).
-    def _node(mv, js, rp="ignored"):
+    def _node(mv, js, rp=artifact):
         return {"judge_script": js, "metric_value": mv, "result_path": rp}
     scorer = os.path.join(tempfile.gettempdir(), "ag2_scorer.py")
     with open(scorer, "w") as f:
@@ -103,6 +106,8 @@ def test_rlimit_computation_failure_never_executes_target(monkeypatch, tmp_path)
     """
     app = _app()
     scorer = tmp_path / "ag2_never_run.py"
+    artifact = tmp_path / "result.json"
+    artifact.write_text("{}\n")
     sentinel = tmp_path / "PWNED_BY_REPLAY"
     scorer.write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n")
 
@@ -114,7 +119,7 @@ def test_rlimit_computation_failure_never_executes_target(monkeypatch, tmp_path)
 
     monkeypatch.setattr(app, "_replay_rlimits", _limits_fail)
     monkeypatch.setattr(subprocess, "run", _must_not_run)
-    out, code = app._replay_run(f"python {scorer} ignored")
+    out, code = app._replay_run(f"python {scorer} {artifact}")
 
     assert (out, code) == ("replay_error:infrastructure:RuntimeError", 1)
     assert not sentinel.exists()
@@ -124,6 +129,8 @@ def test_rlimit_application_failure_never_executes_target(monkeypatch, tmp_path)
     """fork 후 setrlimit 실패도 exec 전에 닫히며 infrastructure failure 로 구분된다."""
     app = _app()
     scorer = tmp_path / "ag2_preexec_never_run.py"
+    artifact = tmp_path / "result.json"
+    artifact.write_text("{}\n")
     sentinel = tmp_path / "PWNED_AFTER_PREEXEC"
     scorer.write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n")
 
@@ -131,7 +138,7 @@ def test_rlimit_application_failure_never_executes_target(monkeypatch, tmp_path)
         raise RuntimeError("setrlimit_failed")
 
     monkeypatch.setattr(app, "_apply_replay_rlimits", _apply_fails)
-    out, code = app._replay_run(f"python {scorer} ignored")
+    out, code = app._replay_run(f"python {scorer} {artifact}")
 
     assert (out, code) == ("replay_error:infrastructure:SubprocessError", 1)
     assert not sentinel.exists()
@@ -141,13 +148,15 @@ def test_target_invalid_utf8_is_failure_not_infrastructure_exemption(tmp_path):
     """실행된 scorer의 malformed stdout은 target failure이며 ``not_replayable`` 면제가 아니다."""
     app = _app()
     scorer = tmp_path / "ag2_invalid_utf8.py"
+    artifact = tmp_path / "result.json"
+    artifact.write_text("{}\n")
     scorer.write_text("import sys\nsys.stdout.buffer.write(b'\\xff')\n")
 
     from lakatos.io.replay import producer_replay
     from server.contexts.tree.judgement_policy import resolve_measurement
 
     verdict = producer_replay(
-        score_cmd=f"python {scorer} ignored",
+        score_cmd=f"python {scorer} {artifact}",
         recorded_metric=1.0,
         run_bash=app._replay_run,
     )

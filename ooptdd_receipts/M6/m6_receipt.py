@@ -51,6 +51,8 @@ def verify(backend, cid):
         queries.append(query)
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": None}]            # 온톨로지 미선언 → metric 강제 skip
+        if "RETURN e.current_receipt_sha AS prev_rsha" in query:
+            return [{"prev_rsha": None}]
         if "SET e.pred_metric" in query:
             if state["registered"]:
                 return []                          # 이미 등록 → 잠금절이 0행 → 409 경로
@@ -86,6 +88,8 @@ def verify(backend, cid):
     def kg_fresh(query, **k):
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": None}]
+        if "RETURN e.current_receipt_sha AS prev_rsha" in query:
+            return [{"prev_rsha": None}]
         if "SET e.pred_metric" in query:
             return [{"tag": "fresh"}]              # 미등록 새 노드 → 1행 등록 성공
         return []

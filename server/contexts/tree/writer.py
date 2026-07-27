@@ -32,6 +32,14 @@ _PRESERVE_IF_SCORED = (
     "e.metric_scope = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.metric_scope ELSE {ms} END"
 )
 
+# A scripted verdict's result path is part of its content-addressed v4 replay identity.  Generic
+# node upsert remains useful for drafts, but it must not retarget an already scripted measurement
+# to another artifact.  This DB-side CASE is atomic with MERGE and covers both writer paths.
+_PRESERVE_RESULT_PATH_IF_SCRIPTED = (
+    "e.result_path = CASE WHEN coalesce(e.verdict_source,'') = 'scripted' "
+    "THEN e.result_path ELSE {rp} END"
+)
+
 
 @dataclass(frozen=True)
 class WriteSummary:
@@ -107,7 +115,8 @@ class TreeKgWriter:
             (
                 """MATCH (t:LakatosTree {name:$tree})
                MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+$tag})
-               SET e.tag=$tag, e.script=$script, e.result_path=$result_path,
+               SET e.tag=$tag, e.script=$script, """ + _PRESERVE_RESULT_PATH_IF_SCRIPTED.format(
+                       rp="$result_path") + "," + """
                    e.algorithm=$algorithm, e.comment=$comment, e.limitation=$limitation,
                    e.open_question=$open_question, e.recorded_at=$ts, e.author=$author,
                    """ + _PRESERVE_IF_SCORED.format(
@@ -290,7 +299,8 @@ class TreeKgWriter:
                        UNWIND $rows AS row
                        MERGE (e:LakatosNode:PrismExperiment {name:$tree+'/'+row.tag})
                        SET e.tag=row.tag, e.script=row.script,
-                           e.result_path=row.result_path, e.algorithm=row.algorithm,
+                           """ + _PRESERVE_RESULT_PATH_IF_SCRIPTED.format(
+                               rp="row.result_path") + "," + """ e.algorithm=row.algorithm,
                            e.comment=row.comment, e.limitation=row.limitation,
                            e.open_question=row.open_question, e.recorded_at=row.ts,
                            """ + _PRESERVE_IF_SCORED.format(

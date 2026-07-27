@@ -10,7 +10,20 @@ LakatoTree is a Python engine for running branching, Lakatosian research program
 
 The project is useful when an AI agent, research workflow, or evaluation harness must show *why* it claims progress. It is not a general experiment runner, a truth oracle, or a replacement for domain-specific measurement. If you only need to log arbitrary scores, LakatoTree is deliberately stricter than necessary.
 
-> **Honest scope.** Verdict derivation is deterministic, but the default live path currently receives a client-submitted numeric value. Receipts seal and replay that value: **reproduction-confirmation, not value-ownership**. See the [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md). Lean checks the kernel's theory model; it does not verify the Python binary or prove the provenance of a measurement.
+> **Honest scope.** An artifact-bound managed submit does more than retain a client path: the server
+> hashes the allowed source files, copies the scorer and result into private content-addressed
+> immutable snapshots, executes from those snapshots, and mints a `MeasurementLock` over the exact
+> command, dependency hashes, environment fingerprint, output, grade, and replay status. A v5 verdict
+> receipt seals both snapshot and source identities plus the lock SHA. Replay provenance is
+> authoritative only while the unique current receipt and lock rehash, their semantics and node
+> caches agree, the environment matches, and both snapshots still rehash to their sealed digests.
+> Legacy/unbound submits remain explicitly non-authoritative and cannot earn replay-owned assurance.
+> For those paths the old boundary still applies: **reproduction-confirmation, not value-ownership**.
+> This proves which bytes and environment produced the recorded measurement; it does **not** prove
+> that the scorer models reality correctly, establish the external provenance of source data, or
+> replace execution sandboxing. See the
+> [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md). Lean checks the kernel's
+> theory model; it does not verify the Python binary or a measurement's truth.
 
 ## Try it in 60 seconds
 
@@ -152,7 +165,7 @@ Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual mo
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock`
+`engine` `engine_identity` `verdicts` `node_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`

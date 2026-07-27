@@ -68,7 +68,11 @@ from server.contexts.tree.api import create_tree_router
 from server.contexts.tree.evidence_claim import create_evidence_claim_router
 from server.contexts.tree.evidence_claim_service import EvidenceClaimService
 from server.contexts.tree.judgement import create_judgement_router
-from server.contexts.tree.judgement_service import JudgementService, isolate_script_file as _isolate_script_file
+from server.contexts.tree.judgement_service import (
+    RESULT_MAX_BYTES,
+    JudgementService,
+    isolate_script_file as _isolate_script_file,
+)
 from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
@@ -181,6 +185,10 @@ def healthz():
         svc['pg'] = 'down'
     try:
         MONGO.command('ping')
+        # ``ping`` proves only server reachability and can succeed for an unauthenticated client
+        # even when every application collection operation is unauthorized.  Exercise one
+        # database-scoped read so readiness means the configured principal can use ``lakatos``.
+        MONGO.list_collection_names()
         svc['mongo'] = 'ok'
     except Exception:
         svc['mongo'] = 'down'
@@ -206,14 +214,16 @@ def version():
 
 
 @app.get('/api/ops/fsck')
-def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool = False):
+def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool = True):
     """R6 전수감사 verb(비변이) — fsck_node *같은 callable* 로 전 트리 노드 record 스캔(재구현 금지 —
     가드가 callable 동일성을 monkeypatch 반사로 핀). skiplist(docs/data/fsck_skiplist.json, record
     content-sha)는 감사·경계 동일 주입. ?emit_skiplist=1 = 면제 후보 방출(사람 검토→git 커밋 파이프라인).
     projection = load_tree_data 의 고정 RETURN(R1) — 스키마가 바뀌면 sha 가 바뀌어 면제가 소멸한다(의도).
 
-    jp3 ?include_receipts=1 (opt-in, 기본 off=현행 바이트동일): 트리당 1회 배치 collect 로 노드별
-    :VerdictReceipt 체인을 동봉해 recompute 체커(RECEIPT_SHA_CONTENT_MISMATCH/ENCODING_STALE)를
+    jp3 receipt 검증은 안전한 기본값이다(명시적 ?include_receipts=0 만 경량 구조 감사): 트리당 1회
+    배치 collect 로 노드별
+    :VerdictReceipt 체인과 :MeasurementLock payload를 동봉해 recompute 체커
+    (RECEIPT_SHA_CONTENT_MISMATCH/ENCODING_STALE/MEASUREMENT_LOCK_CONTENT_MISMATCH)를
     표면화. skiplist 면제·emit 후보 sha 는 *비동봉 base row* 기준(동봉이 sha 를 바꿔 기존 면제를
     전멸시키는 함정 회피 — 면제는 '레코드 열거' 의미론, 체인 성장과 무관하게 안정)."""
     from server.contexts.audit import fsck as _fsck
@@ -223,16 +233,24 @@ def ops_fsck(tree: str = '', emit_skiplist: bool = False, include_receipts: bool
     for n in names:
         td = tree_data(n)
         recs_by_tag: dict = {}
+        locks_by_tag: dict = {}
         if include_receipts:
             for rr in kg('''MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(e)-[:HAS_RECEIPT]->(r:VerdictReceipt)
                             RETURN e.tag AS tag, collect(r {.*}) AS receipts''', n=n):
-                recs_by_tag[rr['tag']] = rr['receipts']
+                if rr.get('tag'):
+                    recs_by_tag[rr['tag']] = rr.get('receipts') or []
+            for lr in kg('''MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(e)-[:HAS_LOCK]->(ml:MeasurementLock)
+                            RETURN e.tag AS tag, collect(ml {.*}) AS measurement_locks''', n=n):
+                if lr.get('tag'):
+                    locks_by_tag[lr['tag']] = lr.get('measurement_locks') or []
         for row in td.get('nodes', []):
             total += 1
             if include_receipts:
                 if skip and _fsck.record_content_sha(row) in skip:
                     continue   # base-sha 선-단락(면제 의미 보존) — total 집계엔 이미 포함
-                checked = dict(row, receipts=recs_by_tag.get(row.get('tag')) or [])
+                checked = dict(row,
+                               receipts=recs_by_tag.get(row.get('tag')) or [],
+                               measurement_locks=locks_by_tag.get(row.get('tag')) or [])
                 fs = _fsck.fsck_node(checked)
             else:
                 fs = _fsck.fsck_node(row, skiplist=skip)
@@ -488,7 +506,7 @@ def _reproducible_for_node(name: str, tag: str) -> bool | None:
     이게 set_verdict 에서 synthesize_promotion(reproducible=) 으로 흘러 RebuildFromRaw 게이트 발동.
     """
     rows = kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                 RETURN e.result_path AS rp''', tree=name, tag=tag)
+                 RETURN coalesce(e.source_result_path, e.result_path) AS rp''', tree=name, tag=tag)
     if not rows:
         return None
     rp = rows[0].get('rp')
@@ -596,7 +614,15 @@ def _safe_replay_argv(score_cmd: str) -> list[str] | None:
     rest = argv[2:]
     if any(a.startswith('-') for a in rest):   # result_path 가 flag 로 위장 → 거부
         return None
-    return [_sys.executable, str(resolved), *rest]
+    if len(rest) > 1:
+        return None  # scorer contract is exactly one optional positional result artifact
+    safe_rest: list[str] = []
+    if rest:
+        result, _result_info = _isolate_script_file(rest[0], RESULT_MAX_BYTES)
+        if result is None:
+            return None
+        safe_rest.append(str(result))
+    return [_sys.executable, str(resolved), *safe_rest]
 
 
 def _replay_run(score_cmd: str) -> tuple[str, int] | _ReplayExecutionResult:

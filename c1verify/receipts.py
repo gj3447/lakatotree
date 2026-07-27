@@ -1,6 +1,6 @@
 """Verdict-receipt kernel — byte-exact RE-IMPLEMENTATION of lakatos.verdicts (NOT an import).
 
-The engine content-addresses every verdict: a :VerdictReceipt seals 13 fields as
+The engine content-addresses every verdict: a :VerdictReceipt seals a versioned field set as
 sha256(header + JCS(fields)); the node's current_receipt_sha points at the head, and prev_receipt_sha
 links each receipt to its predecessor (a git-reflog-shaped immutable chain). C1 re-derives that here
 so an outsider re-checks receipt INTEGRITY (fields hash to their claimed sha) and folds the chain to
@@ -29,10 +29,26 @@ RECEIPT_FIELDS_V1 = (
 RECEIPT_FIELDS_V2 = RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
 #: S4 (EXTAUDIT 2026-07-23): v3 = v2 + comment_sha (interpretation-layer seal). Same presence-dispatch
 #: discipline — a non-null comment_sha selects v3; v2/v1 re-derivation stays byte-identical.
-RECEIPT_FIELDS = RECEIPT_FIELDS_V2 + ("comment_sha",)
+RECEIPT_FIELDS_V3 = RECEIPT_FIELDS_V2 + ("comment_sha",)
+#: LX3 diagnostics v4 is frozen at replay status/reason/regenerated metric.  Artifact identity was
+#: introduced as v5 so old v4 receipts remain byte-for-byte re-derivable.
+RECEIPT_FIELDS_V4 = RECEIPT_FIELDS_V3 + (
+    "replay_status", "replay_reason", "regenerated_metric",
+)
+RECEIPT_FIELDS_V5 = RECEIPT_FIELDS_V4 + (
+    "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
+    "source_script_path", "source_result_path",
+)
+RECEIPT_FIELDS = RECEIPT_FIELDS_V5
+_RECEIPT_ARTIFACT_IDENTITY_FIELDS = (
+    "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
+    "source_script_path", "source_result_path",
+)
 _RECEIPT_ENCODING_VERSION = "v1"
 _RECEIPT_ENCODING_VERSION_V2 = "v2"
 _RECEIPT_ENCODING_VERSION_V3 = "v3"
+_RECEIPT_ENCODING_VERSION_V4 = "v4"
+_RECEIPT_ENCODING_VERSION_V5 = "v5"
 
 
 def _coerce_metric_value(v):
@@ -60,13 +76,22 @@ def canonical_receipt_blob(fields: dict) -> bytes:
 
     jp1 presence-dispatch: a non-null engine_rule_sha selects v2 (14 fields + v2 header); otherwise
     the v1 path stays byte-identical to the pre-jp1 encoding (legacy carve-out by construction)."""
+    v5 = any(fields.get(key) is not None for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
+    v4 = fields.get("replay_status") is not None
     v3 = fields.get("comment_sha") is not None
     v2 = fields.get("engine_rule_sha") is not None
-    keys = RECEIPT_FIELDS if v3 else (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)
-    ver = (_RECEIPT_ENCODING_VERSION_V3 if v3
-           else (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))
+    keys = (RECEIPT_FIELDS_V5 if v5 else
+            (RECEIPT_FIELDS_V4 if v4 else
+             (RECEIPT_FIELDS_V3 if v3 else
+              (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1))))
+    ver = (_RECEIPT_ENCODING_VERSION_V5 if v5 else
+           (_RECEIPT_ENCODING_VERSION_V4 if v4 else
+            (_RECEIPT_ENCODING_VERSION_V3 if v3 else
+             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))))
     payload = {k: fields.get(k) for k in keys}
     payload["metric_value"] = _coerce_metric_value(payload.get("metric_value"))
+    if "regenerated_metric" in payload:
+        payload["regenerated_metric"] = _coerce_metric_value(payload.get("regenerated_metric"))
     payload["judged_at"] = _coerce_judged_at(payload.get("judged_at"))
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     header = f"verdict-receipt\x00{ver}\n"

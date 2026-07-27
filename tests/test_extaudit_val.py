@@ -26,12 +26,13 @@ def test_ladder_l0_to_l3():
     assert verdict_assurance({'verdict': 'progressive'})['val'] == 0            # 레거시(키 부재... 아래 참조)
     a1 = verdict_assurance(_row())
     assert a1['val'] == 1                                                        # 영수증 O, 검증 無
-    a2 = verdict_assurance(_row(measurement_grade='server_regenerated', replay_status='verified'))
+    a2 = verdict_assurance(_row(measurement_grade='server_regenerated', replay_status='verified',
+                                measurement_lock_bound=True))
     assert a2['val'] == 2                                                        # 서버 재유도
     a3 = verdict_assurance(
         _row(measurement_grade='server_regenerated', replay_status='verified',
              assurance_tier_resolved='anchored', attested_by_did='did:key:zA',
-             engine_rule_sha='e1'),
+             engine_rule_sha='e1', measurement_lock_bound=True),
         tree_attestors=['did:key:zA'], engine_rule_floor=frozenset({'e1'}),
         temporal_witness=True)
     assert a3['val'] == 3                                                        # 전 조건 AND
@@ -52,7 +53,8 @@ def test_l0_basis_distinguishes_absence_kinds():
 # ── T2 급소 오라클 (parity gap): armed vs disarmed progressive 가 표면에서 달라야 한다 ────
 def test_parity_gap_closed_on_surface():
     armed = format_verdict_with_val('progressive', verdict_assurance(
-        _row(measurement_grade='server_regenerated', replay_status='verified')))
+        _row(measurement_grade='server_regenerated', replay_status='verified',
+             measurement_lock_bound=True)))
     disarmed = format_verdict_with_val('progressive', verdict_assurance(
         _row(measurement_grade='client_asserted', replay_status='not_attempted')))
     assert armed != disarmed, "armed/disarmed progressive 가 여전히 동일 표면(급소 #5 잔존)"
@@ -68,18 +70,26 @@ def test_forged_grade_with_refuting_replay_is_l0():
 
 
 def test_broken_chain_caps_at_l0():
-    ok2 = _row(measurement_grade='server_regenerated', replay_status='verified')
+    ok2 = _row(measurement_grade='server_regenerated', replay_status='verified',
+               measurement_lock_bound=True)
     assert verdict_assurance(ok2, chain_ok=False)['val'] == 0
     assert verdict_assurance(ok2, chain_ok=False)['basis'] == ('receipt_chain_broken',)
 
 
 # ── T4 dead-σ 무회귀: 검증 불가(None/미주입)는 강등 사유가 아니다 (승급만 없음) ─────────────
 def test_unknowns_do_not_demote():
-    ok2 = _row(measurement_grade='server_regenerated', replay_status='verified')
+    ok2 = _row(measurement_grade='server_regenerated', replay_status='verified',
+               measurement_lock_bound=True)
     assert verdict_assurance(ok2, chain_ok=None)['val'] == 2          # 체인 미대조 = L2 유지
     assert verdict_assurance(ok2)['val'] == 2                          # floor/attestor 미주입 = L3 불가일 뿐
     nr = verdict_assurance(_row(replay_status='not_replayable'))
     assert nr['val'] == 1                                              # 재실행 불가 = L1 유지(반증 아님)
+
+
+def test_verified_labels_without_bound_measurement_lock_are_capped_at_l1():
+    forged = verdict_assurance(
+        _row(measurement_grade='server_regenerated', replay_status='verified'))
+    assert forged == {'val': 1, 'basis': ('measurement_lock_unbound',)}
 
 
 # ── T5 표면 배선: standing() 이 bare verdict 를 방출하지 않는다 / admin 어휘는 원문 유지 ────

@@ -22,6 +22,7 @@ import psycopg2.pool
 from psycopg2 import OperationalError as PgOperationalError
 
 from lakatos.io.reconcile import outbox_id, plan_reconcile
+from server.ports import KgTxGuardFailed
 
 
 class AppContainer:
@@ -58,8 +59,19 @@ class AppContainer:
 
     def kg_tx(self, ops: Iterable[tuple[str, dict]]) -> list:
         """여러 Cypher 를 단일 managed write 트랜잭션으로 (KG-내부 부분쓰기 분기 차단, ROB-1)."""
+        guarded = bool(getattr(ops, "require_first_result", False))
+        op_list = list(ops)
+
         def _unit(tx):
-            return [tx.run(cypher, **params).data() for cypher, params in ops]
+            results = []
+            for index, (cypher, params) in enumerate(op_list):
+                data = tx.run(cypher, **params).data()
+                if guarded and index == 0 and not data:
+                    # Raise *inside* execute_write callback: Neo4j rolls back the dummy lock write
+                    # and no later provenance op runs. Returning [] and checking after commit is too late.
+                    raise KgTxGuardFailed("guarded first statement matched no row")
+                results.append(data)
+            return results
         with self._neo.session() as s:
             return s.execute_write(_unit)
 

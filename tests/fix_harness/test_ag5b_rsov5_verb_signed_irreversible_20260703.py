@@ -22,16 +22,23 @@ from fastapi import HTTPException
 from lakatos import assurance
 from lakatos import write_cert as W
 from server.contexts.tree.judgement_service import JudgementService
-from server.contexts.tree.schemas import CertCommandIn, VerdictIn, WriteCertIn
+from server.contexts.tree.schemas import (CertCommandIn, TestResultIn as ResultIn, VerdictIn,
+                                          WriteCertIn)
 
 _SK = bytes(range(32))
 _DID = W.did_key_encode(W.ed25519_public_key(_SK))
 _NOW = datetime.now(timezone.utc).isoformat()
 
 
-def _cert(verb, *, prev=None, metric_value=None, script_sha=None):
+def _cert(verb, *, prev=None, metric_value=None, script_sha=None, verdict_overrides=None):
+    payload = (VerdictIn(verdict="CANONICAL", **(verdict_overrides or {})).model_dump(
+                   exclude={"write_cert"})
+               if verb == "set_verdict_canonical" else
+               ResultIn(metric_value=(metric_value if metric_value is not None else 1.0),
+                        script="inline").model_dump(exclude={"write_cert"}))
     command = dict(tree="T", tag="n", prev_receipt_sha=prev, metric_value=metric_value,
-                   script_sha=script_sha, verb=verb)
+                   script_sha=script_sha, verb=verb, command_version="v4",
+                   operation_payload_sha256=W.operation_payload_sha256(verb, payload))
     sig = W.ed25519_sign(_SK, W.canonical_cert_blob(command, _NOW))
     return WriteCertIn(signer_did=_DID, signature=sig.hex(), issued_at=_NOW,
                        command=CertCommandIn(**command))
@@ -89,6 +96,14 @@ def test_cert_is_verb_bound_sign_x_execute_y():
     # 대조: 같은 verb(set_verdict_canonical) 면 통과.
     assert _canon_svc(attestors=[_DID]).set_verdict(
         "T", "n", VerdictIn(verdict="CANONICAL", write_cert=_cert("set_verdict_canonical")))["ok"] is True
+
+
+def test_canonical_cert_binds_complete_verdict_payload():
+    cert = _cert("set_verdict_canonical")
+    with pytest.raises(HTTPException) as exc:
+        _canon_svc(attestors=[_DID]).set_verdict(
+            "T", "n", VerdictIn(verdict="CANONICAL", scope="unsigned-scope", write_cert=cert))
+    assert exc.value.status_code == 403
 
 
 guard_defect = "test_canonical_requires_cert_on_attestor_tree"

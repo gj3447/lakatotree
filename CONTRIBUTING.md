@@ -3,9 +3,10 @@
 Thank you for helping improve LakatoTree. Contributions are welcome in code,
 tests, documentation, reproducible examples, and research-grounding corrections.
 
-LakatoTree is in pre-release development. It is dual-licensed (AGPL-3.0-or-later
-or commercial — see [`LICENSING.md`](./LICENSING.md)); contributions require the
-CLA below to keep that model viable.
+LakatoTree is in pre-release development. The project is **dual-licensed** —
+AGPL-3.0-or-later **and** a separate commercial license (see
+[`LICENSING.md`](./LICENSING.md)). Substantial contributions are governed by the
+CLA (below), so please review the terms and open an issue before starting one.
 
 ## Start with the contract
 

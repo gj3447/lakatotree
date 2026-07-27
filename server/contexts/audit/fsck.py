@@ -24,6 +24,8 @@ from lakatos.verdicts import (FORCEFUL_SOURCES,
                               STANDING_VERDICTS as _STANDING_VERDICTS,
                               comment_drift, is_scripted_verdict,
                               match_receipt_encoding, receipt_content_sha)
+from lakatos.measurement_lock import lock_sha as measurement_lock_content_sha
+from lakatos.io.prov import replay_command
 
 # 심각도 서열(단일 정본 — audit·boundary 가 공유). FATAL > ERROR > WARN > INFO.
 FATAL, ERROR, WARN, INFO = "FATAL", "ERROR", "WARN", "INFO"
@@ -31,7 +33,7 @@ _ORDER = {INFO: 0, WARN: 1, ERROR: 2, FATAL: 3}
 
 # check-id → 심각도. 새 check 는 여기서만(H9 스타일 SSOT). 열거되지 않은 부패는 존재하지 않는 것처럼 다루지 않는다.
 _SEVERITY = {
-    "SOURCE_TRUST_NULL": WARN,          # present-but-None trust → tree_metrics 500 유발(크래시-안전은 evidence_weight 가, 감사는 여기)
+    "SOURCE_TRUST_NULL": WARN,          # 인터넷 source 가 실재하는데 trust 없음 → 외부증거 가중 불능
     "MIXED_JUDGED_AT_TYPE": WARN,       # judged_at 이 dict/epoch/ISO 혼재 → 읽기 표류
     "VERDICT_WITHOUT_PREREG": ERROR,    # scripted 판결인데 사전등록(pred_registered_at) 없음 = 영수증 사슬 끊김
     "SCRIPTED_WITHOUT_SOURCE": ERROR,   # scripted 어휘인데 verdict_source 가 영수증(FORCEFUL)이 아님 = force_of 오판
@@ -39,6 +41,9 @@ _SEVERITY = {
     "RECEIPT_CHAIN_MISMATCH": ERROR,    # R5: current_receipt_sha 가 동봉 체인 밖(dangling — 변조/부패). verify 라우트와 공용 어휘
     "FORCEFUL_SOURCE_WITHOUT_RECEIPT": ERROR,   # R6: FORCEFUL 판결인데 원장 포인터 없음(G1 이전/우회 write — skiplist 로만 면제)
     "MEASUREMENT_REFUTED_BUT_STANDING": WARN,   # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 관측(비차단)
+    "REPLAY_DIAGNOSTIC_CACHE_MISMATCH": ERROR,  # v4 head receipt와 node replay 진단 캐시 불일치
+    "REPLAY_INPUT_CACHE_MISMATCH": ERROR,       # v5 head receipt와 node replay 입력 캐시 불일치
+    "MEASUREMENT_LOCK_CONTENT_MISMATCH": ERROR, # sealed lock SHA와 payload_json 재해시 불일치/부재
     "RECEIPT_SHA_CONTENT_MISMATCH": ERROR,      # jp3: stored receipt_sha ≠ recompute(content) — 어느 인코딩과도 불일치(in-place 변조/원장우회 위조)
     "RECEIPT_ENCODING_STALE": WARN,             # jp3: 미선언 구-인코딩(pre-ag3) 정직 mint — 필드드리프트 가시화(변조 아님, 비차단)
     "COMMENT_DRIFT_AFTER_VERDICT": WARN,        # S4: 판정 이후 comment 개서(c6 사후 승리 에세이 장르) — 서사는 자유, 침묵은 불가(비차단)
@@ -64,9 +69,13 @@ class Finding:
 
 
 def _check_source_trust(rec: dict) -> Finding | None:
-    if "source_trust" in rec and rec["source_trust"] is None:
+    # ``source`` is added by TreeKgRepository only for nodes backed by an actual internet
+    # ResearchEvent.  Internal/bash-only nodes correctly have no external-source trust score;
+    # treating their NULL as corruption tempted migrations that manufactured internet evidence.
+    if rec.get("source") and rec.get("source_trust") is None:
         return Finding("SOURCE_TRUST_NULL", _SEVERITY["SOURCE_TRUST_NULL"],
-                       "source_trust present-but-None (evidence_weight fail-safe; 읽기 표면 500 위험)")
+                       "internet ResearchEvent source가 있으나 source_trust 없음 "
+                       "(EigenTrust 재도출 필요; 내부 기본값으로 대체 금지)")
     return None
 
 
@@ -117,10 +126,12 @@ def _check_receipt_chain(rec: dict) -> Finding | None:
     """R5: enriched 레코드(감사 스윕이 receipts 동봉) 전용 — head 포인터가 체인 밖이면 dangling.
     비동봉 레코드는 판단 보류(발화 없음 — 기존 record-level 계약 비파괴)."""
     if "receipts" in rec and rec.get("current_receipt_sha"):
-        shas = {r.get("receipt_sha") for r in (rec.get("receipts") or [])}
-        if rec["current_receipt_sha"] not in shas:
+        heads = [r for r in (rec.get("receipts") or []) if isinstance(r, dict)
+                 and r.get("receipt_sha") == rec["current_receipt_sha"]]
+        if len(heads) != 1:
             return Finding("RECEIPT_CHAIN_MISMATCH", _SEVERITY["RECEIPT_CHAIN_MISMATCH"],
-                           f"current_receipt_sha={rec['current_receipt_sha'][:12]}… 가 동봉 체인에 없음(dangling)")
+                           f"current_receipt_sha={rec['current_receipt_sha'][:12]}… head cardinality="
+                           f"{len(heads)} (exactly one required; dangling/duplicate)")
     return None
 
 
@@ -166,20 +177,247 @@ def _check_receipt_encoding_stale(rec: dict) -> Finding | None:
     return None
 
 
+def _replay_failure_class(reason: str | None) -> str:
+    """Persisted producer-replay reason → operator-facing failure class.
+
+    ``mismatch`` is the historical umbrella status: it includes an actual numeric disagreement,
+    scorer exit, and missing metric output.  Keep the stable fsck check-id while recovering the
+    actionable distinction from the server-generated reason.  Rows minted before reason
+    persistence are explicitly unclassified rather than retroactively called a refutation.
+    """
+    if not reason:
+        return "legacy_unclassified"
+    if reason == "metric_mismatch":
+        return "value_mismatch"
+    if reason.startswith("scorer_nonzero_exit:"):
+        return "scorer_execution_failure"
+    if reason == "no_metric_in_output":
+        return "metric_output_missing"
+    if reason == "cli_contract_incompatible":
+        return "cli_contract_incompatible"
+    if reason.startswith("replay_infrastructure_error:"):
+        return "replay_infrastructure_failure"
+    return "other_replay_failure"
+
+
+def _valid_replay_head(rec: dict) -> dict | None:
+    """Return one content-valid replay-diagnostic head (historical v4 or artifact v5)."""
+    head_sha = rec.get("current_receipt_sha")
+    if not head_sha or "receipts" not in rec:
+        return None
+    heads = [r for r in (rec.get("receipts") or []) if isinstance(r, dict)
+             and r.get("receipt_sha") == head_sha]
+    head = heads[0] if len(heads) == 1 else None
+    if (not head or head.get("receipt_kind") == "prediction"
+            or not head.get("replay_status")
+            or match_receipt_encoding(head, head_sha) != "current"):
+        return None
+    return head
+
+
+def valid_replay_head(rec: dict) -> dict | None:
+    """Public read-boundary helper for the content-valid v4/v5 replay family."""
+    return _valid_replay_head(rec)
+
+
+_ARTIFACT_RECEIPT_FIELDS = (
+    "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
+    "source_script_path", "source_result_path",
+)
+
+
+def _valid_artifact_head(rec: dict) -> dict | None:
+    """Return a content-valid v5 head selected by its sealed artifact-identity presence."""
+    head = _valid_replay_head(rec)
+    if head is None or not any(head.get(key) is not None for key in _ARTIFACT_RECEIPT_FIELDS):
+        return None
+    return head
+
+
+def valid_artifact_head(rec: dict) -> dict | None:
+    """Public provenance boundary: only v5 can authorize an executable artifact recipe."""
+    return _valid_artifact_head(rec)
+
+
+def _valid_v4_head(rec: dict) -> dict | None:
+    """Compatibility alias for callers that mean the v4-origin replay-diagnostic family."""
+    return _valid_replay_head(rec)
+
+
+def valid_v4_head(rec: dict) -> dict | None:
+    """Compatibility alias; new artifact-authority callers must use ``valid_artifact_head``."""
+    return _valid_replay_head(rec)
+
+
+_ARTIFACT_INPUT_CACHE_FIELDS = (
+    ("judge_script", "judge_script_path"),
+    ("judge_script_sha", "judge_script_sha"),
+    ("result_path", "result_path"),
+    ("result_sha256", "result_sha256"),
+    ("measurement_lock_sha", "measurement_lock_sha"),
+    ("source_judge_script_path", "source_script_path"),
+    ("source_result_path", "source_result_path"),
+)
+
+
+def _artifact_input_cache_mismatches(rec: dict, head: dict) -> list[str]:
+    return [node_key for node_key, receipt_key in _ARTIFACT_INPUT_CACHE_FIELDS
+            if rec.get(node_key) != head.get(receipt_key)]
+
+
+def _sealed_replay_diagnostic(rec: dict) -> tuple[str | None, float | None] | None:
+    """Return v4/v5 head diagnostics only when every applicable node cache matches."""
+    head = _valid_replay_head(rec)
+    if head is None:
+        return None  # pre-v4 or invalid receipt: diagnosis is untrusted
+    cache = (rec.get("replay_status"), rec.get("replay_reason"), rec.get("regenerated_metric"))
+    sealed = (head.get("replay_status"), head.get("replay_reason"), head.get("regenerated_metric"))
+    if cache != sealed:
+        return None
+    artifact_head = _valid_artifact_head(rec)
+    if artifact_head is not None and _artifact_input_cache_mismatches(rec, artifact_head):
+        return None
+    return head.get("replay_reason"), head.get("regenerated_metric")
+
+
+def _check_replay_diagnostic_cache(rec: dict) -> Finding | None:
+    """A v4/v5 receipt is immutable, but its projected node cache also needs parity."""
+    head = _valid_replay_head(rec)
+    if head is None:
+        return None
+    cache = (rec.get("replay_status"), rec.get("replay_reason"), rec.get("regenerated_metric"))
+    sealed = (head.get("replay_status"), head.get("replay_reason"), head.get("regenerated_metric"))
+    if cache != sealed:
+        return Finding(
+            "REPLAY_DIAGNOSTIC_CACHE_MISMATCH",
+            _SEVERITY["REPLAY_DIAGNOSTIC_CACHE_MISMATCH"],
+            "node replay diagnostic cache differs from content-addressed v4/v5 head receipt",
+        )
+    return None
+
+
+def _check_replay_input_cache(rec: dict) -> Finding | None:
+    """A mutable node projection cannot retarget a content-valid v5 replay receipt."""
+    head = _valid_artifact_head(rec)
+    if head is None:
+        return None
+    mismatches = _artifact_input_cache_mismatches(rec, head)
+    if mismatches:
+        return Finding(
+            "REPLAY_INPUT_CACHE_MISMATCH",
+            _SEVERITY["REPLAY_INPUT_CACHE_MISMATCH"],
+            "node replay input cache differs from content-addressed v5 head receipt: "
+            + ", ".join(mismatches),
+        )
+    return None
+
+
+def measurement_lock_payload_matches_head(head: dict, payload: dict) -> bool:
+    """Whether a content-valid lock is semantically the measurement sealed by a v5 receipt.
+
+    The lock hash alone only authenticates the lock object.  This second relation prevents an
+    attacker from minting a different, internally valid lock and resealing its SHA into a receipt.
+    """
+    if not isinstance(payload, dict):
+        return False
+    deps = payload.get("deps") or []
+    if not isinstance(deps, list) or any(not isinstance(dep, dict) for dep in deps):
+        return False
+    script_path, result_path = head.get("judge_script_path"), head.get("result_path")
+    expected_deps = ((script_path, head.get("judge_script_sha")),
+                     (result_path, head.get("result_sha256")))
+    dep_mismatch = any(
+        sum(1 for dep in deps
+            if dep.get("path") == path and dep.get("sha256") == sha) != 1
+        for path, sha in expected_deps
+    )
+    expected_outs = [{
+        "name": str(head.get("metric_name") or ""),
+        "value": head.get("metric_value"),
+    }]
+    return (
+        payload.get("cmd") == replay_command(script_path or "", result_path or "")
+        and not dep_mismatch
+        and payload.get("outs") == expected_outs
+        and payload.get("measurement_grade") == head.get("measurement_grade")
+        and payload.get("replay_status") == head.get("replay_status")
+    )
+
+
+def _check_measurement_lock_content(rec: dict) -> Finding | None:
+    """Rehash the exact MeasurementLock payload selected by the valid v5 head receipt.
+
+    Like receipt recomputation, this fires only for an enriched read record.  Legacy/base records
+    without ``measurement_locks`` remain a deliberate no-op; ops/provenance explicitly enrich v5
+    rows and therefore fail closed on a missing, duplicate, malformed, or altered lock payload.
+    """
+    head = _valid_artifact_head(rec)
+    sealed_sha = head.get("measurement_lock_sha") if head is not None else None
+    if head is None or not sealed_sha or "measurement_locks" not in rec:
+        return None
+    matches = [lock for lock in (rec.get("measurement_locks") or [])
+               if isinstance(lock, dict) and lock.get("lock_sha") == sealed_sha]
+    if len(matches) != 1:
+        return Finding(
+            "MEASUREMENT_LOCK_CONTENT_MISMATCH",
+            _SEVERITY["MEASUREMENT_LOCK_CONTENT_MISMATCH"],
+            f"sealed MeasurementLock {str(sealed_sha)[:12]}… has {len(matches)} matching records",
+        )
+    payload_json = matches[0].get("payload_json")
+    try:
+        payload = json.loads(payload_json) if isinstance(payload_json, str) else None
+        derived = measurement_lock_content_sha(payload) if isinstance(payload, dict) else None
+    except (TypeError, ValueError):
+        derived = None
+    if derived != sealed_sha:
+        return Finding(
+            "MEASUREMENT_LOCK_CONTENT_MISMATCH",
+            _SEVERITY["MEASUREMENT_LOCK_CONTENT_MISMATCH"],
+            f"MeasurementLock payload rehash {str(derived)[:12]}… != sealed {str(sealed_sha)[:12]}…",
+        )
+    if not measurement_lock_payload_matches_head(head, payload):
+        return Finding(
+            "MEASUREMENT_LOCK_CONTENT_MISMATCH",
+            _SEVERITY["MEASUREMENT_LOCK_CONTENT_MISMATCH"],
+            "MeasurementLock payload is content-valid but not bound to sealed v5 "
+            "command/dependencies/outs/grade/status",
+        )
+    return None
+
+
 def _check_measurement_refuted(rec: dict) -> Finding | None:
-    """AG6/R-SOV V4 값무결 (측정주권 2026-07-03): producer replay 가 *실행되어 측정을 반증*
-    (replay_status='mismatch')했는데 노드가 여전히 standing verdict 를 든다 → 값무결 WARN(비차단).
+    """AG6/R-SOV V4 값무결 (측정주권 2026-07-03): producer replay 의 ``mismatch`` umbrella
+    상태인데 노드가 여전히 standing verdict 를 든다 → 값무결 WARN(비차단).
 
     승격 floor(G6)는 CANONICAL 만 막는다 — progressive/partial 로 선 반증된 측정은 조용했다. 이 차원이
-    관측화(WARN)해 재실험/분기를 권고하되 write 를 막지 않는다(boundary min ERROR). ★dead-σ:
+    관측화(WARN)해 재실험/분기를 권고하되 write 를 막지 않는다(boundary min ERROR). replay_reason 이
+    영속된 신규 행은 실제 값 불일치와 scorer 실행/출력 실패를 detail 에서 분류한다. check-id 는 감사
+    소비자 호환을 위해 유지하지만, legacy reason-null 은 반증으로 단정하지 않고 unclassified 로 표기한다. ★dead-σ:
     not_attempted(exec OFF)/not_replayable(CLI 계약 비호환 등 실행 불가 — 2026-07-13 신설)/verified(일치)/
     비-standing verdict 은 무발화(검증 불가·일치·이미 부정 ≠ 반증)."""
     if rec.get("replay_status") != "mismatch":
         return None
     if rec.get("verdict") in _STANDING_VERDICTS:
+        sealed = _sealed_replay_diagnostic(rec)
+        reason = sealed[0] if sealed is not None else None
+        regenerated = sealed[1] if sealed is not None else None
+        failure_class = _replay_failure_class(reason)
+        prefix = (f"replay_status='mismatch', replay_reason={reason!r}, "
+                  f"replay_failure_class='{failure_class}'")
+        if failure_class == "value_mismatch":
+            diagnosis = (f"재생성 값이 기록값과 다름(recorded={rec.get('metric_value')!r}, "
+                         f"regenerated={regenerated!r})")
+        elif failure_class == "scorer_execution_failure":
+            diagnosis = "scorer 비정상 종료로 값 비교 전 실패(실행/환경 수리 후 재시도 필요)"
+        elif failure_class == "metric_output_missing":
+            diagnosis = "scorer 출력에 metric 이 없어 값 비교 전 실패(출력 계약 수리 필요)"
+        elif failure_class == "legacy_unclassified":
+            diagnosis = "구버전 행에 원인 미영속 — 값 불일치/실행 실패를 구분할 수 없어 재채점 필요"
+        else:
+            diagnosis = "replay 실패 원인을 확인해 값 재실험 또는 scorer 계약 수리 필요"
         return Finding("MEASUREMENT_REFUTED_BUT_STANDING", _SEVERITY["MEASUREMENT_REFUTED_BUT_STANDING"],
-                       f"replay_status='mismatch'(측정 재실행이 값을 반증)인데 verdict='{rec.get('verdict')}' "
-                       f"로 서있음 — 값무결 경고(비차단; 재실험 또는 새 노드로 분기 권고)")
+                       f"{prefix}: {diagnosis}; verdict='{rec.get('verdict')}' 로 서있음 — "
+                       f"값무결 경고(비차단)")
     return None
 
 
@@ -197,13 +435,26 @@ def _check_comment_drift(rec: dict) -> Finding | None:
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
            _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt,
            _check_receipt_sha_content, _check_receipt_encoding_stale,
-           _check_measurement_refuted, _check_comment_drift)
+           _check_replay_diagnostic_cache, _check_replay_input_cache,
+           _check_measurement_lock_content, _check_measurement_refuted, _check_comment_drift)
 
 
 def record_content_sha(rec: dict) -> str:
     """skiplist 키 — record *내용*의 sha256(정렬키 canonical JSON). git per-OID skiplist 이식: 면제는
-    이 내용 그대로일 때만 유효하고, 레코드가 한 글자라도 바뀌면 sha 가 달라져 면제가 소멸한다(규칙 면제 불가)."""
-    blob = json.dumps(rec, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+    이 내용 그대로일 때만 유효하고, 레코드가 한 글자라도 바뀌면 sha 가 달라져 면제가 소멸한다(규칙 면제 불가).
+
+    Replay diagnostics/artifact hashes were added to the base projection after the legacy skiplist
+    was reviewed. Neo4j projects an absent property as an explicit ``None``; treating those newly
+    introduced nulls as absence preserves the reviewed legacy OIDs, while any non-null identity or
+    diagnosis still changes the content hash and therefore loses the exemption as intended.
+    """
+    canonical = dict(rec)
+    for optional_key in ("replay_reason", "regenerated_metric", "result_sha256",
+                         "source_judge_script_path", "source_result_path"):
+        if canonical.get(optional_key) is None:
+            canonical.pop(optional_key, None)
+    blob = json.dumps(canonical, sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
