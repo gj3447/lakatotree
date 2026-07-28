@@ -1,6 +1,6 @@
 {
   "schema_version": "lakatotree-research-programme/v1",
-  "name": "LakatosTree_HSWM_LargerAI_20260728",
+  "name": "LakatosTree_HSWM_LargerAI_20260728_v2",
   "generated_at": "2026-07-28T00:00:00+09:00",
   "authority_policy": {
     "user_canon": "Only direct user-ratified HSWM statements may enter the hard core.",
@@ -44,11 +44,11 @@
   ],
   "tree": {
     "manifest_owner": "codex-research-2026-07-28",
-    "manifest_digest": "6072561833cb732f8e66cf8e830b2da2bbc924912252294565712fbf4f56b6a9",
+    "manifest_digest": "937ce1b49e0281e38876e9e66c5eb3f79069bc5d3f9eb4df3aec3014ea7c3d7a",
     "title": "HSWM Larger AI — receipt-gated dense research programme",
     "hard_core": "사용자 정전: HSWM은 합의(合意)를 포함하는 더 큰 범위의 AI이며 OM family #8/CHU 축에 놓인다. 그 기질은 함수가 LLM에 의해 실행되는 의미론적 하이퍼그래프 신경망이고, 구조는 열려 있고 자기유사적이며 조합 가능하고 가소적이다. 성능·전이·기억 효능은 hard core가 아니며 영수증 기반 실험으로만 판정한다.",
     "frontier_rule": "A frontier question closes only through a preregistered target and an atomic server verdict receipt; progressive answers positively and rejected answers negatively. Partial, unverified, conditional, off-axis, or manually asserted outcomes remain open.",
-    "doc": "This tree is a successor research programme, not a rewrite of the older sparse HSWM tree or a silent replacement of the HSWM repository ledger that still names LakatosTree_HSWM_20260719 as active. User canon, secondary formalization, engineering evidence, open experiments, and interface boundaries are intentionally separated. Existing states are preserved: durable runtime and scalar metric contracts are engineering-validated; F1 is running without a scientific outcome; transfer and one consolidation operator are exploratory-refuted; topology is exploratory-supported but not independently adjudicated. Sources ground comparisons and mechanisms; they do not establish HSWM efficacy.",
+    "doc": "This versioned successor preserves the immutable v1 materialization while closing its live annotation gap; it is not a rewrite of the older sparse HSWM tree or a silent replacement of the HSWM repository ledger that still names LakatosTree_HSWM_20260719 as active. User canon, secondary formalization, engineering evidence, open experiments, and interface boundaries are intentionally separated. Existing states are preserved: durable runtime and scalar metric contracts are engineering-validated; F1 is running without a scientific outcome; transfer and one consolidation operator are exploratory-refuted; topology is exploratory-supported but not independently adjudicated. Sources ground comparisons and mechanisms; they do not establish HSWM efficacy.",
     "coverage_status": "partial",
     "coverage_statement": "Covers the HSWM identity boundary, compositional and hypergraph formalizations, durable provenance, four discriminating experiment families, and the CHU/LakatoTree/333/ORRR interface. Runtime efficacy remains deliberately unconfirmed.",
     "coverage_backlog": [
@@ -104,6 +104,7 @@
       "algorithm": "programme_root",
       "author": "codex-research-2026-07-28",
       "comment": "HSWM 연구 프로그램의 권위 경계다. 사용자 정전만 hard core에 두고, 수학적 대응은 secondary formalization, 구현 관측은 engineering evidence, 아직 측정하지 않은 주장은 open experiment로 분리한다. 이 루트는 ‘촘촘함’을 노드 수가 아니라 타입이 있는 인과 연결, 출처, 열린 질문, 영수증으로 정의한다. 기존 희소 트리를 덮어쓰지 않고 후속 프로그램으로 보존한다.",
+      "limitation": "권위·분리·밀도 계약만 고정하며 HSWM의 성능, 수학적 완결성, 표준 지위는 증명하지 않는다.",
       "result_path": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json",
       "parent_edges": []
     },
@@ -112,6 +113,7 @@
       "algorithm": "user_canon",
       "author": "codex-research-2026-07-28",
       "comment": "사용자 정전의 첫 정체성 명제다: HSWM은 합의와 동의어가 아니라 합의를 포함하는 더 큰 범위의 AI다. 따라서 합의 알고리즘은 가능한 내부 기능 또는 비교축이지 HSWM 전체의 정의가 아니다. DeGroot류 합의 모델은 보호대의 비교 기반으로만 사용하며 이 정전을 대체하지 않는다.",
+      "limitation": "사용자 정전의 존재론적 경계이며 합의 포함의 수학적 구현이나 효능은 아직 검증하지 않는다.",
       "result_path": "kg://user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23",
       "parent_edges": [
         {"tag": "hswm-programme-root", "relation_kind": "DEFINES_IDENTITY", "evidence_ref": "canon:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23", "inferred": false}
@@ -122,6 +124,7 @@
       "algorithm": "user_canon",
       "author": "codex-research-2026-07-28",
       "comment": "HSWM의 계산 기질에 관한 사용자 정전이다. 의미 단위와 고차 관계는 하이퍼그래프로 놓이고, 그 위의 함수 또는 연산은 LLM이 실행한다. 이 명제는 특정 GNN 아키텍처나 학습 규칙을 아직 고정하지 않는다. Zhou와 AllSet은 가능한 형식화의 비교문헌일 뿐 정전의 원천이 아니다.",
+      "limitation": "특정 GNN, 학습 규칙, 스케일링 법칙 또는 pairwise graph 대비 우월성을 함의하지 않는다.",
       "result_path": "kg://user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23",
       "parent_edges": [
         {"tag": "hswm-programme-root", "relation_kind": "DEFINES_SUBSTRATE", "evidence_ref": "canon:user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23", "inferred": false},
@@ -133,6 +136,7 @@
       "algorithm": "user_canon",
       "author": "codex-research-2026-07-28",
       "comment": "HSWM은 재배맨 #4의 표준이 아니라 OM family #8의 직접 commander이며 CHU의 존재·계산 축에 놓인다. 비행기맨 #4는 HSWM에 접속하는 관문일 수 있지만 소유자가 아니다. 이 경계는 오래된 문서의 ‘재배맨 #4/standard’ 표류를 새 트리에 재도입하지 않기 위한 fail-closed 정체성 제약이다.",
+      "limitation": "정전상 위치만 고정하며 실행 가능한 OM/CHU 통합이나 클라우드 관문 구현을 증명하지 않는다.",
       "result_path": "kg://verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21",
       "parent_edges": [
         {"tag": "hswm-programme-root", "relation_kind": "LOCATES_IN_CANON", "evidence_ref": "canon:verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21", "inferred": false},
@@ -144,6 +148,7 @@
       "algorithm": "user_canon",
       "author": "codex-research-2026-07-28",
       "comment": "HSWM 구조의 사용자 정전 속성은 open, self-similar, composable, plastic이다. 여기서 open은 외부 포트와 입력을 가질 수 있음을, self-similar는 부분 구조가 전체와 유사한 조합 규칙을 가질 수 있음을 뜻한다. composable과 plastic은 각각 결합 가능성과 갱신 가능성이지 자동 성능 보장이 아니다. 정확한 형식 의미는 보호대 질문으로 남긴다.",
+      "limitation": "속성의 정전 의미만 보존하며 조합 폐쇄, 동역학적 안정성, 가소성 효능은 실험 전이다.",
       "result_path": "kg://user-canon-open-self-similar-hswm-2026-07-22",
       "parent_edges": [
         {"tag": "hswm-programme-root", "relation_kind": "DEFINES_ARCHITECTURE", "evidence_ref": "canon:user-canon-open-self-similar-hswm-2026-07-22", "inferred": false},

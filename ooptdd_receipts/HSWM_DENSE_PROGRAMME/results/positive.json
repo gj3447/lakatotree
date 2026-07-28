@@ -1,15 +1,15 @@
 {
-  "run": "hermetic-restored-positive-before-live-materialization",
+  "run": "hermetic-v2-restored-positive-before-live-materialization",
   "command": ".venv/bin/python ooptdd_receipts/run_all.py",
   "exit_code": 0,
   "target": "HSWM_DENSE_PROGRAMME",
   "target_result": "GREEN",
   "target_done": 3,
   "target_total": 3,
-  "suite_green": 56,
-  "suite_total": 56,
-  "manifest_name": "LakatosTree_HSWM_LargerAI_20260728",
-  "manifest_digest": "6072561833cb732f8e66cf8e830b2da2bbc924912252294565712fbf4f56b6a9",
+  "suite_green": 57,
+  "suite_total": 57,
+  "manifest_name": "LakatosTree_HSWM_LargerAI_20260728_v2",
+  "manifest_digest": "937ce1b49e0281e38876e9e66c5eb3f79069bc5d3f9eb4df3aec3014ea7c3d7a",
   "readback_contract": {
     "nodes": 19,
     "edges": 52,
@@ -22,8 +22,18 @@
     "observations": 12
   },
   "restart_contract": {
+    "operations": 0,
+    "nodes_already_exact": 19,
+    "questions_already_exact": 8,
+    "foundations_already_exact": 12,
+    "tradition_already_exact": true,
     "observations_already_exact": 12,
     "observation_posts": 0
   },
-  "scope": "Production seeder functions over a faithful converged HTTP seam; live service materialization is intentionally not claimed by this initial result."
+  "annotation_contract": {
+    "nodes_with_algorithm_comment_limitation": 19,
+    "total_nodes": 19
+  },
+  "manifest_file_sha256": "03749b8aa54159ad85feab44d8d7648641758eb3ebed02ad7dfe22aba870e47b",
+  "scope": "Production seeder functions over a faithful converged HTTP seam for the versioned v2 manifest; live v2 materialization is intentionally not claimed by this pre-deploy result."
 }

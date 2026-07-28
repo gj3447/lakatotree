@@ -1,0 +1,15 @@
+{
+  "run": "injected-count-all-structure-as-spend",
+  "command": "PYTHONDONTWRITEBYTECODE=1 LKT_HSWM_LAUDAN_INJECT=count-structure .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 1,
+  "target": "HSWM_LAUDAN_SPEND",
+  "target_result": "RED",
+  "target_done": 1,
+  "target_total": 2,
+  "missing_event": "structural_depth_retained_without_spend",
+  "suite_green": 56,
+  "suite_total": 57,
+  "injection": "Temporarily replace the production attempted-chain filter with identity so graph depth consumes scientific budget.",
+  "restored_positive_after_injection": true,
+  "live_state_mutated": false
+}

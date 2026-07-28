@@ -1,0 +1,29 @@
+# HSWM dense-tree live finding: structural depth was falsely counted as Laudan scientific spend.
+# Locked before the engine change.  The adapter drives lakatos.quant.metrics.tree_metrics directly.
+name: lakatotree-hswm-laudan-adjudicated-spend
+target:
+  mode: in_process
+  callable: hswm_laudan_spend_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: HSWM-LAUDAN-SPEND-1
+    description: Dense canon, formalisation, evidence, and interface nodes without a server adjudication do not trigger the zero-hit budget abandonment rule.
+    gate:
+      - {event: structural_depth_retained_without_spend, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:HSWM_LAUDAN_SPEND:structural_depth_retained_without_spend
+      source: hswm_laudan_spend_receipt.py
+      symbol: verify
+      must_emit: structural_depth_retained_without_spend
+
+  - id: HSWM-LAUDAN-SPEND-2
+    description: The same depth made of actual forceful adjudications still consumes budget and triggers rule 2 when confirmed prediction hits remain zero.
+    gate:
+      - {event: adjudicated_attempts_trigger_zero_hit_budget, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:HSWM_LAUDAN_SPEND:adjudicated_attempts_trigger_zero_hit_budget
+      source: hswm_laudan_spend_receipt.py
+      symbol: verify
+      must_emit: adjudicated_attempts_trigger_zero_hit_budget

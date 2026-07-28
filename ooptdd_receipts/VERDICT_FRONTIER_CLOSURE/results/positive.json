@@ -1,12 +1,27 @@
 {
-  "run": "restored-positive-after-question-lock-state-guard-and-event-id-hardening",
+    "run": "live-rejected-frontier-closure-plus-restored-positive",
   "command": ".venv/bin/python ooptdd_receipts/run_all.py",
   "exit_code": 0,
   "target": "VERDICT_FRONTIER_CLOSURE",
   "target_result": "GREEN",
   "target_done": 3,
   "target_total": 3,
-    "suite_green": 56,
-    "suite_total": 56,
-  "service_path": "JudgementService.register_prediction(question lock) -> submit_test_result(valid-state guard) -> receipt-addressed QuestionClosure"
+    "suite_green": 57,
+    "suite_total": 57,
+    "deployed_git_head": "31bcf259526d20cbd26a5fb0674418e410968672",
+    "live_probe": {
+        "tree": "LakatosTree_EngineFrontierProbe_20260728_31bcf25",
+        "node": "receipt-backed-rejection",
+        "question": "q-rejected-result-closes-frontier",
+        "verdict": "rejected",
+        "receipt_sha": "9d55d98289bc7a398786292d6c5925816742737f5e789edf22a473091b9852fc",
+        "question_status": "CLOSED",
+        "closed_events": ["9d55d98289bc7a398786292d6c5925816742737f5e789edf22a473091b9852fc"],
+        "receipt_verify_ok": true,
+        "receipt_from_receipt": true,
+        "frontier_open": 0,
+        "frontier_closed": 1,
+        "close_ratio_receipted": 1.0
+    },
+    "service_path": "JudgementService.register_prediction(question lock) -> submit_test_result(valid-state guard) -> receipt-addressed QuestionClosure"
 }

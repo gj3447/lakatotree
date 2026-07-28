@@ -1,0 +1,21 @@
+{
+  "run": "restored-positive-after-adjudicated-spend-filter",
+  "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 0,
+  "target": "HSWM_LAUDAN_SPEND",
+  "target_result": "GREEN",
+  "target_done": 2,
+  "target_total": 2,
+  "suite_green": 57,
+  "suite_total": 57,
+  "contract": {
+    "dense_graph_depth": 6,
+    "structural_nodes_spent": 0,
+    "label_and_prediction_only_nodes_spent": 0,
+    "adjudicated_nodes_spent": 6,
+    "zero_hit_budget_abandon": true,
+    "add_node_abandon_signal_wired": true,
+    "structural_gap_preserves_attempt_streak": true
+  },
+  "engine_sha256": "df08a62172f1af4b32a62d6ad6debf19d8f015a7337627908e716b87a2bf667d"
+}

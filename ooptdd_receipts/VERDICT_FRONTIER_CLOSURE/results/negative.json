@@ -7,8 +7,8 @@
   "target_done": 0,
   "target_total": 0,
   "failure": "AssertionError: real service transaction did not close its receipt-bound question",
-    "suite_green": 55,
-    "suite_total": 56,
+    "suite_green": 56,
+    "suite_total": 57,
   "restored_positive_after_injection": true,
   "service_path": "JudgementService.register_prediction(question lock) -> submit_test_result(valid-state guard) -> receipt-addressed QuestionClosure"
 }

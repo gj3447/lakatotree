@@ -334,7 +334,7 @@ def validate_manifest(data: dict, *, require_external_sources: bool = False) -> 
 
     if data.get("schema_version") != "lakatotree-research-programme/v1":
         errors.append("unknown schema_version")
-    if data.get("name") != "LakatosTree_HSWM_LargerAI_20260728":
+    if data.get("name") != "LakatosTree_HSWM_LargerAI_20260728_v2":
         errors.append("successor tree name is not pinned")
     try:
         _manifest_identity(data)

@@ -1,7 +1,7 @@
 {
   "schema_version": "symposium-ooptdd-receipt/v1",
   "template_only": false,
-  "receipt_id": "lakatotree-hswm-dense-programme-hermetic-20260728",
+    "receipt_id": "lakatotree-hswm-dense-programme-v2-hermetic-20260728",
   "cycle_id": "lakatotree-hswm-density-20260728",
   "requirement_group": "HSWM-DENSE-PROGRAMME",
   "spec": {
@@ -12,7 +12,8 @@
   "producer": {
     "command": ".venv/bin/python ooptdd_receipts/run_all.py",
     "cwd": "/Users/lagyeongjun/CD/lakatotree-pub",
-    "git_head": "e663f421a1586828d4ee482531db0d4ad7b4eae8",
+        "git_head": "31bcf259526d20cbd26a5fb0674418e410968672",
+        "working_tree_state": "dirty-validated-predeploy-v2",
     "entrypoint": "hswm_dense_programme_receipt:verify",
     "source_path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/hswm_dense_programme_receipt.py",
     "source_symbol": "verify",
@@ -20,7 +21,7 @@
     "exit_code": 0
   },
   "correlation": {
-    "cid": "hswm-dense-programme-hermetic-20260728"
+        "cid": "hswm-dense-programme-v2-hermetic-20260728"
   },
   "requirements": [
     {
@@ -42,7 +43,7 @@
   "positive": {
     "observed_verdict": "green",
     "receipt_path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/results/positive.json",
-        "receipt_sha256": "3334ffda27eb62ccb227ec194827cac30fa59fc43228e53e0e3fa1c43e751078",
+        "receipt_sha256": "8f9b67fb5a3bcc28c6ea8d50966932684a9b6a0187168ff528eb2a3ada839e90",
     "evidence_tier": "arrived",
     "charge_ratio": 1.0,
     "forbidden_events_passed": true,
@@ -59,7 +60,7 @@
     "injection": "Temporarily replace the production seeder exact-equality guard so a node-comment tamper is accepted at the readback boundary; the locked tamper event must then be absent.",
     "observed_verdict": "red",
     "receipt_path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/results/negative.json",
-    "receipt_sha256": "74c6c5fa5a35c2bb5ad96ad5ac417baa27e6186f07b297dbfc73801d02095381",
+        "receipt_sha256": "1fb562517efdb1a460af1a0ec4e014c8ececa4501108e82f58cf227e0b230248",
     "restored": true
   },
   "oracle": {
@@ -73,5 +74,5 @@
     "symbol": "verify",
         "sha256": "e24a2d42910352ab58d202f03793f481876477af94d2a553370952a4a38faa4e"
   },
-  "claim_boundary": "This initial envelope proves the executable seeder contract over a faithful converged HTTP seam. It does not claim live service materialization or scientific HSWM progress."
+    "claim_boundary": "This pre-deploy v2 envelope proves the executable seeder and exact-readback contract over a faithful converged HTTP seam. It does not yet claim live v2 materialization, scientific HSWM progress, or efficacy."
 }

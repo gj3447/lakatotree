@@ -33,6 +33,35 @@ def _primary_parent(row: dict) -> str | None:
     return parents[0] if parents else None
 
 
+_MANAGED_ATTEMPT_KEYS = frozenset({
+    "current_receipt_sha", "judged_at", "measurement_grade", "replay_status",
+})
+_ATTEMPT_OUTCOME_KEYS = (
+    "judged_at", "metric_value", "measurement_grade", "replay_status",
+)
+
+
+def _attempted_chain(chain: list[dict]) -> list[dict]:
+    """Return nodes that consumed scientific-attempt budget, in chronology.
+
+    Managed read-model rows expose attempt-state keys even when their values
+    are empty.  Graph depth, a forceful-looking label, or a prediction receipt
+    alone is not an outcome and cannot spend Laudan's zero-hit budget.  A
+    judgement/measurement/replay marker does spend it.  Key-absent legacy
+    fixtures retain their historical one-node/one-attempt interpretation.
+    """
+
+    attempted = []
+    for row in chain:
+        managed_shape = any(key in row for key in _MANAGED_ATTEMPT_KEYS)
+        if not managed_shape:
+            attempted.append(row)
+            continue
+        if any(row.get(key) not in (None, "") for key in _ATTEMPT_OUTCOME_KEYS):
+            attempted.append(row)
+    return attempted
+
+
 def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
                   window: int | None = None) -> dict:
     """가지(leaf) 또는 정본 leaf 의 stack/lifecycle 입력 묶음 — 서버/CLI 단일 어댑터.
@@ -54,6 +83,7 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         seen.add(cur)
         chain.append(by[cur])
         cur = _primary_parent(by[cur])
+    attempts = _attempted_chain(chain)
     seq = []
     for r in reversed(chain):                      # 베이즈는 시간순(root→leaf)
         d = {'verdict': r['verdict']}
@@ -62,7 +92,7 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
             d['noise_band'] = r.get('pred_noise_band')   # 부재(None)와 선언-0을 보존
         seq.append(d)
     consec = 0
-    for r in chain:                                # leaf 쪽부터 연속 비진보
+    for r in attempts:                             # leaf 쪽부터 실제 시도만 연속 비진보
         if r['verdict'] in NONPROGRESSIVE:
             consec += 1
         else:
@@ -75,10 +105,12 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         leaf=leaf, window=window, verdicts=seq,
         # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
         path=[{'tag': r['tag'], 'verdict': r['verdict']} for r in reversed(chain)],
-        consecutive_nonprogressive=consec, nodes_spent=len(chain),
+        consecutive_nonprogressive=consec, nodes_spent=len(attempts),
         # M3: 폐기규칙②·bandit reward 가 묻는 *적중*은 confirmed-novel 진보만(미확증 conditional/
         #     former_canonical 제외) — 넓은 PROGRESS_VERDICTS 로 세면 미확증이 폐기를 면제·reward 오염.
-        prediction_hits=sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS),
+        prediction_hits=sum(
+            1 for r in attempts if r['verdict'] in CONFIRMED_NOVEL_PROGRESS
+        ),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
                                                                  window=window,
                                                                  receipted_tags=_rtags),
@@ -228,18 +260,19 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
         if leaf in tv.path:
             continue
         chain = _branch_chain(tv, leaf)
+        attempts = _attempted_chain(chain)
         consec = 0
-        for r in chain:                          # leaf→분기점 방향 연속 비진보
+        for r in attempts:                       # leaf→분기점 방향 실제 시도만 연속 비진보
             if r['verdict'] in NONPROGRESSIVE:
                 consec += 1
             else:
                 break
         # M3: confirmed-novel 진보만 적중 — 미확증 progressive_conditional 을 적중으로 세면 규칙②
         #     (예산 소진 ∧ 적중 0)가 면제돼 degenerating 가지가 무기한 산다(폐기 지연).
-        hits = sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
+        hits = sum(1 for r in attempts if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
         # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
         pb_windowed = branch_problem_balance_windowed(chain, tv.frontier, receipted_tags=_rtags)
-        ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
+        ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(attempts),
                                     prediction_hits=hits, problem_balance_windowed=pb_windowed)
         if ok:
             abandon.append(dict(leaf=leaf, branch_len=len(chain), reason=reason))
