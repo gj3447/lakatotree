@@ -79,7 +79,7 @@
 | `evidence_action_confidence` | (realm/action dict — 본문 grounding.py 참조) | policy | policy | action 토큰 기반 증거신뢰 (realm 기본값보다 우선) | exit_code 0 / pass·success·replay → 0.80, exit≠0 / fail·reject·error → 0.20, verdict·accep |
 | `eprocess_kappa` | 0.5 | policy_in_scale | vovk_wang2021 | κ∈(0,1) calibrator 족 e=κp^(κ-1) — ∫₀¹=1 이라 임의 유효 p 에서 E[e|H0]≤1 | calibrator 족 자체는 문헌(Vovk-Wang 2021 Prop 2.2 형태), κ=0.5 선택은 관례값. ★정직: κ 튜닝으로 검정력이 달라지나 유효성( |
 | `eprocess_p0` | 0.35 | policy | policy | H0 "건강한 프로그램의 novel 예측 적중률 ≥ p0" 의 경계 | ★정직: rf-ltrem-d2 vital-sign 밴드 하한(0.35–0.5)의 하한 계승 — 그 밴드 자체가 "외부 근거 박약"으로 공시된 값이다(문헌 도출 아 |
-| `eprocess_lambda_fraction` | 0.5 | policy | policy | λ = fraction/(1-p0) — 파산불가 최대 베팅 1/(1-p0) 의 절반 | ★정직: half-Kelly 류 관례(성장률-분산 절충)이지 GRO 최적화 도출이 아니다. λ↑ = 빠른 검출·높은 변동, λ↓ = 보수. 유효성은 λ∈(0,1/ |
+| `eprocess_lambda_fraction` | 0.5 | policy | policy | λ = fraction/(1-p0) — 파산불가 최대 베팅 1/(1-p0) 의 절반 | ★정직: half-Kelly 류 관례(성장률-분산 절충)이지 GRO 최적화 도출이 아니다. 방향(2026-07-28 정정): λ↑ = 극단적 대립가설에서 빠른 증 |
 | `eprocess_alpha` | 0.05 | policy_in_scale | ville1939 | Ville 임계 1/α=20 — anytime 거짓 abandon 신호 확률 상한 | P(sup E_t ≥ 1/α | H0) ≤ α 는 문헌(Ville 1939); α=0.05 컷 자체는 관행적 정책값. 임의 시점 consult(적대적 option |
 
 ## 문헌 정본 (citations)

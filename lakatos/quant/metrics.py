@@ -299,31 +299,50 @@ _EPROCESS_STRUCTURAL_DEMOTES = frozenset({
     'reproducibility_refuted', 'novel_not_server_anchored', 'provisional_stale_engine'})
 
 
+def _eprocess_stream_key(row: dict) -> tuple:
+    """시간순 total order — judged_at 결측은 *뒤로*(빈 문자열 정렬로 앞서면 초기 wealth 증식이
+    최대화되는 편향, POPPER 대조 2026-07-28)."""
+    ja = row.get('judged_at')
+    return (0, str(ja), str(row.get('tag') or '')) if ja else (1, '', str(row.get('tag') or ''))
+
+
 def _eprocess_layer(tv: '_TreeView | list', nodes: list | None = None) -> dict:
     """e-process challenger (S9 흡수 2026-07-28) — anytime-valid abandon 신호, K=3 병행(대체 아님).
 
-    스트림 = novel_registered 노드의 novel_confirmed 이진 결과, (judged_at, tag) 시간순 정렬
-    (optional-stopping 유효성의 순차 전제). ★정직: novel_confirmed=False 중 *구조적 강등*
-    (재현성/앵커/stale-engine — judgement_policy 3종)은 예측 빗나감이 아니므로 스트림에서 제외하고
-    excluded_structural 로 별도 공시(운영 강등을 과학적 반증으로 오독 금지). neutralize_unreceipted
-    이후의 tv 를 받으므로 무영수증 confirmed 는 이미 False 로 게이트된 상태다."""
+    스트림 = **판정 완료된 영수증 보유 novel 예측**의 적중/빗나감 이진 결과, judged_at total order.
+    ★스트림 유효성(POPPER 대조 수리 2026-07-28): e-process 는 '예측이 맞았나'만 재야 한다 —
+    '적중 ∧ 영수증 ∧ 채점'을 재면 운영 위생 backlog(무영수증·미채점)가 과학적 반증으로
+    재라벨링돼 abandon 이 오발화한다(POPPER 는 미완료 실험을 e-value 에 기여시키지 않는다).
+    따라서 3종을 스트림에서 빼고 각각 공시한다:
+      ① unscored     — novel_confirmed 미정(아직 판정 없음). miss 가 아니다.
+      ② unreceipted  — force_of_row != COUNTS (영수증 미도래/반증). 과학적 결과가 아니라 위생 상태.
+      ③ structural   — 구조적 강등(재현성/앵커/stale-engine)으로 False 가 된 노드(운영 강등 ≠ 반증).
+    ③은 결과값에 조건한 사후 선택이라 Ville 예측가능성 전제를 엄밀히는 벗어난다 — 보수적
+    방향(miss 제거)이며 규모를 공시해 소비자가 판단하게 한다(과잉주장 금지)."""
     if not isinstance(tv, _TreeView):
         tv = _tv(nodes=tv if nodes is None else nodes)
     cand = [r for r in tv.nodes if r.get('novel_registered')]
-    excluded = [r['tag'] for r in cand
-                if not r.get('novel_confirmed')
-                and r.get('lakatos_status') in _EPROCESS_STRUCTURAL_DEMOTES]
-    stream_rows = sorted((r for r in cand if r['tag'] not in set(excluded)),
-                         key=lambda r: (str(r.get('judged_at') or ''), str(r.get('tag') or '')))
+    unscored = [r['tag'] for r in cand if r.get('novel_confirmed') is None]
+    scored = [r for r in cand if r.get('novel_confirmed') is not None]
+    unreceipted = [r['tag'] for r in scored if force_of_row(r) != 'COUNTS']
+    receipted = [r for r in scored if force_of_row(r) == 'COUNTS']
+    structural = [r['tag'] for r in receipted
+                  if not r.get('novel_confirmed')
+                  and r.get('lakatos_status') in _EPROCESS_STRUCTURAL_DEMOTES]
+    stream_rows = sorted((r for r in receipted if r['tag'] not in set(structural)),
+                         key=_eprocess_stream_key)
     outcomes = [1 if r.get('novel_confirmed') else 0 for r in stream_rows]
     sig = should_abandon_eprocess(outcomes)
     return dict(stream_n=len(outcomes), hits=sum(outcomes),
-                excluded_structural=excluded,
+                excluded_unscored=unscored, excluded_unreceipted=unreceipted,
+                excluded_structural=structural,
                 abandon=sig['abandon'], fired_at=sig['fired_at'],
                 e_final=round(sig['e_final'], 4), e_max=round(sig['e_max'], 4),
                 threshold=sig['threshold'], p0=sig['p0'], alpha=sig['alpha'],
                 note='K=3(laudan.should_abandon) challenger 병행 — 판정 비구속. anytime-valid: '
-                     '임의 시점 consult 시 거짓 신호 확률<=α (Ville). 일치율 실측 후 재론.')
+                     '임의 시점 consult 시 거짓 신호 확률<=α (Ville). '
+                     '가정: 스트림은 판정완료·영수증 보유 novel 예측만(미채점/무영수증/구조적 강등은 '
+                     '제외·공시) + H0 적중률>=p0 의 조건부 Bernoulli. 일치율·Type-I 실측 후 재론.')
 
 
 def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,

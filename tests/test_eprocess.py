@@ -130,10 +130,12 @@ def test_eprocess_layer_isolated_and_structural_demote_exclusion():
     구조적 강등(재현성/앵커/stale-engine)은 예측 빗나감이 아니므로 제외 + 별도 공시."""
     from lakatos.quant.metrics import _eprocess_layer
     nodes = (
-        [dict(tag=f'm{i:02d}', verdict='partial', novel_registered=True, novel_confirmed=False,
+        [dict(tag=f'm{i:02d}', verdict='partial', verdict_source='scripted',
+              current_receipt_sha='r' * 64, novel_registered=True, novel_confirmed=False,
               judged_at=f'2026-07-{(i % 27) + 1:02d}') for i in range(14)]
-        + [dict(tag='s1', verdict='partial', novel_registered=True, novel_confirmed=False,
-                lakatos_status='reproducibility_refuted', judged_at='2026-07-10'),
+        + [dict(tag='s1', verdict='partial', verdict_source='scripted',
+                current_receipt_sha='r' * 64, novel_registered=True, novel_confirmed=False,
+                lakatos_status='reproducibility_refuted', judged_at='2026-07-28'),
            dict(tag='x1', verdict='proof')])          # novel 미등록 — 스트림 밖
     out = _eprocess_layer(nodes)
     assert out['stream_n'] == 14 and out['hits'] == 0
@@ -169,3 +171,55 @@ def test_false_progressive_screen_emits_ebh_survivors():
     assert 'strong' in rep.survivors_ebh
     assert set(rep.survivors_ebh) <= set(rep.survivors_bh), 'e-BH 는 BH 의 부분집합(이 케이스)'
     assert rep.untestable == ('untest',)
+
+
+# ── 스트림 유효성 수리 가드 (OSS:popper 대조 DEFECT 3건, 2026-07-28) ──────────────────
+
+def test_stream_excludes_unscored_and_unreceipted_nodes():
+    """DEFECT 수리: e-process 는 '예측 적중'만 재야 한다 — '적중 AND 영수증 AND 채점'을 재면
+    운영 위생 backlog 가 과학적 반증으로 재라벨링된다(POPPER 는 미완료 실험을 e-value 에
+    기여시키지 않는다). ①미채점(novel_confirmed=None) ②무영수증(inconclusive) 둘 다 스트림 밖."""
+    from lakatos.quant.metrics import _eprocess_layer
+    nodes = [
+        dict(tag='hit', verdict='progressive', verdict_source='scripted',
+             current_receipt_sha='r' * 64, novel_registered=True, novel_confirmed=True,
+             judged_at='2026-07-01'),
+        dict(tag='miss', verdict='partial', verdict_source='scripted',
+             current_receipt_sha='r' * 64, novel_registered=True, novel_confirmed=False,
+             judged_at='2026-07-02'),
+        dict(tag='unscored', verdict='proof', novel_registered=True,
+             novel_confirmed=None),                       # 아직 판정 안 됨 — miss 아님
+        dict(tag='unreceipted', verdict='progressive', novel_registered=True,
+             novel_confirmed=False, judged_at='2026-07-03'),   # 영수증 없음(force=INCONCLUSIVE)
+    ]
+    out = _eprocess_layer(nodes)
+    assert out['stream_n'] == 2 and out['hits'] == 1, out
+    assert out['excluded_unscored'] == ['unscored'], out
+    assert out['excluded_unreceipted'] == ['unreceipted'], out
+
+
+def test_stream_ordering_is_total_and_unjudged_never_leads():
+    """judged_at 부재가 문자열 정렬로 스트림 맨 앞에 오면 초기 wealth 증식이 최대화된다 —
+    수리 후 미채점은 애초에 스트림 밖이고, 정렬은 결측을 뒤로 보내는 total order 다."""
+    from lakatos.quant.metrics import _eprocess_stream_key
+    rows = [dict(tag='b', judged_at=None), dict(tag='a', judged_at='2026-07-05'),
+            dict(tag='c', judged_at='2026-07-01')]
+    assert [r['tag'] for r in sorted(rows, key=_eprocess_stream_key)] == ['c', 'a', 'b']
+
+
+def test_lambda_direction_note_matches_math():
+    """grounding rationale 의 λ 방향 서술이 수학과 일치해야 — λ↓ 는 '보수'가 아니라
+    검출 가능 대립가설 영역이 p0 쪽으로 *넓어지는* 대신 증식 속도가 느려지는 것."""
+    from lakatos.grounding import provenance
+    note = provenance('eprocess_lambda_fraction')['rationale']
+    assert 'λ↓ = 보수' not in note, '방향 반대 서술 잔존'
+    assert '검출' in note
+
+
+def test_note_declares_model_assumptions():
+    """Ville 보증을 무조건 주장하지 말 것 — payload note 에 스트림 구성 가정을 명시."""
+    from lakatos.quant.metrics import _eprocess_layer
+    out = _eprocess_layer([dict(tag='x', verdict='partial', verdict_source='scripted',
+                                current_receipt_sha='r' * 64, novel_registered=True,
+                                novel_confirmed=False, judged_at='2026-07-01')])
+    assert '가정' in out['note'] and '영수증' in out['note'], out['note']
