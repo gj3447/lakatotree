@@ -9,8 +9,8 @@
 ## tier 별 정직성 요약
 
 - **literature** (4): `bf_partial_equivalent`, `default_prior`, `pagerank_damping`, `ucb_c`
-- **policy_in_scale** (14): `abandon_credence`, `abandon_k`, `bf_progressive`, `bf_rejected`, `ece_bins`, `ece_gate_max`, `ece_gate_min_n`, `eff_cap`, `eigentrust_alpha`, `fdr_q`, `log_score_eps`, `nobel_min_hitrate_lb`, `nobel_min_predictions`, `stack_quorum`
-- **policy** (16): `abandon_b`, `abandon_budget`, `claim_min_confidence`, `claim_strong_confidence`, `credibility_extracted_trust`, `credibility_inferred_trust`, `crisis_exploration_scale`, `demote_canonical_penalty`, `effect_size_floor`, `evidence_action_confidence`, `evidence_realm_confidence`, `injection_high_risk_floor`, `lifecycle_stall_window`, `supersession_window`, `w_problem`, `weight_floor`
+- **policy_in_scale** (16): `abandon_credence`, `abandon_k`, `bf_progressive`, `bf_rejected`, `ece_bins`, `ece_gate_max`, `ece_gate_min_n`, `eff_cap`, `eigentrust_alpha`, `eprocess_alpha`, `eprocess_kappa`, `fdr_q`, `log_score_eps`, `nobel_min_hitrate_lb`, `nobel_min_predictions`, `stack_quorum`
+- **policy** (18): `abandon_b`, `abandon_budget`, `claim_min_confidence`, `claim_strong_confidence`, `credibility_extracted_trust`, `credibility_inferred_trust`, `crisis_exploration_scale`, `demote_canonical_penalty`, `effect_size_floor`, `eprocess_lambda_fraction`, `eprocess_p0`, `evidence_action_confidence`, `evidence_realm_confidence`, `injection_high_risk_floor`, `lifecycle_stall_window`, `supersession_window`, `w_problem`, `weight_floor`
 
 ## 해석 척도 (raw 점수 → 문헌 등급)
 
@@ -77,6 +77,10 @@
 | `demote_canonical_penalty` | 0.1 | policy | policy | former_canonical credence 를 새 정본보다 최소 이만큼 아래로 | agm.demote_canonical(THEORY §2 revision): 옛 정본은 제거가 아니라 강등 — credence 를 새 정본보다 0.1 아래 floo |
 | `evidence_realm_confidence` | (realm/action dict — 본문 grounding.py 참조) | policy | policy | realm 별 기본 증거신뢰 (명시값 부재 시) | payload 에 명시 confidence 없을 때 realm 기본 신뢰. 서열 DATA(0.70)>BASH/GIT(0.60)>HUMAN/KG(0.50)>AGEN |
 | `evidence_action_confidence` | (realm/action dict — 본문 grounding.py 참조) | policy | policy | action 토큰 기반 증거신뢰 (realm 기본값보다 우선) | exit_code 0 / pass·success·replay → 0.80, exit≠0 / fail·reject·error → 0.20, verdict·accep |
+| `eprocess_kappa` | 0.5 | policy_in_scale | vovk_wang2021 | κ∈(0,1) calibrator 족 e=κp^(κ-1) — ∫₀¹=1 이라 임의 유효 p 에서 E[e|H0]≤1 | calibrator 족 자체는 문헌(Vovk-Wang 2021 Prop 2.2 형태), κ=0.5 선택은 관례값. ★정직: κ 튜닝으로 검정력이 달라지나 유효성( |
+| `eprocess_p0` | 0.35 | policy | policy | H0 "건강한 프로그램의 novel 예측 적중률 ≥ p0" 의 경계 | ★정직: rf-ltrem-d2 vital-sign 밴드 하한(0.35–0.5)의 하한 계승 — 그 밴드 자체가 "외부 근거 박약"으로 공시된 값이다(문헌 도출 아 |
+| `eprocess_lambda_fraction` | 0.5 | policy | policy | λ = fraction/(1-p0) — 파산불가 최대 베팅 1/(1-p0) 의 절반 | ★정직: half-Kelly 류 관례(성장률-분산 절충)이지 GRO 최적화 도출이 아니다. λ↑ = 빠른 검출·높은 변동, λ↓ = 보수. 유효성은 λ∈(0,1/ |
+| `eprocess_alpha` | 0.05 | policy_in_scale | ville1939 | Ville 임계 1/α=20 — anytime 거짓 abandon 신호 확률 상한 | P(sup E_t ≥ 1/α | H0) ≤ α 는 문헌(Ville 1939); α=0.05 컷 자체는 관행적 정책값. 임의 시점 consult(적대적 option |
 
 ## 문헌 정본 (citations)
 
@@ -92,6 +96,8 @@
 - **kass_raftery1995**: Kass, R.E. & Raftery, A.E. (1995). Bayes Factors. JASA 90(430):773-795.
 - **laplace1814**: Laplace, P.S. (1814). Essai philosophique sur les probabilités (principle of indifference).
 - **policy**: 엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.
+- **ville1939**: Ville, J. (1939). Étude critique de la notion de collectif. Gauthier-Villars — Ville 부등식: 비음 supermartingale 의 P(sup ≥ 1/α) ≤ α (anytime-valid 임계의 근거).
+- **vovk_wang2021**: Vovk, V. & Wang, R. (2021). E-values: Calibration, combination and applications. Ann. Stat. 49(3):1736-1754 — p→e calibrator 족 κp^(κ-1) 과 e-값 결합.
 - **wald1945**: Wald, A. (1945). Sequential Tests of Statistical Hypotheses. Ann. Math. Stat. 16(2):117-186.
 - **wilson1927**: Wilson, E.B. (1927). Probable Inference... JASA 22(158):209-212.
 

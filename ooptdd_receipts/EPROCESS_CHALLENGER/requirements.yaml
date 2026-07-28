@@ -1,0 +1,33 @@
+# hermetic — 네트워크/KG/시크릿 0 (순수 quant 계산 경로만 실코드 구동).
+# 무엇을 구동하나: lakatos/quant/eprocess.py (S9 흡수) + metrics.tree_metrics 의 eprocess
+# challenger 층 + multiplicity.false_progressive_screen 의 e-BH 병행 출력.
+# 음성 오라클: 전부 적중 스트림에서 abandon 오발화하면 죽는다(과잉 경보 회귀가드) +
+# E[e|H0]<=1 위반(구 고정-BF 층의 결함, finding_b2a8aa7064fc11aa)이 재발하면 죽는다.
+name: lakatotree-advancement-eprocess-challenger
+target:
+  mode: in_process
+  callable: eprocess_challenger_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: EPC-1
+    description: anytime-valid abandon 신호가 tree_metrics 실경로에서 발화한다 — 지속 miss 스트림(n=14, p0=0.35)에서 wealth 가 Ville 임계(1/α=20)를 넘어 eprocess.abandon=true + alert 병행. 구조적 강등(재현성/앵커/stale-engine)은 예측 빗나감이 아니므로 스트림에서 제외되고 excluded_structural 로 공시된다(운영 강등의 과학적 반증 오독 차단).
+    gate:
+      - {event: eprocess_abandon_fires_on_miss_stream, op: ">=", count: 1}
+      - {event: structural_demote_excluded_from_stream, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EPROCESS_CHALLENGER:eprocess_abandon_fires_on_miss_stream
+      source: eprocess_challenger_receipt.py
+      symbol: verify
+      must_emit: eprocess_abandon_fires_on_miss_stream
+  - id: EPC-2
+    description: 이중가드 — (a)전부 적중(건강) 스트림에선 wealth<=1 로 수축해 무발화·무경보(과잉발화 회귀가드) (b)한 스텝 기대 E[e|H0]<=1 이 p0 경계 전 그리드에서 성립(고정 BF 상수 누적이 위반하던 부등식 — 유효성의 심장) (c)e-BH 생존자가 BH 병행 공시되고 임계 규칙(내림차순 e_[k]>=m/(q·k))대로만 reject.
+    gate:
+      - {event: healthy_stream_silent_and_validity_holds, op: ">=", count: 1}
+      - {event: ebh_survivors_emitted, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:EPROCESS_CHALLENGER:healthy_stream_silent_and_validity_holds
+      source: eprocess_challenger_receipt.py
+      symbol: verify
+      must_emit: healthy_stream_silent_and_validity_holds

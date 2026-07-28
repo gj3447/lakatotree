@@ -171,7 +171,7 @@ This compact roster is machine-checked against the package. See the architecture
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`
 
 ### `quant/`
-`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate`
+`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate` `eprocess`
 
 ### `programme/`
 `kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge`

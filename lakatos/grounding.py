@@ -83,6 +83,10 @@ SOURCES = {
     'walton_reed_macagno2008': 'Walton, D., Reed, C. & Macagno, F. (2008). Argumentation Schemes. Cambridge UP — 비판질문 카탈로그(critique kind 의 원리적 근거).',
     'kuhn1977': 'Kuhn, T.S. (1977). Objectivity, Value Judgment, and Theory Choice. In The Essential Tension, pp.320-339. U Chicago Press — 다섯 가치가 이론선택을 미결정(leaderboard 무스칼라 Pareto 의 근거; kuhn1962 는 위기/혁명 어휘만 cover).',
     'lindley1957': 'Lindley, D.V. (1957). A Statistical Paradox. Biometrika 44(1-2):187-192 — 베이즈/빈도 발산이 n 과 함께 커짐(stack 층-독립 근사가 낙관적인 구조적 이유).',
+    'ville1939': 'Ville, J. (1939). Étude critique de la notion de collectif. Gauthier-Villars — Ville 부등식: 비음 supermartingale 의 P(sup ≥ 1/α) ≤ α (anytime-valid 임계의 근거).',
+    'vovk_wang2021': 'Vovk, V. & Wang, R. (2021). E-values: Calibration, combination and applications. Ann. Stat. 49(3):1736-1754 — p→e calibrator 족 κp^(κ-1) 과 e-값 결합.',
+    'wang_ramdas2022': 'Wang, R. & Ramdas, A. (2022). False discovery rate control with e-values. JRSS-B 84(3):822-852 — e-BH: 임의 의존 하 FDR ≤ q.',
+    'ramdas2023': 'Ramdas, A., Grünwald, P., Vovk, V. & Shafer, G. (2023). Game-Theoretic Statistics and Safe Anytime-Valid Inference. Statistical Science 38(4):576-601 — betting e-process/optional stopping 유효성 총론.',
     'policy': '엔지니어링/도메인 정책값 — 문헌 도출 아님 (튜너블). 영감 문헌은 rationale 에 별도 표기.',
 }
 
@@ -410,6 +414,33 @@ GROUNDED = {
         'rationale': 'exit_code 0 / pass·success·replay → 0.80, exit≠0 / fail·reject·error → 0.20, '
                      'verdict·accept·approve·resolve → 0.75, doubt → 0.0(정의적: 의문=신뢰 0). '
                      '성공/실패/판결의 증거강도 도메인 정책값(튜너블).',
+    },
+    # ── e-process 층 (S9 흡수 2026-07-28, quant/eprocess.py) — anytime-valid 연속증거 ──────
+    'eprocess_kappa': {
+        'value': 0.5, 'source': 'vovk_wang2021', 'tier': 'policy_in_scale',
+        'band': 'κ∈(0,1) calibrator 족 e=κp^(κ-1) — ∫₀¹=1 이라 임의 유효 p 에서 E[e|H0]≤1',
+        'rationale': 'calibrator 족 자체는 문헌(Vovk-Wang 2021 Prop 2.2 형태), κ=0.5 선택은 관례값. '
+                     '★정직: κ 튜닝으로 검정력이 달라지나 유효성(E[e|H0]≤1)은 족 전체에서 성립.',
+    },
+    'eprocess_p0': {
+        'value': 0.35, 'source': 'policy', 'tier': 'policy',
+        'band': 'H0 "건강한 프로그램의 novel 예측 적중률 ≥ p0" 의 경계',
+        'rationale': '★정직: rf-ltrem-d2 vital-sign 밴드 하한(0.35–0.5)의 하한 계승 — 그 밴드 자체가 '
+                     '"외부 근거 박약"으로 공시된 값이다(문헌 도출 아님). 낮출수록 abandon 보수적. '
+                     'production 배선: tree_metrics 의 eprocess 층 — K=3(should_abandon) challenger '
+                     '병행 출력이며 판정을 구속하지 않는다(일치율 실측 후 재론).',
+    },
+    'eprocess_lambda_fraction': {
+        'value': 0.5, 'source': 'policy', 'tier': 'policy',
+        'band': 'λ = fraction/(1-p0) — 파산불가 최대 베팅 1/(1-p0) 의 절반',
+        'rationale': '★정직: half-Kelly 류 관례(성장률-분산 절충)이지 GRO 최적화 도출이 아니다. '
+                     'λ↑ = 빠른 검출·높은 변동, λ↓ = 보수. 유효성은 λ∈(0,1/(1-p0)) 전 구간에서 성립.',
+    },
+    'eprocess_alpha': {
+        'value': 0.05, 'source': 'ville1939', 'tier': 'policy_in_scale',
+        'band': 'Ville 임계 1/α=20 — anytime 거짓 abandon 신호 확률 상한',
+        'rationale': 'P(sup E_t ≥ 1/α | H0) ≤ α 는 문헌(Ville 1939); α=0.05 컷 자체는 관행적 정책값. '
+                     '임의 시점 consult(적대적 optional stopping)에도 상한이 유지되는 것이 K=3 대비 본질 이득.',
     },
 }
 

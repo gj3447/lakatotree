@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from lakatos.quant.laudan import (branch_problem_balance_windowed, problem_balance, psr, should_abandon,
                      unattributed_closures)
 from lakatos.quant.bayes import branch_credence, should_abandon_bayes
+from lakatos.quant.eprocess import should_abandon_eprocess
 from lakatos.quant.fertility import predictive_fertility, nobel_grade
 from lakatos.eureka import eureka_over_tree
 from lakatos.verdicts import FORCEFUL_SOURCES
@@ -294,6 +295,37 @@ def _fertility_layer(tv: '_TreeView | list', by: dict | None = None,
     return fert
 
 
+_EPROCESS_STRUCTURAL_DEMOTES = frozenset({
+    'reproducibility_refuted', 'novel_not_server_anchored', 'provisional_stale_engine'})
+
+
+def _eprocess_layer(tv: '_TreeView | list', nodes: list | None = None) -> dict:
+    """e-process challenger (S9 흡수 2026-07-28) — anytime-valid abandon 신호, K=3 병행(대체 아님).
+
+    스트림 = novel_registered 노드의 novel_confirmed 이진 결과, (judged_at, tag) 시간순 정렬
+    (optional-stopping 유효성의 순차 전제). ★정직: novel_confirmed=False 중 *구조적 강등*
+    (재현성/앵커/stale-engine — judgement_policy 3종)은 예측 빗나감이 아니므로 스트림에서 제외하고
+    excluded_structural 로 별도 공시(운영 강등을 과학적 반증으로 오독 금지). neutralize_unreceipted
+    이후의 tv 를 받으므로 무영수증 confirmed 는 이미 False 로 게이트된 상태다."""
+    if not isinstance(tv, _TreeView):
+        tv = _tv(nodes=tv if nodes is None else nodes)
+    cand = [r for r in tv.nodes if r.get('novel_registered')]
+    excluded = [r['tag'] for r in cand
+                if not r.get('novel_confirmed')
+                and r.get('lakatos_status') in _EPROCESS_STRUCTURAL_DEMOTES]
+    stream_rows = sorted((r for r in cand if r['tag'] not in set(excluded)),
+                         key=lambda r: (str(r.get('judged_at') or ''), str(r.get('tag') or '')))
+    outcomes = [1 if r.get('novel_confirmed') else 0 for r in stream_rows]
+    sig = should_abandon_eprocess(outcomes)
+    return dict(stream_n=len(outcomes), hits=sum(outcomes),
+                excluded_structural=excluded,
+                abandon=sig['abandon'], fired_at=sig['fired_at'],
+                e_final=round(sig['e_final'], 4), e_max=round(sig['e_max'], 4),
+                threshold=sig['threshold'], p0=sig['p0'], alpha=sig['alpha'],
+                note='K=3(laudan.should_abandon) challenger 병행 — 판정 비구속. anytime-valid: '
+                     '임의 시점 consult 시 거짓 신호 확률<=α (Ville). 일치율 실측 후 재론.')
+
+
 def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
                   nodes: list | None = None) -> dict:
     """eureka(measurement-grade) — novel 예측 중 *측정 red* 통과 비율 = true/felt. BF substantial +
@@ -337,7 +369,8 @@ def _multiplicity_screen(nodes: list) -> dict:
         out['/'.join(str(k) for k in key)] = dict(
             family_size=rep.family_size, untestable=list(rep.untestable),
             survivors_bh=list(rep.survivors_bh),
-            survivors_bonferroni=list(rep.survivors_bonferroni), q=rep.q, note=rep.note)
+            survivors_bonferroni=list(rep.survivors_bonferroni),
+            survivors_ebh=list(rep.survivors_ebh), q=rep.q, note=rep.note)
     return out
 
 
@@ -423,6 +456,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                          trust_coverage_mode=cfg.get('trust_coverage_mode'))
     fert = _fertility_layer(tv)
     eureka = _eureka_layer(tv)
+    eproc = _eprocess_layer(tv)          # S9: anytime-valid challenger (K=3 병행, 판정 비구속)
     anchored = _anchored_ratio(nodes)   # P0b(MG R8): cross-metric novel 중 서버앵커 비율
     multiplicity = _multiplicity_screen(nodes)
     coverage = _coverage(cfg)
@@ -448,6 +482,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     if closed_q - receipted_closed_q > 0:
         alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 무채점 "
                            f"노드(close_ratio 는 유지, close_ratio_receipted 로 세분 공시; 재귀속은 ADR+GO)"]
+    if eproc.get('abandon'):
+        alerts = [*alerts, f"e-process 폐기 신호(challenger): wealth {eproc['e_max']} ≥ 1/α="
+                           f"{eproc['threshold']} (n={eproc['stream_n']}, fired_at={eproc['fired_at']}) "
+                           f"— anytime-valid, K=3 병행 신호(판정 비구속)"]
     return dict(nodes=n, canonical=(can[0] if can else None), canonical_path=path,
                 progress=prog, rejection_ratio=round(len(rejected) / max(1, n), 2),
                 rejected=rejected, max_degeneration_depth=stalled,
@@ -461,6 +499,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                               unreceipted_closes=closed_q - receipted_closed_q),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
-                eureka=eureka, anchored=anchored, multiplicity=multiplicity, alerts=alerts,
+                eureka=eureka, eprocess=eproc, anchored=anchored, multiplicity=multiplicity,
+                alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
                                 mode=('lenient-counted' if lenient else 'inconclusive-excluded')))

@@ -75,8 +75,10 @@ class MultiplicityReport:
     survivors_bh: tuple          # BH(FDR) 생존 tag
     survivors_bonferroni: tuple  # Bonferroni(FWER) 생존 tag
     q: float
+    survivors_ebh: tuple = ()    # e-BH(Wang-Ramdas 2022) 생존 tag — 임의 의존 하 FDR<=q (정직④)
     note: str = ('보정은 판결을 바꾸지 않는다 — family 수준 false-progressive 경보. '
-                 'p 는 noise_band=1σ 근사(정책 가정)')
+                 'p 는 noise_band=1σ 근사(정책 가정). e-BH 는 같은 근사 p 의 κ-calibrator '
+                 'e 값 위에서 돌지만 BH 의 독립/PRDS 가정이 필요 없다(의존 가지 family 에 안전)')
 
 
 def false_progressive_screen(candidates: list, q: float = FDR_Q) -> MultiplicityReport:
@@ -84,7 +86,21 @@ def false_progressive_screen(candidates: list, q: float = FDR_Q) -> Multiplicity
 
     같은 family 로 묶는 책임은 호출자에 있다 (같은 metric/scope 끼리만 — 다른 측정을
     한 family 로 묶으면 보정이 과도/과소해진다).
+
+    정직 표기 ④ (S9, 2026-07-28): 같은 metric/baseline 을 공유하는 가지들은 의존적인데 BH 는
+    독립/PRDS 가정이 필요하다 — e-BH 병행 출력이 그 가정 없이 FDR<=q 를 보증한다(생존자는
+    통상 BH 의 부분집합 = 더 보수적). 입력 e 는 κ-calibrator(eprocess.p_to_e) 경유라
+    noise_band=1σ 근사(정직①)는 그대로 상속한다.
     """
+    from lakatos.quant.eprocess import e_bh, p_to_e
+
+    def _p_to_e_saturating(p):
+        # p==0.0 은 erf 포화(z≳8σ, float 해상도 밖) — BH 가 p=0 을 reject 하는 것과 동형으로
+        # e=∞ 취급(P(p=0|H0)=0 이라 유효성 무손상). p_to_e 자체의 0-거부는 유지(입력 위생).
+        if p is not None and p <= 0.0:
+            return float('inf')
+        return p_to_e(p)
+
     pvals, untestable = [], []
     for c in candidates:
         p = judgment_pvalue(c['delta'], c.get('noise_band'), c.get('direction', 'lower'))
@@ -93,9 +109,11 @@ def false_progressive_screen(candidates: list, q: float = FDR_Q) -> Multiplicity
             untestable.append(c['tag'])
     bh = benjamini_hochberg(pvals, q)
     bonf = bonferroni(pvals, q)
+    ebh = e_bh([_p_to_e_saturating(p) for p in pvals], q)
     return MultiplicityReport(
         family_size=sum(1 for p in pvals if p is not None),
         untestable=tuple(untestable),
         survivors_bh=tuple(c['tag'] for c, r in zip(candidates, bh) if r),
         survivors_bonferroni=tuple(c['tag'] for c, r in zip(candidates, bonf) if r),
-        q=q)
+        q=q,
+        survivors_ebh=tuple(c['tag'] for c, r in zip(candidates, ebh) if r))
