@@ -117,6 +117,12 @@ _CORRUPT = {
     #   sha256(b'다른 내용') ≠ sha256(b'원본') 인 임의 불일치면 충분(순수 술어 comment_drift).
     "COMMENT_DRIFT_AFTER_VERDICT": {"verdict": "proof", "comment": "원본 + 사후 승리 서사",
                                     "comment_sha_at_verdict": "0" * 64},
+    # FSM 감사 2026-07-28: AGM 강등이 verdict 만 바꾸고 영속 node_state 를 남긴 실제 부패 형태 —
+    #   verdict='former_canonical'(engine 강등) 인데 node_state 는 'CANONICAL' 로 잔존.
+    "NODE_STATE_DRIFT": {"verdict": "former_canonical", "verdict_source": "engine",
+                         "node_state": "CANONICAL", "assurance_tier_resolved": "legacy",
+                         "pred_registered_at": "2026-07-01", "judged_at": "2026-07-02",
+                         "current_receipt_sha": "a" * 64},
 }
 
 

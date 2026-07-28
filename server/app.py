@@ -993,6 +993,7 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                            WHERE e.tag IN $demote AND e.verdict='CANONICAL'
                                  AND coalesce(e.valid_until_rebutted, true) = true
                            SET e.verdict='former_canonical', e.verdict_source='engine',
+                               e.node_state='FORMER_CANONICAL',
                                e.current_best_pointer=false, e.demoted_at=$ts""",
                         dict(tree=tree, demote=demote, ts=ts)))
         else:
@@ -1008,6 +1009,7 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                                      AND coalesce(e.valid_until_rebutted, true) = true
                                      AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
                                SET e.verdict='former_canonical', e.verdict_source='engine',
+                                   e.node_state='FORMER_CANONICAL',
                                    e.current_best_pointer=false, e.demoted_at=$ts
                                MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                                  ON CREATE SET rec.tree=$tree, rec.tag=$tag,

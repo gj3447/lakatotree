@@ -23,7 +23,10 @@ from server.ports import KgTx
 #   *영수증*(FORCEFUL_SOURCES)이면 verdict-bearing 필드를 MATCH 시 보존, 아니면(draft) 정상 갱신. DB-side CASE 라
 #   원자적(읽고-쓰기 race 없음). verdict *권위*는 여전히 judge/set_verdict 층에 — writer 는 파괴만 못 한다.
 #   verdict-bearing 필드만 CASE 로 가드; 메타(comment/algorithm/script/…)는 항상 갱신(draft 편집 보존).
-_FORCEFUL = sorted(FORCEFUL_SOURCES)
+# 2026-07-28 FSM 감사: CANONICAL 승격은 verdict_source='admin'(STRUCTURAL)을 SET 하므로
+# FORCEFUL 만 보존하면 CANONICAL 노드가 같은 tag 의 add_node 재호출로 proof/DRAFT 로 침묵
+# 클로버됐다(CANONICAL→DRAFT 는 전이표상 불법). 승격 source 를 보존 집합에 편입.
+_FORCEFUL = sorted(set(FORCEFUL_SOURCES) | {'admin'})
 _PRESERVE_IF_SCORED = (
     "e.verdict = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.verdict ELSE {v} END, "
     "e.node_state = CASE WHEN coalesce(e.verdict_source,'') IN $forceful THEN e.node_state ELSE {ns} END, "

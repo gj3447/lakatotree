@@ -1,0 +1,40 @@
+# hermetic — 네트워크/KG 0 (순수 술어 + 소스 계약만 구동).
+# 무엇을 구동하나: node_state FSM 파생/전이표 실코드 + fsck 체커 실코드 + writer 보존 상수 +
+# layout fail-closed 게이트 실코드. PROM16 검증 팬아웃(2026-07-28)이 잡은 DEFECT 4건의 봉인.
+# 음성 오라클: 정상 노드/미선언 layout 에서 발화하면 죽는다(과잉 차단 회귀가드).
+name: lakatotree-advancement-fsm-audit-fixes
+target:
+  mode: in_process
+  callable: fsm_audit_fixes_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: FSM-1
+    description: 강등 세탁 차단 — FORMER_CANONICAL(engine 강등) 노드의 전이가 전이표상 불법으로 판정되고, before-상태 파생이 verdict 를 포함한다(종전엔 verdict 누락 부분 row 가 JUDGED_SCRIPTED 로 오판정돼 재채점이 통과). 정상 DRAFT→PREDICTED 는 무영향.
+    gate:
+      - {event: demotion_laundering_blocked, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:FSM_AUDIT_FIXES:demotion_laundering_blocked
+      source: fsm_audit_fixes_receipt.py
+      symbol: verify
+      must_emit: demotion_laundering_blocked
+  - id: FSM-2
+    description: 상태 정합성 — writer 보존 집합이 admin(CANONICAL 승격 source)을 포함해 클로버를 막고, fsck 가 영속 node_state 와 파생 상태의 드리프트(AGM 강등 미반영)를 검출하며, 정렬된 노드에선 무발화한다.
+    gate:
+      - {event: canonical_clobber_guarded, op: ">=", count: 1}
+      - {event: node_state_drift_detected_and_silent_when_aligned, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:FSM_AUDIT_FIXES:node_state_drift_detected_and_silent_when_aligned
+      source: fsm_audit_fixes_receipt.py
+      symbol: verify
+      must_emit: node_state_drift_detected_and_silent_when_aligned
+  - id: FSM-3
+    description: in-toto fail-closed — 만료·서명무효·형식위반 layout 이 422 로 거부되고(종전 침묵 폴백 = 무서명 예측 재개 구멍), 미선언 트리는 None 폴백으로 무회귀다.
+    gate:
+      - {event: layout_fail_closed_enforced, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:FSM_AUDIT_FIXES:layout_fail_closed_enforced
+      source: fsm_audit_fixes_receipt.py
+      symbol: verify
+      must_emit: layout_fail_closed_enforced

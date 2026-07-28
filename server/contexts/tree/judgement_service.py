@@ -30,12 +30,14 @@ from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, ju
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
 from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
-from lakatos.verdicts import (ADMIN_VERDICTS, comment_seal_sha, fold_receipt_chain, is_admin_verdict,
+from lakatos.verdicts import (ADMIN_VERDICTS, FORCEFUL_SOURCES, comment_seal_sha,
+                              fold_receipt_chain, is_admin_verdict, normalize_source,
                               prediction_content_sha, receipt_content_sha)
 from lakatos.write_cert import (CertError, CertSignerNotAllowed, operation_payload_sha256,
                                 verify_write_cert)
 from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.cycle_budget import assert_scoring_budget
+from server.contexts.tree.layout_gate import resolve_role_layout
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
                                                    engine_freshness_fires, qualitative_flags,
                                                    resolve_measurement, response_assurance)
@@ -568,15 +570,10 @@ class JudgementService:
         m0 = meta[0] if meta else {}
         onto = DomainOntology.from_json(m0.get("ontology")) if meta else None
         # EXTAUDIT S6b: layout 이 register_prediction step 을 선언하면 예측등록도 서명 필수(무서명 예측 봉합).
-        #   owner 서명 무효/만료면 layout 무시(dead-σ). step 미선언/layout 미선언 트리는 서명 불요(무회귀).
-        _rl = None
-        try:
-            _cand = layout_mod.parse_role_layout(m0.get("research_layout"))
-            if _cand is not None and not layout_mod.layout_expired(_cand) and layout_mod.verify_layout_sig(
-                    _cand, str(m0.get("layout_owner_did") or ''), str(m0.get("layout_sig") or '')):
-                _rl = _cand
-        except layout_mod.LayoutError:
-            _rl = None
+        #   2026-07-28 fail-closed 정합(in-toto 충실도 감사): 만료·서명무효·형식위반 layout 은 이제
+        #   *거부*(422)다 — 침묵 무시하면 만료 순간 cert 요구가 사라져 무서명 예측이 재개됐다.
+        #   layout 미선언 트리는 여전히 None(무회귀).
+        _rl = resolve_role_layout(m0)
         # Read the actual ledger tip before certificate verification.  The same value is signed,
         # sealed into the PredictionReceipt, and CAS-checked by the write below.
         head_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -776,6 +773,12 @@ class JudgementService:
         #   *여전히* stale/무능력이면 409(재기동 먼저).
         freshen_anchor = False
         freshen_reason = None
+        # FSM 감사 수리(2026-07-28): raw =='scripted' 만 보면 engine/human/reproducible 로 강등된
+        # 노드(former_canonical 등)의 재제출이 통과해 강등이 지워졌다 — FORCEFUL 멤버십으로 확장.
+        # (freshen 좁은통로는 scripted 판정에만 유효하므로 그 안에서 다시 좁힌다.)
+        if normalize_source(pr['vsrc']) in FORCEFUL_SOURCES and pr['vsrc'] != 'scripted':
+            raise HTTPException(409, f"영수증 판정({pr['vsrc']})이 이미 선 노드 — 재채점 금지. "
+                                     f"강등/판정을 되돌리려면 새 노드로 분기하라(강등 세탁 차단).")
         if pr['vsrc'] == 'scripted':
             can_freshen = (pr.get('existing_verdict') == 'partial'
                            and pr.get('existing_lstat') in ('novel_not_server_anchored',
@@ -848,14 +851,9 @@ class JudgementService:
         # EXTAUDIT S6 (역할분리, in-toto 흡수): layout 이 선언됐으면 이 verb 의 allow-list 를 그 verb 의
         #   pubkeys 로 좁힌다(역할=다른 열쇠). owner 서명 무효/만료면 layout 무시(dead-σ: 위조된 정책은
         #   적용 안 함, 폴백은 attestors). layout 미선언 트리는 attestors 그대로 — 라이브 무회귀.
-        role_layout = None
-        try:
-            _lo = layout_mod.parse_role_layout(pr.get('research_layout'))
-            if _lo is not None and not layout_mod.layout_expired(_lo) and layout_mod.verify_layout_sig(
-                    _lo, str(pr.get('layout_owner_did') or ''), str(pr.get('layout_sig') or '')):
-                role_layout = _lo
-        except layout_mod.LayoutError:
-            role_layout = None
+        # 2026-07-28 fail-closed 정합: 선언된 layout 이 무효면 422(종전엔 침묵 폴백 — 역할 좁힘·
+        #   disjoint 검사가 통째로 사라졌다). 미선언 트리는 None → attestors 폴백(무회귀).
+        role_layout = resolve_role_layout(pr)
         submit_allowlist = layout_mod.role_allowlist(role_layout, 'submit_test_result', attestors)
         cert_required = (assurance.GATE_WRITE_CERT in assurance.gates_for('submit_test_result', tier)
                          and bool(attestors))
@@ -1116,8 +1114,12 @@ class JudgementService:
             'metric_value': effective_metric,
             'judged_at': ts,
         })
+        # FSM 감사 수리(2026-07-28): before-상태 재유도에 verdict 를 실어야 한다 — 빼면
+        # former_canonical/degenerating(engine·human 강등) 노드가 JUDGED_SCRIPTED 로 오판정돼
+        # 강등 세탁 재채점이 전이 가드를 침묵 통과했다(읽기 쿼리는 existing_verdict 를 이미 반환).
         _require_state_transition(
             derive_node_state({
+                'verdict': pr.get('existing_verdict'),
                 'node_state': pr.get('node_state'),
                 'verdict_source': pr.get('vsrc'),
                 'pred_registered_at': pr.get('pred_registered_at'),

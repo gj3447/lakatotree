@@ -19,6 +19,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from lakatos.node_state import derive_state_value
 from lakatos.verdicts import (FORCEFUL_SOURCES,
                               SCRIPTED_DIALECTICAL_VERDICTS as _SCRIPTED_DIALECTICAL_VERDICTS,
                               STANDING_VERDICTS as _STANDING_VERDICTS,
@@ -38,6 +39,7 @@ _SEVERITY = {
     "VERDICT_WITHOUT_PREREG": ERROR,    # scripted 판결인데 사전등록(pred_registered_at) 없음 = 영수증 사슬 끊김
     "SCRIPTED_WITHOUT_SOURCE": ERROR,   # scripted 어휘인데 verdict_source 가 영수증(FORCEFUL)이 아님 = force_of 오판
     "VERDICT_WRITE_WITHOUT_TIER_RESOLVE": ERROR,   # G6: 판결 write 에 tier resolve 흔적 없음 = 디스패치 우회/G6 이전
+    "NODE_STATE_DRIFT": WARN,           # 영속 node_state 가 파생 상태와 불일치 = 강등/전이 미반영(FSM 감사 2026-07-28)
     "RECEIPT_CHAIN_MISMATCH": ERROR,    # R5: current_receipt_sha 가 동봉 체인 밖(dangling — 변조/부패). verify 라우트와 공용 어휘
     "FORCEFUL_SOURCE_WITHOUT_RECEIPT": ERROR,   # R6: FORCEFUL 판결인데 원장 포인터 없음(G1 이전/우회 write — skiplist 로만 면제)
     "MEASUREMENT_REFUTED_BUT_STANDING": WARN,   # AG6: replay 가 측정을 반증(mismatch)했는데 standing verdict — 값무결 관측(비차단)
@@ -432,11 +434,30 @@ def _check_comment_drift(rec: dict) -> Finding | None:
     return None
 
 
+def _check_node_state_drift(rec: dict) -> Finding | None:
+    """영속 node_state 와 필드 파생 상태의 드리프트 (FSM 감사 2026-07-28).
+
+    AGM 강등이 verdict 만 바꾸고 node_state 를 남겨 '영속 CANONICAL ∧ verdict former_canonical'
+    이 영구 공존했다 — 읽기 모델은 영속값을 우선하므로 강등된 노드가 계속 CANONICAL 로
+    표면화된다. 파생 불가(빈 row)나 영속값 부재(legacy NULL)는 드리프트가 아니다(부재≠반증).
+    """
+    persisted = (rec.get("node_state") or "").strip()
+    if not persisted:
+        return None
+    derived = derive_state_value(rec)
+    if derived and persisted != derived:
+        return Finding("NODE_STATE_DRIFT", _SEVERITY["NODE_STATE_DRIFT"],
+                       f"persisted node_state={persisted} != derived {derived} "
+                       f"(verdict={rec.get('verdict')}, source={rec.get('verdict_source')})")
+    return None
+
+
 _CHECKS = (_check_source_trust, _check_judged_at_type, _check_prereg, _check_scripted_source,
            _check_tier_resolve, _check_receipt_chain, _check_forceful_receipt,
            _check_receipt_sha_content, _check_receipt_encoding_stale,
            _check_replay_diagnostic_cache, _check_replay_input_cache,
-           _check_measurement_lock_content, _check_measurement_refuted, _check_comment_drift)
+           _check_measurement_lock_content, _check_measurement_refuted, _check_comment_drift,
+           _check_node_state_drift)
 
 
 def record_content_sha(rec: dict) -> str:
