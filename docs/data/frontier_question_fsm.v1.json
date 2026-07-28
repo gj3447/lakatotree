@@ -26,9 +26,26 @@
         "question": {"type": "string"},
         "event_id": {"type": "string"}
       }
+    },
+    "ADJUDICATED": {
+      "type": "object",
+      "required": ["tree", "question", "verdict", "receipt_sha"],
+      "properties": {
+        "tree": {"type": "string"},
+        "question": {"type": "string"},
+        "verdict": {"type": "string"},
+        "receipt_sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
     }
   },
-  "guards": {},
+  "guards": {
+    "receipt_backed_conclusive": {
+      "reads": [],
+      "event_reads": ["verdict", "receipt_sha"],
+      "pure": true,
+      "synchronous": true
+    }
+  },
   "effects": {
     "UpdateQuestionMetadata": {
       "kind": "command",
@@ -63,7 +80,7 @@
         {"id": "OPEN", "kind": "atomic"},
         {"id": "CLOSED", "kind": "atomic"}
       ],
-      "events": ["OPEN", "CLOSE"],
+      "events": ["OPEN", "CLOSE", "ADJUDICATED"],
       "invalid_event_policy": {
         "mode": "reject",
         "guard_false": "reject",
@@ -105,6 +122,39 @@
           "to": "CLOSED",
           "effects": [],
           "effect_bindings": {}
+        },
+        {
+          "id": "adjudication-close",
+          "from": "OPEN",
+          "event": "ADJUDICATED",
+          "to": "CLOSED",
+          "guard": "receipt_backed_conclusive",
+          "priority": 0,
+          "effects": ["RecordQuestionClosure"],
+          "effect_bindings": {
+            "RecordQuestionClosure": {
+              "tree": "event.tree",
+              "question": "event.question",
+              "event_id": "event.receipt_sha"
+            }
+          }
+        },
+        {
+          "id": "adjudication-retain-open",
+          "from": "OPEN",
+          "event": "ADJUDICATED",
+          "to": "OPEN",
+          "priority": 1,
+          "effects": [],
+          "effect_bindings": {}
+        },
+        {
+          "id": "duplicate-adjudication",
+          "from": "CLOSED",
+          "event": "ADJUDICATED",
+          "to": "CLOSED",
+          "effects": [],
+          "effect_bindings": {}
         }
       ]
     }
@@ -119,13 +169,18 @@
       "id": "close-is-idempotent",
       "statement": "Repeated CLOSE commands do not increment visits or append closure/history events.",
       "verification": "Duplicate-close trace plus application service contract test."
+    },
+    {
+      "id": "self-report-cannot-close",
+      "statement": "An adjudication without a valid content-addressed receipt identity cannot close a question; the application transaction persists that receipt and closure together.",
+      "verification": "Guard-false trace, reducer conformance test, service transaction test, and OOPTDD injected-fault oracle."
     }
   ],
   "liveness_properties": [
     {
       "id": "eventual-close",
-      "statement": "An OPEN question reaches CLOSED when a CLOSE command is delivered.",
-      "assumptions": ["A valid CLOSE command is eventually delivered and persistence is available."],
+      "statement": "An OPEN question reaches CLOSED when a CLOSE command or receipt-backed conclusive ADJUDICATED event is delivered.",
+      "assumptions": ["A valid event is eventually delivered and persistence is available."],
       "verification": "Open-close abstract trace and service integration test."
     }
   ],

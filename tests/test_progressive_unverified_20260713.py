@@ -103,7 +103,7 @@ def test_eureka_verdict_maps_unverified_to_progressive():
     assert eureka_verdict("degenerating") == "degenerating"
 
 
-def test_eureka_write_mapping_and_tree_recompute_are_symmetric():
+def test_unverified_eureka_declaration_without_actual_closure_is_inconclusive():
     from lakatos.eureka import classify, eureka_over_tree
 
     mapped = classify({
@@ -113,7 +113,7 @@ def test_eureka_write_mapping_and_tree_recompute_are_symmetric():
         "delta": -0.4,
         "noise_band": 0.02,
         "source_trust": 1.0,
-        "closed": 1,
+        "closed": 0,
         "opened": 0,
     }, require_promotion=False)
     recomputed = eureka_over_tree([{
@@ -128,8 +128,9 @@ def test_eureka_write_mapping_and_tree_recompute_are_symmetric():
         "pred_closes": "q1",
         "questions": [],
     }])
-    assert mapped.true is True
-    assert recomputed["true"] == 1 and recomputed["hallucinated"] == 0
+    assert mapped.true is False and mapped.inconclusive is True
+    assert recomputed["true"] == 0 and recomputed["hallucinated"] == 0
+    assert recomputed["inconclusive"] == 1
 
 
 def test_unverified_is_not_promotable():

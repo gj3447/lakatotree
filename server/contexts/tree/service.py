@@ -109,10 +109,10 @@ class TreeService:
         td = tree_data if tree_data is not None else self.tree_data(name)
         return self._mutations().add_node(name, node, td)
 
-    def create_tree(self, name: str, spec: CreateTreeIn) -> dict:
+    def create_tree(self, name: str, spec: CreateTreeIn, create_only: bool = False) -> dict:
         """나무 생성/메타 upsert(MERGE LakatosTree). 멱등·last-write-wins. hard_core/frontier_rule
-        비우면 policy_warnings 경고만(차단 아님). 노드/질문은 별도 라우트."""
-        return self._mutations().upsert_tree(TreeSpec(
+        비우면 policy_warnings 경고만(차단 아님). create_only 는 동명 나무를 409 로 거부한다."""
+        tree_spec = TreeSpec(
             name=name,
             title=spec.title,
             hard_core=spec.hard_core,
@@ -132,7 +132,8 @@ class TreeService:
             witness_dids=(None if spec.witness_dids is None else tuple(spec.witness_dids)),
             witness_threshold=spec.witness_threshold,
             cycle_budget=spec.cycle_budget,
-        ))
+        )
+        return self._mutations().upsert_tree(tree_spec, create_only=create_only)
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:
         """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
@@ -200,6 +201,7 @@ class TreeService:
         closure_id = f'{name}/{qname}/closure'
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+              SET q._cas=coalesce(q._cas, 0) + 0
               WITH q, coalesce(q.status, $open_state) AS before_state
               WITH q, before_state, before_state=$open_state AS transitioned
               FOREACH (_ IN CASE WHEN transitioned THEN [1] ELSE [] END |

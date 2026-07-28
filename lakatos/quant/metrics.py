@@ -405,6 +405,94 @@ def _coverage(cfg: dict) -> dict:
                 backlog_count=len(backlog), exhaustive=(status == 'exhaustive'))
 
 
+def _structure_layer(nodes: list[dict]) -> dict:
+    """Report graph density facts without turning them into a quality verdict.
+
+    Research density is not raw node count. This layer makes fragmentation,
+    multi-parent synthesis, and typed-relation use observable while preserving
+    malformed legacy rows as explicit unnamed/duplicate/dangling counts.
+    """
+
+    n = len(nodes)
+    tags: dict[str, list[int]] = {}
+    parent_edges: list[list[dict]] = []
+    for index, row in enumerate(nodes):
+        tag = str(row.get('tag') or '')
+        tags.setdefault(tag, []).append(index)
+        edges = row.get('parent_edges')
+        if not isinstance(edges, list):
+            parents = row.get('parents') or ([] if not row.get('parent') else [row.get('parent')])
+            edges = [{'tag': parent, 'relation_kind': 'knowledge_inheritance'}
+                     for parent in parents if parent]
+        parent_edges.append([edge for edge in edges
+                             if isinstance(edge, dict) and edge.get('tag')])
+
+    adjacency = [set() for _ in nodes]
+    raw_edges = sum(len(edges) for edges in parent_edges)
+    edge_count = typed_edges = dangling_edges = duplicate_edges = 0
+    multi_parent_nodes = 0
+    resolved_parent_counts = [0 for _ in nodes]
+    for child, edges in enumerate(parent_edges):
+        resolved_parents: set[int] = set()
+        seen_parent_tags: set[str] = set()
+        for edge in edges:
+            parent_tag = str(edge.get('tag'))
+            if parent_tag in seen_parent_tags:
+                duplicate_edges += 1
+                continue
+            seen_parent_tags.add(parent_tag)
+            if (edge.get('relation_kind') or 'knowledge_inheritance') != 'knowledge_inheritance':
+                is_typed = True
+            else:
+                is_typed = False
+            candidates = tags.get(parent_tag, [])
+            if len(candidates) != 1:
+                dangling_edges += 1
+                continue
+            parent = candidates[0]
+            resolved_parents.add(parent)
+            edge_count += 1
+            if is_typed:
+                typed_edges += 1
+            adjacency[child].add(parent)
+            adjacency[parent].add(child)
+        if len(resolved_parents) > 1:
+            multi_parent_nodes += 1
+        resolved_parent_counts[child] = len(resolved_parents)
+
+    components = 0
+    largest = 0
+    unseen = set(range(n))
+    while unseen:
+        components += 1
+        stack = [unseen.pop()]
+        size = 0
+        while stack:
+            current = stack.pop()
+            size += 1
+            neighbours = adjacency[current] & unseen
+            unseen.difference_update(neighbours)
+            stack.extend(neighbours)
+        largest = max(largest, size)
+
+    duplicate_tag_nodes = sum(len(indices) for tag, indices in tags.items()
+                              if tag and len(indices) > 1)
+    return {
+        'roots': sum(1 for count in resolved_parent_counts if count == 0),
+        'components': components,
+        'raw_edges': raw_edges,
+        'edges': edge_count,
+        'duplicate_edges': duplicate_edges,
+        'multi_parent_nodes': multi_parent_nodes,
+        'typed_edges': typed_edges,
+        'typed_edge_ratio': round(typed_edges / edge_count, 3) if edge_count else None,
+        'largest_component_ratio': round(largest / n, 3) if n else None,
+        'dangling_edges': dangling_edges,
+        'unnamed_nodes': len(tags.get('', [])),
+        'duplicate_tag_nodes': duplicate_tag_nodes,
+    }
+
+
 def _assemble_alerts(*, stalled: int, prog: dict | None, annotated: int, n: int,
                      coverage: dict, abandon: list, multiplicity: dict) -> list:
     """경보 조립 — 퇴행/정체/주석미완/커버리지/폐기후보/다중비교를 사람 읽는 문자열로."""
@@ -478,6 +566,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     eproc = _eprocess_layer(tv)          # S9: anytime-valid challenger (K=3 병행, 판정 비구속)
     anchored = _anchored_ratio(nodes)   # P0b(MG R8): cross-metric novel 중 서버앵커 비율
     multiplicity = _multiplicity_screen(nodes)
+    structure = _structure_layer(nodes)
     coverage = _coverage(cfg)
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
                               coverage=coverage,
@@ -519,6 +608,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
                 eureka=eureka, eprocess=eproc, anchored=anchored, multiplicity=multiplicity,
+                structure=structure,
                 alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
                                 mode=('lenient-counted' if lenient else 'inconclusive-excluded')))

@@ -69,21 +69,41 @@ def test_frontier_reducer_conforms_to_machine_spec():
 
     source = Path(__file__).parents[1] / "docs/data/frontier_question_fsm.v1.json"
     machine = json.loads(source.read_text(encoding="utf-8"))["machines"][0]
-    declared = {
-        (transition["from"], transition["event"]): transition
-        for transition in machine["transitions"]
-    }
+    declared = {}
+    for transition in machine["transitions"]:
+        declared.setdefault((transition["from"], transition["event"]), []).append(transition)
     for state in QuestionState:
-        for event in QuestionEvent:
-            expected = declared.get((state.value, event.value))
-            if expected is None:
+        for event in (QuestionEvent.OPEN, QuestionEvent.CLOSE):
+            expected = declared.get((state.value, event.value), [])
+            if not expected:
                 with pytest.raises(ValueError):
                     step(state, event)
                 continue
+            assert len(expected) == 1
+            expected = expected[0]
             actual = step(state, event)
             assert actual.state.value == expected["to"]
             assert actual.transition_id == expected["id"]
             assert [effect.value for effect in actual.effects] == expected["effects"]
+
+    closing = step(QuestionState.OPEN, QuestionEvent.ADJUDICATED,
+                   verdict="progressive", receipt_sha="a" * 64)
+    retained = step(QuestionState.OPEN, QuestionEvent.ADJUDICATED,
+                    verdict="partial", receipt_sha="b" * 64)
+    duplicate = step(QuestionState.CLOSED, QuestionEvent.ADJUDICATED,
+                     verdict="rejected", receipt_sha="c" * 64)
+    assert closing.transition_id == "adjudication-close"
+    assert retained.transition_id == "adjudication-retain-open"
+    assert duplicate.transition_id == "duplicate-adjudication"
+    adjudication_close = next(
+        route for route in declared[("OPEN", "ADJUDICATED")]
+        if route.get("guard") == "receipt_backed_conclusive"
+    )
+    assert adjudication_close["effect_bindings"]["RecordQuestionClosure"]["event_id"] \
+        == "event.receipt_sha"
+    with pytest.raises(ValueError, match="sha256"):
+        step(QuestionState.OPEN, QuestionEvent.ADJUDICATED,
+             verdict="progressive", receipt_sha="not-a-receipt")
 
 
 def test_belief_composite_constraint_and_migration_are_declared():

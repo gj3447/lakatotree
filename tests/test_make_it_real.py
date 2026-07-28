@@ -147,13 +147,19 @@ def test_calibration_query_restricts_to_novel_registered(monkeypatch):
 
 
 def test_register_prediction_bumps_closed_question_visits(monkeypatch):
-    # WIRE1-UCB 수정: closes_question 예측이 그 질문 n_visits++ → UCB 탐색항 차등
+    # WIRE1-UCB 수정: closes_question 예측이 같은 guarded registration statement 안에서
+    # 질문 존재/OPEN 을 검증하고 n_visits++ → 유령 target·부분 커밋 금지.
     app = load_app()
     calls = _capture_kg(monkeypatch, app)
     app.register_prediction('T', 'v', app.PredictionIn(
         metric_name='p95', baseline_value=0.5, closes_question='q1'))
     assert any('n_visits=coalesce(q.n_visits, 0) + 1' in q for q, _ in calls)
-    assert any(kw.get('cq') == 'q1' for _, kw in calls)
+    assert any(kw.get('closes_question') == 'q1' for _, kw in calls)
+    assert any(
+        "coalesce(q.status, '__MISSING__')" in q
+        and "question_state = $open_state" in q
+        for q, _ in calls
+    )
 
 
 # ── prom16 engine-axis: CounterexampleType end-to-end 배선 (server) ──

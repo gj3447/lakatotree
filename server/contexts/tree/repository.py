@@ -107,6 +107,7 @@ def normalize_frontier_row(row: dict) -> dict:
     out["status"] = normalize_text(out.get("status")) or "OPEN"
     out["body"] = normalize_text(out.get("body"))
     out["closed_by"] = normalize_text_list(out.get("closed_by"))
+    out["closed_events"] = normalize_text_list(out.get("closed_events"))
     return out
 
 
@@ -188,6 +189,8 @@ class TreeKgRepository:
         WITH e, [pe IN raw_parent_edges WHERE pe.tag IS NOT NULL] AS parent_edges,
              collect(DISTINCT q.name) AS questions
         OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt {receipt_sha: e.current_receipt_sha})
+        OPTIONAL MATCH (e)-[:CLOSES_QUESTION]->(closedq:OpenQuestion)
+        WITH e, parent_edges, questions, hr, count(DISTINCT closedq) AS closed_question_count
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
                e.result_path AS result_path, e.result_sha256 AS result_sha256,
                e.source_judge_script_path AS source_judge_script_path,
@@ -209,6 +212,8 @@ class TreeKgRepository:
                e.verdict_source AS verdict_source, e.node_state AS node_state,
                e.pred_baseline AS pred_baseline, e.pred_noise_band AS pred_noise_band,
                e.pred_direction AS pred_direction, e.pred_closes AS pred_closes,
+               e.pred_question_bound AS pred_question_bound,
+               closed_question_count AS closed_question_count,
                e.pred_metric AS pred_metric, e.pred_registered_at AS pred_registered_at,
                e.judged_at AS judged_at,
                e.pred_scale_type AS pred_scale_type, e.pred_novel AS pred_novel,
@@ -248,7 +253,8 @@ class TreeKgRepository:
         frontier = self.kg(
             "MATCH (t:LakatosTree {name:$n})-[:HAS_FRONTIER]->(q) "
             "RETURN q.name AS name, q.status AS status, q.body AS body, "
-            "q.closed_by AS closed_by, q.expected_gain AS expected_gain, "
+            "q.closed_by AS closed_by, q.closed_events AS closed_events, "
+            "q.expected_gain AS expected_gain, "
             "q.cost AS cost, q.n_visits AS n_visits",
             n=name,
         )

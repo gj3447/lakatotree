@@ -1,0 +1,14 @@
+{
+  "run": "injected-negative-after-question-lock-state-guard-and-event-id-hardening",
+  "command": "LKT_VFC_INJECT=suppress-conclusive .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 1,
+  "target": "VERDICT_FRONTIER_CLOSURE",
+  "target_result": "RED",
+  "target_done": 0,
+  "target_total": 0,
+  "failure": "AssertionError: real service transaction did not close its receipt-bound question",
+    "suite_green": 55,
+    "suite_total": 56,
+  "restored_positive_after_injection": true,
+  "service_path": "JudgementService.register_prediction(question lock) -> submit_test_result(valid-state guard) -> receipt-addressed QuestionClosure"
+}

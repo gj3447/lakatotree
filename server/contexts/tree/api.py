@@ -26,9 +26,9 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
         return service_factory().tree_data(name)
 
     @router.post("/api/tree/{name}")
-    def create_tree(name: str, spec: CreateTreeIn):
-        """나무 생성/메타 upsert. GET 와 같은 경로지만 메서드(POST)로 분기 — 멱등·last-write-wins."""
-        return service_factory().create_tree(name, spec)
+    def create_tree(name: str, spec: CreateTreeIn, create_only: bool = False):
+        """나무 생성/메타 upsert. create_only=true 면 동명 나무를 덮지 않고 409."""
+        return service_factory().create_tree(name, spec, create_only=create_only)
 
     @router.delete("/api/tree/{name}")
     def delete_tree(name: str, cascade: bool = False):

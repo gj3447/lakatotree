@@ -95,6 +95,16 @@ CONFIRMED_NOVEL_PROGRESS = frozenset({
     "progressive",
 })
 
+# frontier_state: a question is closed when its preregistered yes/no target has
+# received an exact answer. ``progressive`` answers positively and ``rejected``
+# answers negatively. Dialectical/off-axis or provisional verdicts do not answer
+# that target and therefore keep it open. This is intentionally narrower than
+# REJECTING_VERDICTS and is owned here with the rest of the verdict vocabulary.
+QUESTION_ANSWER_VERDICTS = frozenset({
+    "progressive",
+    "rejected",
+})
+
 
 def is_progress_verdict(verdict: str) -> bool:
     return verdict in PROGRESS_VERDICTS

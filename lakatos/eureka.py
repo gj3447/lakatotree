@@ -152,7 +152,7 @@ def _node_to_eureka_input(node: dict) -> dict:
 
     * ``delta = metric_value − pred_baseline``  (exactly ``judge.judge``'s effect)
     * ``noise_band = pred_noise_band``
-    * ``closed = |pred_closes|`` (questions this prediction closes),
+    * ``closed = |CLOSES_QUESTION|`` (questions actually closed by a committed adjudication),
       ``opened = |questions|`` (questions the node raises) → per-node problem balance
     * ``verdict`` / ``novel_registered`` / ``novel_confirmed`` / ``source_trust`` — direct
 
@@ -168,7 +168,7 @@ def _node_to_eureka_input(node: dict) -> dict:
         "delta": delta,
         "noise_band": node.get("pred_noise_band"),
         "source_trust": node.get("source_trust", 1.0),
-        "closed": closed_count(node.get("pred_closes")),   # R7: 글자수 버그 봉합(str 질문명=1)
+        "closed": closed_count(node.get("closed_question_count")),
         "opened": len(node.get("questions") or []),
     }
 

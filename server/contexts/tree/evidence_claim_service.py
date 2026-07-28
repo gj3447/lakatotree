@@ -869,7 +869,18 @@ class EvidenceClaimService:
                      OPTIONAL MATCH (e)-[:HAS_RESEARCH_EVENT]->(ev:ResearchEvent)
                      RETURN ev.id AS id, ev.name AS name, ev.realm AS realm, ev.actor AS actor,
                             ev.action AS action, ev.evidence_refs AS evidence_refs,
-                            ev.payload AS payload, ev.created_at AS created_at
+                            ev.payload AS payload, ev.created_at AS created_at,
+                            ev.lakatos_location AS lakatos_location,
+                            ev.theoretical_basis AS theoretical_basis,
+                            ev.foundation_refs AS foundation_refs,
+                            [(ev)-[evr:EVIDENCE_FOR_RIVAL]->(rp:LakatosRivalProgramme) |
+                              {programme:rp.name, relation:evr.relation,
+                               rival_node:evr.rival_node,
+                               comparison_axes:evr.comparison_axes,
+                               evidence_refs:evr.evidence_refs}] AS rival_links,
+                            [(ev)-[:BOUND_BY]->(rs:ReferenceSite) |
+                              {sourceId:rs.sourceId, sourcePath:rs.sourcePath,
+                               layer:rs.layer, note:rs.note}] AS longinus_refs
                      ORDER BY ev.created_at, ev.name""", tree=name, tag=tag)
 
     @staticmethod
@@ -930,5 +941,10 @@ class EvidenceClaimService:
             "target": event.target,
             "evidence_refs": list(event.evidence_refs),
             "payload": dict(event.payload),
+            "lakatos_location": row.get("lakatos_location") or "",
+            "theoretical_basis": row.get("theoretical_basis") or "",
+            "foundation_refs": list(row.get("foundation_refs") or []),
+            "rival_links": list(row.get("rival_links") or []),
+            "longinus_refs": list(row.get("longinus_refs") or []),
             "created_at": row.get("created_at"),
         }

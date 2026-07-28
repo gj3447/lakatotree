@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from lakatos import assurance
 from lakatos.node_state import NodeState
@@ -90,6 +91,10 @@ def _reject_scored(nodes: Sequence[NodeIn]) -> None:
 class TreeNotFound(Exception):
     """add_node 대상 나무가 KG 에 없음(MATCH 0행). 침묵 no-op 대신 fail-loud — mutations 가 404 로 번역.
     (service 경로는 load_tree_data 가 먼저 404; 이건 writer 직접호출까지 막는 defense-in-depth.)"""
+
+
+class TreeAlreadyExists(Exception):
+    """create-only 원자 claim 이 기존 동명 나무를 관측함 — mutations 가 409 로 번역."""
 
 
 class TierDowngrade(Exception):
@@ -206,6 +211,7 @@ class TreeKgWriter:
         witness_dids: Sequence[str] | None = None,
         witness_threshold: int | None = None,
         cycle_budget: int | None = None,
+        create_only: bool = False,
     ) -> WriteSummary:
         # G6: 신규 트리는 ON CREATE 로만 tier 스탬프(기본 anchored — git default-OFF 반전). 기존 트리는
         #   tier 미선언 upsert 에 절대 안 덮인다(T2 write-clobber 교정: TreeSpec 기본값 flip 이 아니라
@@ -213,42 +219,52 @@ class TreeKgWriter:
         #   원자 판정 — 상향만 관철, 하향은 기존값 유지 → RETURN 불일치로 TierDowngrade(→409).
         # G10: attestor_dids(서명자 allow-list=키 실물)도 tier 와 같은 非클로버 규율 — None(미선언)은
         #   기존값 불변, 선언 시에만 교체(revocation 은 정당한 운영이라 ratchet 아님·명시 교체).
+        # create_only 는 별도 존재조회가 아니라 MERGE 의 ON CREATE 표식을 같은 DB transaction 에서
+        # 판정한다. REQUIRED_CONSTRAINTS 의 lkt_tree_name_unique 가 경합 직렬화의 전제다. loser 는
+        # conditional FOREACH 를 건너뛰므로 기존 metadata 를 한 필드도 건드리지 않는다. 임시 표식은
+        # commit 전에 제거되어 저장 모델에는 노출되지 않는다.
+        create_claim = uuid4().hex
         results = self.kg_tx([
             (
                 """MERGE (t:LakatosTree {name:$tree})
-                     ON CREATE SET t.assurance_tier = coalesce($declared_tier, $default_tier)
-                   SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
-                       t.doc=$doc, t.coverage_backlog=$coverage_backlog,
-                       t.coverage_statement=$coverage_statement,
-                       t.coverage_status=$coverage_status, t.ontology=$ontology,
-                       t.require_novel_anchor=$require_novel_anchor,
-                       t.require_certified_evidence=$require_certified_evidence, t.updated_at=$ts
-                   SET t.assurance_tier = CASE
-                         WHEN $declared_tier IS NULL THEN t.assurance_tier
-                         WHEN $declared_rank >= """ + _TIER_RANK_CASE + """ THEN $declared_tier
-                         ELSE t.assurance_tier END
-                   SET t.attestor_dids = CASE
-                         WHEN $attestor_dids IS NULL THEN t.attestor_dids
-                         ELSE $attestor_dids END
-                   SET t.research_layout = CASE
-                         WHEN $research_layout IS NULL THEN t.research_layout
-                         ELSE $research_layout END,
-                       t.layout_owner_did = CASE
-                         WHEN $layout_owner_did IS NULL THEN t.layout_owner_did
-                         ELSE $layout_owner_did END,
-                       t.layout_sig = CASE
-                         WHEN $layout_sig IS NULL THEN t.layout_sig
-                         ELSE $layout_sig END,
-                       t.witness_dids = CASE
-                         WHEN $witness_dids IS NULL THEN t.witness_dids
-                         ELSE $witness_dids END,
-                       t.witness_threshold = CASE
-                         WHEN $witness_threshold IS NULL THEN t.witness_threshold
-                         ELSE $witness_threshold END
-                   SET t.cycle_budget = CASE
-                         WHEN $cycle_budget IS NULL THEN t.cycle_budget
-                         ELSE $cycle_budget END
-                   RETURN t.assurance_tier AS assurance_tier""",
+                     ON CREATE SET t.assurance_tier = coalesce($declared_tier, $default_tier),
+                                   t._create_claim = $create_claim
+                   WITH t, coalesce(t._create_claim = $create_claim, false) AS created
+                   FOREACH (_ IN CASE WHEN $create_only AND NOT created THEN [] ELSE [1] END |
+                     SET t.title=$title, t.hard_core=$hard_core, t.frontier_rule=$frontier_rule,
+                         t.doc=$doc, t.coverage_backlog=$coverage_backlog,
+                         t.coverage_statement=$coverage_statement,
+                         t.coverage_status=$coverage_status, t.ontology=$ontology,
+                         t.require_novel_anchor=$require_novel_anchor,
+                         t.require_certified_evidence=$require_certified_evidence, t.updated_at=$ts
+                     SET t.assurance_tier = CASE
+                           WHEN $declared_tier IS NULL THEN t.assurance_tier
+                           WHEN $declared_rank >= """ + _TIER_RANK_CASE + """ THEN $declared_tier
+                           ELSE t.assurance_tier END
+                     SET t.attestor_dids = CASE
+                           WHEN $attestor_dids IS NULL THEN t.attestor_dids
+                           ELSE $attestor_dids END
+                     SET t.research_layout = CASE
+                           WHEN $research_layout IS NULL THEN t.research_layout
+                           ELSE $research_layout END,
+                         t.layout_owner_did = CASE
+                           WHEN $layout_owner_did IS NULL THEN t.layout_owner_did
+                           ELSE $layout_owner_did END,
+                         t.layout_sig = CASE
+                           WHEN $layout_sig IS NULL THEN t.layout_sig
+                           ELSE $layout_sig END,
+                         t.witness_dids = CASE
+                           WHEN $witness_dids IS NULL THEN t.witness_dids
+                           ELSE $witness_dids END,
+                         t.witness_threshold = CASE
+                           WHEN $witness_threshold IS NULL THEN t.witness_threshold
+                           ELSE $witness_threshold END
+                     SET t.cycle_budget = CASE
+                           WHEN $cycle_budget IS NULL THEN t.cycle_budget
+                           ELSE $cycle_budget END)
+                   FOREACH (_ IN CASE WHEN created THEN [1] ELSE [] END |
+                     REMOVE t._create_claim)
+                   RETURN t.assurance_tier AS assurance_tier, created AS created""",
                 dict(
                     tree=name,
                     title=title,
@@ -270,6 +286,8 @@ class TreeKgWriter:
                     layout_sig=layout_sig,
                     witness_dids=(None if witness_dids is None else list(witness_dids)),
                     witness_threshold=witness_threshold,
+                    create_only=create_only,
+                    create_claim=create_claim,
                     # PROM16: 예산도 tier/attestor 와 같은 非클로버 규율 — None(미선언)=기존값 불변
                     #   (예산 없는 upsert 가 선언된 상한을 조용히 지우면 루프 상한이 무력화된다).
                     #   ★단 非클로버는 거기까지다 — tier 와 달리 단조 ratchet 이 *없다*(위 CASE 는 상향만
@@ -282,8 +300,11 @@ class TreeKgWriter:
                 ),
             )
         ])
+        report = (results[0][0] or {}) if results and results[0] else {}
+        if create_only and report.get("created") is not True:
+            raise TreeAlreadyExists(name)
         if assurance_tier is not None:
-            got = (results[0][0] or {}).get("assurance_tier") if results and results[0] else None
+            got = report.get("assurance_tier")
             if got != assurance_tier:   # ratchet 이 하향 선언을 거부하고 기존 tier 를 유지함
                 raise TierDowngrade(
                     f"assurance_tier 다운그레이드 거부: 현재 '{got}' → 선언 '{assurance_tier}' (단조 ratchet)")

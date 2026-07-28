@@ -36,7 +36,7 @@ def _pred_eureka_without_noise(q, **kw):
     return []
 
 
-def test_submit_emits_true_eureka_in_same_tx(monkeypatch):
+def test_submit_persists_felt_but_not_true_eureka_without_actual_closure(monkeypatch):
     app = load_app()
     txs = []
     monkeypatch.setattr(app, 'kg', _pred_eureka)
@@ -46,7 +46,9 @@ def test_submit_emits_true_eureka_in_same_tx(monkeypatch):
         metric_value=0.1, script='j.py', novel_measured=0.9))   # 큰 개선(delta=0.4) + novel 적중
     assert out['verdict'] == 'progressive_unverified'
     assert out['eureka']['felt'] is True
-    assert out['eureka']['true'] is True
+    # A declared pred_closes target is not an achieved closure. This unverified
+    # verdict retains the real question, so Eureka may be felt but cannot be true.
+    assert out['eureka']['true'] is False
     assert out['eureka']['hallucinated'] is False
     # 같은 단일 tx 안에서 영속 (판결 SET 과 원자적, 2차 비원자 쓰기 금지)
     assert len(txs) == 1

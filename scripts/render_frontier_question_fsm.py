@@ -17,13 +17,14 @@ def render(spec: dict) -> str:
     edges = []
     for transition in machine["transitions"]:
         effects = ", ".join(transition.get("effects", [])) or "none"
+        guard = f' [{transition["guard"]}]' if transition.get("guard") else ""
         rows.append(
-            f'| `{transition["from"]}` | `{transition["event"]}` | '
+            f'| `{transition["from"]}` | `{transition["event"]}{guard}` | '
             f'`{transition["to"]}` | `{transition["id"]}` | {effects} |'
         )
         edges.append(
             f'    {transition["from"]} --> {transition["to"]}: '
-            f'{transition["event"]} / {effects}'
+            f'{transition["event"]}{guard} / {effects}'
         )
     safety = "\n".join(f'- `{item["id"]}`: {item["statement"]}' for item in spec["safety_properties"])
     liveness = "\n".join(f'- `{item["id"]}`: {item["statement"]}' for item in spec["liveness_properties"])
@@ -41,6 +42,12 @@ def render(spec: dict) -> str:
 Unlisted state/event pairs are rejected without state change. In particular, `CLOSED + OPEN`
 is invalid. `CLOSED` is intentionally atomic rather than final so duplicate `CLOSE` has an
 explicit idempotent self-loop.
+
+`ADJUDICATED` is a transition event, not a client verdict label. The judgement
+service emits it only after minting the content-addressed verdict receipt in the
+same managed transaction. Exact final verdicts `progressive` and `rejected`
+answer the preregistered question positively or negatively. Partial,
+equivalent, conditional, and unverified outcomes keep the question open.
 
 ## State diagram
 

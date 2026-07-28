@@ -24,13 +24,14 @@ def _judged(tag, *, closes='', questions=(), verdict='progressive', source='scri
     return dict(tag=tag, verdict=verdict, verdict_source=source, node_state='JUDGED_SCRIPTED',
                 novel_registered=novel, novel_confirmed=confirmed, source_trust=1.0,
                 metric_value=value, pred_baseline=base, pred_noise_band=0.0,
-                pred_closes=closes, questions=list(questions), parents=[], parent_edges=[],
+                pred_closes=closes, closed_question_count=closed_count(closes),
+                questions=list(questions), parents=[], parent_edges=[],
                 pred_metric='m', judged_at='2026-07-03T00:00:00Z', pred_registered_at='2026-07-02')
 
 
 # ── guard_defect (음성): 헤드라인 거짓말 3종의 죽음 ────────────────────────────────────────
 def test_headline_metrics_stop_lying():
-    # (1) 글자수 버그: pred_closes='q_lx3_enabler'(13자) → closed 는 13 이 아니라 1.
+    # (1) committed closure projector exposes one closed question, not a name length.
     inp = _node_to_eureka_input(_judged('n', closes='q_lx3_enabler'))
     assert inp['closed'] == 1, f"closed={inp['closed']} — 질문명 글자수를 닫은 질문 수로 계산(거짓 수치)"
     assert _node_to_eureka_input(_judged('n', closes=''))['closed'] == 0

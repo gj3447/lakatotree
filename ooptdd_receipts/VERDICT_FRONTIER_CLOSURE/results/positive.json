@@ -1,0 +1,12 @@
+{
+  "run": "restored-positive-after-question-lock-state-guard-and-event-id-hardening",
+  "command": ".venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 0,
+  "target": "VERDICT_FRONTIER_CLOSURE",
+  "target_result": "GREEN",
+  "target_done": 3,
+  "target_total": 3,
+    "suite_green": 56,
+    "suite_total": 56,
+  "service_path": "JudgementService.register_prediction(question lock) -> submit_test_result(valid-state guard) -> receipt-addressed QuestionClosure"
+}

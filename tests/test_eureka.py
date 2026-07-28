@@ -29,7 +29,8 @@ _TREE_NODE = {
     "tag": "v8_frozen", "verdict": "progressive",
     "novel_registered": True, "novel_confirmed": True,
     "metric_value": 12.0, "pred_baseline": 2.0, "pred_noise_band": 0.1,
-    "pred_closes": ["q1", "q2", "q3"], "questions": ["q4"], "source_trust": 1.0,
+    "pred_closes": ["q1", "q2", "q3"], "closed_question_count": 3,
+    "questions": ["q4"], "source_trust": 1.0,
 }
 
 _TRUE = {
@@ -126,7 +127,7 @@ def test_node_to_input_derives_delta_and_balance_from_real_fields():
     inp = _node_to_eureka_input(_TREE_NODE)
     assert inp["delta"] == 10.0          # metric_value - pred_baseline (judge convention)
     assert inp["noise_band"] == 0.1
-    assert inp["closed"] == 3 and inp["opened"] == 1   # |pred_closes| vs |questions|
+    assert inp["closed"] == 3 and inp["opened"] == 1   # committed closure edges vs raised questions
     assert "stands" not in inp and "reproducible" not in inp  # standing is not a node field
 
 
@@ -189,7 +190,8 @@ _LEDGER_ABSENT_NODE = {
     "tag": "v_no_ledger", "verdict": "progressive",
     "novel_registered": True, "novel_confirmed": True,
     "metric_value": 12.0, "pred_baseline": 2.0, "pred_noise_band": 0.1,
-    "pred_closes": [], "questions": [], "source_trust": 1.0,   # → closed=0, opened=0
+    "pred_closes": [], "closed_question_count": 0,
+    "questions": [], "source_trust": 1.0,   # → closed=0, opened=0
 }
 
 

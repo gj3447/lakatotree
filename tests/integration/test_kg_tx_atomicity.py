@@ -5,9 +5,13 @@ mock 으로는 검증 불가했던 것을 실 DB 로: AppContainer.kg_tx 가 exe
 복구 모델). prom C 의 atomic observation bind / A4 belief 영속+auto-demote / submit_test_result 의
 판결+PROV 단일 tx 가 모두 이 보장에 의존한다.
 """
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 
 from server.container import AppContainer
+from server.contexts.tree.writer import TreeAlreadyExists, TreeKgWriter
 
 pytestmark = pytest.mark.integration
 
@@ -53,3 +57,48 @@ def test_recovery_is_rerun_idempotent_merge(neo4j_driver):
     c.kg_tx([op])
     rows = c.kg("MATCH (n:ITNode {tag:'rerun'}) RETURN count(n) AS c")
     assert rows[0]['c'] == 1, 'MERGE 재실행이 중복 생성하면 복구=재실행 모델이 깨진 것'
+
+
+def test_create_only_concurrent_claim_has_one_winner_and_no_loser_clobber(neo4j_driver):
+    """동명 create-only 두 호출은 unique key 아래 정확히 하나만 생성하고 loser 는 409 원인으로 끝난다."""
+    c = _container(neo4j_driver)
+    name = 'IT_CreateOnlyAtomic_20260728'
+    c.kg("CREATE CONSTRAINT lkt_tree_name_unique IF NOT EXISTS "
+         "FOR (t:LakatosTree) REQUIRE t.name IS UNIQUE")
+    c.kg("MATCH (t:LakatosTree {name:$name}) DETACH DELETE t", name=name)
+    barrier = Barrier(2)
+
+    def attempt(title: str) -> tuple[str, str]:
+        writer = TreeKgWriter(c.kg_tx)
+        barrier.wait()
+        try:
+            writer.upsert_tree_meta(
+                name=name,
+                title=title,
+                hard_core=f'{title} HC',
+                frontier_rule=f'{title} FR',
+                create_only=True,
+            )
+        except TreeAlreadyExists:
+            return 'conflict', title
+        return 'created', title
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(attempt, ('alpha', 'beta')))
+        assert sorted(status for status, _ in outcomes) == ['conflict', 'created']
+        winner = next(title for status, title in outcomes if status == 'created')
+        rows = c.kg(
+            "MATCH (t:LakatosTree {name:$name}) "
+            "RETURN count(t) AS n, t.title AS title, t.hard_core AS hard_core, "
+            "t._create_claim AS leaked_claim",
+            name=name,
+        )
+        assert rows == [{
+            'n': 1,
+            'title': winner,
+            'hard_core': f'{winner} HC',
+            'leaked_claim': None,
+        }]
+    finally:
+        c.kg("MATCH (t:LakatosTree {name:$name}) DETACH DELETE t", name=name)

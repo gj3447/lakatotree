@@ -1,0 +1,76 @@
+{
+  "schema_version": "symposium-ooptdd-receipt/v1",
+  "template_only": false,
+  "receipt_id": "lakatotree-verdict-frontier-closure-20260728",
+  "cycle_id": "lakatotree-hswm-density-20260728",
+  "requirement_group": "VERDICT-FRONTIER-CLOSURE",
+  "spec": {
+    "path": "ooptdd_receipts/VERDICT_FRONTIER_CLOSURE/requirements.yaml",
+    "sha256": "2f1ce67fb1c8d15f6d0181395a2cf37ced972a70c6362443764ef4aea6c1d41e",
+    "locked_before_positive_run": true
+  },
+  "producer": {
+    "command": ".venv/bin/python ooptdd_receipts/run_all.py",
+    "cwd": "/Users/lagyeongjun/CD/lakatotree-pub",
+    "git_head": "e663f421a1586828d4ee482531db0d4ad7b4eae8",
+    "entrypoint": "verdict_frontier_closure_receipt:verify",
+    "source_path": "server/contexts/tree/judgement_service.py",
+    "source_symbol": "JudgementService.submit_test_result",
+    "real_code_path": true,
+    "exit_code": 0
+  },
+  "correlation": {
+    "cid": "verdict-frontier-closure-20260728"
+  },
+  "requirements": [
+    {
+      "id": "VFC-1",
+      "role": "guard_mechanism",
+      "event": "adjudication_closed_question"
+    },
+    {
+      "id": "VFC-2",
+      "role": "guard_defect",
+      "event": "nonconclusive_question_retained"
+    },
+    {
+      "id": "VFC-3",
+      "role": "guard_mechanism",
+      "event": "duplicate_adjudication_idempotent"
+    }
+  ],
+  "positive": {
+    "observed_verdict": "green",
+    "receipt_path": "ooptdd_receipts/VERDICT_FRONTIER_CLOSURE/results/positive.json",
+        "receipt_sha256": "db15e6de52a67798300dd01e2cdedfff1e5e70c2a645298ba5149bbb4ab86d34",
+    "evidence_tier": "arrived",
+    "charge_ratio": 1.0,
+    "forbidden_events_passed": true,
+    "loop": {
+      "complete": true,
+      "methodology_ok": true,
+      "done": 3,
+      "total": 3
+    }
+  },
+  "negative_oracle": {
+    "spec_sha256": "2f1ce67fb1c8d15f6d0181395a2cf37ced972a70c6362443764ef4aea6c1d41e",
+    "technique": "fault_injection",
+    "injection": "Temporarily suppress the real set of conclusive adjudication verdicts.",
+    "observed_verdict": "red",
+    "receipt_path": "ooptdd_receipts/VERDICT_FRONTIER_CLOSURE/results/negative.json",
+        "receipt_sha256": "1f66720b1ce5534769184f7af36922aaec9139305a767fc5166edb44e2e9eecc",
+    "restored": true
+  },
+  "oracle": {
+    "separate_source": false,
+    "corroborated": false,
+    "emit_identity": "memory://ooptdd-loop/verdict-frontier-closure",
+    "read_identity": "memory://ooptdd-loop/verdict-frontier-closure"
+  },
+  "source_binding": {
+    "path": "server/contexts/tree/judgement_service.py",
+    "symbol": "JudgementService.submit_test_result",
+    "sha256": "5eccad84cbcd4a2107b62b3a7ed484737b3fa30062d6b4c1753fd42d17a3121b"
+  }
+}

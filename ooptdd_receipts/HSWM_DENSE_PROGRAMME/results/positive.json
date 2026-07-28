@@ -1,0 +1,29 @@
+{
+  "run": "hermetic-restored-positive-before-live-materialization",
+  "command": ".venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 0,
+  "target": "HSWM_DENSE_PROGRAMME",
+  "target_result": "GREEN",
+  "target_done": 3,
+  "target_total": 3,
+  "suite_green": 56,
+  "suite_total": 56,
+  "manifest_name": "LakatosTree_HSWM_LargerAI_20260728",
+  "manifest_digest": "6072561833cb732f8e66cf8e830b2da2bbc924912252294565712fbf4f56b6a9",
+  "readback_contract": {
+    "nodes": 19,
+    "edges": 52,
+    "roots": 1,
+    "components": 1,
+    "multi_parent_nodes": 17,
+    "typed_edge_ratio": 1.0,
+    "questions": 8,
+    "foundations": 12,
+    "observations": 12
+  },
+  "restart_contract": {
+    "observations_already_exact": 12,
+    "observation_posts": 0
+  },
+  "scope": "Production seeder functions over a faithful converged HTTP seam; live service materialization is intentionally not claimed by this initial result."
+}

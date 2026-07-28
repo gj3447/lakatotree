@@ -1,0 +1,15 @@
+{
+  "run": "injected-exact-comparison-bypass",
+  "command": "LKT_HSWM_DENSE_INJECT=accept-tamper .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 1,
+  "target": "HSWM_DENSE_PROGRAMME",
+  "target_result": "RED",
+  "target_done": 2,
+  "target_total": 3,
+  "missing_event": "hswm_tampered_readback_rejected",
+  "suite_green": 55,
+  "suite_total": 56,
+  "injection": "Temporarily replace the production seeder exact-equality guard with a no-op while a node comment is altered at the readback boundary.",
+  "restored_positive_after_injection": true,
+  "live_state_mutated": false
+}

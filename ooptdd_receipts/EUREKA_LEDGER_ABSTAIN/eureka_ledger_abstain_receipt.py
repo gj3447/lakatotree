@@ -33,16 +33,18 @@ def _ev(cid, name, **attrs):
             "service": "lakatos.eureka.finding_B", "event": name, **attrs}
 
 
-# 확증 novel + 강한 효과(delta 10) + 문제장부 부재(pred_closes 없음, questions 없음) = closed 0, opened 0.
+# 확증 novel + 강한 효과(delta 10) + 문제장부 부재(실제 CLOSES_QUESTION 0, questions 0)
+# = closed 0, opened 0. ``pred_closes`` 는 선언일 뿐 성취가 아니므로 닫힘 수로 쓰지 않는다.
 _LEDGER_ABSENT = {
     "tag": "omd", "verdict": "progressive",
     "novel_registered": True, "novel_confirmed": True,
     "metric_value": 12.0, "pred_baseline": 2.0, "pred_noise_band": 0.1,
-    "pred_closes": [], "questions": [], "source_trust": 1.0,
+    "pred_closes": [], "closed_question_count": 0, "questions": [], "source_trust": 1.0,
 }
 # 장부 PRESENT + net-negative(닫음 1 < 연 3) — 여전히 veto 되어야 하는 대조군.
 _NET_NEGATIVE = {**_LEDGER_ABSENT, "tag": "neg",
-                 "pred_closes": ["q_closed"], "questions": ["q1", "q2", "q3"]}
+                 "pred_closes": ["q_closed"], "closed_question_count": 1,
+                 "questions": ["q1", "q2", "q3"]}
 
 
 def verify(backend, cid):
@@ -74,7 +76,8 @@ def verify(backend, cid):
         _LEDGER_ABSENT,                                                        # inconclusive
         {**_LEDGER_ABSENT, "tag": "omd2"},                                     # inconclusive
         {**_NET_NEGATIVE, "tag": "true1",
-         "pred_closes": ["a", "b", "c"], "questions": ["q1"]},                 # true (closed 3 > opened 1)
+         "pred_closes": ["a", "b", "c"], "closed_question_count": 3,
+         "questions": ["q1"]},                                               # true (closed 3 > opened 1)
         {**_NET_NEGATIVE, "tag": "hall1", "novel_confirmed": False},           # hallucinated (unconfirmed)
     ]
     r = eureka_over_tree(nodes)

@@ -29,6 +29,28 @@
         {"event": "CLOSE", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]},
         {"event": "OPEN", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": []}
       ]
+    },
+    {
+      "id": "adjudication-close",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": true}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]}
+      ]
+    },
+    {
+      "id": "adjudication-retain-open",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": false}, "expected_state": "OPEN", "expected_effects": []}
+      ]
+    },
+    {
+      "id": "duplicate-adjudication",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": true}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": true}, "expected_state": "CLOSED", "expected_effects": []}
+      ]
     }
   ]
 }

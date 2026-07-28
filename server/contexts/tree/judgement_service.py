@@ -20,6 +20,12 @@ from lakatos import replay_artifacts as replay_artifact_mod
 from lakatos.io import envfp as envfp_mod
 from lakatos.io.replay import ProducerReplayVerdict
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
+from lakatos.frontier_state import (
+    QuestionEvent,
+    QuestionState,
+    receipt_backed_conclusive,
+    step as step_question,
+)
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.trust import INTERNAL_SOURCE_TRUST
 from lakatos.verdict.argue import assemble_af, grounded_extension
@@ -642,10 +648,18 @@ class JudgementService:
             except temporal_mod.AnchorInvalid as e:
                 raise HTTPException(422, f'temporal 정족수 무효: {e}')
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {name:$closes_question})
+                  WITH e, q
+                  FOREACH (_ IN CASE WHEN q IS NULL THEN [] ELSE [1] END |
+                    SET q._cas=coalesce(q._cas, 0) + 0)
+                  WITH e, q,
+                    CASE WHEN q IS NULL THEN null
+                         ELSE coalesce(q.status, '__MISSING__') END AS question_state
                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted')
                         AND e.pred_registered_at IS NULL
                         AND coalesce(e.node_state, 'DRAFT') IN $allowed_from
                         AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                        AND ($closes_question = '' OR question_state = $open_state)
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                       e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
                       e.pred_scale_type=$scale_type,
@@ -656,7 +670,10 @@ class JudgementService:
                       e.novel_registered = ($novel_metric IS NOT NULL),
                       e.pred_registered_at=$ts,
                       e.node_state=$node_state,
-                      e.baseline_lineage=$baseline_lineage
+                      e.baseline_lineage=$baseline_lineage,
+                      e.pred_question_bound=($closes_question = '' OR q IS NOT NULL)
+                  FOREACH (_ IN CASE WHEN $closes_question = '' THEN [] ELSE [1] END |
+                    SET q.n_visits=coalesce(q.n_visits, 0) + 1)
                   WITH e
                   MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                     ON CREATE SET rec.receipt_kind='prediction', rec.tree=$tree, rec.tag=$tag,
@@ -673,12 +690,14 @@ class JudgementService:
                   RETURN e.tag AS tag""",
                        tree=name, tag=tag, ts=ts,
                        node_state=NodeState.PREDICTED.value,
+                       open_state='OPEN',
                        baseline_lineage=baseline_lineage,   # R12: 계보 앵커 마크(비파괴)
                        allowed_from=[NodeState.DRAFT.value, NodeState.ADMINISTRATIVE.value],
                        rsha=rsha, prev_rsha=prev_rsha,
                        **spec)
         if not rows:
-            raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
+            raise HTTPException(409, '노드 없음/이미 채점됨 또는 closes_question 이 이 트리의 OPEN 질문이 아님 '
+                                     '— 사후 예측등록·유령 질문 target 금지')
         # EXTAUDIT S7b: 예측 spec 의 외부 증인 앵커(T1) persist — 사전등록 timestamp 의 외부성.
         #   검증은 write 이전에 완료(validate-then-write, 위) — 여기서는 persist 만.
         #   무효/부재/무증인은 조용히 skip(앵커는 선택 — 없으면 L3 못 열 뿐, dead-σ).
@@ -704,12 +723,10 @@ class JudgementService:
                   SET e.pred_anchor_verified=true, e.pred_anchor_gen_time=$gt,
                       e.pred_anchor_quorum=$qn, e.pred_anchor_threshold=$th""",
                     tree=name, tag=tag, gt=gt, qn=_qn, th=threshold)
-        if p.closes_question:
-            self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$cq})
-                  SET q.n_visits=coalesce(q.n_visits, 0) + 1''', tree=name, cq=p.closes_question)
         self.hist(name, 'prediction_register', tag, p.model_dump())
         return {'ok': True, 'pred_receipt_sha': rsha,
                 'pred_anchor_verified': bool(anchors and witnesses),
+                'question_bound': bool(p.closes_question),
                 'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}
 
     def submit_test_result(self, name: str, tag: str, r: TestResultIn) -> dict:
@@ -1018,12 +1035,18 @@ class JudgementService:
         # 노드 인터넷 관측 eigentrust 로 재유도 — forged source_trust 로 true-eureka 를 못 산다(credibility 와
         # 동일 원천). internal 노드=1.0. 영속(e.source_trust)도 이 값으로 → tree-level eureka_over_tree 도 정직.
         est = self._eigentrust_source_trust(name, tag)
-        eu = eureka_classify({
+        eu_input = {
             'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent,
             'verdict': verdict,
             'delta': v.delta, 'noise_band': pr['nb'], 'source_trust': est,
-            'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
-        }, require_promotion=False)
+            'opened': int(pr.get('n_opened') or 0),
+        }
+        # Closure credit is selected only after the managed transaction locks and
+        # reads the actual question state. Merely declaring pred_closes is not a
+        # solved problem: partial/unverified outcomes must not mint true Eureka.
+        eu_open = eureka_classify({**eu_input, 'closed': 0}, require_promotion=False)
+        eu_closed = eureka_classify({**eu_input, 'closed': 1}, require_promotion=False)
+        eu = eu_open
         ts = datetime.now(timezone.utc).isoformat()
         # AG3/R-SOV V1 값소유(측정주권 2026-07-03): submit 시 *들어온* 값을 서버가 재유도 → 전체 verdict.
         #   persisted 노드가 아니라 incoming(r.script/result_path/metric_value)을 replay 하므로 신규노드도
@@ -1164,14 +1187,32 @@ class JudgementService:
             source_script_path=source_script_path,
             source_result_path=source_result_path)
         rsha = receipt_content_sha(receipt_fields)
+        close_question_from_verdict = bool(
+            target_id and receipt_backed_conclusive(verdict, rsha)
+        )
+        # The adjudication event is the immutable verdict receipt itself.  Keep the persisted
+        # QuestionClosure identity and q.closed_events exactly aligned with the FSM effect binding
+        # (RecordQuestionClosure.event_id = event.receipt_sha); manual CLOSE events retain their
+        # separate operator-supplied/stable identifiers in TreeService.
+        closure_id = rsha if target_id else None
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
-                   WITH e
+                   WITH t, e
                    WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                       OR ($freshen AND e.verdict = 'partial'
                           AND e.lakatos_status IN ['novel_not_server_anchored', 'provisional_stale_engine']
                           AND e.metric_value = $mv))
                      AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                   OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {name:$target_id})
+                   WITH t, e, q
+                   WHERE NOT $has_target OR q IS NOT NULL
+                   FOREACH (_ IN CASE WHEN q IS NULL THEN [] ELSE [1] END |
+                     SET q._cas=coalesce(q._cas, 0) + 0)
+                   WITH t, e, q,
+                     CASE WHEN q IS NULL THEN null
+                          ELSE coalesce(q.status, $open_state) END AS question_before_state
+                   WHERE NOT $has_target
+                      OR question_before_state IN [$open_state, $closed_state]
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.node_state=$node_state,
                        e.judge_script=$script, e.judge_script_sha=$sha,
@@ -1179,9 +1220,7 @@ class JudgementService:
                        e.source_judge_script_path=$source_script,
                        e.source_result_path=$source_rp,
                        e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
-                       e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
-                       e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
-                       e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
+                       e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
                        e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
                        e.replay_reason=$replay_reason, e.regenerated_metric=$regenerated_metric,
@@ -1189,7 +1228,7 @@ class JudgementService:
                        e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha,
                        e.measurement_lock_sha=$lsha, e.measurement_lock_key=$lkey,
                        e.temporal_witness_verified=$tw
-                   WITH e
+                   WITH t, e, q, question_before_state
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
                        rec.verdict=$v, rec.verdict_source='scripted', rec.metric_name=$mn,
@@ -1211,7 +1250,38 @@ class JudgementService:
                          ml.payload_json=$lock_payload_json
                      MERGE (e)-[:HAS_LOCK]->(ml)
                    )
-                   RETURN e.tag AS claimed""",
+                   WITH e, rec, q, question_before_state,
+                     ($close_question AND question_before_state = $open_state) AS question_closed
+                   FOREACH (_ IN CASE WHEN question_closed THEN [1] ELSE [] END |
+                     SET q.status=$closed_state,
+                         q.n_visits=coalesce(q.n_visits, 0) + 1,
+                         q.closed_by=CASE
+                           WHEN q.closed_by IS NULL THEN [$tag]
+                           WHEN $tag IN q.closed_by THEN q.closed_by
+                           ELSE q.closed_by + $tag
+                         END,
+                         q.closed_events=CASE
+                           WHEN q.closed_events IS NULL THEN [$closure_id]
+                           WHEN $closure_id IN q.closed_events THEN q.closed_events
+                           ELSE q.closed_events + $closure_id
+                         END
+                     MERGE (c:QuestionClosure {id:$closure_id})
+                     ON CREATE SET c.closed_by=$tag, c.at=$ts, c.tree=$tree,
+                                   c.question=$target_id, c.trigger='ADJUDICATED',
+                                   c.verdict=$v, c.receipt_sha=$rsha
+                     MERGE (q)-[:HAS_CLOSURE]->(c)
+                     MERGE (e)-[cq:CLOSES_QUESTION]->(q)
+                     SET cq.receipt_sha=$rsha, cq.verdict=$v, cq.at=$ts
+                     MERGE (c)-[:CAUSED_BY]->(rec)
+                   )
+                   SET e.eureka_felt=CASE WHEN question_closed THEN $eu_closed_felt ELSE $eu_open_felt END,
+                       e.eureka_true=CASE WHEN question_closed THEN $eu_closed_true ELSE $eu_open_true END,
+                       e.eureka_hallucinated=CASE WHEN question_closed THEN $eu_closed_hall ELSE $eu_open_hall END,
+                       e.eureka_reasons=CASE WHEN question_closed THEN $eu_closed_reasons ELSE $eu_open_reasons END,
+                       e.eureka_bf=CASE WHEN question_closed THEN $eu_closed_bf ELSE $eu_open_bf END
+                   RETURN e.tag AS claimed, question_before_state, question_closed,
+                          CASE WHEN question_closed THEN $closed_state
+                               ELSE question_before_state END AS question_state""",
                 dict(tree=name, tag=tag, mn=pr['m'], mv=effective_metric, v=verdict,
                      mg=measurement_grade,   # AG3: 측정 출처등급(server_regenerated/client_asserted) 봉인
                      freshen=freshen_anchor,   # novel-anchor freshen: CAS 탈출은 앵커-데모트 partial 동일값 재제출만
@@ -1226,6 +1296,9 @@ class JudgementService:
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch/not_replayable)
                      replay_reason=replay_reason, regenerated_metric=regenerated_metric,
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
+                     has_target=bool(target_id),
+                     close_question=close_question_from_verdict,
+                     closure_id=closure_id, open_state='OPEN', closed_state='CLOSED',
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
                      csha=csha,   # S4: 판정 시점 comment 봉인 미러 + receipt v3 필드 persist
                      lsha=_lsha, lkey=_lkey,
@@ -1233,8 +1306,12 @@ class JudgementService:
                      lock_payload_json=_lock_payload_json, tw=temporal_witness,
                      efresh=efresh,                     # jp4: 판관 자기진단 관측화(unchecked/fresh/stale_code/incapable/indeterminate)
                      boot_sha=(fresh or {}).get('boot_git_sha'),   # jp4: 노드-레벨 판관 신원 provenance(영수증 봉인은 jp1 engine_rule_sha 가 정본)
-                     eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
-                     eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
+                     eu_open_felt=eu_open.felt, eu_open_true=eu_open.true,
+                     eu_open_hall=eu_open.hallucinated,
+                     eu_open_reasons=list(eu_open.reasons), eu_open_bf=round(eu_open.bf, 6),
+                     eu_closed_felt=eu_closed.felt, eu_closed_true=eu_closed.true,
+                     eu_closed_hall=eu_closed.hallucinated,
+                     eu_closed_reasons=list(eu_closed.reasons), eu_closed_bf=round(eu_closed.bf, 6)))]
         for tr in prov_triples(name, tag, sealed_script_path, sealed_result_path,
                                verdict, stored_sha, ts):
             if tr.get('kind'):
@@ -1279,6 +1356,22 @@ class JudgementService:
         if (isinstance(tx_result, list) and len(tx_result) == len(ops)
                 and isinstance(tx_result[0], list) and not tx_result[0]):
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
+        first_row = (tx_result[0][0]
+                     if isinstance(tx_result, list) and tx_result
+                     and isinstance(tx_result[0], list) and tx_result[0]
+                     and isinstance(tx_result[0][0], dict) else {})
+        question_closed = bool(first_row.get('question_closed'))
+        question_before_state = first_row.get('question_before_state')
+        question_state = first_row.get('question_state')
+        question_transition = None
+        if target_id and question_before_state in {state.value for state in QuestionState}:
+            question_transition = step_question(
+                QuestionState(question_before_state),
+                QuestionEvent.ADJUDICATED,
+                verdict=verdict,
+                receipt_sha=rsha,
+            )
+        eu = eu_closed if question_closed else eu_open
         self.hist(name, 'test_result', tag, dict(value=effective_metric, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict,
                                                  script=sealed_script_path,
@@ -1292,6 +1385,10 @@ class JudgementService:
                                                  replay_status=replay_status,
                                                  replay_reason=replay_reason,
                                                  regenerated_metric=regenerated_metric))
+        if question_closed:
+            self.hist(name, 'question_close', tag,
+                      {'question': target_id, 'trigger': 'ADJUDICATED',
+                       'verdict': verdict, 'receipt_sha': rsha})
         # EXTAUDIT S3b/S7b: VAL 재도출 — L3 은 attestation(allow-list)+engine floor+temporal witness 가 다 설 때.
         _display, _assur = response_assurance(
             verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
@@ -1313,6 +1410,11 @@ class JudgementService:
                 'measurement_lock_sha': _lsha,
                 'replay_status': replay_status, 'replay_reason': replay_reason,
                 'regenerated_metric': regenerated_metric,
+                'question': ({'target': target_id, 'closed': question_closed,
+                              'state': question_state,
+                              'transition': (question_transition.transition_id
+                                             if question_transition else None)}
+                             if target_id else None),
                 # G10: authorship 은 서명에서 유도(무cert=None) — client 문자열이 아니다.
                 'attested_by': attested_by_did,
                 'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,

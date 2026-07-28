@@ -43,6 +43,11 @@ class _RegKg:
             'pred_registered_at': None, 'current_receipt_sha': None,
         }
         self.receipts: list[dict] = []
+        self.questions = {
+            'q-x': {
+                'status': 'OPEN', 'n_visits': 0, 'closed_by': [], 'closed_events': [],
+            }
+        }
 
     # ── kg() reads/writes (register_prediction 은 self.kg 로 씀) ─────────────────────────
     def __call__(self, query, **p):
@@ -54,11 +59,15 @@ class _RegKg:
             return [{'prev_rsha': self.node['current_receipt_sha']}]
         if 'SET e.pred_metric' in query:   # guarded 등록 write
             n = self.node
+            target = p.get('closes_question') or ''
+            question = self.questions.get(target) if target else None
             ok = (n.get('verdict_source') != 'scripted'
                   and n.get('pred_registered_at') is None
                   and (n.get('node_state') or 'DRAFT') in p['allowed_from'])
             if 'coalesce(e.current_receipt_sha' in query:   # CAS 절(구현이 추가) 충실 모델
                 ok = ok and (n.get('current_receipt_sha') or '') == (p.get('prev_rsha') or '')
+            if target:
+                ok = ok and question is not None and question['status'] == 'OPEN'
             if not ok:
                 return []
             n.update(
@@ -70,7 +79,10 @@ class _RegKg:
                 pred_script_sha=p['judge_script_sha'], pred_credence=p['credence'],
                 pred_registered_at=p['ts'], node_state=p['node_state'],
                 baseline_lineage=p['baseline_lineage'],
+                pred_question_bound=(not target or question is not None),
             )
+            if question is not None:
+                question['n_visits'] += 1
             if 'MERGE (rec:VerdictReceipt' in query and p.get('rsha'):
                 rec = {
                     'receipt_sha': p['rsha'], 'receipt_kind': 'prediction',
@@ -117,14 +129,37 @@ class _RegKg:
     # ── kg_tx() — submit 의 #M5 CAS op 충실 적용(G1 테스트 _ReceiptKg 동형) ───────────────
     def tx(self, ops):
         q0, params = ops[0]
+        first = {'claimed': params.get('tag')}
         if 'MERGE (rec:VerdictReceipt' in q0:
+            question = self.questions.get(params.get('target_id'))
+            if params.get('has_target') and question is None:
+                return [[] if index == 0 else [] for index, _ in enumerate(ops)]
+            before_state = (question or {}).get('status')
+            if params.get('has_target') and before_state not in {'OPEN', 'CLOSED'}:
+                # Production Cypher guards this after locking q and before any verdict/receipt write.
+                return [[] if index == 0 else [] for index, _ in enumerate(ops)]
             self.node['verdict'] = params['v']
             self.node['verdict_source'] = 'scripted'
             self.node['current_receipt_sha'] = params['rsha']
             self.receipts.append({'receipt_sha': params['rsha'],
                                   'prev_receipt_sha': params['prev_rsha'],
                                   'verdict': params['v'], 'verdict_source': 'scripted'})
-        return [[{'claimed': params.get('tag')}] for _ in ops]
+            closure_query_complete = all(token in q0 for token in (
+                'QuestionClosure', 'CLOSES_QUESTION', 'question_before_state',
+                'CAUSED_BY', 'SET q._cas',
+            ))
+            if (closure_query_complete and params.get('close_question')
+                    and question and question['status'] == 'OPEN'):
+                question['status'] = 'CLOSED'
+                question['n_visits'] += 1
+                question['closed_by'].append(params['tag'])
+                question['closed_events'].append(params['closure_id'])
+                first.update(question_before_state=before_state,
+                             question_closed=True, question_state='CLOSED')
+            else:
+                first.update(question_before_state=before_state, question_closed=False,
+                             question_state=(question or {}).get('status'))
+        return [[first] if index == 0 else [] for index, _ in enumerate(ops)]
 
 
 def _svc():
@@ -172,6 +207,75 @@ def test_submit_chains_verdict_receipt_onto_prediction_receipt():
     # 체인 fold: head(verdict) → prediction(genesis) 도달 (무결)
     v = svc.verify_verdict_chain('T', 'seam')
     assert v['ok'] and v['from_receipt'] and v['rederived'] == 'progressive_unverified', v
+    assert out['question'] == {
+        'target': 'q-x', 'closed': False, 'state': 'OPEN',
+        'transition': 'adjudication-retain-open',
+    }
+    assert kg.questions['q-x']['status'] == 'OPEN'
+    assert out['eureka']['true'] is False
+
+
+def test_receipted_progressive_submit_atomically_closes_bound_question():
+    svc, kg = _svc()
+    svc.register_prediction('T', 'seam', _pred())
+
+    out = svc.submit_test_result(
+        'T', 'seam',
+        Result(metric_value=1.0, script='inline', novel_measured=1.0,
+               lakatos_anomaly=True, lakatos_consequence=True,
+               lakatos_excess=True, lakatos_hardcore=True),
+    )
+
+    assert out['verdict'] == 'progressive', out
+    assert out['question'] == {
+        'target': 'q-x', 'closed': True, 'state': 'CLOSED',
+        'transition': 'adjudication-close',
+    }
+    assert kg.questions['q-x']['status'] == 'CLOSED'
+    assert kg.questions['q-x']['closed_by'] == ['seam']
+    verdict_receipt = next(r for r in kg.receipts if r.get('verdict_source') == 'scripted')
+    assert kg.questions['q-x']['closed_events'] == [verdict_receipt['receipt_sha']]
+
+
+def test_receipted_submit_against_preclosed_question_reports_duplicate_not_close():
+    svc, kg = _svc()
+    svc.register_prediction('T', 'seam', _pred())
+    kg.questions['q-x']['status'] = 'CLOSED'
+
+    out = svc.submit_test_result(
+        'T', 'seam',
+        Result(metric_value=1.0, script='inline', novel_measured=1.0,
+               lakatos_anomaly=True, lakatos_consequence=True,
+               lakatos_excess=True, lakatos_hardcore=True),
+    )
+
+    assert out['question'] == {
+        'target': 'q-x', 'closed': False, 'state': 'CLOSED',
+        'transition': 'duplicate-adjudication',
+    }
+    assert kg.questions['q-x']['closed_by'] == []
+    assert out['eureka']['true'] is False
+
+
+def test_submit_against_unknown_question_state_rolls_back_before_receipt_write():
+    svc, kg = _svc()
+    svc.register_prediction('T', 'seam', _pred())
+    prediction_receipt_count = len(kg.receipts)
+    prediction_head = kg.node['current_receipt_sha']
+    kg.questions['q-x']['status'] = 'CORRUPT'
+
+    with pytest.raises(HTTPException) as exc:
+        svc.submit_test_result(
+            'T', 'seam',
+            Result(metric_value=1.0, script='inline', novel_measured=1.0,
+                   lakatos_anomaly=True, lakatos_consequence=True,
+                   lakatos_excess=True, lakatos_hardcore=True),
+        )
+
+    assert exc.value.status_code == 409
+    assert len(kg.receipts) == prediction_receipt_count
+    assert kg.node['current_receipt_sha'] == prediction_head
+    assert kg.node.get('verdict_source') is None
 
 
 def test_registered_unjudged_node_chain_folds_clean():

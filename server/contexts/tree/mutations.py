@@ -14,7 +14,13 @@ from lakatos.coverage import validate_coverage_declaration
 from server.contexts.tree.materialization import TreeMaterializationPlanner
 from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.validation import LakatosSemanticValidator, PolicyFinding
-from server.contexts.tree.writer import TierDowngrade, TreeKgWriter, TreeNotFound, WriteSummary
+from server.contexts.tree.writer import (
+    TierDowngrade,
+    TreeAlreadyExists,
+    TreeKgWriter,
+    TreeNotFound,
+    WriteSummary,
+)
 from server.ports import HistoryAppend
 
 
@@ -119,7 +125,7 @@ class TreeMutationService:
             raise HTTPException(404, f"나무 없음: {name}")
         self.hist(name, "tree_delete", None, {})
 
-    def upsert_tree(self, spec: TreeSpec) -> dict:
+    def upsert_tree(self, spec: TreeSpec, *, create_only: bool = False) -> dict:
         # G6: 선언 tier 어휘는 닫힌 집합 — 오타(예: 'precious')를 무음 저장하면 게이트 0 인 유령 tier 가 생긴다.
         if spec.assurance_tier is not None and spec.assurance_tier not in assurance.TIERS:
             raise HTTPException(422, f"assurance_tier 미정의 어휘: '{spec.assurance_tier}' — "
@@ -160,10 +166,13 @@ class TreeMutationService:
                     witness_dids=spec.witness_dids,
                     witness_threshold=spec.witness_threshold,
                     cycle_budget=spec.cycle_budget,
+                    create_only=create_only,
                 )
             )
+        except TreeAlreadyExists as e:
+            raise HTTPException(409, f"동명 나무가 이미 존재함: {e}") from e
         except TierDowngrade as e:
-            raise HTTPException(409, f"G6 단조 ratchet: {e}")
+            raise HTTPException(409, f"G6 단조 ratchet: {e}") from e
         summary = summary.plus(self.writer.upsert_nodes(spec.name, spec.nodes))
         summary = summary.plus(self.writer.link_branch_edges(spec.name, bulk.parent_edges_by_tag))
         summary = summary.plus(self.writer.upsert_questions(spec.name, spec.questions))

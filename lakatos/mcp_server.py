@@ -12,6 +12,10 @@ from mcp.server.fastmcp import FastMCP
 BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
 mcp = FastMCP('lakatotree')
 
+PARENT_EDGES_JSON_MAX_BYTES = 64 * 1024
+PARENT_EDGES_MAX_COUNT = 64
+_PARENT_EDGE_FIELDS = frozenset({'tag', 'inferred', 'relation_kind', 'evidence_ref'})
+
 
 def _headers():
     tok = os.environ.get('LAKATOS_API_TOKEN')   # 서버 auth 켜져 있으면 토큰 전달 (REG-1)
@@ -64,6 +68,41 @@ def _with_preflight(resp, warn):
         resp = dict(resp)
         resp['local_preflight_warning'] = warn
     return resp
+
+
+def _parse_parent_edges_json(raw: str) -> list[dict]:
+    """Bound and validate the MCP JSON shim before it reaches the typed REST API."""
+    if len(raw.encode('utf-8')) > PARENT_EDGES_JSON_MAX_BYTES:
+        raise ValueError(f'parent_edges_json exceeds {PARENT_EDGES_JSON_MAX_BYTES} bytes')
+    try:
+        edges = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'parent_edges_json must be a JSON array: {exc.msg}') from exc
+    if not isinstance(edges, list):
+        raise ValueError('parent_edges_json must be a JSON array of edge objects')
+    if len(edges) > PARENT_EDGES_MAX_COUNT:
+        raise ValueError(f'parent_edges_json exceeds {PARENT_EDGES_MAX_COUNT} edges')
+    for index, edge in enumerate(edges):
+        if not isinstance(edge, dict):
+            raise ValueError(f'parent_edges_json[{index}] must be an object')
+        extra = set(edge) - _PARENT_EDGE_FIELDS
+        if extra:
+            raise ValueError(f'parent_edges_json[{index}] has unknown fields: {sorted(extra)}')
+        tag = edge.get('tag')
+        if not isinstance(tag, str) or not tag.strip():
+            raise ValueError(f'parent_edges_json[{index}].tag must be a non-empty string')
+        inferred = edge.get('inferred', False)
+        relation = edge.get('relation_kind', 'knowledge_inheritance')
+        evidence = edge.get('evidence_ref', '')
+        if not isinstance(inferred, bool):
+            raise ValueError(f'parent_edges_json[{index}].inferred must be boolean')
+        if not isinstance(relation, str) or not relation.strip():
+            raise ValueError(f'parent_edges_json[{index}].relation_kind must be a non-empty string')
+        if not isinstance(evidence, str):
+            raise ValueError(f'parent_edges_json[{index}].evidence_ref must be a string')
+        if (inferred or relation != 'knowledge_inheritance') and not evidence.strip():
+            raise ValueError(f'parent_edges_json[{index}] typed/inferred edge requires evidence_ref')
+    return edges
 
 
 @mcp.tool()
@@ -306,8 +345,11 @@ def delete_tree(name: str, cascade: bool = False) -> str:
 @mcp.tool()
 def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
              comment: str = '', algorithm: str = '', author: str = '',
-             result_path: str = '') -> str:
+             result_path: str = '', parent_edges_json: str = '') -> str:
     """나무에 노드 추가(나무가 먼저 있어야 — 없으면 404, create_tree 로 생성). parent/parents_csv 로 DAG 다중 부모.
+    parent_edges_json = [{"tag":"root","relation_kind":"FORMALIZES","evidence_ref":"kg:...",
+    "inferred":false}] 형식의 typed edge 목록. knowledge_inheritance 이외 관계나 inferred edge 는
+    evidence_ref 필수이며 서버 정책이 검증한다. parent/parents_csv 와 함께 쓰면 tag 기준으로 정규화된다.
     author = 노드 작성자 actor(FF3: CANONICAL floor 의 human attestation 이 actor≠author 일 때만 인정 — self-vouch 봉쇄).
     result_path = 이 노드의 산출물(영수증) 경로 — reproducible 게이트(F-CON-1)의 앵커. 계보
     (record_derivation)의 최종 output 과 일치해야 하고, 그 궁극 root 들은 kind='source' 로 선언된
@@ -316,6 +358,8 @@ def add_node(name: str, tag: str, parent: str = '', parents_csv: str = '',
     if parent:
         parents.insert(0, parent)
     body = dict(tag=tag, parents=parents, comment=comment, algorithm=algorithm, author=author)
+    if parent_edges_json:
+        body['parent_edges'] = _parse_parent_edges_json(parent_edges_json)
     if result_path:
         body['result_path'] = result_path
     return json.dumps(_with_preflight(_post(f'/api/tree/{name}/node', body),

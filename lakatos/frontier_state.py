@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from lakatos.verdicts import QUESTION_ANSWER_VERDICTS
+
 
 class QuestionState(str, Enum):
     OPEN = "OPEN"
@@ -17,6 +19,7 @@ class QuestionState(str, Enum):
 class QuestionEvent(str, Enum):
     OPEN = "OPEN"
     CLOSE = "CLOSE"
+    ADJUDICATED = "ADJUDICATED"
 
 
 class QuestionEffect(str, Enum):
@@ -55,11 +58,67 @@ _TRANSITIONS: dict[tuple[QuestionState, QuestionEvent], QuestionTransition] = {
         effects=(),
         transition_id="duplicate-close",
     ),
+    (QuestionState.CLOSED, QuestionEvent.ADJUDICATED): QuestionTransition(
+        state=QuestionState.CLOSED,
+        effects=(),
+        transition_id="duplicate-adjudication",
+    ),
 }
 
 
-def step(state: QuestionState, event: QuestionEvent) -> QuestionTransition:
-    """Reduce one typed event or reject without changing state."""
+def receipt_backed_conclusive(verdict: str | None, receipt_sha: str | None) -> bool:
+    """Whether an adjudication identity can close its preregistered target.
+
+    ``progressive`` confirms the target and ``rejected`` falsifies it; both are
+    conclusive answers. Partial, equivalent, conditional, and unverified
+    outcomes retain the question. This pure reducer validates the
+    content-addressed receipt identity; the application service owns the
+    stronger guarantee that receipt persistence and closure commit atomically.
+    """
+
+    valid_sha = (
+        isinstance(receipt_sha, str)
+        and len(receipt_sha) == 64
+        and all(char in "0123456789abcdef" for char in receipt_sha)
+    )
+    return valid_sha and verdict in QUESTION_ANSWER_VERDICTS
+
+
+def step(
+    state: QuestionState,
+    event: QuestionEvent,
+    *,
+    verdict: str | None = None,
+    receipt_sha: str | None = None,
+) -> QuestionTransition:
+    """Reduce one typed event or reject without changing state.
+
+    ``ADJUDICATED`` is Mealy-style: closure belongs to a particular
+    receipt-backed verdict event rather than a stable node state.
+    """
+
+    if event is QuestionEvent.ADJUDICATED:
+        if not (
+            isinstance(receipt_sha, str)
+            and len(receipt_sha) == 64
+            and all(char in "0123456789abcdef" for char in receipt_sha)
+        ):
+            raise InvalidQuestionTransition(
+                "ADJUDICATED requires a lowercase sha256 receipt identity; "
+                "self-report cannot close a question"
+            )
+        if state is QuestionState.OPEN:
+            if receipt_backed_conclusive(verdict, receipt_sha):
+                return QuestionTransition(
+                    state=QuestionState.CLOSED,
+                    effects=(QuestionEffect.RECORD_CLOSURE,),
+                    transition_id="adjudication-close",
+                )
+            return QuestionTransition(
+                state=QuestionState.OPEN,
+                effects=(),
+                transition_id="adjudication-retain-open",
+            )
 
     try:
         return _TRANSITIONS[(state, event)]

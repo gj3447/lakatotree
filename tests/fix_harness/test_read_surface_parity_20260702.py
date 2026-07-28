@@ -37,7 +37,10 @@ _TREE_SET_RE = re.compile(r"\bt\.([a-z_][a-z0-9_]*)\s*=(?!=)")
 _NODE_RETURN_RE = re.compile(r"\be\.([a-z_][a-z0-9_]*)\s+AS\s+")
 _TREE_RETURN_RE = re.compile(r"\bt\.([a-z_][a-z0-9_]*)\s+AS\s+")
 _ALLOW_NODE = frozenset({'_cas'})          # CAS 더미 — 원장 필드 아님
-_ALLOW_TREE = frozenset()
+_ALLOW_TREE = frozenset({
+    # create-only claim marker: ON CREATE SET + same-statement REMOVE, never committed/readable state.
+    '_create_claim',
+})
 # graph_view 가 소비하나 RETURN 밖에서 합성되는 키(post-normalize 주입/계산).
 _COMPUTED_ROW_KEYS = frozenset({'source', 'tag', 'parent', 'parents', 'parent_edges', 'questions'})
 
@@ -92,6 +95,7 @@ class _ParityKg:
         self.tag = tag
         self.node: dict = {'tag': tag, 'verdict': 'proof', 'node_state': 'DRAFT'}
         self.tree: dict = {'title': 'T', 'hard_core': '', 'require_novel_anchor': False}
+        self.questions: dict[str, dict] = {'q-x': {'status': 'OPEN'}}
 
     def _apply(self, query: str, params: dict) -> None:
         for field, pname in self._ASSIGN.findall(query):
@@ -116,10 +120,39 @@ class _ParityKg:
         return [row] if row else []
 
     def tx(self, ops):   # KgTx — submit #M5(판결 SET + receipt MERGE)
+        first = {'claimed': self.tag}
         for query, params in ops:
             if 'HAS_NODE' in query and 'SET' in query:
                 self._apply(query, params)
-        return [[{'claimed': self.tag}] for _ in ops]
+            if 'MERGE (rec:VerdictReceipt' in query:
+                question = self.questions.get(params.get('target_id'))
+                before = (question or {}).get('status')
+                closure_query_complete = all(token in query for token in (
+                    'QuestionClosure', 'CLOSES_QUESTION', 'question_before_state',
+                    'CAUSED_BY', 'SET q._cas',
+                ))
+                closed = bool(
+                    closure_query_complete
+                    and params.get('close_question')
+                    and question
+                    and before == 'OPEN'
+                )
+                if closed:
+                    question['status'] = 'CLOSED'
+                suffix = 'closed' if closed else 'open'
+                self.node.update({
+                    'eureka_felt': params.get(f'eu_{suffix}_felt'),
+                    'eureka_true': params.get(f'eu_{suffix}_true'),
+                    'eureka_hallucinated': params.get(f'eu_{suffix}_hall'),
+                    'eureka_reasons': params.get(f'eu_{suffix}_reasons'),
+                    'eureka_bf': params.get(f'eu_{suffix}_bf'),
+                })
+                first.update(
+                    question_before_state=before,
+                    question_closed=closed,
+                    question_state='CLOSED' if closed else before,
+                )
+        return [[first] if index == 0 else [] for index, _ in enumerate(ops)]
 
 
 def test_scored_node_ledger_fields_are_readable():
