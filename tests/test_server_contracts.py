@@ -61,7 +61,8 @@ def install_fake_ports(monkeypatch, app, existing_nodes=("p1", "p2")):
                           "by": "human:reviewer", "kind": "evaluation"}],
             }]
         if "QuestionClosure" in query:
-            return [{"name": params.get("qn")}]
+            return [{"name": params.get("qn"), "before_state": "OPEN",
+                     "after_state": "CLOSED", "transitioned": True}]
         if "RETURN q.name AS name" in query:
             return []
         if "RETURN e.tag AS tag" in query or "RETURN q.name AS name" in query:

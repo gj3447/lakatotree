@@ -1,0 +1,37 @@
+# Locked 2026-07-28 before implementation. Hermetic: network/KG zero; real application
+# functions and real FSM reducer are driven through capture ports.
+name: lakatotree-state-isolation-frontier-fsm
+target:
+  mode: in_process
+  callable: state_isolation_fsm_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ISO-1
+    description: Belief identity and abandonment are scoped by tree, preventing cross-tree AGM mutation.
+    gate:
+      - {event: tree_scoped_belief_identity, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:STATE_ISOLATION_FSM:tree_scoped_belief_identity
+      source: state_isolation_fsm_receipt.py
+      symbol: verify
+      must_emit: tree_scoped_belief_identity
+  - id: FSM-1
+    description: CLOSED plus OPEN is an invalid frontier transition and fails without a history event.
+    gate:
+      - {event: frontier_reopen_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:STATE_ISOLATION_FSM:frontier_reopen_rejected
+      source: state_isolation_fsm_receipt.py
+      symbol: verify
+      must_emit: frontier_reopen_rejected
+  - id: FSM-2
+    description: Repeated CLOSE is an idempotent CLOSED self-loop with no duplicate effect or history event.
+    gate:
+      - {event: frontier_close_idempotent, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:STATE_ISOLATION_FSM:frontier_close_idempotent
+      source: state_isolation_fsm_receipt.py
+      symbol: verify
+      must_emit: frontier_close_idempotent

@@ -64,6 +64,8 @@ REQUIRED_CONSTRAINTS = (
     # (tree, name) 복합키 — name 전역 UNIQUE 였던 것을 2026-07-23 트리-스코프 수리로 교체.
     # 적용 전 선행 마이그레이션 필수(기존 노드 tree 박기): scripts/migrate_open_question_tree_scope_20260723.cypher
     CompositeUniqueSpec("lkt_open_question_tree_name_key", "OpenQuestion", ("tree", "name")),
+    # AGM belief identity is tree-local. Apply scripts/migrate_belief_tree_scope_20260728.cypher first.
+    CompositeUniqueSpec("lkt_belief_tree_id_key", "Belief", ("tree", "belief_id")),
     ConstraintSpec("lkt_research_event_id_unique", "ResearchEvent", "id"),
     # ① real-KG: 연구전통 tradition_id uniqueness — set_tradition 의 MERGE 키 중복(같은 id 두 전통) 방지.
     ConstraintSpec("lkt_research_tradition_id_unique", "ResearchTradition", "tradition_id"),

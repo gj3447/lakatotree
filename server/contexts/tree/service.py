@@ -19,6 +19,13 @@ from lakatos.programme.consilience import (
     project_tree_rows,
     report_bytes,
 )
+from lakatos.frontier_state import (
+    InvalidQuestionTransition,
+    QuestionEffect,
+    QuestionEvent,
+    QuestionState,
+    step as step_question,
+)
 
 from lakatos.verdicts import FORCEFUL_SOURCES as _FORCEFUL_SOURCES
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
@@ -160,50 +167,75 @@ class TreeService:
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})
           MERGE (qn:OpenQuestion {name:$qn, tree:$tree})
-          SET qn.body=$body, qn.status='OPEN', qn.created_at=$ts,
-              qn.expected_gain=$expected_gain, qn.cost=$cost,
-              qn.n_visits=coalesce(qn.n_visits, 0)
+          ON CREATE SET qn.status=$open_state, qn.created_at=$ts, qn.n_visits=0
+          WITH t, qn, coalesce(qn.status, $open_state) AS before_state
+          FOREACH (_ IN CASE WHEN before_state=$open_state THEN [1] ELSE [] END |
+            SET qn.body=$body, qn.status=$open_state,
+                qn.expected_gain=$expected_gain, qn.cost=$cost,
+                qn.n_visits=coalesce(qn.n_visits, 0))
           MERGE (t)-[:HAS_FRONTIER]->(qn)
-          RETURN qn.name AS name""",
+          RETURN qn.name AS name, before_state""",
             tree=name,
             qn=question.qname,
             body=question.body,
             expected_gain=question.expected_gain,
             cost=question.cost,
             ts=datetime.now(timezone.utc).isoformat(),
+            open_state=QuestionState.OPEN.value,
         )
         if not rows:   # MATCH 0행 = 나무 미존재 — 종전엔 침묵 no-op ok:true (close_question 과 비대칭)
             raise HTTPException(404, f"나무 없음: {name} (질문 열기 실패 — 침묵 no-op 금지)")
-        self.hist(name, "question_open", None, question.model_dump())
-        return {"ok": True}
+        before = rows[0].get("before_state") or QuestionState.OPEN.value
+        try:
+            transition = step_question(QuestionState(before), QuestionEvent.OPEN)
+        except (ValueError, InvalidQuestionTransition) as exc:
+            raise HTTPException(409, f"질문 상태 전이 거부: {before} + OPEN") from exc
+        if QuestionEffect.UPDATE_METADATA in transition.effects:
+            self.hist(name, "question_open", None, question.model_dump())
+        return {"ok": True, "state": transition.state.value,
+                "changed": transition.changed, "transition": transition.transition_id}
 
     def close_question(self, name: str, qname: str, closed_by: str = "") -> dict:
         ts = datetime.now(timezone.utc).isoformat()
-        closure_id = f'{name}/{qname}/closure/{closed_by or "unknown"}@{ts}'
+        closure_id = f'{name}/{qname}/closure'
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
-              SET q.status='CLOSED',
-                  q.n_visits=coalesce(q.n_visits, 0) + 1,
-                  q.closed_by=CASE
-                    WHEN q.closed_by IS NULL THEN [$by]
-                    WHEN $by IN q.closed_by THEN q.closed_by
-                    ELSE q.closed_by + $by
-                  END,
-                  q.closed_events=CASE
-                    WHEN q.closed_events IS NULL THEN [$closure_id]
-                    ELSE q.closed_events + $closure_id
-                  END
-              MERGE (c:QuestionClosure {id:$closure_id})
-              SET c.closed_by=$by, c.at=$ts, c.tree=$tree, c.question=$qn
-              MERGE (q)-[:HAS_CLOSURE]->(c)
-              RETURN q.name AS name""",
+              WITH q, coalesce(q.status, $open_state) AS before_state
+              WITH q, before_state, before_state=$open_state AS transitioned
+              FOREACH (_ IN CASE WHEN transitioned THEN [1] ELSE [] END |
+                SET q.status=$closed_state,
+                    q.n_visits=coalesce(q.n_visits, 0) + 1,
+                    q.closed_by=CASE
+                      WHEN q.closed_by IS NULL THEN [$by]
+                      WHEN $by IN q.closed_by THEN q.closed_by
+                      ELSE q.closed_by + $by
+                    END,
+                    q.closed_events=CASE
+                      WHEN q.closed_events IS NULL THEN [$closure_id]
+                      ELSE q.closed_events + $closure_id
+                    END
+                MERGE (c:QuestionClosure {id:$closure_id})
+                SET c.closed_by=$by, c.at=$ts, c.tree=$tree, c.question=$qn
+                MERGE (q)-[:HAS_CLOSURE]->(c))
+              RETURN q.name AS name, before_state,
+                     CASE WHEN transitioned THEN $closed_state ELSE before_state END AS after_state,
+                     transitioned""",
             tree=name,
             qn=qname,
             by=closed_by,
             closure_id=closure_id,
             ts=ts,
+            open_state=QuestionState.OPEN.value,
+            closed_state=QuestionState.CLOSED.value,
         )
         if not rows:
             raise HTTPException(404, f"질문 없음: {qname}")
-        self.hist(name, "question_close", closed_by, {"question": qname})
-        return {"ok": True}
+        before = rows[0].get("before_state") or QuestionState.OPEN.value
+        try:
+            transition = step_question(QuestionState(before), QuestionEvent.CLOSE)
+        except (ValueError, InvalidQuestionTransition) as exc:
+            raise HTTPException(409, f"질문 상태 전이 거부: {before} + CLOSE") from exc
+        if QuestionEffect.RECORD_CLOSURE in transition.effects:
+            self.hist(name, "question_close", closed_by, {"question": qname})
+        return {"ok": True, "state": transition.state.value,
+                "changed": transition.changed, "transition": transition.transition_id}

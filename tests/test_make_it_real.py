@@ -23,6 +23,8 @@ def _capture_kg(monkeypatch, app, ret=None):
 
     def fake_kg(q, **kw):
         calls.append((q, kw))
+        if 'MERGE (qn:OpenQuestion' in q:
+            return [{'name': kw.get('qn'), 'before_state': 'OPEN'}]
         return ret if ret is not None else [{'tag': 'v'}]
 
     monkeypatch.setattr(app, 'kg', fake_kg)

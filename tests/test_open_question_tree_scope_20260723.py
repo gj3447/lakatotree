@@ -30,7 +30,7 @@ class _CaptureKg:
 
     def __call__(self, cypher, **params):
         self.ops.append((cypher, params))
-        return [{"t": 1}]
+        return [{"t": 1, "before_state": "OPEN"}]
 
 
 class _CaptureKgTx:

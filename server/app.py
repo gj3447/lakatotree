@@ -925,17 +925,28 @@ def _load_belief_base(tree: str) -> list:
     # G9(git-흡수 2026-07-02): active base = 포인터가 살아있는(abandoned=false) belief 만. 폐기된 belief 는
     #   물리 삭제가 아니라 abandoned=true 로 표식(git prune: 도달가능 객체는 불멸, 포인터만 죽는다) — 증거 불멸.
     rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(b:Belief)
-                 WHERE coalesce(b.abandoned, false) = false
+                 WHERE (b.tree=$tree OR b.tree IS NULL)
+                       AND coalesce(b.abandoned, false) = false
                  RETURN b.belief_id AS belief_id, b.statement AS statement, b.kind AS kind,
                         b.credence AS credence, b.problem_balance AS problem_balance,
-                        b.connectivity AS connectivity, b.depends_on AS depends_on
-                 ORDER BY belief_id""", tree=tree)
+                        b.connectivity AS connectivity, b.depends_on AS depends_on,
+                        b.tree AS scope_tree
+                 ORDER BY belief_id, CASE WHEN b.tree=$tree THEN 0 ELSE 1 END""", tree=tree)
+    # Migration keeps legacy nodes as provenance, so both legacy and scoped edges may coexist.
+    # Collapse by belief_id and always prefer the current tree's owned node.
+    selected = {}
+    for row in rows or []:
+        belief_id = row['belief_id']
+        current = selected.get(belief_id)
+        if current is None or (current.get('scope_tree') != tree and row.get('scope_tree') == tree):
+            selected[belief_id] = row
     return [Belief(belief_id=r['belief_id'], statement=r.get('statement') or r['belief_id'],
                    kind=r.get('kind') or 'protective_belt',
                    credence=r['credence'] if r.get('credence') is not None else 0.5,
                    problem_balance=int(r.get('problem_balance') or 0),
                    connectivity=int(r.get('connectivity') or 0),
-                   depends_on=tuple(r.get('depends_on') or ())) for r in (rows or [])]
+                   depends_on=tuple(r.get('depends_on') or ()))
+            for r in selected.values()]
 
 
 def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
@@ -947,7 +958,7 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                     depends_on=list(b.depends_on)) for b in r.base]
     ops = [("""MATCH (t:LakatosTree {name:$tree})
                UNWIND $beliefs AS b
-               MERGE (bel:Belief {belief_id: b.belief_id})
+               MERGE (bel:Belief {tree:$tree, belief_id: b.belief_id})
                SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
                    bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
                    bel.depends_on=b.depends_on, bel.updated_at=$ts,
@@ -960,7 +971,7 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
         # G9: 폐기=포인터 죽음(비파괴) — DETACH DELETE 대신 abandoned 표식 + was_* 복구영수증(branch.c '(was oid)').
         #   belief 노드·엣지·의존 증거는 도달가능하게 잔존. 물리 소거는 도달성 스윕의 prunable 게이트만 소유.
         ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(bel:Belief)
-                       WHERE bel.belief_id IN $removed
+                       WHERE bel.tree=$tree AND bel.belief_id IN $removed
                        SET bel.abandoned=true, bel.was_credence=bel.credence,
                            bel.was_kind=bel.kind, bel.abandoned_at=$ts""",
                     dict(tree=tree, removed=list(r.removed), ts=ts)))
