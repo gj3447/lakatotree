@@ -19,8 +19,8 @@ from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _
                                expected_progress_gain, realized_reward)
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.quant.metrics import branch_inputs
-from lakatos.verdicts import (FRONTIER_PROGRESS_VERDICTS, SCORED_PROGRESS_VERDICTS,
-                              TESTED_CORE_VERDICTS)
+from lakatos.verdicts import (FORCEFUL_SOURCES, FRONTIER_PROGRESS_VERDICTS,
+                              SCORED_PROGRESS_VERDICTS, TESTED_CORE_VERDICTS)
 from lakatos.programme.series import series_from_path
 from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
@@ -108,15 +108,23 @@ class ProgrammeService:
         self.rank_questions = rank_questions
 
     def calibration(self, name: str) -> dict:
+        # ADR D2(2026-07-28): receipt-gate 비대칭 수리 — raw novel_confirmed 는 무영수증
+        # self-report 를 포함해 판관 보정 측정을 오염시켰다(tree_metrics 의 neutralize 게이트와
+        # 의미론 정렬). FORCEFUL(scripted/engine) 판정만 + 결정론 정렬(순차 소비 전제).
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
                      WHERE e.pred_credence IS NOT NULL AND e.novel_confirmed IS NOT NULL
                            AND e.novel_registered = true
-                     RETURN e.pred_credence AS p, e.novel_confirmed AS o""", tree=name)
+                           AND e.verdict_source IN $forceful
+                     RETURN e.pred_credence AS p, e.novel_confirmed AS o
+                     ORDER BY e.judged_at, e.tag""", tree=name,
+                       forceful=sorted(FORCEFUL_SOURCES))
         fc = [(r['p'], 1 if r['o'] else 0) for r in rows]
         return dict(n=len(fc), brier=round(brier_score(fc), 4), log_score=round(log_score(fc), 4),
                     calibration_error=round(calibration_error(fc), 4),
                     scope='tree_level',
-                    note='Brier 0=완벽, log=overconfidence 강벌, ECE=보정오차. novel 등록 예측만, 트리(발급자) 수준')
+                    note='Brier 0=완벽, log=overconfidence 강벌, ECE=보정오차. novel 등록 예측만, '
+                         '트리(발급자) 수준. FORCEFUL(영수증) 판정 결과만 계상 — 무영수증 '
+                         'self-report 는 보정 측정에서 제외(ADR D2), judged_at 결정론 정렬')
 
     def directions(self, name: str) -> dict:
         td = self.tree_data(name)
