@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from lakatos.node_state import derive_state_value
 from lakatos.coverage import resolve_coverage_status
+from lakatos.engine_identity import effective_floor
 from lakatos.verdicts import format_verdict_with_val, verdict_assurance
 
 
@@ -54,7 +55,24 @@ def normalize_tree_row(row: dict) -> dict:
     return out
 
 
-def normalize_node_row(row: dict) -> dict:
+def assurance_with_context(row: dict, *, tree_attestors=None, engine_rule_floor=None) -> dict:
+    """읽기 시점 VAL 재도출 — submit 시점(judgement_service response_assurance)과 동형 의미론.
+
+    P3 수술(2026-07-28, finding_d286e6ed37a462c1): 읽기 경로가 kwargs 를 안 넘겨 전 영구 표면이
+    L1 천장이었다(라이브 실측: SelfDev 47노드 전부 val<=1, L3 프로브가 partial@L1 되읽힘).
+    - lock_bound = bool(measurement_lock_sha) — submit 의 bool(_lsha) 와 동형. row 에 이미 있으면
+      보존(기존 fixture 계약). 파생은 사본에만(원본 row shape 불변 — fsck record sha 최소 교란).
+    - temporal_witness = 저장 미러(e.temporal_witness_verified — submit 이 정족수 검증 후 SET).
+    - floor 대조 대상은 head receipt 봉인 sha(노드별 가변) — 현 프로세스 상수를 넘기면
+      항진명제가 읽기 시점으로 이동할 뿐이라 금지."""
+    if 'measurement_lock_bound' not in row and row.get('measurement_lock_sha'):
+        row = {**row, 'measurement_lock_bound': True}
+    return verdict_assurance(row, tree_attestors=tree_attestors,
+                             engine_rule_floor=engine_rule_floor,
+                             temporal_witness=bool(row.get('temporal_witness_verified')))
+
+
+def normalize_node_row(row: dict, *, tree_attestors=None, engine_rule_floor=None) -> dict:
     out = dict(row)
     out["tag"] = normalize_text(out.get("tag"))
     out["verdict"] = normalize_text(out.get("verdict")) or "proof"
@@ -75,7 +93,10 @@ def normalize_node_row(row: dict) -> dict:
     # EXTAUDIT S3b (SLSA 흡수): VAL 등급을 read-model 에 부착 — get_tree/metrics/leaderboard 가
     # 자동 상속한다. 비파괴 계약: bare `verdict` 는 불변(내부 술어 전부 그걸 읽음), 표면 동봉은
     # 추가 필드로만. 도출은 읽기 시점(저장 금지 — 저장하면 생산자 자기신고).
-    out["assurance"] = verdict_assurance(out)
+    # P3(2026-07-28): 호출자가 트리 컨텍스트(attestors/floor)를 주입하면 L2/L3 까지 재도출 —
+    # 미주입은 승급 불가일 뿐(기존 의미론 보존, test_extaudit_val:84).
+    out["assurance"] = assurance_with_context(out, tree_attestors=tree_attestors,
+                                              engine_rule_floor=engine_rule_floor)
     out["verdict_display"] = format_verdict_with_val(out["verdict"], out["assurance"])
     return out
 
@@ -166,6 +187,7 @@ class TreeKgRepository:
         OPTIONAL MATCH (e)-[:RAISES_QUESTION]->(q)
         WITH e, [pe IN raw_parent_edges WHERE pe.tag IS NOT NULL] AS parent_edges,
              collect(DISTINCT q.name) AS questions
+        OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt {receipt_sha: e.current_receipt_sha})
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
                e.result_path AS result_path, e.result_sha256 AS result_sha256,
                e.source_judge_script_path AS source_judge_script_path,
@@ -212,6 +234,7 @@ class TreeKgRepository:
                e.stale_engine_rule_demoted_at AS stale_engine_rule_demoted_at,
                e.engine_freshness AS engine_freshness,
                e.judged_by_boot_git_sha AS judged_by_boot_git_sha,
+               hr.engine_rule_sha AS engine_rule_sha,
                e.replay_status AS replay_status, e.replay_reason AS replay_reason,
                e.regenerated_metric AS regenerated_metric,
                e.measurement_grade AS measurement_grade,
@@ -239,13 +262,20 @@ class TreeKgRepository:
             n=name,
         )
         observations, node_source = internet_observations(obs_rows)
-        normalized_nodes = [normalize_node_row(row) for row in nodes]
+        # P3(2026-07-28): 트리 컨텍스트를 노드 assurance 에 관통 — attestors 는 submit 과 동형으로
+        # raw attestor_dids(역할 좁힘 없이 — role_allowlist 를 쓰면 submit 응답 L3 과 의미가 갈림).
+        tree_meta = normalize_tree_row(t[0])
+        attestors = [str(d).strip() for d in (tree_meta.get("attestor_dids") or [])
+                     if d and str(d).strip()]
+        floor = effective_floor()
+        normalized_nodes = [normalize_node_row(row, tree_attestors=attestors,
+                                               engine_rule_floor=floor) for row in nodes]
         for r in normalized_nodes:
             if r["tag"] in node_source:
                 r["source"] = node_source[r["tag"]]
         return {
             "name": name,
-            **normalize_tree_row(t[0]),
+            **tree_meta,
             "nodes": normalized_nodes,
             "frontier": [normalize_frontier_row(row) for row in frontier],
             "observations": observations,

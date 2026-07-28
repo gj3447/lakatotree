@@ -13,8 +13,9 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from lakatos.engine_identity import ENGINE_RULE_SHA
+from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.verdict.argue import assemble_af, grounded_extension
+from server.contexts.tree.repository import assurance_with_context
 from lakatos.verdict.spine import reconcile_standing
 from lakatos.verdicts import format_verdict_with_val, receipt_content_sha, verdict_assurance
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions, is_measurement_owned
@@ -611,9 +612,16 @@ class EvidenceClaimService:
     def standing(self, name: str, tag: str) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                     OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt {receipt_sha: e.current_receipt_sha})
                      RETURN e.verdict AS verdict, e.verdict_source AS verdict_source,
                             e.current_receipt_sha AS current_receipt_sha,
                             e.measurement_grade AS measurement_grade, e.replay_status AS replay_status,
+                            e.measurement_lock_sha AS measurement_lock_sha,
+                            e.assurance_tier_resolved AS assurance_tier_resolved,
+                            e.attested_by_did AS attested_by_did,
+                            e.temporal_witness_verified AS temporal_witness_verified,
+                            t.attestor_dids AS attestor_dids,
+                            hr.engine_rule_sha AS engine_rule_sha,
                             collect({id:a.id, attacks:a.attacks, kind:a.kind, by:a.by}) AS args""",
                        tree=name, tag=tag)
         if not rows:
@@ -624,7 +632,10 @@ class EvidenceClaimService:
         stands = verdict_arg in ext
         # EXTAUDIT S3 (SLSA 흡수): 채점/진보 어휘는 bare 방출 금지 — VAL 등급을 표면에 강제 동봉.
         # 도출은 읽기 시점(저장 금지) — armed/disarmed progressive 가 표면에서 구분된다(급소 #5).
-        assurance = verdict_assurance(rows[0])
+        # P3(2026-07-28): repository 와 동일 파생으로 L2/L3 까지 재도출(이전엔 무-kwargs L1 천장).
+        _att = [str(d).strip() for d in (rows[0].get('attestor_dids') or []) if d and str(d).strip()]
+        assurance = assurance_with_context(rows[0], tree_attestors=_att,
+                                           engine_rule_floor=effective_floor())
         return dict(tag=tag, verdict=format_verdict_with_val(rows[0]['verdict'], assurance),
                     assurance=assurance, stands=stands,
                     grounded_extension=sorted(ext),

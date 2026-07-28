@@ -449,8 +449,11 @@ def record_content_sha(rec: dict) -> str:
     diagnosis still changes the content hash and therefore loses the exemption as intended.
     """
     canonical = dict(rec)
+    # engine_rule_sha: P3(2026-07-28) head-receipt 조인으로 projection 에 추가 — 무영수증 legacy
+    # 노드는 None 이므로 absence 로 취급해 리뷰된 면제를 보존(비-null 봉인 sha 는 의도대로 sha 변경).
     for optional_key in ("replay_reason", "regenerated_metric", "result_sha256",
-                         "source_judge_script_path", "source_result_path"):
+                         "source_judge_script_path", "source_result_path",
+                         "engine_rule_sha"):
         if canonical.get(optional_key) is None:
             canonical.pop(optional_key, None)
     blob = json.dumps(canonical, sort_keys=True, ensure_ascii=False,
