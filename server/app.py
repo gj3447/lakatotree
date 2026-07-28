@@ -203,14 +203,23 @@ def _current_auth_posture() -> str:
     return _classify_posture(bool(os.environ.get('LAKATOS_API_TOKEN')))
 
 
+def _freshness_gate_posture() -> str:
+    """판관 신선도 게이트 무장 자세 — freshness_provider_from_env 와 같은 술어(재유도 금지).
+    efresh 가 KG 프로퍼티에만 기록되던 write-only 관측 갭(finding_042e2ea2a6e3b55d)의 읽기 표면."""
+    from server.engine_freshness import freshness_provider_from_env
+    return 'on' if freshness_provider_from_env() is not None else 'opt_out'
+
+
 @app.get('/version')
 def version():
-    """서빙 코드 신원 + stale 자기보고(G2, S5 봉합) + 쓰기 인증 자세(FE5). 배포 프로브가 boot_git_sha vs
-    disk_head_sha 로 stale 을, auth_posture 로 무인증 open-write 를 탐지한다(open-but-observable).
+    """서빙 코드 신원 + stale 자기보고(G2, S5 봉합) + 쓰기 인증 자세(FE5) + 판관 게이트 자세(P1).
+    배포 프로브가 boot_git_sha vs disk_head_sha 로 stale 을, auth_posture 로 무인증 open-write 를,
+    freshness_gate 로 built-then-disarmed 를 탐지한다(open-but-observable).
 
     이전엔 /version 이 없어 프로세스가 어느 커밋에서 부팅했는지 알 수 없었다(6커밋 stale 서빙이 감지 불가였음)."""
     from server.version import served_version
-    return {**served_version(), 'auth_posture': _current_auth_posture()}
+    return {**served_version(), 'auth_posture': _current_auth_posture(),
+            'freshness_gate': _freshness_gate_posture()}
 
 
 @app.get('/api/ops/fsck')

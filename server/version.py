@@ -129,6 +129,11 @@ def served_version() -> dict:
         "disk_head_sha": disk,
         "identity_verified": identity_verified,
         "stale": (BOOT_GIT_SHA != disk) if identity_verified else None,
+        # stale 의 referent 는 자기 박스 1-hop(프로세스 vs 자기 디스크)뿐 — canon(origin) 대비는
+        # 이 프로세스가 측정하지 않는다(네트워크 없는 읽기 표면). 07-28 실측: scope 무명시 stale:false
+        # 가 'canon 대비 신선'으로 오독돼 remediation 6커밋 뒤 서빙이 초록으로 위장했다. overclaim 제거:
+        "stale_scope": "process_vs_disk",
+        "canon_lag": "unknown",   # 대조는 외부 watchdog(P2)의 몫 — 감지 없이 신선 주장 금지
     }
 
 
