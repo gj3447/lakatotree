@@ -943,7 +943,10 @@ class JudgementService:
         #   가정을 선언하고 그게 tree 의 hard core 를 건드리면(protected≠∅) 아래에서 different_programme 로
         #   강등 — self-report bool(lakatos_hardcore=True)로 위반을 못 숨긴다. touched 미제공 시 레거시 폴백.
         #   잔여 frontier: touched-set 은 아직 제출자 선언 — git-diff ∩ Longinus 로 파생은 후속.
-        _raw_core = (pr.get('hard_core') or '').replace(';', ',').replace('\n', ',')
+        _hc = pr.get('hard_core') or ''
+        if isinstance(_hc, (list, tuple)):   # trees created with array hard_core (e.g. ooptdd_ontology)
+            _hc = ','.join(str(x) for x in _hc)
+        _raw_core = str(_hc).replace(';', ',').replace('\n', ',')
         _core_tokens = {tok.strip().lower() for tok in _raw_core.split(',') if tok.strip()}
         _touched = [tok.strip().lower() for tok in (r.touched_assumptions or []) if tok and tok.strip()]
         hc_derived = None
