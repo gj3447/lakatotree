@@ -1,5 +1,5 @@
 {
-  "run": "restored-positive-after-adjudicated-spend-filter",
+  "run": "postdeploy-restored-positive-after-adjudicated-spend-filter",
   "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ooptdd_receipts/run_all.py",
   "exit_code": 0,
   "target": "HSWM_LAUDAN_SPEND",
@@ -17,5 +17,19 @@
     "add_node_abandon_signal_wired": true,
     "structural_gap_preserves_attempt_streak": true
   },
-  "engine_sha256": "df08a62172f1af4b32a62d6ad6debf19d8f015a7337627908e716b87a2bf667d"
+  "engine_sha256": "df08a62172f1af4b32a62d6ad6debf19d8f015a7337627908e716b87a2bf667d",
+  "live_v2_readback": {
+    "tree": "LakatosTree_HSWM_LargerAI_20260728_v2",
+    "deployed_git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "raw_nodes": 19,
+    "raw_edges": 52,
+    "open_questions": 8,
+    "closed_questions": 0,
+    "scientific_outcomes": 0,
+    "laudan_abandon_candidates": [],
+    "annotation_coverage": 1.0,
+    "alerts": [
+      "커버리지 backlog 6건 — 전수성 주장 금지"
+    ]
+  }
 }

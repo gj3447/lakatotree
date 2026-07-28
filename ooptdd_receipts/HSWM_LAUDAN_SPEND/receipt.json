@@ -12,8 +12,8 @@
   "producer": {
     "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ooptdd_receipts/run_all.py",
     "cwd": "/Users/lagyeongjun/CD/lakatotree-pub",
-    "git_head": "31bcf259526d20cbd26a5fb0674418e410968672",
-    "working_tree_state": "dirty-validated-predeploy",
+    "git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "working_tree_state": "clean-committed-and-live-deployed-at-verification",
     "entrypoint": "hswm_laudan_spend_receipt:verify",
     "source_path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/hswm_laudan_spend_receipt.py",
     "source_symbol": "verify",
@@ -38,8 +38,8 @@
   "positive": {
     "observed_verdict": "green",
     "receipt_path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/results/positive.json",
-    "receipt_sha256": "4a7c24a39ee85ab3870f1ebe50e8c20097a64bf9061bdb200542e92a765916a0",
-    "evidence_tier": "arrived",
+    "receipt_sha256": "bd189019e5a68e0e7cef65ddc5d7e0feede19c45633f677b2754f5623e83a621",
+    "evidence_tier": "queryable_causal",
     "charge_ratio": 1.0,
     "forbidden_events_passed": true,
     "loop": {
@@ -69,5 +69,18 @@
     "symbol": "verify",
     "sha256": "984779c89eacb2b8c56d54b65af9eda72ac6e1f59e589964797b29b503173791"
   },
-  "claim_boundary": "The receipt proves that structural density alone cannot spend Laudan budget while actual adjudicated attempts still do. The signal is diagnostic-only and makes no HSWM efficacy or progress claim."
+  "engine_binding": {
+    "path": "lakatos/quant/metrics.py",
+    "symbol": "_attempted_chain",
+    "sha256": "df08a62172f1af4b32a62d6ad6debf19d8f015a7337627908e716b87a2bf667d"
+  },
+  "live_readback": {
+    "tree": "LakatosTree_HSWM_LargerAI_20260728_v2",
+    "deployed_git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "raw_nodes": 19,
+    "raw_edges": 52,
+    "adjudicated_outcomes": 0,
+    "laudan_abandon_candidates": []
+  },
+  "claim_boundary": "The receipt proves that structural density alone cannot spend Laudan budget while actual adjudicated attempts still do; the deployed v2 readback confirms the false-abandon set is empty. The signal is diagnostic-only and makes no HSWM efficacy or progress claim."
 }

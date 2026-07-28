@@ -1,7 +1,7 @@
 {
   "schema_version": "symposium-ooptdd-receipt/v1",
   "template_only": false,
-    "receipt_id": "lakatotree-hswm-dense-programme-v2-hermetic-20260728",
+  "receipt_id": "lakatotree-hswm-dense-programme-v2-live-20260728",
   "cycle_id": "lakatotree-hswm-density-20260728",
   "requirement_group": "HSWM-DENSE-PROGRAMME",
   "spec": {
@@ -10,10 +10,10 @@
     "locked_before_positive_run": true
   },
   "producer": {
-    "command": ".venv/bin/python ooptdd_receipts/run_all.py",
+    "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ooptdd_receipts/run_all.py",
     "cwd": "/Users/lagyeongjun/CD/lakatotree-pub",
-        "git_head": "31bcf259526d20cbd26a5fb0674418e410968672",
-        "working_tree_state": "dirty-validated-predeploy-v2",
+    "git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "working_tree_state": "clean-committed-and-live-deployed-at-verification",
     "entrypoint": "hswm_dense_programme_receipt:verify",
     "source_path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/hswm_dense_programme_receipt.py",
     "source_symbol": "verify",
@@ -43,8 +43,8 @@
   "positive": {
     "observed_verdict": "green",
     "receipt_path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/results/positive.json",
-        "receipt_sha256": "8f9b67fb5a3bcc28c6ea8d50966932684a9b6a0187168ff528eb2a3ada839e90",
-    "evidence_tier": "arrived",
+    "receipt_sha256": "0e500b0f68ba53a8bebf81c762fe3fa6ac0bb67333f9ec388078141747c1ef54",
+    "evidence_tier": "queryable_causal",
     "charge_ratio": 1.0,
     "forbidden_events_passed": true,
     "loop": {
@@ -60,7 +60,7 @@
     "injection": "Temporarily replace the production seeder exact-equality guard so a node-comment tamper is accepted at the readback boundary; the locked tamper event must then be absent.",
     "observed_verdict": "red",
     "receipt_path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/results/negative.json",
-        "receipt_sha256": "1fb562517efdb1a460af1a0ec4e014c8ececa4501108e82f58cf227e0b230248",
+    "receipt_sha256": "1fb562517efdb1a460af1a0ec4e014c8ececa4501108e82f58cf227e0b230248",
     "restored": true
   },
   "oracle": {
@@ -72,7 +72,23 @@
   "source_binding": {
     "path": "ooptdd_receipts/HSWM_DENSE_PROGRAMME/hswm_dense_programme_receipt.py",
     "symbol": "verify",
-        "sha256": "e24a2d42910352ab58d202f03793f481876477af94d2a553370952a4a38faa4e"
+    "sha256": "e24a2d42910352ab58d202f03793f481876477af94d2a553370952a4a38faa4e"
   },
-    "claim_boundary": "This pre-deploy v2 envelope proves the executable seeder and exact-readback contract over a faithful converged HTTP seam. It does not yet claim live v2 materialization, scientific HSWM progress, or efficacy."
+  "live_materialization": {
+    "tree": "LakatosTree_HSWM_LargerAI_20260728_v2",
+    "url_identity": "http://127.0.0.1:55170/api/tree/LakatosTree_HSWM_LargerAI_20260728_v2",
+    "manifest_owner": "codex-research-2026-07-28",
+    "manifest_digest": "937ce1b49e0281e38876e9e66c5eb3f79069bc5d3f9eb4df3aec3014ea7c3d7a",
+    "deployed_git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "first_apply_operations": 53,
+    "second_apply_operations": 0,
+    "scientific_progress_verdicts": 0,
+    "efficacy_claims": 0,
+    "seeder_binding": {
+      "path": "scripts/seed_hswm_larger_ai_programme.py",
+      "symbol": "apply_manifest",
+      "sha256": "f5092d73a25124e5f8cf7f75446c32a6de0f4c69cc4b8ec7f119b1d2174c5e44"
+    }
+  },
+  "claim_boundary": "This receipt proves that the versioned v2 manifest is materially present on the deployed HTTP runtime, exactly read back, and zero-write idempotent on reapply. It proves dense structure and diagnostic integrity, not scientific HSWM progress or efficacy."
 }
