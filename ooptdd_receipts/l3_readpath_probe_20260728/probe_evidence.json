@@ -1,0 +1,75 @@
+{
+  "probe": "L3 read-path live (P3 수술 실증)",
+  "tree": "LakatoTree_L3ReadProbe_20260728_r2",
+  "server": "http://127.0.0.1:55170",
+  "generated_at": "2026-07-28T03:04:23.782112+00:00",
+  "attestor_did": "did:key:z6MkpxJ6kdm8A5CK47FSrmzBAU6tupf9ShSeorr44qR6dd56",
+  "witness_dids": [
+    "did:key:z6Mkh6G7T8hVpv8mSxukU4KrSDLhL8DdXnyYRYnyud9FD1Tq",
+    "did:key:z6MkvVkjdxhPAm1yVd3dhhdxk5RRm2PDw9nhsmhYz4VkYSPD"
+  ],
+  "honesty_boundary": "solo box 키 자기생성 — 메커니즘 실증(외부성은 키 소유 구조 몫)",
+  "steps": [
+    {
+      "name": "tree_create_anchored",
+      "ok": true,
+      "status": 200,
+      "body": "{'ok': True, 'tree': 'LakatoTree_L3ReadProbe_20260728_r2', 'nodes': 0, 'questions': 0, 'tx_count': 1, 'op_count': 1}"
+    },
+    {
+      "name": "node_create",
+      "ok": true,
+      "status": 200
+    },
+    {
+      "name": "prediction_registered",
+      "ok": true,
+      "status": 200,
+      "pred_anchor_verified": true,
+      "quorum": null,
+      "body": "{'ok': True, 'pred_receipt_sha': 'fc988846f9db0c4c61a28f2193c1b1dc08ccd5743bba86c015d750afdf30ed6d', 'pred_anchor_verified': True, 'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}"
+    },
+    {
+      "name": "pred_receipt_minted",
+      "ok": true,
+      "pred_receipt_sha": "fc988846f9db0c4c61a28f2193c1b1dc08ccd5743bba86c015d750afdf30ed6d"
+    },
+    {
+      "name": "submit_ok",
+      "ok": true,
+      "status": 200,
+      "verdict": "partial",
+      "body": "{'ok': True, 'freshen': False, 'verdict': 'partial', 'verdict_display': 'partial@L3(attested_witnessed)', 'assurance': {'val': 3, 'basis': []}, 'delta': -1.0, 'novel': False, 'lakatos': 'n/a', 'metric_verdict': 'partial', 'requires_human': False, 'script_sha_server_verified': True, 'judge_script_sha"
+    },
+    {
+      "name": "submit_response_l3",
+      "ok": true,
+      "assurance": {
+        "val": 3,
+        "basis": []
+      },
+      "verdict_display": "partial@L3(attested_witnessed)"
+    },
+    {
+      "name": "read_surface_get_tree_l3",
+      "ok": true,
+      "assurance": {
+        "val": 3,
+        "basis": []
+      },
+      "verdict_display": "partial@L3(attested_witnessed)",
+      "measurement_grade": "server_regenerated",
+      "replay": "verified"
+    },
+    {
+      "name": "read_surface_standing_l3",
+      "ok": true,
+      "assurance": {
+        "val": 3,
+        "basis": []
+      },
+      "verdict": "partial@L3(attested_witnessed)"
+    }
+  ],
+  "result": "L3_ON_READ_SURFACES"
+}
