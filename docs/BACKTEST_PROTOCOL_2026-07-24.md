@@ -1,111 +1,223 @@
-# BACKTEST PROTOCOL — 엔진 효과성 후향 블라인드 백테스트 (사전등록 정본)
+# BACKTEST PROTOCOL — LakatoTree 진보판정기 효능 백테스트
 
-> 상태: **사전등록 설계 정본** (측정 착수 전). corpus 동결 후 해시를 §10에 기록.
-> 계승: `docs/C3_EFFECTIVENESS_PROTOCOL.md` (superseded — 골격만 계승, n=9 검정력 설계는 폐기).
-> 결정 근거: `SYMPOSIUM/THEORY/lakatotree/DECISION_PROM16_4ITEMS_2026-07-24.md` D1.
-> 발주: PROM 16 §C 권고 (n=9/팔 = 40pp 차이에서 검정력 26% → 무정보 설계).
+> 상태: **IMPLEMENTED / UNTESTED** (측정 전).
+> 2026-07-29 통계 감사에서 기존 초안의 표본수·비열등성·specificity·Cohen's d 결함을 측정 전에 교정했다.
+> confirmatory corpus, 외부 시간 앵커, 측정 결과는 아직 없다. 기존 C3·dogfood는 development-only다.
 
-## 0. 한 줄
+## 0. 주장 범위
 
-**LakatoTree(사전등록+novel 게이트+3층 스택)가 naive(self-report)와 POPPER-류(외부 자동판정기)보다
-*거짓 진보(false progressive)*를 더 적게 찍는가** — 같은 코퍼스·같은 입력에 페어드로 돌려 McNemar로 잰다.
-엔진은 appraise 하지 generate 하지 않는다. 판정 특이도를 재지 발견율을 재지 않는다(C3 §0 범위 계승).
+같은 봉인 사례에서 LakatoTree의 **진보 판정 커널**이 두 내부 기준선보다 외부 지상진리를 더 정확히
+분류하는지 검정한다. 1차 표본은 progressive/nonprogressive가 같은 수인 외부 sealed holdout이다.
 
-## 1. 가설 (사전등록)
+- `naive`: 주 지표 개선만 보면 진보
+- `popper_like`: 측정 전 등록된 주 지표 개선만 보면 진보
+- `lakatotree`: 실제 `lakatos.verdict.judge.judge()`가 측정 전 등록, 주 지표 개선, 독립 novel
+  corroboration을 모두 요구
 
-- **H1**: `FPR_lakatotree < FPR_naive` AND `FPR_lakatotree ≤ FPR_popper_like`
-  (1차 지표 = false-progressive rate: 지상진리상 퇴행/날조인데 progressive 판정한 비율).
-- **H0**: FPR 차이 없음.
-- **반증 조건(구체)**: 코퍼스 N≥20 확보 후 McNemar exact (양측 α=0.05)에서 naive 대비 우위 불성립,
-  또는 자체 특이도 하한(§4) 미달이면 H1 기각.
-- **null 결과도 정직하게 출판** (C3 §1 계승 — "honest gap").
+이 백테스트가 성공해도 다음은 증명하지 않는다.
 
-## 2. 장치 (페어드 3-장치 — 동일 사례·동일 증거 투입)
+- 연구 생산성이나 발견률 향상
+- 미래 연구에서의 인과효과
+- branch-level Popper/Bayes/Laudan stack 또는 eureka 전체의 효능
+- HSWM 효능
 
-| 장치 | 판정 방식 | 역할 |
+stack과 eureka는 개별 사례를 한 번에 분류하는 단일 production composer가 없고, 프로그램 역사·문제수지 등
+추가 입력을 요구한다. 임의의 기본값으로 합성하면 새 실험 장치를 발명하는 것이므로 1차 arm에서 제외한다.
+
+## 1. 사전등록 가설
+
+- **H1 (conjunctive accuracy superiority)**:
+  `error_lakatotree < error_naive` **AND** `error_lakatotree < error_popper_like`.
+- 각 비교는 같은 외부 holdout 사례의 paired correctness로 검정한다. nonprogressive에서 LakatoTree만
+  맞히면 favorable, progressive에서 기준선만 맞히면 reverse discordance다.
+- 두 비교 중 하나라도 실패하면 H1은 지지되지 않는다. 유리한 비교만 골라 보고하지 않는다.
+- FPR만 1차 검정하지 않는다. 세 규칙은 `lakatotree ⊆ popper_like ⊆ naive` 포함관계라
+  nonprogressive 사례에서 reverse FPR discordance가 구조상 불가능해 우위가 장치에 내장되기 때문이다.
+- null·음성·검정력 부족 결과도 같은 result contract로 출판한다.
+
+## 2. 세 장치와 입력 격리
+
+| 장치 | 판정 | 구현 권위 |
 |---|---|---|
-| **A. naive** | 개선 감지만 = "measured 가 baseline 보다 나으면 progressive" (사전등록·novelty 무시) | confabulation baseline (C3 조건 B 계승) |
-| **B. popper_like** | 사전등록 예측 충족 여부만 (novel/구조 게이트 없는 단층 판정기) | 외부 대조 — POPPER(ICML 2025) 류의 최소 기능형 |
-| **C. lakatotree** | 정본 파이프라인: judge(사전등록 novel 게이트) → stack(Popper/Bayes/Laudan, quorum 2) → eureka(측정-red) | 피험체 |
+| `naive` | noise band를 넘는 주 지표 개선 | 실제 `judge()`의 primary-improvement 계산 |
+| `popper_like` | 측정 전 등록 + 주 지표 개선 | 내부 단층 기준선. 외부 POPPER 제품 효능 주장 아님 |
+| `lakatotree` | 측정 전 등록 + 주 지표 개선 + 독립 novel corroboration | 실제 `judge(..., require_independent_source=True)` |
 
-세 장치 모두 **동일한 사례 패키지**(예측·측정값·증거)를 받는다. 패키지에는 장치 식별자가 없다(§5 블라인드).
-판정 실행은 스크립트로, 판정자(사람)는 출력의 장치 라벨을 모른다.
+모든 장치는 동일한 `device_input`만 받는다. 다음 필드는 adapter 입력에서 구조적으로 제거한다.
 
-## 3. 코퍼스 (N=20~30, 3원천 혼합)
+- `ground_truth`
+- `ground_truth_evidence`
+- `adjudicator_ids`
+- `source_class`
 
-| 원천 | 수 | 내용 | 지상진리 |
-|---|---|---|---|
-| 프로젝트 dogfood | 6 | 기존 ground-truth 보유 예제 (euler, bpc_inspection, consumer3d 등) | 이미 검증된 정본 |
-| 외부 사례 | 8~14 | 공개 재현성 사건·역사적 프로그램 (Sakana CUDA, METR o3 행동, SWE-bench 리크류 + C3 역사 사례 중 선별) | 2인+ 독립 판정자가 outcome-blind로 합의 동결 |
-| 합성 날조 | 6~10 | sabotage 주입: metric은 개선됐으나 ① novel 부재(ad-hoc) ② 측정 오염 ③ 사전등록 후 변경 ④ 선택적 보고 | 제작 시 정의 (날조 유형이 곧 지상진리) |
+`case_package_sha256`은 development에서는 canonical inline 입력도 허용하지만 confirmatory에서는 반드시
+manifest 내부 상대경로의 strict JSON package bytes를 봉인하고 그 내용이 실제 `device_input`과 같아야 한다.
 
-선정 규칙: **결과를 알기 전에** 선정 기준을 동결한다. 외부 사례의 포함/제외는 판정 결과가 아니라
-출처 신뢰도(1차 소스 존재)로만 결정. 합성 날조는 코퍼스의 최소 25% — 이것이 없으면 분자(FP)가 0이 된다
-(METR/SHADE-Arena 교훈: 날조 탐지율엔 주입 날조가 필요).
+## 3. 코퍼스와 노출 규칙
 
-## 4. 지표 (전부 기존 엔진 primitive — dogfood, 순환성 차단 규칙 준수)
+### 3.1 confirmatory에서 금지
 
-- **1차 — FPR(false-progressive rate)**: 지상진리 퇴행/날조 사례 중 progressive 판정 비율, 장치별.
-- **2차 — 특이도(specificity) 하한 규칙**: 민감도만으로 이기는 것을 막기 위해, 장치 C의
-  true-progressive 재현율이 사전등록 하한(초기값 0.70, Wilson 하한 기준) 미달이면 "탐지력 있는 보수성"이
-  아니라 "무판정"으로 기록하고 H1 주장을 철회한다.
-- **3차 — 보정**: 등록 credence vs 실현의 Brier/log (calibrate.py). 해당 장치만.
-- **부록 A — 층 실효 (D2 연계)**: 같은 실행에서 leave-one-layer-out replay — stack 3층(popper/bayes/laudan)을
-  한 층씩 빼고 판결 flip 관측 (`lakatos/programme/flip.py` 의 반사실적 피벗 정의 그대로). contested 코퍼스에서도
-  flip=0 인 층은 reporting-only 강등 후보로 표기(그때 결정, 지금 아님).
-- **부록 B — 상수 민감도 (D4 연계)**: 대표 정책 상수(abandon_credence, stack_quorum, credibility_*_trust,
-  bf_progressive)를 ±1단계 흔들어 판결 flip 관측. flip 유발 상수는 문헌 근거 승격 후보로 표기.
+- 기존 `examples/c3_effectiveness_corpus.py` 12건
+- 프로젝트 dogfood와 문서에 이름·정답이 노출된 사례
+- 개발 중 adapter 또는 threshold 수정에 사용한 사례
+- 결과를 본 뒤 고른 사례
 
-## 5. 블라인딩 (Soderberg 함정 차단)
+이들은 construct-validity/development 자료로만 남긴다.
 
-- 전 장치 동일 패키징: 영수증 포맷·필드 순서·산출물 수를 맞춘다 (영수증 노출 시 팔 추측 가능 → 누수).
-- 판정 후 판정자에게 **팔 추측 질문**("방금 본 출력이 어느 장치 것 같았는가")을 묻고 추측률을 보고한다.
-  추측률이 우연 수준을 유의하게 넘으면 블라인드 실패로 기록하고 해당 판정자 분은 민감도 분석에서 제외.
+### 3.2 confirmatory 구성
 
-## 6. 통계 계획 (사전등록, 데이터 보기 전 동결)
+- 외부 사례: progressive/nonprogressive **동수**, 장치 출력과 arm을 보지 않은 독립 판정자 2인 이상이
+  1차 출처로 ground truth 동결. 이 층만 1차 superiority 표본이다.
+- sealed synthetic sabotage: 전체의 **25% 이상**, 전부 ground-truth nonprogressive. 제작 정의·난이도·
+  오염 유형을 결과 전에 봉인하고 별도 stress stratum으로 보고한다. 1차 효과량에는 섞지 않는다.
+- 각 사례는 고유 `sampling_unit_id`, `component_id`, `source_entity_ids`, package SHA, measurement/novel
+  source SHA를 가진다. 외부 1차 표본에서는 이 값들이 종류를 가로질러 pairwise nonoverlap이어야 하며
+  pilot과도 source/component가 겹치면 안 된다.
+- 외부 N은 §6의 두 superiority + sensitivity 3중 exact joint-power plan을 실제 제안 N에서 직접 통과해야 한다.
 
-- 1차 비교: 장치별 FPR — **McNemar exact** (페어드 이진: 같은 사례에서 C는 옳고 A/B는 틀린 불일치 쌍).
-- 신뢰구간: Wilson 95% (grounding.wilson_lower_bound 재사용).
-- 다중성: 장치 쌍 2개(C vs A, C vs B) — Bonferroni α=0.025 (quant.multiplicity 재사용).
-- 검정력 근거: N=20~30 코퍼스에 날조 6~10이면 FP 기회가 충분하고, 페어드 McNemar는 불일치 쌍 기반이라
-  독립 n=9×2 설계(검정력 26%)보다 같은 N에서 우월. 부족 시 판정은 "검정력 부족"으로 정직 보고.
-- 효과크기: 차이를 cohen_d_grade 밴드로 해석, raw 숫자 단독 인용 금지.
+사례 ID는 유일해야 하고 duplicate JSON key, NaN, Infinity는 로더가 거부한다. confirmatory 외부 package
+경로는 manifest 디렉터리 안의 상대경로만 허용한다. ID만 바꾼 복제 사례는 pseudoreplication으로 거부한다.
 
-## 7. 타당도 위협 (C3 §6 계승 + 추가)
+## 4. 지표
 
-1. **순환성(치명)**: 지상진리는 외부(독립 인간 합의/날조 제작 정의)다. 엔진 출력을 지상진리로 쓰는 사례는 즉시 제외.
-2. **선택 편향**: 사례 선정은 결과를 알기 전. 역사 사례는 승자 기지 편향을 명시.
-3. **날조 현실성**: 합성 날조가 너무 쉬우면(FP 탐지가 자명) 민감도 부풀림 — 날조별 탐지율을 개별 보고하고
-   "자명 등급"을 분리 집계한다.
-4. **백테스트 ≠ 전향**: 이 설계는 "과거 날조를 탐지하는가"만 증명한다. 미래 연구를 낫게 한다는 주장은
-   별도 전향 무작위 배정 실험(Phase 4)의 몫이며, 이 문서 어디에도 그 주장을 쓰지 않는다.
-5. **판정자 표본**: 독립 판정자 2인은 외부 인간이 이상적이나, 현실 대안(다른 모델 계열 + 사람 1인)을 쓸 경우
-   그 한계를 결과에 병기한다.
+### 4.1 1차 — 외부 holdout paired error
 
-## 8. 단계
+- 장치별 `error = incorrect / external_holdout`과 accuracy를 보고한다. 외부 holdout은 class-balanced이다.
+- 비교 효과는 `error_lakatotree - error_control`이다. **음수면 LakatoTree 우위**다.
+- paired risk difference의 Bonferroni-adjusted 97.5% 구간은 Newcombe (1998) paired method 10으로 계산한다.
+- discordant pair 수와 exact McNemar p-value를 항상 함께 보고한다.
+- matched odds ratio는 `LakatoTree-only correct / control-only correct` 방향과 exact conditional CI로 보고한다.
 
-- **B0 — 코퍼스 구축·동결** (게이팅): 3원천 수집 + 지상진리 합의 + `corpus_manifest.json` (sha 포함) 커밋.
-  이것 없이 측정 불가.
-- **B1 — 장치 어댑터 구현**: naive/popper_like 는 엔진 primitive 의 *얇은 래퍼*로(판정 로직 신규 작성 금지 —
-  장치 B는 judge 의 novelty 게이트만 끈 형태가 아니라 독립 단층 규칙으로, 순환성 방지).
-- **B2 — 블라인드 실행**: 패키징 → 장치별 실행 → 판정자 outcome-blind 라벨링 → 팔 추측 질문.
-- **B3 — 분석·보고**: §6 계획대로. null이면 null대로. 부록 A/B 결과를 같은 보고서에 동봉.
+### 4.2 오류 형태와 sabotage stress
 
-## 9. 결정 규칙
+- 외부 holdout의 FPR과 sensitivity/TPR을 장치별 Wilson 구간과 함께 보고한다.
+- synthetic sabotage는 별도 FPR stress 결과로만 보고하며 H1 분모에 넣지 않는다.
 
-- H1 지지(1차 통과 + 특이도 하한 통과) → 효과크기와 함께 보고, Phase 4(전향 실험) 승급 검토.
-- H1 반증 → "엔진 효과 미입증"을 README 톤 하향과 함께 정직 기록.
-- 검정력 부족(불일치 쌍 부족) → 무정보로 보고, 코퍼스 확충 외 결론 없음.
-- **어느 쪽이든 null은 실패가 아니라 결과다** (C3 §8 계승).
+### 4.3 보수성 방지 gate
 
-## 10. 동결 기록 (측정 착수 시 채움)
+구초안에서 “specificity”라고 부른 값은 실제로 **true-progressive sensitivity/TPR**였다. 명칭을 교정한다.
 
-- corpus_manifest.json sha256: (미기록)
-- 지상진리 판정자: (미기록) / 합의 일시: (미기록)
-- 분석 스크립트 sha256: (미기록)
-- 사전등록 시각: (미기록 — OTS 앵커 대상, PROM 16 L2)
+- `sensitivity_lakatotree = correctly_progressive / ground_truth_progressive`
+- Wilson 95% lower bound가 사전등록 `min_sensitivity_wilson_lb` 이상이어야 한다.
+- 미달이면 “탐지력 있는 보수성”이 아니라 `NOT_SUPPORTED`다.
 
----
+paired binary 결과에 Cohen's d를 적용하지 않는다.
 
-*이 프로토콜은 C3 의 골격(사전등록·순환성 차단·null 출판·임계 동결)을 계승하고, 검정력 설계를
-페어드 McNemar + 합성 날조 코퍼스로 교체한 것이다. 측정 착수 = B0 코퍼스 동결 후.*
+## 5. 블라인딩
+
+ground-truth 판정자는 장치 실행 전에 사례를 판정하고, 장치 라벨·출력을 보지 않는다.
+`device_outputs_seen=false`, curator DID, rubric SHA, raw-label SHA, consensus rule, 최종 ground-truth assignment
+SHA를 machine-readable attestation에 봉인하고 모든 curator가 Ed25519 서명한다. 같은 curator들은
+holdout prior-exposure attestation과 사례별 prediction-before-measurement ordering attestation도 서명한다.
+장치는 자동 함수이므로
+사후 인간이 장치 출력을 다시 라벨링하지 않는다. 분석기는 ground truth를 사용하지만 adapter 함수에는 전달하지
+않는다. 이 구조는 arm-guess 설문보다 직접적인 label-leakage 차단이다.
+
+## 6. 통계·검정력 계획
+
+- familywise alpha: `0.05`
+- 두 superiority 비교: Bonferroni `pairwise_alpha = 0.025`
+- exact two-sided McNemar, 방향은 LakatoTree 우위여야 함
+- accuracy-discordant pair에서 LakatoTree-only correct일 조건부 확률 사전 가정: `0.80`
+- 전체 3중 결합 목표 power: `0.80`
+- 필수 gate 3개(naive 비교, popper_like 비교, sensitivity)의 의존성을 가정하지 않는 union-bound 설계:
+  각 component power `≥ 1-(1-.8)/3 = 14/15 ≈ .933333`
+- accuracy component는 `D ~ Binomial(N_external, r_floor)`로 discordant 수를 혼합한 exact power를 계산한다.
+  `ceil(required_discordant/r)` 근사는 금지한다.
+- `r_floor`는 development pilot 두 contrast의 observed rate가 아니라 각 Wilson 95% lower bound 중 최솟값이며,
+  contrast의 `total_pairs`는 `total_pilot_cases`와 같아야 한다. 모든 pilot case의 고유 sampling unit,
+  component, nonempty source 목록을 machine receipt로 재계산하고 confirmatory holdout과 비중복을 검사한다.
+- sensitivity component는 true-sensitivity alternative `0.90`에서 Wilson lower `≥0.70` 통과 확률을 exact 계산한다.
+- 관측 discordant gate도 component target을 쓴다: 최소 **34쌍**
+  (`34 → .9379729218`, `33 → .8932131493`). 단순 유의성 최저 7:0은 power 설계가 아니다.
+- 제안된 실제 class-balanced N에서 세 component와 union-bound joint lower bound를 모두 재계산해 통과해야 한다.
+
+## 7. 판정 상태
+
+- `SUPPORTED`: 외부 holdout 두 accuracy 비교 모두 방향·exact p·discordant-power gate 통과 + sensitivity gate 통과
+- `NOT_SUPPORTED`: sensitivity 미달, 우위 방향 실패, 또는 충분한 정보에서 superiority 불성립
+- `INCONCLUSIVE_UNDERPOWERED`: 방향은 유리하나 discordant pair가 사전 power 수에 미달
+- `INVALID`: schema, label isolation, source SHA, sample plan 등 구조 위반
+- `INVALID_TEMPORAL_ANCHOR`: 2-of-N 외부 witness 서명·target SHA·exact readback 중 하나라도 불일치
+- `INVALID_MEASUREMENT_LOCK`: 코드·protocol·환경·case package 중 하나라도 lock 이후 변경
+
+`NOT_SUPPORTED`와 `INCONCLUSIVE_UNDERPOWERED`를 합치지 않는다.
+
+## 8. 측정 순서
+
+1. **Development only**: adapter·분석기·power calculator를 기존 노출 자료로 검증한다.
+2. **Corpus curation**: 독립 판정자가 sealed holdout을 만들고 manifest를 동결한다.
+3. **Code/environment freeze**: manifest, protocol, schema, `judge.py`, `grounding.py`, `backtest.py`,
+   `measurement_lock.py`, `temporal.py`, `write_cert.py`, `envfp.py`, CLI, case/provenance package와 코드가 직접 계산한 환경
+   fingerprint를 portable logical-path `MeasurementLock`에 묶는다. 빈/축소 dep set은 거부한다.
+4. **Temporal anchor**: premeasurement lock SHA(그 안에 raw manifest SHA 포함)를 producer·curator와
+   역할이 분리된 Ed25519 witness allow-list의 **2-of-N 이상**이 서명하고 exact readback sidecar를 기록한다.
+5. **One-shot run**: runner가 lock, allow-list SHA, 서명 정족수, exact readback을 검증한 뒤 실행한다.
+6. **Producer receipt**: result SHA를 같은 input `lock_key`에 추가하되
+   `producer_generated / replay_status=pending / claim_eligible=false`로만 발행한다. INVALID 결과에는
+   receipt를 발행하지 않는다. 이 단계의 `SUPPORTED`는 분석 상태일 뿐 과학 주장 승격이 아니다.
+7. **Independent replay**: producer·curator·witness와 다른 사전등록 replayer DID가
+   `lock_key + result SHA + result status + replay environment SHA + 양 actor DID`를 Ed25519 서명하고,
+   byte-identical 재생까지 통과한 뒤에만 `externally_signed_replay / verified`로 승격한다.
+   `SUPPORTED`만 `claim_eligible=true`; 음성·검정력 부족 결과는 `publication_eligible=true`이지만
+   양성 효능 주장은 불가하다.
+
+run-time에 새로 만든 lock만으로는 사전등록 시점을 증명하지 못한다. 현재 `gen_time`은 외부 TSA나
+transparency log의 암호학적 시각 증명이 아니라 독립 witness가 서명한 **시각 진술**이다. 따라서 witness의
+정직성·비담합과 out-of-band 기록 보존을 가정하며, 강한 존재-이전 증명에는 RFC 3161 TSA·OpenTimestamps·
+append-only transparency log 같은 별도 권위가 필요하다. 이것도 사적 선행 실행으로 결과를 몰랐다는 사실까지
+증명하지는 않는다. blind holdout·독립 corpus custody가 남은 사회적 신뢰 경계다. DID 서명은 서로 다른 키
+제어를 증명하지만 서로 다른 인간·조직이 실제로 키를 보유한다는 사실까지 증명하지는 않으므로
+witness/replayer/corpus custody의 실세계 독립성은 여전히 사회적 신뢰 경계다. 고유한
+`sampling_unit_id`/`component_id`/`source_entity_ids` 문자열도 실제 연구 단위의 독립성을 스스로 증명하지
+않으므로 외부 corpus audit가 필요하다.
+정족수 sidecar가 없거나 위조되면 confirmatory 실행은 fail-close한다.
+
+## 9. 구현·재현 명령
+
+```bash
+# 실제 제안 N의 3-gate joint power contract (floor는 pilot receipt에서 복사)
+.venv/bin/python -m lakatos.backtest_cli joint-power \
+  --external-cases <even-N> --discordance-rate-floor <pilot-wilson-floor>
+
+# manifest 구조 + pre-lock 참조 artifact 의미/해시/서명 검증
+.venv/bin/python -m lakatos.backtest_cli validate <manifest.json>
+
+# 측정 전 input lock 생성 (코드가 환경 fingerprint를 직접 계산)
+.venv/bin/python -m lakatos.backtest_cli lock <manifest.json> \
+  --output <premeasurement-lock.json>
+
+# exact readback 뒤 한 번만 실행
+.venv/bin/python -m lakatos.backtest_cli run <manifest.json> \
+  --lock <premeasurement-lock.json> \
+  --output <result.json> --receipt-output <producer-receipt.json>
+
+# 별도 actor/checkout에서 독립 replay
+.venv/bin/python -m lakatos.backtest_cli replay <manifest.json> \
+  --lock <premeasurement-lock.json> --producer-result <result.json> \
+  --producer-receipt <producer-receipt.json> --replayer-did <did:key:...> \
+  --replay-signature <ed25519-hex> --receipt-output <verified-receipt.json>
+```
+
+confirmatory의 권위 실행면은 lock에 포함된 `lakatos.backtest_cli` 모듈이며, 저장소 `scripts/` wrapper는
+개발 편의용이다. 설치된 wheel에서는 같은 명령을 `lakatotree-backtest` entrypoint로 실행한다.
+manifest/anchor schema와
+machine protocol은 `lakatos/resources/` package data에 포함되며 lock은 checkout 절대경로가 아닌 논리 경로를 쓴다.
+`validate` 시점에는 아직 생성되지 않은 temporal-anchor receipt를 검사하지 않는다. witness 서명·정족수·
+exact readback 검증은 anchor 생성 뒤 `run --lock`에서만 수행된다.
+
+## 10. confirmatory 동결 기록
+
+아래는 독립 corpus가 준비되기 전까지 비워 둔다. 미기록 상태에서 측정 금지.
+
+- corpus manifest raw SHA-256: **미기록**
+- ground-truth 판정자/합의 시각 + curator-signed blind attestation: **미기록**
+- curator-signed holdout prior-exposure attestation: **미기록**
+- contrast별 pilot count/Wilson discordance floor와 case-level source/component nonoverlap receipt: **미기록**
+- code commit + protocol/judge/analyzer SHA: **미기록**
+- environment SHA: **미기록**
+- premeasurement MeasurementLock SHA/key: **미기록**
+- case별 prediction/measurement/curator-signed order receipt + 외부 witness exact readback: **미기록**
+- producer/curator/replayer DID allow-list와 separation attestation: **미기록**
+
+따라서 현재 과학 상태는 효능 양성도 음성도 아닌 **UNTESTED**다.

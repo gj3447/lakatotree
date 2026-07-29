@@ -4,17 +4,19 @@
 됐다(사전등록→판정 중앙값 46초). verdicts.py:381 자백 "벽시계 순서는 temporal witness 의 몫".
 
 rekor/OTS 흡수 통찰(양끝 앵커): 예측 receipt sha 에 T1, 판정 receipt sha 에 T2 를 *외부 증인*이
-서명하면 T1<T2 + 해시-인과 사슬 = 서버 로컬 시각을 전혀 신뢰하지 않아도 백데이트가 불가능하다.
+서명하면 T1<T2 + 해시-인과 사슬이 된다. 단, 여기의 T1/T2는 trusted timestamp proof가 아니라
+증인의 시각 진술이다. 정직하고 분리된 증인과 out-of-band 기록을 가정할 때 서버 단독 백데이트를 막는다.
 
 증인 substrate = did:key(Ed25519) — write_cert 의 hashlib-only 경로 재사용(RSA/DER RFC3161 파서를
 손으로 굴리지 않는다: q_signer_key_substrate 결정 준수). RFC3161 TSA 는 이 인터페이스의 한 구현이고,
-여기 커널은 그 위상(외부 서명자 + gen_time + digest 바인딩)을 순수하게 정의한다.
+여기 커널은 인증된 진술(외부 서명자 + gen_time + digest 바인딩)을 순수하게 정의한다. RFC3161/OTS의
+암호학적 존재-이전 보장은 별도 어댑터와 receipt 검증 없이는 성립하지 않는다.
 
 ★정직 경계(c1verify witness 모델 정합): 증인 키가 *연구자와 분리된 별개 주체*(out-of-band k-of-N)일
 때만 진짜 외부성이 성립한다. solo box 에서 증인 키를 자기가 쥐면 이 witness 는 약하다 — 그 경우
 c1verify README 규율대로 UNSUPPORTED(신뢰 저하)로 읽어야 하며 L3 를 주지 않는다(witness_allowlist 가
 비면 검증 실패). digest 도메인 분리 + gen_time 봉인으로 자기위조 재사용은 막지만 시각 자체의 외부성은
-키 소유 구조가 결정한다.
+키 소유 구조가 결정한다. 서로 다른 DID가 서로 다른 인간/조직임도 이 커널만으로 증명하지 않는다.
 # KG: q-extaudit-temporal-witness-20260722 / crit-extaudit 감사
 """
 from __future__ import annotations
@@ -41,15 +43,15 @@ def spec_digest(spec: dict) -> str:
     """예측 spec 의 client-계산가능 정본 sha256 — 앵커가 커버하는 값. 서버가 받은 spec 에서 동일 재계산해
     증인이 서명한 것이 *바로 이 예측*임을 못박는다(백데이트 방어의 핵: 커밋된 spec 의 외부 timestamp).
 
-    ★사전등록 timestamp 의 외부성은 여기 있다 — receipt sha(서버 계산)가 아니라 spec(client 계산)을
-    앵커하므로 register 왕복 없이 단일 호출로 증인 timestamp 를 붙일 수 있다."""
+    receipt sha(서버 계산)가 아니라 spec(client 계산)을 앵커하므로 register 왕복 없이 단일 호출로
+    증인의 인증된 시각 진술을 붙일 수 있다. 신뢰된 시각 권위는 별도다."""
     body = json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
     return hashlib.sha256(_ANCHOR_DOMAIN + b"spec\n" + body.encode("utf-8")).hexdigest()
 
 
 def _signed_bytes(digest_hex: str, gen_time_iso: str) -> bytes:
     """증인 서명 대상 = 도메인 + JCS({digest, gen_time}). gen_time 을 봉인해 같은 서명을 다른 시각으로
-    재사용 못 하게 한다(외부 시각의 무결성)."""
+    재사용 못 하게 한다(증인이 진술한 시각 문자열의 무결성)."""
     body = json.dumps({"digest": digest_hex, "gen_time": gen_time_iso},
                       sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return _ANCHOR_DOMAIN + body.encode("utf-8")
@@ -57,7 +59,7 @@ def _signed_bytes(digest_hex: str, gen_time_iso: str) -> bytes:
 
 def build_temporal_anchor(witness_secret32: bytes, receipt_sha_hex: str, gen_time_iso: str,
                           witness_did: str) -> dict:
-    """증인(테스트/외부 TSA-역)이 발행하는 anchor. 서버는 verify 만 호출한다.
+    """증인(테스트/외부 attestor)이 발행하는 anchor. 서버는 verify 만 호출한다.
 
     {witness_did, digest, gen_time, signature(hex), channel}. gen_time 은 *증인의* 시각(서버 시계 아님)."""
     from lakatos.write_cert import ed25519_sign
@@ -86,10 +88,11 @@ def verify_temporal_anchor(anchor: dict, *, expect_receipt_sha: str,
         raise AnchorInvalid("digest 불일치 — 다른 receipt 를 커버한 토큰(밀반입 봉쇄)")
     gen_time = str(anchor.get("gen_time") or "")
     try:
+        _parse_iso(gen_time)
         pub = did_key_decode(witness)
         ok = ed25519_verify(pub, _signed_bytes(want, gen_time), bytes.fromhex(anchor.get("signature") or ""))
     except ValueError as exc:
-        raise AnchorInvalid(f"서명 파싱 실패: {exc}") from exc
+        raise AnchorInvalid(f"시각/서명 파싱 실패: {exc}") from exc
     if not ok:
         raise AnchorInvalid("증인 서명 불일치")
     return gen_time
@@ -97,7 +100,9 @@ def verify_temporal_anchor(anchor: dict, *, expect_receipt_sha: str,
 
 def _parse_iso(ts: str) -> datetime:
     dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        raise ValueError("timezone-aware ISO-8601 timestamp required")
+    return dt.astimezone(timezone.utc)
 
 
 def anchor_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool:
@@ -106,6 +111,15 @@ def anchor_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool:
     파싱 실패 = False(fail-closed). 이것이 '결과 먼저, 예측 나중'을 물리적으로 막는 핵심 부등식."""
     try:
         return _parse_iso(pred_gen_time) <= _parse_iso(verdict_gen_time)
+    except (ValueError, AttributeError):
+        return False
+
+
+def anchor_strict_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool:
+    """Strict T1 < T2 for claims that literally require *before*, not no-later-than."""
+
+    try:
+        return _parse_iso(pred_gen_time) < _parse_iso(verdict_gen_time)
     except (ValueError, AttributeError):
         return False
 
@@ -141,13 +155,15 @@ def verify_temporal_quorum(anchors: list, *, expect_receipt_sha: str,
         except AnchorInvalid:
             continue
         w = str(a.get("witness_did") or "").strip()
-        # 같은 증인 다중서명 = 1 계상 (가장 이른 gen_time 유지는 무의미 — distinct 카운트가 핵심)
-        if w not in valid_by_witness:
+        # 같은 증인은 1명으로 계상하되, 제출된 서명 중 가장 늦은 절대시각을
+        # 보존한다. 이른 offset 문자열로 더 늦은 서명을 숨길 수 없어야 한다.
+        if w not in valid_by_witness or _parse_iso(gt) > _parse_iso(valid_by_witness[w]):
             valid_by_witness[w] = gt
     if len(valid_by_witness) < threshold:
         raise AnchorInvalid(
             f"증인 정족수 미달: 유효 distinct 증인 {len(valid_by_witness)} < threshold {threshold}")
-    return max(valid_by_witness.values())
+    latest = max(_parse_iso(value) for value in valid_by_witness.values())
+    return latest.isoformat()
 
 
 def has_valid_temporal_quorum(pred_anchors: list, verdict_gen_time: str, *,

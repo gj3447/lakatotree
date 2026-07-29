@@ -1,0 +1,13 @@
+{
+  "run": "scientific-backtest-novelty-gate-defect-injection-20260729",
+  "command": "PYTHONDONTWRITEBYTECODE=1 LKT_SCI_BACKTEST_INJECT=collapse-adapters .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 1,
+  "target": "SCIENTIFIC_BACKTEST",
+  "target_result": "RED",
+  "target_done": 0,
+  "target_total": 0,
+  "failure": "AssertionError: collapsed LakatoTree trace no longer rejects improvement without novel corroboration",
+  "suite_green": 57,
+  "suite_total": 58,
+  "restored_positive_after_injection": true
+}

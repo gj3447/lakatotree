@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lakatotree.dev/schema/scientific-backtest-provenance-v1.json",
+  "title": "LakatoTree curator-signed scientific provenance v1",
+  "oneOf": [
+    {"$ref": "#/$defs/blind_adjudication"},
+    {"$ref": "#/$defs/prior_exposure"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "did_list": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^did:key:"}
+    },
+    "signatures": {
+      "type": "object",
+      "minProperties": 2,
+      "propertyNames": {"pattern": "^did:key:"},
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-fA-F]{128}$"
+      }
+    },
+    "blind_adjudication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "completed_at", "curator_dids", "device_outputs_seen",
+        "rubric_sha256", "raw_labels_sha256", "consensus_rule",
+        "ground_truth_assignment_sha256", "curator_signatures"
+      ],
+      "properties": {
+        "schema_version": {"const": "lakatotree-blind-adjudication/v1"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "curator_dids": {"$ref": "#/$defs/did_list"},
+        "device_outputs_seen": {"const": false},
+        "rubric_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_labels_sha256": {"$ref": "#/$defs/sha256"},
+        "consensus_rule": {"type": "string", "minLength": 1},
+        "ground_truth_assignment_sha256": {"$ref": "#/$defs/sha256"},
+        "curator_signatures": {"$ref": "#/$defs/signatures"}
+      }
+    },
+    "prior_exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "holdout_exposed_to_developers",
+        "holdout_identity_sha256", "curator_dids", "curator_signatures"
+      ],
+      "properties": {
+        "schema_version": {"const": "lakatotree-prior-exposure/v1"},
+        "holdout_exposed_to_developers": {"const": false},
+        "holdout_identity_sha256": {"$ref": "#/$defs/sha256"},
+        "curator_dids": {"$ref": "#/$defs/did_list"},
+        "curator_signatures": {"$ref": "#/$defs/signatures"}
+      }
+    }
+  }
+}

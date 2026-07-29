@@ -55,6 +55,7 @@ Changelog = "https://github.com/gj3447/lakatotree/blob/master/CHANGELOG.md"
 [project.scripts]
 lakatos = "lakatos.cli:main"
 lakatotree-demo = "lakatos.demos.euler:main"
+lakatotree-backtest = "lakatos.backtest_cli:main"
 
 [project.optional-dependencies]
 # --- web/MCP 표면 (서버 배포용; server.app 가 DB 드라이버를 즉시 import 하므로 자기완결) ---
@@ -104,3 +105,6 @@ all = [
 # wheel package discovery = engine(lakatos)+server only. Source archives may retain tests/docs/examples
 # so recipients can audit the source release; none are installed as import packages.
 include = ["lakatos*", "server*"]
+
+[tool.setuptools.package-data]
+lakatos = ["resources/*.json"]

@@ -167,7 +167,7 @@ Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual mo
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts`
+`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`
@@ -198,6 +198,7 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 - **Understand the design:** [THEORY.md](THEORY.md) and [PIDNA](docs/PIDNA.md)
 - **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)
 - **Evaluate, continue, or prune it:** [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md)
+- **Audit the progress judge scientifically:** [backtest protocol](docs/BACKTEST_PROTOCOL_2026-07-24.md)
 - **Inspect formal claims:** [formal/Pidna.lean](formal/Pidna.lean)
 - **Review measurement limits:** [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md)
 - **Read the philosophical rationale:** [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md)

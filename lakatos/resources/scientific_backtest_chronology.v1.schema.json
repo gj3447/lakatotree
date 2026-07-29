@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lakatotree.dev/schema/scientific-backtest-chronology-v1.json",
+  "title": "LakatoTree chronology receipt and ordering attestation v1",
+  "oneOf": [
+    {"$ref": "#/$defs/receipt"},
+    {"$ref": "#/$defs/ordering"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "receipt_kind", "case_id", "recorded_at", "payload_sha256"],
+      "properties": {
+        "schema_version": {"const": "lakatotree-chronology-receipt/v1"},
+        "receipt_kind": {"enum": ["prediction_registration", "measurement_observation"]},
+        "case_id": {"type": "string", "minLength": 1},
+        "recorded_at": {"type": "string", "format": "date-time"},
+        "payload_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "ordering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "case_id", "prediction_receipt_sha256",
+        "measurement_receipt_sha256", "prediction_registered_at",
+        "measurement_observed_at", "strictly_before", "attestor_dids",
+        "attestor_signatures"
+      ],
+      "properties": {
+        "schema_version": {"const": "lakatotree-ordering-attestation/v1"},
+        "case_id": {"type": "string", "minLength": 1},
+        "prediction_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "measurement_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "prediction_registered_at": {"type": "string", "format": "date-time"},
+        "measurement_observed_at": {"type": "string", "format": "date-time"},
+        "strictly_before": {"const": true},
+        "attestor_dids": {
+          "type": "array", "minItems": 2, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^did:key:"}
+        },
+        "attestor_signatures": {
+          "type": "object", "minProperties": 2,
+          "propertyNames": {"pattern": "^did:key:"},
+          "additionalProperties": {
+            "type": "string", "pattern": "^[0-9a-fA-F]{128}$"
+          }
+        }
+      }
+    }
+  }
+}

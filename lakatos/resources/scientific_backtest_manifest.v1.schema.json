@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lakatotree.dev/schema/scientific-backtest-manifest-v1.json",
+  "title": "LakatoTree scientific backtest manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "phase",
+    "status",
+    "measurement_started",
+    "protocol",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lakatotree-scientific-backtest/v1"
+    },
+    "experiment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "enum": ["development", "confirmatory"]
+    },
+    "status": {
+      "enum": ["draft", "sealed"]
+    },
+    "measurement_started": {
+      "type": "boolean"
+    },
+    "protocol": {
+      "$ref": "#/$defs/protocol"
+    },
+    "preregistration": {
+      "$ref": "#/$defs/preregistration"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"phase": {"const": "confirmatory"}},
+        "required": ["phase"]
+      },
+      "then": {
+        "required": ["preregistration"],
+        "properties": {
+          "status": {"const": "sealed"},
+          "measurement_started": {"const": false},
+          "protocol": {
+            "allOf": [
+              {
+                "properties": {
+                  "familywise_alpha": {"const": 0.05},
+                  "pairwise_alpha": {"const": 0.025},
+                  "min_power": {"const": 0.8},
+                  "conditional_accuracy_advantage": {"const": 0.8},
+                  "min_sensitivity_wilson_lb": {"const": 0.7},
+                  "sensitivity_alternative": {"const": 0.9}
+                }
+              }
+            ]
+          },
+          "cases": {
+            "items": {
+              "required": [
+                "chronology", "case_package_path", "sampling_unit_id",
+                "component_id", "source_entity_ids"
+              ],
+              "properties": {
+                "source_class": {"enum": ["external", "synthetic_sabotage"]},
+                "exposure_status": {"const": "sealed_holdout"},
+                "adjudicator_ids": {
+                  "type": "array", "minItems": 2, "uniqueItems": true,
+                  "items": {"type": "string", "pattern": "^did:key:"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "familywise_alpha",
+        "pairwise_alpha",
+        "min_power",
+        "conditional_accuracy_advantage",
+        "accuracy_discordance_rate_floor",
+        "min_sensitivity_wilson_lb",
+        "sensitivity_alternative"
+      ],
+      "properties": {
+        "familywise_alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "pairwise_alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "min_power": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "conditional_accuracy_advantage": {
+          "type": "number",
+          "exclusiveMinimum": 0.5,
+          "exclusiveMaximum": 1
+        },
+        "accuracy_discordance_rate_floor": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "min_sensitivity_wilson_lb": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "sensitivity_alternative": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "preregistration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frozen_at", "code_commit", "sampling_frame", "target_population",
+        "pilot_receipt", "blind_adjudication", "prior_exposure", "temporal_anchor",
+        "producer_did", "curator_dids", "replayer_allowlist"
+      ],
+      "properties": {
+        "frozen_at": {"type": "string", "format": "date-time"},
+        "code_commit": {"type": "string", "pattern": "^[0-9a-fA-F]{40,64}$"},
+        "sampling_frame": {"type": "string", "minLength": 1},
+        "target_population": {"type": "string", "minLength": 1},
+        "pilot_receipt": {"$ref": "#/$defs/artifact_ref"},
+        "producer_did": {"type": "string", "pattern": "^did:key:"},
+        "curator_dids": {
+          "type": "array", "minItems": 2, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^did:key:"}
+        },
+        "replayer_allowlist": {"$ref": "#/$defs/artifact_ref"},
+        "blind_adjudication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "completed_at", "attestation_path", "attestation_sha256", "device_outputs_seen"
+          ],
+          "properties": {
+            "completed_at": {"type": "string", "format": "date-time"},
+            "attestation_path": {"type": "string", "minLength": 1},
+            "attestation_sha256": {"$ref": "#/$defs/sha256"},
+            "device_outputs_seen": {"const": false}
+          }
+        },
+        "prior_exposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attestation_path", "attestation_sha256", "holdout_exposed_to_developers"
+          ],
+          "properties": {
+            "attestation_path": {"type": "string", "minLength": 1},
+            "attestation_sha256": {"$ref": "#/$defs/sha256"},
+            "holdout_exposed_to_developers": {"const": false}
+          }
+        },
+        "temporal_anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "receipt_path", "witness_allowlist_path", "witness_allowlist_sha256", "threshold"
+          ],
+          "properties": {
+            "receipt_path": {"type": "string", "minLength": 1},
+            "witness_allowlist_path": {"type": "string", "minLength": 1},
+            "witness_allowlist_sha256": {"$ref": "#/$defs/sha256"},
+            "threshold": {"type": "integer", "minimum": 2}
+          }
+        }
+      }
+    },
+    "prediction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_name",
+        "direction",
+        "baseline_value",
+        "noise_band",
+        "scale_type"
+      ],
+      "properties": {
+        "metric_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": ["lower", "higher"]
+        },
+        "baseline_value": {
+          "type": "number"
+        },
+        "noise_band": {
+          "type": "number",
+          "minimum": 0
+        },
+        "scale_type": {
+          "enum": ["ratio", "interval", "ordinal"]
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source_sha256"],
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "novel_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_name",
+        "direction",
+        "threshold",
+        "measured",
+        "source_sha256"
+      ],
+      "properties": {
+        "metric_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": ["lower", "higher"]
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "measured": {
+          "type": "number"
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "novelty_sense": {
+          "enum": [
+            "zahar_use_novelty",
+            "temporal_novelty",
+            "worrall_use_novelty"
+          ]
+        }
+      }
+    },
+    "chronology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prediction_registered_at",
+        "measurement_observed_at",
+        "prediction_receipt_path",
+        "prediction_receipt_sha256",
+        "measurement_receipt_path",
+        "measurement_receipt_sha256",
+        "ordering_attestation_path",
+        "ordering_attestation_sha256"
+      ],
+      "properties": {
+        "prediction_registered_at": {"type": "string", "format": "date-time"},
+        "measurement_observed_at": {"type": "string", "format": "date-time"},
+        "prediction_receipt_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "prediction_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "measurement_receipt_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "measurement_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "ordering_attestation_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "ordering_attestation_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "source_class",
+        "ground_truth",
+        "ground_truth_evidence",
+        "adjudicator_ids",
+        "exposure_status",
+        "case_package_sha256",
+        "prediction_registered_before_measurement",
+        "prediction",
+        "measurement"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_class": {
+          "enum": ["dogfood", "external", "synthetic_sabotage"]
+        },
+        "ground_truth": {
+          "enum": ["progressive", "nonprogressive"]
+        },
+        "ground_truth_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "adjudicator_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "exposure_status": {
+          "enum": ["development_exposed", "sealed_holdout"]
+        },
+        "case_package_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "case_package_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sampling_unit_id": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "source_entity_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "prediction_registered_before_measurement": {
+          "type": "boolean"
+        },
+        "chronology": {
+          "$ref": "#/$defs/chronology"
+        },
+        "prediction": {
+          "$ref": "#/$defs/prediction"
+        },
+        "measurement": {
+          "$ref": "#/$defs/measurement"
+        },
+        "novel_target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/novel_target"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"source_class": {"const": "synthetic_sabotage"}},
+            "required": ["source_class"]
+          },
+          "then": {
+            "properties": {"ground_truth": {"const": "nonprogressive"}}
+          }
+        }
+      ]
+    }
+  }
+}
