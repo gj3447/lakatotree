@@ -41,6 +41,13 @@ def _delete(path):
 # 그 밖의 절대경로는 F-CON-1/R2-NOVEL 파일앵커 게이트에서 막히니 제출 전에 경고.
 SYNCED_ROOTS = (
     '/opt/lakatotree',
+    # 2026-07-29: 서버가 이 머신에서 돈다(127.0.0.1:55170, uvicorn server/app.py,
+    # cwd=/data/kjra/PROJECT/PI/lakatotree). 따라서 로컬 절대경로는 서버가 직접 읽는다 —
+    # /data/kjra/PROJECT/3DLAB/LX3_ICP_SPEC 영수증으로 L2(replay_verified) 실증됨
+    # (regenerated_metric 이 기록값과 비트 동일). 그 전까지 이 경로들이 루트 밖이라
+    # **거짓 경고**가 떴고 실제로 판단을 오도했다(차단은 아니었다).
+    '/data/kjra/PROJECT',
+    '/data/kjra/.local/state/lakatotree',
     '/Users/lagyeongjun/CD/spacegirl_tool',
 ) + tuple(f'/Users/lagyeongjun/CD/SYMPOSIUM/{d}' for d in (
     'PI', 'HSWM', 'THEORY', 'FINDINGS', 'METAHUMOTONIC', 'MATH', 'PAPERS', 'BIZ_IDEA',
