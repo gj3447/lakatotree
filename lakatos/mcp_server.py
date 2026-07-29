@@ -39,15 +39,16 @@ def _delete(path):
 # ── 로컬 preflight (2026-07-24, Mac↔Proxmox 동기화 하네스 Tier2) ─────────────
 # 서버(Proxmox lxc-301)는 bin/lakatotree-sync-now.sh MAPPINGS 동기화 루트 밑 파일만 읽을 수 있다.
 # 그 밖의 절대경로는 F-CON-1/R2-NOVEL 파일앵커 게이트에서 막히니 제출 전에 경고.
-SYNCED_ROOTS = (
+# 2026-07-29: 서버는 이 머신에서 돈다(127.0.0.1:55170, uvicorn server/app.py,
+# cwd=/data/kjra/PROJECT/PI/lakatotree). 실측한 서버 설정은 **역할별로 루트가 다르다**:
+#   LAKATOS_SCRIPT_ROOTS = /data/kjra/PROJECT/PI:/data/kjra/PROJECT/3DLAB  (+repo ROOT +/tmp +replay cache)
+#   LAKATOS_RAW_ROOT     = /data/kjra/PROJECT                              (영수증/결과 — 더 넓다)
+# 예전 preflight 는 한 집합만 써서 (a) 로컬 절대경로마다 거짓 경고를 냈고
+# (b) 역할을 구분 못 해 script 로는 거부될 경로에 침묵했다. 실측 불일치 9건.
+_SERVER_ROOT = '/data/kjra/PROJECT/PI/lakatotree'
+_REPLAY_CACHE = '/data/kjra/.local/state/lakatotree'
+_LEGACY_MAC_ROOTS = (
     '/opt/lakatotree',
-    # 2026-07-29: 서버가 이 머신에서 돈다(127.0.0.1:55170, uvicorn server/app.py,
-    # cwd=/data/kjra/PROJECT/PI/lakatotree). 따라서 로컬 절대경로는 서버가 직접 읽는다 —
-    # /data/kjra/PROJECT/3DLAB/LX3_ICP_SPEC 영수증으로 L2(replay_verified) 실증됨
-    # (regenerated_metric 이 기록값과 비트 동일). 그 전까지 이 경로들이 루트 밖이라
-    # **거짓 경고**가 떴고 실제로 판단을 오도했다(차단은 아니었다).
-    '/data/kjra/PROJECT',
-    '/data/kjra/.local/state/lakatotree',
     '/Users/lagyeongjun/CD/spacegirl_tool',
 ) + tuple(f'/Users/lagyeongjun/CD/SYMPOSIUM/{d}' for d in (
     'PI', 'HSWM', 'THEORY', 'FINDINGS', 'METAHUMOTONIC', 'MATH', 'PAPERS', 'BIZ_IDEA',
@@ -56,9 +57,68 @@ SYNCED_ROOTS = (
     'GIT', '_archive', 'SKILLS'))
 
 
-def _preflight_paths(*paths):
+_SERVER_ENV_CACHE: dict | None = None
+
+
+def _server_env() -> dict:
+    """서버 프로세스의 LAKATOS_* 설정을 읽는다.
+
+    ★이 변수들은 **서버 프로세스에만** 있고 MCP 클라이언트 프로세스에는 없다. 그래서
+    os.environ 만 보면 항상 비어 있고 preflight 가 서버와 어긋난다(2026-07-29 실측).
+    로컬 서버면 /proc 에서 실제 값을 읽고, 못 찾으면 자기 env → 빈 값 순으로 강등한다.
+    """
+    global _SERVER_ENV_CACHE
+    if _SERVER_ENV_CACHE is not None:
+        return _SERVER_ENV_CACHE
+    env = {k: os.environ.get(k, '') for k in ('LAKATOS_SCRIPT_ROOTS', 'LAKATOS_RAW_ROOT')}
+    if not any(env.values()):
+        try:                                   # 로컬 서버 프로세스에서 직접
+            for pid in os.listdir('/proc'):
+                if not pid.isdigit():
+                    continue
+                try:
+                    with open(f'/proc/{pid}/environ', 'rb') as f:
+                        raw = f.read().decode('utf-8', 'replace')
+                except OSError:
+                    continue
+                if 'LAKATOS_SCRIPT_ROOTS=' not in raw:
+                    continue
+                for item in raw.split('\0'):
+                    k, _, v = item.partition('=')
+                    if k in env and v:
+                        env[k] = v
+                break
+        except OSError:
+            pass
+    _SERVER_ENV_CACHE = env
+    return env
+
+
+def _server_roots(role: str) -> tuple:
+    """서버가 그 역할에 대해 실제로 허용하는 루트. 하드코딩하지 않고 서버 설정을 읽는다."""
+    env = _server_env()
+    script_roots = [p for p in env.get('LAKATOS_SCRIPT_ROOTS', '').split(os.pathsep) if p]
+    if role == 'script':
+        roots = [_SERVER_ROOT, '/tmp', _REPLAY_CACHE] + script_roots
+    else:                                      # result / derivation input·output
+        raw = env.get('LAKATOS_RAW_ROOT', '')
+        roots = [_REPLAY_CACHE] + ([raw] if raw else []) + script_roots
+    return tuple(roots) + _LEGACY_MAC_ROOTS
+
+
+# 하위호환 — 기존 호출부가 참조할 수 있다
+SYNCED_ROOTS = _server_roots('result')
+
+
+def _preflight_paths(*paths, role: str = 'result'):
+    """role='script' 이면 서버의 스크립트 루트로, 아니면 raw 루트로 판정한다.
+
+    역할을 구분해야 (a) /tmp 스크립트에 거짓 경고를 안 내고
+    (b) script 로는 거부될 경로(예: RAW_ROOT 안이지만 SCRIPT_ROOTS 밖)에 침묵하지 않는다.
+    """
+    roots = _server_roots(role)
     bad = [p for p in paths if isinstance(p, str) and p.startswith('/')
-           and not p.startswith(SYNCED_ROOTS)]
+           and not p.startswith(roots)]
     if bad:
         return ('local-preflight: 동기화 루트 밖 경로 — Proxmox 서버가 파일을 읽을 수 없어 '
                 '파일앵커 게이트(F-CON-1/R2-NOVEL)가 막힌다: ' + ', '.join(bad)
@@ -231,7 +291,7 @@ def run_cycle(name: str, spec_json: str) -> str:
         spec = json.loads(spec_json or '{}')
     except json.JSONDecodeError as e:
         return json.dumps({'error': 'invalid_spec_json', 'detail': str(e)}, ensure_ascii=False)
-    warn = _preflight_paths(spec.get('novel_script', ''), spec.get('script', ''),
+    warn = _preflight_paths(spec.get('novel_script', ''), spec.get('script', ''), role='script') or _preflight_paths(
                             spec.get('result_path', ''))
     return json.dumps(_with_preflight(_post(f'/api/tree/{name}/cycle', spec), warn),
                       ensure_ascii=False)
@@ -450,7 +510,8 @@ def submit_result(name: str, tag: str, value: float, script: str,
         body['result_path'] = result_path
     return json.dumps(_with_preflight(
         _post(f'/api/tree/{name}/node/{tag}/test_result', body),
-        _preflight_paths(script, result_path, novel_script)), ensure_ascii=False)
+        (_preflight_paths(script, novel_script, role='script')
+         or _preflight_paths(result_path))), ensure_ascii=False)
 
 
 @mcp.tool()

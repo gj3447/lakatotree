@@ -1,0 +1,61 @@
+{
+ "seq": "D3",
+ "replay_scorer": true,
+ "metric": 3,
+ "metric_name": "preflight_vs_server_gate_disagreements",
+ "baseline_pre_fix": 9,
+ "direction": "lower",
+ "sample_n": 16,
+ "fix_commit": "e4f27123aa5f67b3ce267f807d27fbbf6e213bf3",
+ "added_roots": [
+  "/data/kjra/PROJECT",
+  "/data/kjra/.local/state/lakatotree"
+ ],
+ "pre_channel": "git_show_verified",
+ "oracle": {
+  "env_channel": "proc:39271",
+  "server_env": {
+   "LAKATOS_RAW_ROOT": "/data/kjra/PROJECT",
+   "LAKATOS_SCRIPT_ROOTS": "/data/kjra/PROJECT/PI:/data/kjra/PROJECT/3DLAB",
+   "LAKATOS_REPLAY_CACHE_ROOT": "/data/kjra/.local/state/lakatotree/replay-artifacts/v1"
+  },
+  "gate_A": "judgement_service.isolate_script_file (mirrored, source-sha pinned)",
+  "gate_A_roots": [
+   "/data/kjra/PROJECT/PI/lakatotree",
+   "/tmp",
+   "/data/kjra/.local/state/lakatotree/replay-artifacts/v1",
+   "/data/kjra/PROJECT/PI",
+   "/data/kjra/PROJECT/3DLAB"
+  ],
+  "gate_B": "server/file_hashing._within_raw_root (production import)",
+  "gate_B_root": "/data/kjra/PROJECT"
+ },
+ "pre": {
+  "false_warning": [
+   "/data/kjra/PROJECT/3DLAB/LX3_ICP_SPEC/scripts/harness411_replay_scorer_20260729.py [script]",
+   "/data/kjra/PROJECT/3DLAB/LX3_ICP_SPEC/tests/test_longinus_20260729_recompute.py [script]",
+   "/data/kjra/PROJECT/PI/lakatotree/lakatos/mcp_server.py [script]",
+   "/data/kjra/.local/state/lakatotree/replay-artifacts/v1/script [script]",
+   "/tmp [script]",
+   "/data/kjra/PROJECT/3DLAB/LX3_ICP_SPEC/evidence/T_03full_to_step_cad_20260518.json [derivation]",
+   "/data/kjra/PROJECT/3DLAB/LX3_ICP_SPEC/evidence/README.md [derivation]",
+   "/data/kjra/PROJECT/PI/lakatotree/server/file_hashing.py [derivation]",
+   "/data/kjra/PROJECT/LX3_RAW [derivation]"
+  ],
+  "missed_warning": [],
+  "agree_n": 7,
+  "disagreements": 9
+ },
+ "post": {
+  "false_warning": [
+   "/tmp [script]"
+  ],
+  "missed_warning": [
+   "/data/kjra/PROJECT/LX3_RAW [script]",
+   "/data/kjra/.local/state/lakatotree/replay-artifacts/v1/result [derivation]"
+  ],
+  "agree_n": 13,
+  "disagreements": 3
+ },
+ "note": "양방향 지표 — false_warning 만 보면 화이트리스트로 0 을 만들 수 있다. missed_warning 을 같이 세서 그 길을 막았다."
+}
