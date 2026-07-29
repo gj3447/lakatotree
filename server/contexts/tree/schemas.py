@@ -229,8 +229,11 @@ class TestResultIn(BaseModel):
 class CritiqueIn(BaseModel):
     """Human/agent doubt, comment, rebuttal, or evaluation."""
 
-    arg_id: str
-    attacks: str
+    # Argument identity is persisted as ``tree/arg_id`` and later shortened at the AF boundary.
+    # A slash in arg_id makes that encoding ambiguous across trees and can collapse two actors'
+    # arguments onto the same AF symbol, so ids are deliberately one non-empty segment.
+    arg_id: str = Field(min_length=1, max_length=256, pattern=r"^[^/]+$")
+    attacks: str = Field(min_length=1, max_length=512)
     by: str = ""
     kind: str = "doubt"
     body: str = ""

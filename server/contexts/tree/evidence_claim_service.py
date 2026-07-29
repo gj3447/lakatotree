@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -272,22 +273,129 @@ class EvidenceClaimService:
                     authoritative=True, authority_reason='content_valid_v5_receipt')
 
     def add_critique(self, name: str, tag: str, c: CritiqueIn) -> dict:
+        arg_full = f'{name}/{c.arg_id}'
+        create_claim = uuid4().hex
         # fail-loud(나생문 #13): MERGE 가 노드 부재 시 no-op 이면 형제 mutation 과 달리 200·history 를
         #   남겨 provenance 를 오염한다 → RETURN e.tag 로 매칭 확인, 0행이면 hist 전에 404.
+        # Lock the tree before re-reading the tree-global argument id.  Argument ids are encoded as
+        # ``tree/arg``; the tree lock therefore serializes every contender for that identity even
+        # when they target different nodes.  The guarded MERGE is first-write-wins and never SETs
+        # an existing argument.  ``lkt_argument_id_unique`` is the schema-level second line of
+        # defence for writers outside this service.
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-              MERGE (a:Argument {id:$tree+'/'+$arg}) SET a.by=$by, a.kind=$kind, a.body=$body,
-                    a.attacks=$attacks, a.at=$ts
-              MERGE (e)-[:HAS_ARGUMENT]->(a)
-              RETURN e.tag AS tag""",
-                tree=name, tag=tag, arg=c.arg_id, by=c.by, kind=c.kind, body=c.body,
+              SET t._argument_cas = coalesce(t._argument_cas, 0) + 0
+              WITH t, e
+              OPTIONAL MATCH (existing:Argument {id:$arg_full})
+              WITH t, e, [a IN collect(existing) WHERE a IS NOT NULL] AS existing_nodes
+              OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(target:Argument)
+                WHERE target.id = CASE
+                    WHEN $attacks STARTS WITH $tree+'/' THEN $attacks
+                    ELSE $tree+'/'+$attacks END
+              WITH t, e, existing_nodes, collect(target.id) AS target_ids
+              WITH t, e, existing_nodes,
+                   CASE WHEN $attacks=$tag THEN $tag
+                        WHEN size(target_ids)>0 THEN last(split(target_ids[0], '/'))
+                        ELSE null END AS normalized_attacks
+              WITH t, e, existing_nodes, normalized_attacks,
+                   size(existing_nodes) AS preexisting_count,
+                   normalized_attacks IS NOT NULL AS target_valid
+              FOREACH (_ IN CASE WHEN target_valid AND preexisting_count=0 THEN [1] ELSE [] END |
+                MERGE (a:Argument {id:$arg_full})
+                  ON CREATE SET a:LakatosArgument, a._argument_create_claim=$create_claim,
+                                a.tree_name=$tree, a.local_id=$arg,
+                                a.by=$by, a.kind=$kind, a.body=$body,
+                                a.attacks=normalized_attacks, a.at=$ts)
+              WITH t, e, normalized_attacks, target_valid
+              OPTIONAL MATCH (actual:Argument {id:$arg_full})
+              WITH t, e, normalized_attacks, target_valid,
+                   [a IN collect(actual) WHERE a IS NOT NULL] AS actual_nodes
+              WITH t, e, normalized_attacks, target_valid, actual_nodes,
+                   size(actual_nodes) AS existing_count,
+                   CASE WHEN size(actual_nodes)=1 THEN actual_nodes[0] ELSE null END AS actual
+              WITH t, e, normalized_attacks, target_valid, existing_count, actual,
+                   coalesce(actual._argument_create_claim=$create_claim, false) AS created
+              FOREACH (_ IN CASE WHEN created THEN [1] ELSE [] END |
+                MERGE (e)-[:HAS_ARGUMENT]->(actual)
+                REMOVE actual._argument_create_claim)
+              WITH t, e, normalized_attacks, target_valid, existing_count, actual, created,
+                   (NOT created AND existing_count=1
+                    AND actual.by=$by AND actual.kind=$kind
+                    AND actual.body=$body AND actual.attacks=normalized_attacks
+                    AND EXISTS { MATCH (e)-[:HAS_ARGUMENT]->(actual) }) AS idempotent
+              RETURN e.tag AS tag, target_valid,
+                     created,
+                     coalesce(idempotent, false) AS idempotent,
+                     existing_count AS existing_count,
+                     normalized_attacks AS attacks""",
+                tree=name, tag=tag, arg=c.arg_id, arg_full=arg_full,
+                create_claim=create_claim,
+                by=c.by, kind=c.kind, body=c.body,
                 attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag} (critique 대상 부재 — 등재 거부)')
-        self.hist(name, 'critique', tag, c.model_dump())
+        claim = rows[0]
+        required_result = {'target_valid', 'created', 'idempotent', 'existing_count', 'attacks'}
+        missing_result = required_result.difference(claim)
+        if missing_result:
+            raise HTTPException(
+                500,
+                'argument integrity result incomplete: '
+                + ', '.join(sorted(missing_result)),
+            )
+        target_valid = claim['target_valid']
+        created = claim['created']
+        idempotent = claim['idempotent']
+        existing_count = claim['existing_count']
+        normalized_attacks = claim['attacks']
+        result_types_valid = (
+            type(target_valid) is bool
+            and type(created) is bool
+            and type(idempotent) is bool
+            and type(existing_count) is int
+            and existing_count >= 0
+            and (normalized_attacks is None or isinstance(normalized_attacks, str))
+        )
+        result_state_valid = (
+            (not created or (
+                target_valid and existing_count == 1
+                and not idempotent and bool(normalized_attacks)
+            ))
+            and (not idempotent or (
+                target_valid and existing_count == 1
+                and not created and bool(normalized_attacks)
+            ))
+            and (
+                (bool(normalized_attacks) and existing_count >= 1)
+                if target_valid
+                else normalized_attacks is None and not created and not idempotent
+            )
+        )
+        if not result_types_valid or not result_state_valid:
+            raise HTTPException(500, 'argument integrity result inconsistent')
+        if not target_valid:
+            raise HTTPException(422, f"attacks target '{c.attacks}' disappeared before commit")
+        if not created and not idempotent:
+            raise HTTPException(
+                409, f"argument '{c.arg_id}' is immutable; concurrent content won the identity")
+
+        if created:
+            history_payload = c.model_dump()
+            history_payload['attacks'] = normalized_attacks
+            self.hist(name, 'critique', tag, history_payload)
         # ★certify.py:13 의 '새 반박이 G3(stands)를 깨면 자동 철회' 이행 — 승격이 stands 를 *요구*한
         # 것의 대칭. 비판 등재 직후 grounded standing 을 재계산하고, CANONICAL 의 standing 이 깨졌으면
         # former_canonical 로 강등(결정론 grounded_extension 사실에만 근거, verdict_source='engine').
-        out: dict = {'ok': True, 'note': '비판 등재 — 코드 빌딩은 순수 agent(test_result) 담당'}
+        # Exact retries still reconcile standing.  The argument write and this side effect are two
+        # transactions; returning early here would make a crash between them permanently sticky.
+        out: dict = {
+            'ok': True,
+            'note': (
+                'identical concurrent critique retry — immutable no-op'
+                if idempotent else '비판 등재 — 코드 빌딩은 순수 agent(test_result) 담당'
+            ),
+        }
+        if idempotent:
+            out['idempotent'] = True
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
                      RETURN e.verdict AS verdict,

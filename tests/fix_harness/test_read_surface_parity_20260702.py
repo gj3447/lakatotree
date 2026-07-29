@@ -40,6 +40,8 @@ _ALLOW_NODE = frozenset({'_cas'})          # CAS 더미 — 원장 필드 아님
 _ALLOW_TREE = frozenset({
     # create-only claim marker: ON CREATE SET + same-statement REMOVE, never committed/readable state.
     '_create_claim',
+    # Tree-scoped CAS dummy used only to serialize immutable Argument identity contenders.
+    '_argument_cas',
 })
 # graph_view 가 소비하나 RETURN 밖에서 합성되는 키(post-normalize 주입/계산).
 _COMPUTED_ROW_KEYS = frozenset({'source', 'tag', 'parent', 'parents', 'parent_edges', 'questions'})

@@ -112,6 +112,8 @@ class TreeService:
     def create_tree(self, name: str, spec: CreateTreeIn, create_only: bool = False) -> dict:
         """나무 생성/메타 upsert(MERGE LakatosTree). 멱등·last-write-wins. hard_core/frontier_rule
         비우면 policy_warnings 경고만(차단 아님). create_only 는 동명 나무를 409 로 거부한다."""
+        if not name or '/' in name:
+            raise HTTPException(422, "tree name must be one non-empty path segment")
         tree_spec = TreeSpec(
             name=name,
             title=spec.title,

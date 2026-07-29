@@ -34,7 +34,9 @@ class _StatefulKg:
 
     def __call__(self, query, **p):
         if "MERGE (a:Argument" in query:            # critique 등재 — 노드 존재(RETURN e.tag) 모델(#13 fail-loud)
-            return [{"tag": p.get("tag")}]
+            return [{"tag": p.get("tag"), "target_valid": True,
+                     "created": True, "idempotent": False, "existing_count": 1,
+                     "attacks": p.get("attacks")}]
         if _READ in query and "collect({id:a.id" in query:   # :127 스냅샷 read — CANONICAL + 미방어 doubt
             return [{"verdict": "CANONICAL", "vur": True,
                      "args": [{"id": "T/d1", "attacks": "n"}]}]   # d1 이 verdict 직접공격 → stands=False

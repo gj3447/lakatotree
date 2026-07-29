@@ -66,6 +66,9 @@ REQUIRED_CONSTRAINTS = (
     CompositeUniqueSpec("lkt_open_question_tree_name_key", "OpenQuestion", ("tree", "name")),
     # AGM belief identity is tree-local. Apply scripts/migrate_belief_tree_scope_20260728.cypher first.
     CompositeUniqueSpec("lkt_belief_tree_id_key", "Belief", ("tree", "belief_id")),
+    # Arguments use the globally unique ``tree/arg`` content identity.  The application also
+    # serializes writes on the tree node; this constraint catches out-of-band writers.
+    ConstraintSpec("lkt_argument_id_unique", "LakatosArgument", "id"),
     ConstraintSpec("lkt_research_event_id_unique", "ResearchEvent", "id"),
     # ① real-KG: 연구전통 tradition_id uniqueness — set_tradition 의 MERGE 키 중복(같은 id 두 전통) 방지.
     ConstraintSpec("lkt_research_tradition_id_unique", "ResearchTradition", "tradition_id"),

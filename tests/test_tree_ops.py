@@ -65,11 +65,12 @@ def test_neo4j_constraint_diagnostics_emit_safe_missing_migrations():
     assert report["ok"] is False
     assert "LakatosTree.name" in report["present"]
     assert "LakatosNode.name" in report["present"]
-    assert {"OpenQuestion.(tree+name)", "Belief.(tree+belief_id)",
+    assert {"OpenQuestion.(tree+name)", "Belief.(tree+belief_id)", "LakatosArgument.id",
             "ResearchEvent.id", "ResearchTradition.tradition_id"} <= set(report["missing"])
     assert report["migration_cypher"] == [
         "CREATE CONSTRAINT lkt_open_question_tree_name_key IF NOT EXISTS FOR (n:OpenQuestion) REQUIRE (n.tree, n.name) IS UNIQUE",
         "CREATE CONSTRAINT lkt_belief_tree_id_key IF NOT EXISTS FOR (n:Belief) REQUIRE (n.tree, n.belief_id) IS UNIQUE",
+        "CREATE CONSTRAINT lkt_argument_id_unique IF NOT EXISTS FOR (n:LakatosArgument) REQUIRE n.id IS UNIQUE",
         "CREATE CONSTRAINT lkt_research_event_id_unique IF NOT EXISTS FOR (n:ResearchEvent) REQUIRE n.id IS UNIQUE",
         "CREATE CONSTRAINT lkt_research_tradition_id_unique IF NOT EXISTS FOR (n:ResearchTradition) REQUIRE n.tradition_id IS UNIQUE",
     ]
