@@ -17,8 +17,8 @@ import pytest
 # These values satisfy import-time configuration only.  The service below receives the
 # testcontainers driver explicitly and never reads these endpoints.
 os.environ.setdefault("NEO4J_URI", "bolt://argument-harness.invalid:7687")
-os.environ.setdefault("NEO4J_USER", "unused")
-os.environ.setdefault("NEO4J_PASSWORD", "unused")
+os.environ.setdefault("NEO4J_USER", "neo4j")
+os.environ.setdefault("NEO4J_PASSWORD", "argument-harness-only")
 
 from fastapi import HTTPException  # noqa: E402
 
