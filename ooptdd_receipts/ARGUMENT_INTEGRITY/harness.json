@@ -1,0 +1,66 @@
+{
+  "schema_version": "lakatotree-requirements-harness/v1",
+  "name": "argument-integrity-real-datastore",
+  "tier": "L_IDE",
+  "claim_boundary": "This harness verifies the real EvidenceClaimService.add_critique path against disposable Neo4j and PostgreSQL instances under the exercised two-contender schedules. It does not prove every possible scheduler interleaving or a production deployment migration.",
+  "requirements": {
+    "spec": "ooptdd_receipts/ARGUMENT_INTEGRITY/requirements.yaml",
+    "ids": ["ARG-1", "ARG-2", "ARG-3", "ARG-4", "ARG-5"]
+  },
+  "system_under_test": {
+    "source": "server/contexts/tree/evidence_claim_service.py",
+    "symbol": "EvidenceClaimService.add_critique",
+    "entrypoint": "tests/integration/test_argument_integrity_real_neo4j.py"
+  },
+  "axes": {
+    "inform": [
+      "Bind every observation to the locked ARG-1 through ARG-5 requirement ids.",
+      "Bind the receipt to hashes of the requirement spec, test harness, fixture, and service source."
+    ],
+    "constrain": [
+      "Use only testcontainers-owned Neo4j and PostgreSQL instances; production datastore environment values are not consumed.",
+      "Require five named tests, no skips, bounded barriers, bounded subprocess time, and a blocking CI job."
+    ],
+    "verify": [
+      "Call the real service through AppContainer.kg and AppContainer.hist.",
+      "Use independent Cypher and SQL readback for argument, relationship, claim-token, lock, and history cardinality.",
+      "Exercise same-node and cross-node two-session races."
+    ],
+    "correct": [
+      "Run the identical harness against the historical pre-fix revision and require semantic assertion failures rather than import or infrastructure errors.",
+      "Run the current source again after the negative control and require restored GREEN."
+    ]
+  },
+  "tests": {
+    "ARG-1": "test_arg_1_dangling_target_is_rejected_without_side_effects",
+    "ARG-2": "test_arg_2_argument_identity_is_immutable",
+    "ARG-3": "test_arg_3_exact_retry_is_idempotent_without_duplicate_history",
+    "ARG-4": "test_arg_4_tree_lock_serializes_cross_node_identity_race",
+    "ARG-5": "test_arg_5_create_claim_has_one_owner_and_does_not_leak"
+  },
+  "negative_control": {
+    "revision": "ea0301cd7121e3382b0364e112aa852134a0c11d",
+    "service_sha256": "237baf2884b4f86b94c1935816755a00da723e01266677cbcb95ceae19fbcd8b",
+    "required_failed_tests": [
+      "test_arg_1_dangling_target_is_rejected_without_side_effects",
+      "test_arg_2_argument_identity_is_immutable",
+      "test_arg_3_exact_retry_is_idempotent_without_duplicate_history"
+    ]
+  },
+  "runtime": {
+    "opt_in_env": "LAKATOS_IT",
+    "neo4j_image": "neo4j:5",
+    "postgres_image": "postgres:16-alpine",
+    "participants": 2,
+    "barrier_timeout_seconds": 15,
+    "future_timeout_seconds": 60
+  },
+  "artifacts": [
+    "environment.json",
+    "positive.json",
+    "negative.json",
+    "restored_positive.json",
+    "receipt.json",
+    "bundle_manifest.json"
+  ]
+}
