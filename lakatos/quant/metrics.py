@@ -233,34 +233,39 @@ def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | N
         head_match = 1 if sc_name == head_key and n >= 2 else 0
         return (head_match, regen_tip, n, str(sc_name))
 
+    def _finish(first_tag, first_m, last_tag, last_m, direction, scope_name, *, first_as=None):
+        gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)
+        first = {'tag': first_tag, 'm': first_m}
+        if first_as:
+            first['as'] = first_as
+        common = dict(first=first, last={'tag': last_tag, 'm': last_m},
+                      direction=direction, scope=scope_name)
+        if first_m != 0:
+            return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
+        return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))
+
+    # Head series wins over longer legacy scopes (programme-head is the progress claim).
+    if head_key is not None and head_key in scopes:
+        head_rows = scopes[head_key]
+        if len(head_rows) >= 2:
+            direction = head_rows[-1][2]
+            return _finish(head_rows[0][0], head_rows[0][1],
+                           head_rows[-1][0], head_rows[-1][1], direction, head_key)
+        if len(head_rows) == 1:
+            t, last_m, direction, _mg = head_rows[0]
+            base = by[t].get('pred_baseline')
+            if base is not None:
+                return _finish(t, float(base), t, last_m, direction, head_key,
+                               first_as='pred_baseline')
+
     eligible = [k for k, rows in scopes.items() if len(rows) >= 2]
-    # Head-only series: one live path point + pred_baseline on that node (common after
-    # neutralize drops prior L0 points). Use baseline → measured as the improvement pair.
-    if not eligible and head_key is not None and len(scopes.get(head_key, [])) == 1:
-        t, last_m, direction, _mg = scopes[head_key][0]
-        base = by[t].get('pred_baseline')
-        if base is not None:
-            first_m = float(base)
-            gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)
-            common = dict(first={'tag': t, 'm': first_m, 'as': 'pred_baseline'},
-                          last={'tag': t, 'm': last_m}, direction=direction, scope=head_key)
-            if first_m != 0:
-                return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
-            return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))
     if not eligible:
         return None
     scope_name = max(eligible, key=_scope_key)
     sc = scopes[scope_name]
     first_m, last_m = sc[0][1], sc[-1][1]
-    # Direction from the *head* (last) row — first-row default 'higher' on legacy tests
-    # must not invert unreceipted_closes lower-is-better series.
     direction = sc[-1][2]
-    gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)   # 개선=양수
-    common = dict(first={'tag': sc[0][0], 'm': first_m},
-                  last={'tag': sc[-1][0], 'm': last_m}, direction=direction, scope=scope_name)
-    if first_m != 0:
-        return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
-    return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))   # 기준 0 → 절대증가
+    return _finish(sc[0][0], first_m, sc[-1][0], last_m, direction, scope_name)
 
 def _degeneration_depth(tv: '_TreeView | list', children: dict | None = None) -> int:
     """퇴행 깊이 — 정본경로 노드들의 최대 연속 비진보 자식 체인 (≥3 경보)."""
