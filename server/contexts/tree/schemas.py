@@ -114,6 +114,11 @@ class CreateTreeIn(BaseModel):
     #     fail-safe 로 무제한(soft bypass). 전체 술어·비대칭: server/contexts/tree/cycle_budget.py.
     #   None=미선언(불변·비클로버, 기존 트리 전부) = 무제한.
     cycle_budget: int | None = Field(None, ge=0)
+    # PROM16 residual / q-selfdev-budget-ratchet (2026-08-01): 기존 트리 cycle_budget *상향* 시
+    #   의도적 확인 플래그. 미설정+상향 = 409 — 에이전트 무마찰 self-raise 구멍에 최소 마찰 게이트.
+    #   attestor_dids 가 있는 트리는 추가로 write_cert 도 요구(assurance_tier 쓰기와 대칭).
+    confirm_budget_raise: bool = False
+    write_cert: WriteCertIn | None = None
 
     @model_validator(mode="after")
     def validate_coverage(self) -> "CreateTreeIn":

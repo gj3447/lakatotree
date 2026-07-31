@@ -21,6 +21,11 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
     def trees():
         return service_factory().list_trees()
 
+    @router.post("/api/trees/janitor")
+    def list_index_janitor(delete_empty_probes: bool = False):
+        """q-selfdev-list-index-janitor: dangling list/empty Probe 잔해 스캔(+선택 삭제)."""
+        return service_factory().list_index_janitor(delete_empty_probes=delete_empty_probes)
+
     @router.get("/api/tree/{name}")
     def tree(name: str):
         return service_factory().tree_data(name)

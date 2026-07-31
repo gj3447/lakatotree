@@ -33,15 +33,11 @@ register_prediction + submit_result)나 set_verdict 로 갈아타면 계속 채�
     안 생긴다 — 잔존 표면은 영수증 이전 시대 노드뿐.
   · 조회 실패 = 무제한(fail-safe, budget_state 참조) — 정지는 KG 가용성에 *조건부*다.
   · TOCTOU — 동시 verb 둘이 같은 used 를 읽어 상한을 넘길 수 있다(soft 루프 상한, race-proof 아님).
-  · ★상한 자체가 self-raisable — 서두 원칙("에이전트가 고를 수 있는 정지는 정지가 아니다")의 잔여 구멍.
-    cycle_budget 은 writer.py upsert 에서 plain last-write-wins 다(바로 위 assurance_tier 와 달리 단조
-    ratchet 이 *없다*). 소진된 에이전트가 같은 트리에 create_tree(name, cycle_budget=N) 을 부르면 자기
-    천장을 올린다: create_tree 는 채점 verb 가 아니라 이 게이트 밖이고, tier 게이트(assurance.VERB_GATES)
-    대상도 아니며, MCP/REST 표면엔 운영자↔에이전트 구분이 없어 부를 자격을 가른 것도 없다(거부 detail 과
-    advice 레지스트리가 그 상향을 *다음 수로 권하기까지* 한다 — 협조 전제라 정직한 안내다). 즉 verb 교체
-    우회는 실제로 막혔지만 *상한 선택* 경로는 열려 있다 ⇒ 이 정지는 협조적 에이전트에만 서고, 적대적
-    에이전트엔 서지 않는다. ratchet 은 운영자↔에이전트 authn 구분이 전제인데 현 표면엔 그 구분이 없어
-    사용자 설계 결정으로 남긴다 — 그때까지 이 코드는 무조건적 정지를 갖지 않는다.
+  · ★상한 self-raise 마찰(2026-08-01, q-selfdev-budget-ratchet): create_tree 경로에서 *기존 예산
+    상향* 은 confirm_budget_raise=true 필수(미확인 409). attestor_dids 가 있으면 write-cert 도 필수
+    (assurance_tier 쓰기와 대칭). writer LWW 는 유지하되 service 게이트가 무마찰 상향을 막는다.
+    잔여: 확인 플래그 자체를 아는 적대 에이전트는 여전히 상향 가능 — 운영자 authn 구분 전까지
+    완전 정지는 아니다. 다만 우연/자동화 루프의 무음 self-raise 는 닫혔다.
 # KG: span_lakatotree_engine / G3_one_verb_honest_cycle
 """
 

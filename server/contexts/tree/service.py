@@ -114,6 +114,7 @@ class TreeService:
         비우면 policy_warnings 경고만(차단 아님). create_only 는 동명 나무를 409 로 거부한다."""
         if not name or '/' in name:
             raise HTTPException(422, "tree name must be one non-empty path segment")
+        self._assert_budget_raise_gate(name, spec)
         tree_spec = TreeSpec(
             name=name,
             title=spec.title,
@@ -136,6 +137,92 @@ class TreeService:
             cycle_budget=spec.cycle_budget,
         )
         return self._mutations().upsert_tree(tree_spec, create_only=create_only)
+
+    def _assert_budget_raise_gate(self, name: str, spec: CreateTreeIn) -> None:
+        """q-selfdev-budget-ratchet: cycle_budget 상향 self-raise 마찰.
+
+        - 신규 트리 / 첫 선언(기존 None→N): 통과
+        - 기존 N→M (M>N): confirm_budget_raise=true 필수
+        - attestor_dids 비어있지 않으면 write_cert 도 필수(assurance 쓰기 대칭)
+        조회 실패(나무 없음)=신규 경로로 통과. 하향(M<N)은 writer LWW 그대로(운영 축소 허용).
+        """
+        if spec.cycle_budget is None:
+            return
+        try:
+            td = self.tree_data(name)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                return
+            raise
+        cur = td.get("cycle_budget")
+        if cur is None:
+            return  # first declaration
+        try:
+            cur_i = int(cur)
+        except (TypeError, ValueError):
+            return
+        if int(spec.cycle_budget) <= cur_i:
+            return  # same or lower — not a raise
+        if not spec.confirm_budget_raise:
+            raise HTTPException(
+                409,
+                f"cycle_budget 상향 거부: 현재 {cur_i} → 선언 {spec.cycle_budget}. "
+                f"confirm_budget_raise=true 필요(self-raise 마찰 게이트, q-selfdev-budget-ratchet).",
+            )
+        attestors = list(td.get("attestor_dids") or [])
+        if attestors:
+            if spec.write_cert is None:
+                raise HTTPException(
+                    403,
+                    "cycle_budget 상향은 attestor write-cert 필수 "
+                    "(assurance_tier 쓰기와 대칭, q-selfdev-budget-ratchet).",
+                )
+            from lakatos.write_cert import verify_write_cert
+            from lakatos.write_cert import operation_payload_sha256
+            payload = spec.model_dump(exclude={"write_cert"})
+            verify_write_cert(
+                spec.write_cert.model_dump(),
+                expected_command="create_tree.cycle_budget_raise",
+                expected_payload_sha256=operation_payload_sha256(payload),
+                allowlist=attestors,
+            )
+
+    def list_index_janitor(self, *, delete_empty_probes: bool = False) -> dict:
+        """q-selfdev-list-index-janitor: 목록에 뜨지만 실체 비정상이거나 빈 Probe 잔해 정리.
+
+        dangling = (a) list 에는 있으나 load 가 404 (이론상 드묾) (b) 이름에 Probe 포함 + 노드 0.
+        delete_empty_probes=True 이면 빈 Probe 트리를 cascade 삭제(파괴적 — 호출자 책임).
+        """
+        listed = self.list_trees()
+        dangling: list[dict] = []
+        empty_probes: list[str] = []
+        for row in listed:
+            n = row.get("name") or ""
+            try:
+                td = self.tree_data(n)
+            except HTTPException as exc:
+                if exc.status_code == 404:
+                    dangling.append({"name": n, "reason": "list_present_load_404"})
+                continue
+            nodes = td.get("nodes") or []
+            if not nodes and ("Probe" in n or "probe" in n or "RoleLayout" in n):
+                empty_probes.append(n)
+                dangling.append({"name": n, "reason": "empty_probe", "nodes": 0})
+        deleted: list[str] = []
+        if delete_empty_probes:
+            for n in empty_probes:
+                try:
+                    self.delete_tree(n, cascade=True)
+                    deleted.append(n)
+                except HTTPException:
+                    pass
+        return {
+            "listed": len(listed),
+            "dangling": dangling,
+            "dangling_count": len(dangling),
+            "empty_probes": empty_probes,
+            "deleted": deleted,
+        }
 
     def delete_tree(self, name: str, cascade: bool = False) -> dict:
         """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
