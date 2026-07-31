@@ -1,0 +1,29 @@
+{
+  "metric": 22,
+  "metric_name": "legacy_green_annotated_count",
+  "legacy_inconclusive_tags": [
+    "exp-lkt-engine-unify-try1",
+    "exp-lkt-engine-unify-try2",
+    "exp-selfdev-label-minus-counts-zero-20260731",
+    "exp-selfdev-unreceipted-closes-zero-20260731",
+    "exp-selfdev-write-auth-live-20260731",
+    "sp_good_0dd5",
+    "sp_unv_0dd5",
+    "sp_viol_0dd5",
+    "v0_prototype",
+    "v10_rebuild_oo",
+    "v11_writepath_enforce",
+    "v12_engine_spine",
+    "v13_engine_synthesis",
+    "v14_fcon1_marquez",
+    "v15_quantitative_grounding",
+    "v16_pnr_dialectic",
+    "v17_create_tree_surface",
+    "v18_delete_tree_surface",
+    "v19_extaudit_grade_gate",
+    "v1_apt_laudan",
+    "v2_adversarial_fixed",
+    "v3_bayes_stack"
+  ],
+  "policy": "no rejudge 409; annotate-only catalog"
+}
