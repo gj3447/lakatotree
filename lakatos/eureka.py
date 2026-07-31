@@ -42,14 +42,21 @@ BF_SUBSTANTIAL = 3.162
 
 
 def eureka_verdict(verdict: str) -> str:
-    """Map the Lakatos-unverified metric verdict onto Eureka's orthogonal discovery axis.
+    """Map programme/status verdicts onto Eureka's orthogonal discovery axis.
 
     The abandon-stack reads ``progressive_unverified`` as neutral BF=1.0. Eureka still
     evaluates the independently confirmed novelty/problem-closure gates, so it reads the
     same metric result as ``progressive``. ``classify`` owns this normalization so every public
     measurement caller receives the same semantics; promotion still sees the raw verdict.
+
+    ``CANONICAL`` is the programme-head *status* of progressive evidence (promotion), not a
+    Bayesian neutral event. Mapping it to progressive preserves measurement-grade true-eureka
+    after set_verdict(CANONICAL) — otherwise promoting L2 progressive kills path eureka BF
+    (BF_BASE default 1.0 → always marginal). Eureka is not the promotion gate.
     """
-    return "progressive" if verdict == "progressive_unverified" else verdict
+    if verdict in ("progressive_unverified", "CANONICAL"):
+        return "progressive"
+    return verdict
 
 
 @dataclass(frozen=True)

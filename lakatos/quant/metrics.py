@@ -98,9 +98,8 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         else:
             break
     recent = chain[:window]
-    # finding A(2026-07-12): 폐기 규칙③ 은 영수증 있는(verdict_source ∈ FORCEFUL) 닫은 노드가 낸
-    # close 만 credit — 무채점 self-report close 가 문제수지를 부풀려 폐기를 면제하는 것을 차단.
-    _rtags = {t for t, r in by.items() if r.get('verdict_source') in FORCEFUL_SOURCES}
+    # finding A + Sprint A: force_of_row COUNTS 만 credit (라벨-only FORCEFUL 제외).
+    _rtags = {t for t, r in by.items() if force_of_row(r) == 'COUNTS'}
     return dict(
         leaf=leaf, window=window, verdicts=seq,
         # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
@@ -193,7 +192,14 @@ def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
 
 # ── 지표 개념별 순수함수 (한 개념 = 한 함수 = 한 테스트) ──────────────────────────────
 def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | None:
-    """진보율 — 같은 scope 정본경로의 metric 개선 %. 방향 인식(ENG-HON-1) + first=0 가드(F-FG-8)."""
+    """진보율 — 같은 scope 정본경로의 metric 개선 %. 방향 인식(ENG-HON-1) + first=0 가드(F-FG-8).
+
+    Scope 선택 (2026-07-31 고도화):
+      1) 정본 *헤드* 노드의 metric_scope 가 path 위 2점 이상이면 그 scope 우선
+         (레거시 count 스코프가 헤드 unreceipted_closes 등을 가리는 정체 오경보 완화)
+      2) 그 중 server_regenerated path 끝점을 가진 scope 가 있으면 가산
+      3) 아니면 종전: 노드 최다 scope (tie → 이름순)
+    """
     if not isinstance(tv, _TreeView):
         tv = _tv(by=by, path=tv)
     by = tv.by
@@ -204,11 +210,33 @@ def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | N
     scopes = defaultdict(list)
     for t, m, sc, d in pm:
         scopes[sc].append((t, m, d))
-    # dogfood: 다중 scope 중 노드 최다 scope 측정 + *어느 scope 인지* 정직 표기. tie 면 이름순(결정성).
-    scope_name = max(scopes, key=lambda k: (len(scopes[k]), str(k)))
-    sc = scopes[scope_name]
-    if len(sc) < 2:
+
+    head_scope = None
+    for t in reversed(tv.path):
+        if by[t].get('metric_value') is not None:
+            head_scope = by[t].get('metric_scope')
+            break
+
+    def _scope_key(sc_name):
+        rows = scopes[sc_name]
+        n = len(rows)
+        # server_regenerated tip bonus when last path node in this scope is regenerated
+        tip_tags = {r[0] for r in rows}
+        regen_tip = 0
+        for t in reversed(tv.path):
+            if t in tip_tags:
+                if by[t].get('measurement_grade') == 'server_regenerated':
+                    regen_tip = 1
+                break
+        head_match = 1 if sc_name == head_scope and n >= 2 else 0
+        # sort: head match, regen tip, count, name — max() picks best
+        return (head_match, regen_tip, n, str(sc_name))
+
+    eligible = [k for k, rows in scopes.items() if len(rows) >= 2]
+    if not eligible:
         return None
+    scope_name = max(eligible, key=_scope_key)
+    sc = scopes[scope_name]
     first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
     gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)   # 개선=양수
     common = dict(first={'tag': sc[0][0], 'm': first_m},
@@ -253,9 +281,10 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
         tv = _tv(nodes=tv, frontier=frontier, by=by, path=path, leaves=leaves,
                  open_q=open_q, closed_q=closed_q)
     abandon = []
-    # finding A(2026-07-12): 폐기 규칙③ 은 영수증 있는(verdict_source ∈ FORCEFUL) close 만 credit —
-    # 무채점 self-report close 가 문제수지를 부풀려 폐기를 면제(조용한 false-retain)하는 것을 차단.
-    _rtags = {r.get('tag') for r in tv.nodes if r.get('verdict_source') in FORCEFUL_SOURCES}
+    # finding A(2026-07-12) + Sprint A(2026-07-31): 폐기 규칙③ 은 force_of_row COUNTS close 만
+    # credit — FORCEFUL 라벨만 있고 원장/검증 없는 closer 가 문제수지를 부풀리는 것을 차단
+    # (close_ratio_receipted 술어와 정렬).
+    _rtags = {r.get('tag') for r in tv.nodes if force_of_row(r) == 'COUNTS'}
     for leaf in tv.leaves:
         if leaf in tv.path:
             continue
