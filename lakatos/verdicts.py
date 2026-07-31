@@ -301,6 +301,14 @@ def force_of_row(row: dict) -> str:
     if (base == 'COUNTS' and row.get('measurement_grade') == 'client_asserted'
             and row.get('replay_status') != 'verified'):
         return 'INCONCLUSIVE'   # 주장된 값(무검증) = 영수증 미도래와 동급 — credit 은 replay 가 산다
+    # Admin CANONICAL promotion rewrites verdict_source→admin (SELF_REPORT), which would
+    # drop L2 server_regenerated heads from progress/close credit. Measurement sovereignty:
+    # regenerated+verified+receipt still COUNTS after promotion (2026-07-31 고도화).
+    if (base != 'COUNTS'
+            and row.get('measurement_grade') == 'server_regenerated'
+            and row.get('replay_status') == 'verified'
+            and row.get('current_receipt_sha')):
+        return 'COUNTS'
     return base
 
 
