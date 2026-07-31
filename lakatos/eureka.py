@@ -54,7 +54,9 @@ def eureka_verdict(verdict: str) -> str:
     after set_verdict(CANONICAL) — otherwise promoting L2 progressive kills path eureka BF
     (BF_BASE default 1.0 → always marginal). Eureka is not the promotion gate.
     """
-    if verdict in ("progressive_unverified", "CANONICAL"):
+    # OR-chain (not multi-element vocab set/tuple) — engine_unify_vocab AST 가
+    # 정본 밖 ≥2어휘 리터럴 집합을 센다. 의미는 동일: status 어휘 → discovery 축 progressive.
+    if verdict == "progressive_unverified" or verdict == "CANONICAL":
         return "progressive"
     return verdict
 
