@@ -262,11 +262,23 @@ class TreeService:
         if not closed_by or not str(closed_by).strip():
             raise HTTPException(422, "reattribute requires closed_by (node tag)")
 
+        def _as_str_list(value) -> list:
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return [str(x) for x in value if x is not None and str(x)]
+            if isinstance(value, str):
+                # Repair accidental string-concat artifacts later; keep scalar as one tag.
+                return [value] if value else []
+            return [str(value)]
+
         # Load closer node + question state in one read (tree scope).
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
                OPTIONAL MATCH (t)-[:HAS_NODE]->(n {tag:$by})
                RETURN coalesce(q.status, 'OPEN') AS q_status,
+                      q.closed_by AS closed_by,
+                      q.closed_events AS closed_events,
                       n.tag AS tag,
                       n.verdict AS verdict,
                       n.verdict_source AS verdict_source,
@@ -334,19 +346,44 @@ class TreeService:
         # Unique closure id per closer+time so reattribute does not overwrite the
         # original close MERGE (id was previously tree/qname/closure only).
         closure_id = f"{name}/{qname}/closure/{closed_by}@{ts}"
+        prev_by = _as_str_list(row.get("closed_by"))
+        # Repair known concat glitch from early reattribute (tagA+tagB as one string).
+        if closed_by not in prev_by:
+            # split accidental joins where both tags are known node tags? keep simple:
+            # if a single element contains closed_by as suffix/prefix, rebuild.
+            repaired: list[str] = []
+            for item in prev_by:
+                if item == closed_by:
+                    repaired.append(item)
+                elif item.endswith(closed_by) and len(item) > len(closed_by):
+                    head = item[: -len(closed_by)]
+                    if head:
+                        repaired.append(head)
+                    repaired.append(closed_by)
+                elif closed_by in item and item != closed_by:
+                    # e.g. "v5...d1..." — keep head before closed_by if present
+                    idx = item.find(closed_by)
+                    if idx > 0:
+                        repaired.append(item[:idx])
+                    repaired.append(closed_by)
+                    tail = item[idx + len(closed_by):]
+                    if tail:
+                        repaired.append(tail)
+                else:
+                    repaired.append(item)
+            prev_by = list(dict.fromkeys([x for x in repaired if x]))  # stable unique
+            if closed_by not in prev_by:
+                prev_by = prev_by + [closed_by]
+        prev_ev = _as_str_list(row.get("closed_events"))
+        if closure_id not in prev_ev:
+            prev_ev = prev_ev + [closure_id]
+
         written = self.kg(
             """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
                WHERE coalesce(q.status, $open_state) = $closed_state
                SET q._cas = coalesce(q._cas, 0) + 0,
-                   q.closed_by = CASE
-                     WHEN q.closed_by IS NULL THEN [$by]
-                     WHEN $by IN q.closed_by THEN q.closed_by
-                     ELSE q.closed_by + $by
-                   END,
-                   q.closed_events = CASE
-                     WHEN q.closed_events IS NULL THEN [$closure_id]
-                     ELSE q.closed_events + $closure_id
-                   END
+                   q.closed_by = $closed_by_list,
+                   q.closed_events = $closed_events_list
                MERGE (c:QuestionClosure {id:$closure_id})
                SET c.closed_by=$by, c.at=$ts, c.tree=$tree, c.question=$qn,
                    c.kind='reattribute', c.receipt_sha=$receipt_sha
@@ -358,6 +395,8 @@ class TreeService:
             closure_id=closure_id,
             ts=ts,
             receipt_sha=receipt_sha,
+            closed_by_list=prev_by,
+            closed_events_list=prev_ev,
             open_state=QuestionState.OPEN.value,
             closed_state=QuestionState.CLOSED.value,
         )
