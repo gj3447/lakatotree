@@ -440,13 +440,33 @@ def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
 def _anchored_ratio(nodes: list) -> dict:
     """P0b(ManifestoGap R8): cross-metric novel 판결(novel_server_anchored 필드 보유) 중 *서버앵커*
     비율 — FF1 이 default-ON(신규 anchored 트리)인지, 아니면 novel 이 client float 한 줄로 서는지의
-    단일 관측. 분모 = novel_server_anchored 가 판정된 노드(True/False), 분자 = True. G5 단일 프로젝터."""
+    관측. 분모 = novel_server_anchored 가 판정된 노드(True/False), 분자 = True.
+
+    2026-07-31 빗방울 고도화: close_ratio_receipted / e-process 와 같이 force_of_row==COUNTS
+    정렬 부프로젝터를 병행한다. all_nodes 는 P0b 계약(레거시 L0 float 포함) 유지; counts_force
+    는 진보·영수증 힘이 있는 노드만 — L0 client_asserted float 를 진보 잔여로 오인하지 않게.
+    """
     judged = [r for r in nodes if r.get('novel_server_anchored') is not None]
     anchored = sum(1 for r in judged if r.get('novel_server_anchored'))
-    return dict(scope='all_nodes', novel_measured=len(judged), server_anchored=anchored,
-                anchored_ratio=round(anchored / len(judged), 3) if judged else None,
-                note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
-                     'None=novel 판정 노드 없음.')
+    counts = [r for r in judged if force_of_row(r) == 'COUNTS']
+    counts_anch = sum(1 for r in counts if r.get('novel_server_anchored'))
+    float_all = sorted(r.get('tag') for r in judged if not r.get('novel_server_anchored') and r.get('tag'))
+    float_counts = sorted(r.get('tag') for r in counts if not r.get('novel_server_anchored') and r.get('tag'))
+    return dict(
+        scope='all_nodes',
+        novel_measured=len(judged),
+        server_anchored=anchored,
+        anchored_ratio=round(anchored / len(judged), 3) if judged else None,
+        float_tags=float_all,
+        counts_force=dict(
+            novel_measured=len(counts),
+            server_anchored=counts_anch,
+            anchored_ratio=round(counts_anch / len(counts), 3) if counts else None,
+            float_tags=float_counts,
+        ),
+        note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
+             'all_nodes=P0b; counts_force=force_of_row COUNTS 정렬(진보 힘). '
+             'None=novel 판정 노드 없음.')
 
 
 def _multiplicity_screen(nodes: list) -> dict:
@@ -647,6 +667,12 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         and any(_closer_label_forceful(cb) for cb in (q.get('closed_by') or [])))
     annotated = sum(1 for r in nodes
                     if r.get('algorithm') and r.get('comment') and r.get('limitation'))
+    # 정본경로 주석 (2026-07-31): 전 트리 100% 주석은 dogfood 현실과 불합치 → 경로 완전성만 경보.
+    path_annotated = sum(
+        1 for t in path
+        if (by.get(t) or {}).get('algorithm')
+        and (by.get(t) or {}).get('comment')
+        and (by.get(t) or {}).get('limitation'))
     # 공유 트리 구조 1회 계산 → 각 지표 함수는 tv 하나만 받는다(결합을 1급 객체로).
     tv = _TreeView(nodes=nodes, frontier=frontier, by=by, path=path, children=children,
                    leaves=leaves, open_q=open_q, closed_q=closed_q)
@@ -665,9 +691,15 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     multiplicity = _multiplicity_screen(nodes)
     structure = _structure_layer(nodes)
     coverage = _coverage(cfg)
-    alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
+    alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=path_annotated, n=max(len(path), 1),
                               coverage=coverage,
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
+    # 정본경로 주석 경보 문구 (전 트리 n 대신 path 완전성).
+    alerts = [
+        (f'정본경로 주석 미완 {path_annotated}/{len(path)}'
+         if a == '주석 미완 노드 존재' and path else a)
+        for a in alerts
+    ]
     # 2026-07-31 고도화: inconclusive 사유 세분 (client_asserted vs 원장부재 vs 기타) —
     # "verdict_source 없이" 일괄 문구가 L0 client_asserted(소스 있음)를 오도하던 것 교정.
     _raw_by = {r.get('tag'): r for r in raw_nodes}
@@ -699,9 +731,15 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
             f"fsck MEASUREMENT_REFUTED_BUT_STANDING 대응")]
     if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
         _drift = anchored['novel_measured'] - anchored['server_anchored']
-        alerts = [*alerts, f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
-                           f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). anchored_ratio="
-                           f"{anchored['anchored_ratio']}"]
+        _cf = anchored.get('counts_force') or {}
+        _cf_drift = (_cf.get('novel_measured') or 0) - (_cf.get('server_anchored') or 0)
+        _cf_ratio = _cf.get('anchored_ratio')
+        alerts = [*alerts, (
+            f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
+            f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). "
+            f"anchored_ratio={anchored['anchored_ratio']}; "
+            f"COUNTS-aligned float={_cf_drift} "
+            f"(counts_force.anchored_ratio={_cf_ratio})")]
     if closed_q - receipted_closed_q > 0:
         alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 "
                            f"force_of_row≠COUNTS(무채점·무영수증·client_asserted 미검증 등). "

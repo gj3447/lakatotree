@@ -112,6 +112,10 @@ def test_p0b_anchored_ratio_projector():
     a = m['anchored']
     assert a['novel_measured'] == 3 and a['server_anchored'] == 2, a   # None 은 분모 제외
     assert a['anchored_ratio'] == round(2 / 3, 3)
+    assert a['float_tags'] == ['b'], a
+    # bare progressive fixture 는 force_of_row≠COUNTS → counts_force 분모 0
+    assert a['counts_force']['novel_measured'] == 0
+    assert a['counts_force']['anchored_ratio'] is None
     # novel 판정 노드 0 → None(거짓 0 아님).
     assert tree_metrics([_n('x', None)], [])['anchored']['anchored_ratio'] is None
 
@@ -119,10 +123,28 @@ def test_p0b_anchored_ratio_projector():
 # ── P3b: notebook-drift alert ─────────────────────────────────────────────────────────────
 def test_p3b_notebook_drift_alert():
     m = tree_metrics([_n('a', True), _n('b', False)], [])   # 1/2 서버앵커
-    assert any('서버앵커 안 된 novel' in x for x in m['alerts']), m['alerts']
+    hit = [x for x in m['alerts'] if '서버앵커 안 된 novel' in x]
+    assert hit, m['alerts']
+    assert 'COUNTS-aligned float=' in hit[0]
     # 전부 앵커 = 알럿 없음(정상).
     m2 = tree_metrics([_n('a', True), _n('b', True)], [])
     assert not any('서버앵커 안 된 novel' in x for x in m2['alerts'])
+
+
+def test_p0b_counts_force_anchored_ratio():
+    """force_of_row==COUNTS 노드만 counts_force 분모 — L0 float 와 진보 힘 float 분리."""
+    def _counts(tag, nsa):
+        return dict(tag=tag, verdict='progressive', novel_server_anchored=nsa,
+                    verdict_source='scripted', current_receipt_sha='ab' * 32,
+                    parents=[], parent_edges=[], node_state='JUDGED_SCRIPTED')
+    m = tree_metrics([_counts('ok', True), _counts('float', False), _n('l0float', False)], [])
+    a = m['anchored']
+    assert a['novel_measured'] == 3 and a['server_anchored'] == 1
+    assert a['float_tags'] == ['float', 'l0float']
+    cf = a['counts_force']
+    assert cf['novel_measured'] == 2 and cf['server_anchored'] == 1
+    assert cf['anchored_ratio'] == 0.5
+    assert cf['float_tags'] == ['float']
 
 
 # ── P0c: line19 각주(doc-honesty) ─────────────────────────────────────────────────────────

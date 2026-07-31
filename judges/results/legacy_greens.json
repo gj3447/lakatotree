@@ -1,6 +1,5 @@
 {
   "metric": 22,
-  "metric_name": "legacy_green_annotated_count",
   "legacy_inconclusive_tags": [
     "exp-lkt-engine-unify-try1",
     "exp-lkt-engine-unify-try2",
@@ -24,6 +23,5 @@
     "v1_apt_laudan",
     "v2_adversarial_fixed",
     "v3_bayes_stack"
-  ],
-  "policy": "no rejudge 409; annotate-only catalog"
+  ]
 }
