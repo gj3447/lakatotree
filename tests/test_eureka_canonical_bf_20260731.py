@@ -56,22 +56,22 @@ def test_path_metrics_true_eureka_with_canonical_l2_head():
     assert m["eureka"]["true_rate"] > 0
 
 
-def test_progress_prefers_head_metric_scope_over_legacy_count():
-    """Head unreceipted_closes scope wins over longer legacy count scope."""
+def test_progress_prefers_head_metric_name_over_legacy_count():
+    """Head metric_name (unreceipted_closes) wins over longer legacy tests series."""
     nodes = [
         dict(tag="a", verdict="former_canonical", parent=None, parents=[],
              parent_edges=[], metric_value=62.0, metric_scope="count",
-             pred_direction="lower", verdict_source="admin"),
+             metric_name="tests", pred_direction="higher", verdict_source="admin"),
         dict(tag="b", verdict="former_canonical", parent="a", parents=["a"],
              parent_edges=[], metric_value=100.0, metric_scope="count",
-             pred_direction="lower", verdict_source="admin"),
+             metric_name="tests", pred_direction="higher", verdict_source="admin"),
         dict(tag="c", verdict="progressive", parent="b", parents=["b"],
-             parent_edges=[], metric_value=12.0, metric_scope="unreceipted_closes",
+             parent_edges=[], metric_value=12.0, metric_name="unreceipted_closes",
              pred_direction="lower", pred_baseline=12.0,
              verdict_source="scripted", current_receipt_sha="b" * 64,
              measurement_grade="server_regenerated", replay_status="verified"),
         dict(tag="d", verdict="CANONICAL", parent="c", parents=["c"],
-             parent_edges=[], metric_value=0.0, metric_scope="unreceipted_closes",
+             parent_edges=[], metric_value=0.0, metric_name="unreceipted_closes",
              pred_direction="lower", pred_baseline=12.0,
              verdict_source="scripted", current_receipt_sha="c" * 64,
              measurement_grade="server_regenerated", replay_status="verified",
@@ -82,4 +82,5 @@ def test_progress_prefers_head_metric_scope_over_legacy_count():
     prog = m["progress"]
     assert prog is not None
     assert prog["scope"] == "unreceipted_closes"
+    assert prog["direction"] == "lower"
     assert prog["improvement_pct"] == 100.0  # 12 → 0 lower = full improvement

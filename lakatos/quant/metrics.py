@@ -203,33 +203,34 @@ def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | N
     if not isinstance(tv, _TreeView):
         tv = _tv(by=by, path=tv)
     by = tv.by
-    pm = [(t, by[t]['metric_value'], by[t].get('metric_scope'), by[t].get('pred_direction') or 'lower')
-          for t in tv.path if by[t].get('metric_value') is not None]
+    # Group key: metric_name when present (unreceipted_closes vs tests), else metric_scope.
+    # Mixing different metric_name under scope=None was collapsing head hygiene into legacy tests.
+    pm = []
+    for t in tv.path:
+        row = by[t]
+        if row.get('metric_value') is None:
+            continue
+        key = row.get('metric_name') or row.get('metric_scope')
+        pm.append((t, row['metric_value'], key,
+                   row.get('pred_direction') or 'lower',
+                   row.get('measurement_grade')))
     if len(pm) < 2:
         return None
     scopes = defaultdict(list)
-    for t, m, sc, d in pm:
-        scopes[sc].append((t, m, d))
+    for t, m, key, d, mg in pm:
+        scopes[key].append((t, m, d, mg))
 
-    head_scope = None
+    head_key = None
     for t in reversed(tv.path):
         if by[t].get('metric_value') is not None:
-            head_scope = by[t].get('metric_scope')
+            head_key = by[t].get('metric_name') or by[t].get('metric_scope')
             break
 
     def _scope_key(sc_name):
         rows = scopes[sc_name]
         n = len(rows)
-        # server_regenerated tip bonus when last path node in this scope is regenerated
-        tip_tags = {r[0] for r in rows}
-        regen_tip = 0
-        for t in reversed(tv.path):
-            if t in tip_tags:
-                if by[t].get('measurement_grade') == 'server_regenerated':
-                    regen_tip = 1
-                break
-        head_match = 1 if sc_name == head_scope and n >= 2 else 0
-        # sort: head match, regen tip, count, name — max() picks best
+        regen_tip = 1 if rows and rows[-1][3] == 'server_regenerated' else 0
+        head_match = 1 if sc_name == head_key and n >= 2 else 0
         return (head_match, regen_tip, n, str(sc_name))
 
     eligible = [k for k, rows in scopes.items() if len(rows) >= 2]
@@ -237,14 +238,16 @@ def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | N
         return None
     scope_name = max(eligible, key=_scope_key)
     sc = scopes[scope_name]
-    first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
+    first_m, last_m = sc[0][1], sc[-1][1]
+    # Direction from the *head* (last) row — first-row default 'higher' on legacy tests
+    # must not invert unreceipted_closes lower-is-better series.
+    direction = sc[-1][2]
     gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)   # 개선=양수
     common = dict(first={'tag': sc[0][0], 'm': first_m},
                   last={'tag': sc[-1][0], 'm': last_m}, direction=direction, scope=scope_name)
     if first_m != 0:
         return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
     return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))   # 기준 0 → 절대증가
-
 
 def _degeneration_depth(tv: '_TreeView | list', children: dict | None = None) -> int:
     """퇴행 깊이 — 정본경로 노드들의 최대 연속 비진보 자식 체인 (≥3 경보)."""
