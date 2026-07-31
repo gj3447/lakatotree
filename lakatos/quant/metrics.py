@@ -452,20 +452,46 @@ def _anchored_ratio(nodes: list) -> dict:
     counts_anch = sum(1 for r in counts if r.get('novel_server_anchored'))
     float_all = sorted(r.get('tag') for r in judged if not r.get('novel_server_anchored') and r.get('tag'))
     float_counts = sorted(r.get('tag') for r in counts if not r.get('novel_server_anchored') and r.get('tag'))
+    # 2026-08-01: L2 supersession residual — child with novel_server_anchored=True
+    # means the float lineage was re-sealed; historical float tag remains (append-only)
+    # but is not an active programme force gap.
+    children_by_parent: dict[str, list] = defaultdict(list)
+    for r in nodes:
+        for p in (r.get('parents') or ([] if not r.get('parent') else [r.get('parent')])):
+            if p:
+                children_by_parent[str(p)].append(r)
+
+    def _superseded(tags: list[str]) -> list[str]:
+        out = []
+        for ft in tags:
+            kids = children_by_parent.get(ft) or []
+            if any(k.get('novel_server_anchored') for k in kids):
+                out.append(ft)
+        return out
+
+    super_all = _superseded(float_all)
+    super_counts = _superseded(float_counts)
+    active_all = [t for t in float_all if t not in set(super_all)]
+    active_counts = [t for t in float_counts if t not in set(super_counts)]
     return dict(
         scope='all_nodes',
         novel_measured=len(judged),
         server_anchored=anchored,
         anchored_ratio=round(anchored / len(judged), 3) if judged else None,
         float_tags=float_all,
+        superseded_float_tags=super_all,
+        active_float_tags=active_all,
         counts_force=dict(
             novel_measured=len(counts),
             server_anchored=counts_anch,
             anchored_ratio=round(counts_anch / len(counts), 3) if counts else None,
             float_tags=float_counts,
+            superseded_float_tags=super_counts,
+            active_float_tags=active_counts,
         ),
         note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
              'all_nodes=P0b; counts_force=force_of_row COUNTS 정렬(진보 힘). '
+             'superseded_float_tags=자식 L2 nsa 재봉인 있는 역사 float. '
              'None=novel 판정 노드 없음.')
 
 
@@ -734,12 +760,21 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         _cf = anchored.get('counts_force') or {}
         _cf_drift = (_cf.get('novel_measured') or 0) - (_cf.get('server_anchored') or 0)
         _cf_ratio = _cf.get('anchored_ratio')
+        _super = anchored.get('superseded_float_tags') or []
+        _active = anchored.get('active_float_tags')
+        if _active is None:
+            _active = [t for t in (anchored.get('float_tags') or []) if t not in set(_super)]
+        _cf_active = (_cf.get('active_float_tags')
+                      if _cf.get('active_float_tags') is not None
+                      else _cf.get('float_tags') or [])
         alerts = [*alerts, (
             f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
             f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). "
             f"anchored_ratio={anchored['anchored_ratio']}; "
             f"COUNTS-aligned float={_cf_drift} "
-            f"(counts_force.anchored_ratio={_cf_ratio})")]
+            f"(counts_force.anchored_ratio={_cf_ratio}); "
+            f"active_float={len(_active)} superseded_float={len(_super)} "
+            f"(COUNTS active={len(_cf_active)})")]
     if closed_q - receipted_closed_q > 0:
         alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 "
                            f"force_of_row≠COUNTS(무채점·무영수증·client_asserted 미검증 등). "

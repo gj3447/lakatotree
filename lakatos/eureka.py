@@ -53,10 +53,17 @@ def eureka_verdict(verdict: str) -> str:
     Bayesian neutral event. Mapping it to progressive preserves measurement-grade true-eureka
     after set_verdict(CANONICAL) — otherwise promoting L2 progressive kills path eureka BF
     (BF_BASE default 1.0 → always marginal). Eureka is not the promotion gate.
+
+    ``former_canonical`` is the same class after a later promote: the node still *measured*
+    progressive evidence; only programme-head status moved. Without the map, every path
+    demotion (new CANONICAL) mass-hallucinates prior true-eurekas as bf_marginal (SelfDev
+    2026-08-01 rain: L2 unreceipted head → former_canonical → true_rate collapse).
     """
     # OR-chain (not multi-element vocab set/tuple) — engine_unify_vocab AST 가
     # 정본 밖 ≥2어휘 리터럴 집합을 센다. 의미는 동일: status 어휘 → discovery 축 progressive.
-    if verdict == "progressive_unverified" or verdict == "CANONICAL":
+    if (verdict == "progressive_unverified"
+            or verdict == "CANONICAL"
+            or verdict == "former_canonical"):
         return "progressive"
     return verdict
 
@@ -206,14 +213,28 @@ def eureka_over_tree(nodes: list) -> dict:
     # confirmed+substantial-BF but no declared pred_closes → inconclusive, honestly unmeasured.)
     inconclusive = sum(1 for v in verdicts if v.inconclusive)
     assessable = felt - inconclusive
+    # 2026-08-01: split measurement_failed so path dogfood sees bf_marginal vs novel_unconfirmed
+    # (status demotion to former_canonical used to look like mass novel failure).
+    n_bf = sum(1 for v in verdicts if v.hallucinated
+               and any(str(r).startswith("bf_marginal") for r in v.reasons))
+    n_novel = sum(1 for v in verdicts if v.hallucinated and "novel_unconfirmed" in v.reasons)
+    n_other = sum(
+        1 for v in verdicts if v.hallucinated
+        and not any(str(r).startswith("bf_marginal") for r in v.reasons)
+        and "novel_unconfirmed" not in v.reasons)
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
         "inconclusive": inconclusive, "assessable": assessable,
         "true_rate": round(true / assessable, 3) if assessable else 0.0,
         "hallucination_rate": round(hallucinated / assessable, 3) if assessable else 0.0,
         "problem_ledger_absent": inconclusive,
-        "hallucinated_reason_split": {"problem_ledger_absent": inconclusive,
-                                      "measurement_failed": hallucinated},
+        "hallucinated_reason_split": {
+            "problem_ledger_absent": inconclusive,
+            "measurement_failed": hallucinated,
+            "bf_marginal": n_bf,
+            "novel_unconfirmed": n_novel,
+            "other": n_other,
+        },
         "measurement_grade": True,
     }
 

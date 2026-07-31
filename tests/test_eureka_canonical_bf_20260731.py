@@ -12,7 +12,25 @@ from lakatos.quant.metrics import tree_metrics
 def test_eureka_verdict_maps_canonical_to_progressive():
     assert eureka_verdict("CANONICAL") == "progressive"
     assert eureka_verdict("progressive_unverified") == "progressive"
+    assert eureka_verdict("former_canonical") == "progressive"
     assert eureka_verdict("rejected") == "rejected"
+
+
+def test_former_canonical_keeps_progressive_bf_after_demotion():
+    """Later promote demotes prior head to former_canonical — eureka BF must not collapse."""
+    node = dict(
+        novel_registered=True,
+        novel_confirmed=True,
+        verdict="former_canonical",
+        delta=-12.0,
+        noise_band=0.0,
+        source_trust=1.0,
+        closed=1,
+        opened=0,
+    )
+    ev = classify(node, require_promotion=False)
+    assert ev.true is True, ev.reasons
+    assert ev.bf == bayes_factor("progressive", delta=-12.0, noise_band=0.0)
 
 
 def test_canonical_with_novel_closure_can_be_true_eureka():
