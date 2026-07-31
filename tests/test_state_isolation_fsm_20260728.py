@@ -105,6 +105,24 @@ def test_frontier_reducer_conforms_to_machine_spec():
         step(QuestionState.OPEN, QuestionEvent.ADJUDICATED,
              verdict="progressive", receipt_sha="not-a-receipt")
 
+    # Sprint A P0-2: REATTRIBUTE never reopens; receipt-backed append only on CLOSED.
+    from lakatos.frontier_state import QuestionEffect
+    appended = step(QuestionState.CLOSED, QuestionEvent.REATTRIBUTE,
+                    verdict="progressive", receipt_sha="d" * 64)
+    retained = step(QuestionState.CLOSED, QuestionEvent.REATTRIBUTE,
+                    verdict="partial", receipt_sha="e" * 64)
+    assert appended.transition_id == "reattribute-append"
+    assert QuestionEffect.APPEND_CLOSER in appended.effects
+    assert appended.state is QuestionState.CLOSED
+    assert retained.transition_id == "reattribute-retain"
+    assert retained.effects == ()
+    with pytest.raises(ValueError, match="CLOSED"):
+        step(QuestionState.OPEN, QuestionEvent.REATTRIBUTE,
+             verdict="progressive", receipt_sha="f" * 64)
+    with pytest.raises(ValueError, match="sha256"):
+        step(QuestionState.CLOSED, QuestionEvent.REATTRIBUTE,
+             verdict="progressive", receipt_sha="short")
+
 
 def test_belief_composite_constraint_and_migration_are_declared():
     from server.contexts.tree.diagnostics import diagnose_required_constraints
@@ -156,6 +174,93 @@ def test_duplicate_close_is_idempotent_and_does_not_append_history():
     assert out["state"] == "CLOSED"
     assert out["changed"] is False
     assert history == []
+
+
+class _ReattrKg:
+    """Two-phase kg: (1) load closer+status (2) append write."""
+
+    def __init__(self, *, q_status, closer_row, write_ok=True):
+        self.q_status = q_status
+        self.closer_row = closer_row
+        self.write_ok = write_ok
+        self.calls = []
+
+    def __call__(self, cypher, **params):
+        self.calls.append((cypher, params))
+        if "OPTIONAL MATCH" in cypher and "HAS_NODE" in cypher:
+            return [{
+                "q_status": self.q_status,
+                **self.closer_row,
+            }]
+        if "kind='reattribute'" in cypher or "reattribute" in cypher or "$closure_id" in cypher and "SET q.closed_by" in cypher:
+            if not self.write_ok:
+                return []
+            prev = self.closer_row.get("prev_closed_by") or []
+            by = params.get("by")
+            closed_by = prev if by in prev else list(prev) + [by]
+            return [{"name": params.get("qn"), "closed_by": closed_by}]
+        return []
+
+
+def test_reattribute_appends_receipted_closer_without_reopen():
+    closer = dict(
+        tag="node-ok",
+        verdict="progressive",
+        verdict_source="scripted",
+        current_receipt_sha="a" * 64,
+        measurement_grade="server_regenerated",
+        replay_status="verified",
+        node_state="CANONICAL_CANDIDATE",
+        prev_closed_by=["admin-old"],
+    )
+    port = _ReattrKg(q_status="CLOSED", closer_row=closer)
+    history = []
+    out = _service(port, history).reattribute_question("TreeA", "q", closed_by="node-ok")
+    assert out["ok"] is True
+    assert out["state"] == "CLOSED"
+    assert out["changed"] is True
+    assert out["appended"] is True
+    assert "node-ok" in (out.get("closed_by") or [])
+    assert history and history[0][1] == "question_reattribute"
+    # never sets status OPEN
+    write_cypher = port.calls[-1][0]
+    assert "OPEN" not in write_cypher or "open_state" in write_cypher
+    assert "SET q.status=$open" not in write_cypher
+
+
+def test_reattribute_rejects_force_of_row_non_counts_closer():
+    closer = dict(
+        tag="node-bad",
+        verdict="progressive",
+        verdict_source="scripted",
+        current_receipt_sha="",  # present-empty → INCONCLUSIVE
+        measurement_grade=None,
+        replay_status=None,
+        node_state="INCONCLUSIVE",
+    )
+    port = _ReattrKg(q_status="CLOSED", closer_row=closer)
+    history = []
+    with pytest.raises(HTTPException) as exc:
+        _service(port, history).reattribute_question("TreeA", "q", closed_by="node-bad")
+    assert exc.value.status_code == 409
+    assert "COUNTS" in str(exc.value.detail)
+    assert history == []
+
+
+def test_reattribute_rejects_open_question():
+    closer = dict(
+        tag="node-ok",
+        verdict="progressive",
+        verdict_source="scripted",
+        current_receipt_sha="b" * 64,
+        measurement_grade="server_regenerated",
+        replay_status="verified",
+        node_state="CANONICAL_CANDIDATE",
+    )
+    port = _ReattrKg(q_status="OPEN", closer_row=closer)
+    with pytest.raises(HTTPException) as exc:
+        _service(port, []).reattribute_question("TreeA", "q", closed_by="node-ok")
+    assert exc.value.status_code == 409
 
 
 def test_open_question_created_at_is_a_latch_not_last_write_wins():

@@ -20,11 +20,17 @@ class QuestionEvent(str, Enum):
     OPEN = "OPEN"
     CLOSE = "CLOSE"
     ADJUDICATED = "ADJUDICATED"
+    # Sprint A P0-2 (2026-07-31): append a receipt-backed closer to an already-CLOSED
+    # question without reopening. Does not change status; does not rewrite history.
+    REATTRIBUTE = "REATTRIBUTE"
 
 
 class QuestionEffect(str, Enum):
     UPDATE_METADATA = "UpdateQuestionMetadata"
     RECORD_CLOSURE = "RecordQuestionClosure"
+    # Append-only closer on an already-CLOSED question (REATTRIBUTE). Distinct from
+    # RecordQuestionClosure so CLOSE idempotency and reopen bans stay untouched.
+    APPEND_CLOSER = "AppendQuestionCloser"
 
 
 @dataclass(frozen=True)
@@ -66,6 +72,14 @@ _TRANSITIONS: dict[tuple[QuestionState, QuestionEvent], QuestionTransition] = {
 }
 
 
+def _valid_receipt_sha(receipt_sha: str | None) -> bool:
+    return (
+        isinstance(receipt_sha, str)
+        and len(receipt_sha) == 64
+        and all(char in "0123456789abcdef" for char in receipt_sha)
+    )
+
+
 def receipt_backed_conclusive(verdict: str | None, receipt_sha: str | None) -> bool:
     """Whether an adjudication identity can close its preregistered target.
 
@@ -76,12 +90,7 @@ def receipt_backed_conclusive(verdict: str | None, receipt_sha: str | None) -> b
     stronger guarantee that receipt persistence and closure commit atomically.
     """
 
-    valid_sha = (
-        isinstance(receipt_sha, str)
-        and len(receipt_sha) == 64
-        and all(char in "0123456789abcdef" for char in receipt_sha)
-    )
-    return valid_sha and verdict in QUESTION_ANSWER_VERDICTS
+    return _valid_receipt_sha(receipt_sha) and verdict in QUESTION_ANSWER_VERDICTS
 
 
 def step(
@@ -95,14 +104,14 @@ def step(
 
     ``ADJUDICATED`` is Mealy-style: closure belongs to a particular
     receipt-backed verdict event rather than a stable node state.
+
+    ``REATTRIBUTE`` is also Mealy-style: only a receipt-backed conclusive
+    adjudication may append a closer on an already-CLOSED question. OPEN
+    questions must use CLOSE/ADJUDICATED; REATTRIBUTE never reopens.
     """
 
     if event is QuestionEvent.ADJUDICATED:
-        if not (
-            isinstance(receipt_sha, str)
-            and len(receipt_sha) == 64
-            and all(char in "0123456789abcdef" for char in receipt_sha)
-        ):
+        if not _valid_receipt_sha(receipt_sha):
             raise InvalidQuestionTransition(
                 "ADJUDICATED requires a lowercase sha256 receipt identity; "
                 "self-report cannot close a question"
@@ -120,7 +129,33 @@ def step(
                 transition_id="adjudication-retain-open",
             )
 
+    if event is QuestionEvent.REATTRIBUTE:
+        if not _valid_receipt_sha(receipt_sha):
+            raise InvalidQuestionTransition(
+                "REATTRIBUTE requires a lowercase sha256 receipt identity; "
+                "self-report cannot reattribute a closed question"
+            )
+        if state is QuestionState.OPEN:
+            raise InvalidQuestionTransition(
+                "REATTRIBUTE is only valid on CLOSED; use CLOSE or ADJUDICATED on OPEN"
+            )
+        if state is QuestionState.CLOSED:
+            if receipt_backed_conclusive(verdict, receipt_sha):
+                return QuestionTransition(
+                    state=QuestionState.CLOSED,
+                    effects=(QuestionEffect.APPEND_CLOSER,),
+                    transition_id="reattribute-append",
+                )
+            # receipt present but non-conclusive (partial/equivalent/…) — no append
+            return QuestionTransition(
+                state=QuestionState.CLOSED,
+                effects=(),
+                transition_id="reattribute-retain",
+            )
+
     try:
         return _TRANSITIONS[(state, event)]
     except KeyError as exc:
-        raise InvalidQuestionTransition(f"invalid frontier transition: {state.value} + {event.value}") from exc
+        raise InvalidQuestionTransition(
+            f"invalid frontier transition: {state.value} + {event.value}"
+        ) from exc

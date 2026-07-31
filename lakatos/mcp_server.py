@@ -298,6 +298,19 @@ def close_question(name: str, qname: str, closed_by: str = '') -> str:
 
 
 @mcp.tool()
+def reattribute_question(name: str, qname: str, closed_by: str) -> str:
+    """CLOSED 질문에 receipted closer 를 append-only 재귀속(재개봉 금지). Sprint A P0-2.
+    closer 노드는 force_of_row==COUNTS(영수증 실재·client_asserted 미검증 제외) 이어야 한다.
+    OPEN 질문·무영수증 closer·duplicate-close 우회는 409."""
+    import urllib.parse as up
+    q = '?' + up.urlencode({'closed_by': closed_by})
+    return json.dumps(
+        _post(f'/api/tree/{name}/question/{qname}/reattribute{q}', {}),
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
 def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: str = '',
                 doc: str = '', coverage_statement: str = '', coverage_backlog_csv: str = '',
                 ontology: str = '', require_novel_anchor: bool = False,

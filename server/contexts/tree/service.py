@@ -243,3 +243,141 @@ class TreeService:
             self.hist(name, "question_close", closed_by, {"question": qname})
         return {"ok": True, "state": transition.state.value,
                 "changed": transition.changed, "transition": transition.transition_id}
+
+    def reattribute_question(self, name: str, qname: str, closed_by: str) -> dict:
+        """Append a receipt-backed closer to an already-CLOSED question (Sprint A P0-2).
+
+        Does **not** reopen. Rejects self-report / force_of_row≠COUNTS closers.
+        Pure FSM: CLOSED + REATTRIBUTE + receipt_backed_conclusive → AppendQuestionCloser.
+        """
+        from lakatos.frontier_state import (
+            InvalidQuestionTransition,
+            QuestionEffect,
+            QuestionEvent,
+            QuestionState,
+            step as step_question,
+        )
+        from lakatos.verdicts import force_of_row
+
+        if not closed_by or not str(closed_by).strip():
+            raise HTTPException(422, "reattribute requires closed_by (node tag)")
+
+        # Load closer node + question state in one read (tree scope).
+        rows = self.kg(
+            """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+               OPTIONAL MATCH (t)-[:HAS_NODE]->(n {tag:$by})
+               RETURN coalesce(q.status, 'OPEN') AS q_status,
+                      n.tag AS tag,
+                      n.verdict AS verdict,
+                      n.verdict_source AS verdict_source,
+                      n.current_receipt_sha AS current_receipt_sha,
+                      n.measurement_grade AS measurement_grade,
+                      n.replay_status AS replay_status,
+                      n.node_state AS node_state""",
+            tree=name, qn=qname, by=closed_by,
+        )
+        if not rows:
+            raise HTTPException(404, f"질문 없음: {qname}")
+        row = rows[0]
+        if not row.get("tag"):
+            raise HTTPException(404, f"closer 노드 없음: {closed_by}")
+
+        closer = {
+            "tag": row["tag"],
+            "verdict": row.get("verdict"),
+            "verdict_source": row.get("verdict_source"),
+            "current_receipt_sha": row.get("current_receipt_sha"),
+            "measurement_grade": row.get("measurement_grade"),
+            "replay_status": row.get("replay_status"),
+            "node_state": row.get("node_state"),
+        }
+        # Always present the receipt key so force_of_row applies the ledger gate
+        # (API rows always carry the key; OPTIONAL MATCH may yield None).
+        if "current_receipt_sha" not in closer:
+            closer["current_receipt_sha"] = None
+
+        if force_of_row(closer) != "COUNTS":
+            raise HTTPException(
+                409,
+                f"reattribute 거부: closer {closed_by!r} force_of_row≠COUNTS "
+                f"(vs={closer.get('verdict_source')!r}, "
+                f"receipt={bool(closer.get('current_receipt_sha'))}, "
+                f"mg={closer.get('measurement_grade')!r}, "
+                f"replay={closer.get('replay_status')!r})",
+            )
+
+        receipt_sha = closer.get("current_receipt_sha") or ""
+        verdict = closer.get("verdict") or ""
+        before = row.get("q_status") or QuestionState.OPEN.value
+        try:
+            transition = step_question(
+                QuestionState(before),
+                QuestionEvent.REATTRIBUTE,
+                verdict=verdict,
+                receipt_sha=receipt_sha,
+            )
+        except (ValueError, InvalidQuestionTransition) as exc:
+            raise HTTPException(
+                409, f"질문 상태 전이 거부: {before} + REATTRIBUTE ({exc})"
+            ) from exc
+
+        if QuestionEffect.APPEND_CLOSER not in transition.effects:
+            return {
+                "ok": True,
+                "state": transition.state.value,
+                "changed": False,
+                "transition": transition.transition_id,
+                "appended": False,
+            }
+
+        ts = datetime.now(timezone.utc).isoformat()
+        # Unique closure id per closer+time so reattribute does not overwrite the
+        # original close MERGE (id was previously tree/qname/closure only).
+        closure_id = f"{name}/{qname}/closure/{closed_by}@{ts}"
+        written = self.kg(
+            """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+               WHERE coalesce(q.status, $open_state) = $closed_state
+               SET q._cas = coalesce(q._cas, 0) + 0,
+                   q.closed_by = CASE
+                     WHEN q.closed_by IS NULL THEN [$by]
+                     WHEN $by IN q.closed_by THEN q.closed_by
+                     ELSE q.closed_by + $by
+                   END,
+                   q.closed_events = CASE
+                     WHEN q.closed_events IS NULL THEN [$closure_id]
+                     ELSE q.closed_events + $closure_id
+                   END
+               MERGE (c:QuestionClosure {id:$closure_id})
+               SET c.closed_by=$by, c.at=$ts, c.tree=$tree, c.question=$qn,
+                   c.kind='reattribute', c.receipt_sha=$receipt_sha
+               MERGE (q)-[:HAS_CLOSURE]->(c)
+               RETURN q.name AS name, q.closed_by AS closed_by""",
+            tree=name,
+            qn=qname,
+            by=closed_by,
+            closure_id=closure_id,
+            ts=ts,
+            receipt_sha=receipt_sha,
+            open_state=QuestionState.OPEN.value,
+            closed_state=QuestionState.CLOSED.value,
+        )
+        if not written:
+            raise HTTPException(
+                409,
+                f"reattribute write 0행 — 질문이 CLOSED가 아니거나 동시 변경: {qname}",
+            )
+        self.hist(
+            name,
+            "question_reattribute",
+            closed_by,
+            {"question": qname, "closure_id": closure_id, "receipt_sha": receipt_sha},
+        )
+        return {
+            "ok": True,
+            "state": transition.state.value,
+            "changed": True,
+            "transition": transition.transition_id,
+            "appended": True,
+            "closed_by": written[0].get("closed_by"),
+            "closure_id": closure_id,
+        }

@@ -57,4 +57,9 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
     def close_question(name: str, qname: str, closed_by: str = ""):
         return service_factory().close_question(name, qname, closed_by=closed_by)
 
+    @router.post("/api/tree/{name}/question/{qname}/reattribute")
+    def reattribute_question(name: str, qname: str, closed_by: str = ""):
+        """Append receipt-backed closer to CLOSED question (no reopen). Sprint A P0-2."""
+        return service_factory().reattribute_question(name, qname, closed_by=closed_by)
+
     return router

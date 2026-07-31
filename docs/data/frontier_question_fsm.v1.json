@@ -11,37 +11,102 @@
   "event_schemas": {
     "OPEN": {
       "type": "object",
-      "required": ["tree", "question", "event_id"],
+      "required": [
+        "tree",
+        "question",
+        "event_id"
+      ],
       "properties": {
-        "tree": {"type": "string"},
-        "question": {"type": "string"},
-        "event_id": {"type": "string"}
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string"
+        }
       }
     },
     "CLOSE": {
       "type": "object",
-      "required": ["tree", "question", "event_id"],
+      "required": [
+        "tree",
+        "question",
+        "event_id"
+      ],
       "properties": {
-        "tree": {"type": "string"},
-        "question": {"type": "string"},
-        "event_id": {"type": "string"}
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string"
+        }
       }
     },
     "ADJUDICATED": {
       "type": "object",
-      "required": ["tree", "question", "verdict", "receipt_sha"],
+      "required": [
+        "tree",
+        "question",
+        "verdict",
+        "receipt_sha"
+      ],
       "properties": {
-        "tree": {"type": "string"},
-        "question": {"type": "string"},
-        "verdict": {"type": "string"},
-        "receipt_sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "receipt_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "REATTRIBUTE": {
+      "type": "object",
+      "required": [
+        "tree",
+        "question",
+        "verdict",
+        "receipt_sha",
+        "closed_by"
+      ],
+      "properties": {
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "receipt_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "closed_by": {
+          "type": "string"
+        }
       }
     }
   },
   "guards": {
     "receipt_backed_conclusive": {
       "reads": [],
-      "event_reads": ["verdict", "receipt_sha"],
+      "event_reads": [
+        "verdict",
+        "receipt_sha"
+      ],
       "pure": true,
       "synchronous": true
     }
@@ -51,11 +116,21 @@
       "kind": "command",
       "payload_schema": {
         "type": "object",
-        "required": ["tree", "question", "event_id"],
+        "required": [
+          "tree",
+          "question",
+          "event_id"
+        ],
         "properties": {
-          "tree": {"type": "string"},
-          "question": {"type": "string"},
-          "event_id": {"type": "string"}
+          "tree": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
         }
       }
     },
@@ -63,11 +138,47 @@
       "kind": "command",
       "payload_schema": {
         "type": "object",
-        "required": ["tree", "question", "event_id"],
+        "required": [
+          "tree",
+          "question",
+          "event_id"
+        ],
         "properties": {
-          "tree": {"type": "string"},
-          "question": {"type": "string"},
-          "event_id": {"type": "string"}
+          "tree": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AppendQuestionCloser": {
+      "kind": "command",
+      "payload_schema": {
+        "type": "object",
+        "required": [
+          "tree",
+          "question",
+          "closed_by",
+          "event_id"
+        ],
+        "properties": {
+          "tree": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "closed_by": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
         }
       }
     }
@@ -77,10 +188,21 @@
       "id": "frontier-question",
       "initial": "OPEN",
       "states": [
-        {"id": "OPEN", "kind": "atomic"},
-        {"id": "CLOSED", "kind": "atomic"}
+        {
+          "id": "OPEN",
+          "kind": "atomic"
+        },
+        {
+          "id": "CLOSED",
+          "kind": "atomic"
+        }
       ],
-      "events": ["OPEN", "CLOSE", "ADJUDICATED"],
+      "events": [
+        "OPEN",
+        "CLOSE",
+        "ADJUDICATED",
+        "REATTRIBUTE"
+      ],
       "invalid_event_policy": {
         "mode": "reject",
         "guard_false": "reject",
@@ -92,7 +214,9 @@
           "from": "OPEN",
           "event": "OPEN",
           "to": "OPEN",
-          "effects": ["UpdateQuestionMetadata"],
+          "effects": [
+            "UpdateQuestionMetadata"
+          ],
           "effect_bindings": {
             "UpdateQuestionMetadata": {
               "tree": "event.tree",
@@ -106,7 +230,9 @@
           "from": "OPEN",
           "event": "CLOSE",
           "to": "CLOSED",
-          "effects": ["RecordQuestionClosure"],
+          "effects": [
+            "RecordQuestionClosure"
+          ],
           "effect_bindings": {
             "RecordQuestionClosure": {
               "tree": "event.tree",
@@ -130,7 +256,9 @@
           "to": "CLOSED",
           "guard": "receipt_backed_conclusive",
           "priority": 0,
-          "effects": ["RecordQuestionClosure"],
+          "effects": [
+            "RecordQuestionClosure"
+          ],
           "effect_bindings": {
             "RecordQuestionClosure": {
               "tree": "event.tree",
@@ -155,6 +283,34 @@
           "to": "CLOSED",
           "effects": [],
           "effect_bindings": {}
+        },
+        {
+          "id": "reattribute-append",
+          "from": "CLOSED",
+          "event": "REATTRIBUTE",
+          "to": "CLOSED",
+          "guard": "receipt_backed_conclusive",
+          "priority": 0,
+          "effects": [
+            "AppendQuestionCloser"
+          ],
+          "effect_bindings": {
+            "AppendQuestionCloser": {
+              "tree": "event.tree",
+              "question": "event.question",
+              "closed_by": "event.closed_by",
+              "event_id": "event.receipt_sha"
+            }
+          }
+        },
+        {
+          "id": "reattribute-retain",
+          "from": "CLOSED",
+          "event": "REATTRIBUTE",
+          "to": "CLOSED",
+          "priority": 1,
+          "effects": [],
+          "effect_bindings": {}
         }
       ]
     }
@@ -174,17 +330,31 @@
       "id": "self-report-cannot-close",
       "statement": "An adjudication without a valid content-addressed receipt identity cannot close a question; the application transaction persists that receipt and closure together.",
       "verification": "Guard-false trace, reducer conformance test, service transaction test, and OOPTDD injected-fault oracle."
+    },
+    {
+      "id": "reattribute-does-not-reopen",
+      "statement": "REATTRIBUTE on CLOSED never returns OPEN; only appends a receipt-backed closer when conclusive.",
+      "verification": "Reducer conformance test + service contract: status stays CLOSED; closed_by grows append-only."
+    },
+    {
+      "id": "reattribute-requires-receipt",
+      "statement": "REATTRIBUTE without a valid content-addressed receipt identity is rejected; self-report cannot reattribute.",
+      "verification": "Guard-false / InvalidQuestionTransition on missing sha."
     }
   ],
   "liveness_properties": [
     {
       "id": "eventual-close",
       "statement": "An OPEN question reaches CLOSED when a CLOSE command or receipt-backed conclusive ADJUDICATED event is delivered.",
-      "assumptions": ["A valid event is eventually delivered and persistence is available."],
+      "assumptions": [
+        "A valid event is eventually delivered and persistence is available."
+      ],
       "verification": "Open-close abstract trace and service integration test."
     }
   ],
-  "trace_fixtures": ["docs/data/frontier_question_fsm.traces.json"],
+  "trace_fixtures": [
+    "docs/data/frontier_question_fsm.traces.json"
+  ],
   "conformance": {
     "implementation_step": "lakatos.frontier_state.step",
     "model_trace_runner": "fsm-design/scripts/run_fsm_traces.py",

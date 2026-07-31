@@ -74,9 +74,59 @@ def test_facts_split_without_redefining_truth():
     assert closed_count('') == 0 == (1 if '' else 0)
     assert closed_count(['a', 'b']) == 2 and closed_count(None) == 0 and closed_count(3) == 3
     # (4) receipted close: scripted-progressive closer 는 분자 포함(기존 close_ratio 와 동행).
+    #     키 부재(current_receipt_sha) = 레거시 신뢰 → COUNTS (force_of_row 철학).
     closer = _judged('closer', closes='q0')
     frontier = [dict(name='q0', status='CLOSED', closed_by=['closer'], body=''),
                 dict(name='q1', status='OPEN', closed_by=[], body='')]
     m = tree_metrics([closer], frontier)
     assert m['frontier']['close_ratio_receipted'] == 0.5 == m['frontier']['close_ratio']
     assert m['frontier']['unreceipted_closes'] == 0
+    assert m['frontier']['close_ratio_label_forceful'] == 0.5
+    assert m['frontier']['label_minus_counts_closes'] == 0
+
+
+def test_receipted_close_aligns_with_force_of_row_not_label_only():
+    """Sprint A P0-1: FORCEFUL 라벨만 있고 원장 부재면 receipted 분자에서 제외.
+
+    SelfDev 실측 급소: close_ratio_receipted 가 verdict_source∈FORCEFUL 만 봐
+    scripted+current_receipt_sha='' closer 를 분자에 삼아 COUNTS 대비 과대계상.
+    """
+    # FORCEFUL 라벨 + 키 실재·빈 sha → force_of_row INCONCLUSIVE
+    label_only = dict(
+        _judged('closer-label'),
+        current_receipt_sha='',
+        measurement_grade=None,
+        replay_status=None,
+    )
+    # FORCEFUL 라벨 + client_asserted ∧ ¬verified → INCONCLUSIVE
+    client_asserted = dict(
+        _judged('closer-ca'),
+        current_receipt_sha='a' * 64,
+        measurement_grade='client_asserted',
+        replay_status='not_attempted',
+    )
+    # 진짜 COUNTS: server_regenerated + verified
+    counts = dict(
+        _judged('closer-ok'),
+        current_receipt_sha='b' * 64,
+        measurement_grade='server_regenerated',
+        replay_status='verified',
+    )
+    frontier = [
+        dict(name='q-label', status='CLOSED', closed_by=['closer-label'], body=''),
+        dict(name='q-ca', status='CLOSED', closed_by=['closer-ca'], body=''),
+        dict(name='q-ok', status='CLOSED', closed_by=['closer-ok'], body=''),
+        dict(name='q-open', status='OPEN', closed_by=[], body=''),
+    ]
+    m = tree_metrics([label_only, client_asserted, counts], frontier)
+    fr = m['frontier']
+    assert fr['closed'] == 3 and fr['open'] == 1
+    assert fr['close_ratio'] == 0.75
+    # 구 술어: scripted 3건 모두 FORCEFUL → ratio 3/4 = 0.75
+    assert fr['close_ratio_label_forceful'] == 0.75
+    assert fr['label_forceful_closes'] == 3
+    # 신 술어: COUNTS 1건만 → 1/4 = 0.25
+    assert fr['close_ratio_receipted'] == 0.25, fr
+    assert fr['unreceipted_closes'] == 2
+    assert fr['label_minus_counts_closes'] == 2
+    assert any('force_of_row' in a or '술어 드리프트' in a for a in m['alerts']), m['alerts']

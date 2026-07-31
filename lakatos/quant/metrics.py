@@ -574,13 +574,26 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     rejected = [r['tag'] for r in nodes if r['verdict'] == 'rejected']
     open_q = sum(1 for q in frontier if q['status'] == 'OPEN')
     closed_q = sum(1 for q in frontier if q['status'] == 'CLOSED')
-    # R7: receipted close — closed_by 노드가 영수증(FORCEFUL) 판결을 실제로 보유한 close 만 분자.
-    #   무채점(draft/미존재) closer 의 close 는 unreceipted 로 세분(기존 close_ratio 는 불변 병행).
+    # R7 + Sprint A (2026-07-31): receipted close 분자는 force_of_row==COUNTS 만.
+    #   예전은 verdict_source∈FORCEFUL_SOURCES 라벨만 봐서, FORCEFUL 라벨인데
+    #   current_receipt_sha 부재 / client_asserted∧¬verified 인 closer 도 분자에 삼(SelfDev 실측
+    #   FORCEFUL 9 vs COUNTS 4 과대 5건). 진보 집계(neutralize_unreceipted)와 동일 술어로 정렬.
+    #   구 라벨 지표는 close_ratio_label_forceful 로 병행 공시(비파괴 관측).
     _by_tag = {r.get('tag'): r for r in nodes}
+
+    def _closer_counts(cb: str) -> bool:
+        row = _by_tag.get(cb)
+        return bool(row) and force_of_row(row) == 'COUNTS'
+
+    def _closer_label_forceful(cb: str) -> bool:
+        return (_by_tag.get(cb) or {}).get('verdict_source') in FORCEFUL_SOURCES
+
     receipted_closed_q = sum(
         1 for q in frontier if q['status'] == 'CLOSED'
-        and any((_by_tag.get(cb) or {}).get('verdict_source') in FORCEFUL_SOURCES
-                for cb in (q.get('closed_by') or [])))
+        and any(_closer_counts(cb) for cb in (q.get('closed_by') or [])))
+    label_forceful_closed_q = sum(
+        1 for q in frontier if q['status'] == 'CLOSED'
+        and any(_closer_label_forceful(cb) for cb in (q.get('closed_by') or [])))
     annotated = sum(1 for r in nodes
                     if r.get('algorithm') and r.get('comment') and r.get('limitation'))
     # 공유 트리 구조 1회 계산 → 각 지표 함수는 tv 하나만 받는다(결합을 1급 객체로).
@@ -621,8 +634,14 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                            f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). anchored_ratio="
                            f"{anchored['anchored_ratio']}"]
     if closed_q - receipted_closed_q > 0:
-        alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 무채점 "
-                           f"노드(close_ratio 는 유지, close_ratio_receipted 로 세분 공시; 재귀속은 ADR+GO)"]
+        alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 "
+                           f"force_of_row≠COUNTS(무채점·무영수증·client_asserted 미검증 등). "
+                           f"close_ratio 유지 / close_ratio_receipted=COUNTS 정렬 / "
+                           f"close_ratio_label_forceful=구 FORCEFUL 라벨 병행; 재귀속=REATTRIBUTE 또는 ADR+GO"]
+    if label_forceful_closed_q - receipted_closed_q > 0:
+        alerts = [*alerts, f"close 술어 드리프트: FORCEFUL 라벨 close {label_forceful_closed_q}건 중 "
+                           f"{label_forceful_closed_q - receipted_closed_q}건은 force_of_row 미통과"
+                           f"(라벨만 영수증 — COUNTS 정렬 전 과대계상 잔여)"]
     if eproc.get('abandon'):
         alerts = [*alerts, f"e-process 폐기 신호(challenger): wealth {eproc['e_max']} ≥ 1/α="
                            f"{eproc['threshold']} (n={eproc['stream_n']}, fired_at={eproc['fired_at']}) "
@@ -632,12 +651,16 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 rejected=rejected, max_degeneration_depth=stalled,
                 frontier=dict(open=open_q, closed=closed_q,
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2),
-                              # R7: 병행 공시(기존 close_ratio 비파괴) — 분자 = CLOSED 중 closed_by
-                              # 노드가 영수증(FORCEFUL) 판결 보유. 무채점 close 가 Pareto/close_ratio 를
-                              # 떠받치는 왜곡을 사실로 노출한다(재귀속은 ADR+user GO 별도).
+                              # R7+SprintA: 분자 = CLOSED 중 closed_by 가 force_of_row COUNTS.
+                              # 무채점·FORCEFUL-without-receipt·client_asserted 미검증 closer 는 제외.
                               close_ratio_receipted=round(
                                   receipted_closed_q / max(1, open_q + closed_q), 2),
-                              unreceipted_closes=closed_q - receipted_closed_q),
+                              unreceipted_closes=closed_q - receipted_closed_q,
+                              # 구 술어(verdict_source∈FORCEFUL only) — 정렬 전 과대계상 관측용.
+                              close_ratio_label_forceful=round(
+                                  label_forceful_closed_q / max(1, open_q + closed_q), 2),
+                              label_forceful_closes=label_forceful_closed_q,
+                              label_minus_counts_closes=label_forceful_closed_q - receipted_closed_q),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
                 eureka=eureka, eprocess=eproc, anchored=anchored, multiplicity=multiplicity,

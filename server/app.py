@@ -439,6 +439,10 @@ def close_question(name: str, qname: str, closed_by: str = ''):
     # unattributed_closed 로 노출). 외부 증거로 닫을 땐 미귀속이 정상이나 가지 수지엔 안 들어간다.
     return _tree_service().close_question(name, qname, closed_by=closed_by)
 
+def reattribute_question(name: str, qname: str, closed_by: str = ''):
+    """CLOSED 질문에 receipted closer 를 append-only 로 재귀속 (재개봉 금지). Sprint A P0-2."""
+    return _tree_service().reattribute_question(name, qname, closed_by=closed_by)
+
 def register_prediction(name: str, tag: str, p: PredictionIn):
     return _judgement_service().register_prediction(name, tag, p)
 
