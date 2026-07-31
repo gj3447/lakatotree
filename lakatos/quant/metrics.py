@@ -234,6 +234,19 @@ def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | N
         return (head_match, regen_tip, n, str(sc_name))
 
     eligible = [k for k, rows in scopes.items() if len(rows) >= 2]
+    # Head-only series: one live path point + pred_baseline on that node (common after
+    # neutralize drops prior L0 points). Use baseline → measured as the improvement pair.
+    if not eligible and head_key is not None and len(scopes.get(head_key, [])) == 1:
+        t, last_m, direction, _mg = scopes[head_key][0]
+        base = by[t].get('pred_baseline')
+        if base is not None:
+            first_m = float(base)
+            gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)
+            common = dict(first={'tag': t, 'm': first_m, 'as': 'pred_baseline'},
+                          last={'tag': t, 'm': last_m}, direction=direction, scope=head_key)
+            if first_m != 0:
+                return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
+            return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))
     if not eligible:
         return None
     scope_name = max(eligible, key=_scope_key)
