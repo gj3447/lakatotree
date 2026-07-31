@@ -612,9 +612,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     #   (tree_metrics)과 리더보드(score_competitor→predictive_fertility)가 *같은* 술어를 쓴다 — 열매
     #   (fertility)를 한 곳에서 receipt-gate('가짜 열매로 cross-pollinate 금지', 하네스=열매). inconclusive=
     #   force_of_row=='INCONCLUSIVE'(영수증 미도래 + FORCEFUL 라벨 원장부재 포함), refuted=replay 반증인데 COUNTS.
-    inconclusive, refuted = partition_unreceipted(nodes)
+    raw_nodes = nodes  # pre-neutralize (alert reason split / provenance honesty)
+    inconclusive, refuted = partition_unreceipted(raw_nodes)
     lenient = bool(cfg.get('provenance_lenient'))
-    nodes = neutralize_unreceipted(nodes, lenient=lenient)
+    nodes = neutralize_unreceipted(raw_nodes, lenient=lenient)
     by = {r['tag']: r for r in nodes}
     n = len(nodes)
     path = _canonical_path(nodes, by)
@@ -667,17 +668,35 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
                               coverage=coverage,
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
+    # 2026-07-31 고도화: inconclusive 사유 세분 (client_asserted vs 원장부재 vs 기타) —
+    # "verdict_source 없이" 일괄 문구가 L0 client_asserted(소스 있음)를 오도하던 것 교정.
+    _raw_by = {r.get('tag'): r for r in raw_nodes}
+    inc_split = {'client_asserted_unverified': 0, 'forceful_without_receipt': 0,
+                 'empty_verdict_source': 0, 'other': 0}
+    for _tag in inconclusive:
+        _r = _raw_by.get(_tag) or {}
+        if (_r.get('measurement_grade') == 'client_asserted'
+                and _r.get('replay_status') != 'verified'):
+            inc_split['client_asserted_unverified'] += 1
+        elif 'current_receipt_sha' in _r and not _r.get('current_receipt_sha'):
+            inc_split['forceful_without_receipt'] += 1
+        elif not _r.get('verdict_source'):
+            inc_split['empty_verdict_source'] += 1
+        else:
+            inc_split['other'] += 1
     if inconclusive:
+        _parts = [f"{k}={v}" for k, v in inc_split.items() if v]
         alerts = [*alerts, (
-            f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개가 verdict_source 없이 self-report = inconclusive "
-            + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
+            f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개 inconclusive "
+            f"({', '.join(_parts)}) "
+            + ("→ 진보 집계서 제외(L2 result_path+replay 또는 legacy 주석). provenance 참조"
+               if not lenient
                else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
     if refuted and not lenient:
         alerts = [*alerts, (
             f"측정 반증된 green: replay_status='mismatch' 노드 {len(refuted)}개(영수증은 있으나 서버 "
             f"재실행이 값을 반증) → 진보/발전성 credit 서 제외(재실험·분기 권고). "
             f"fsck MEASUREMENT_REFUTED_BUT_STANDING 대응")]
-
     if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
         _drift = anchored['novel_measured'] - anchored['server_anchored']
         alerts = [*alerts, f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
@@ -717,4 +736,5 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 structure=structure,
                 alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
-                                mode=('lenient-counted' if lenient else 'inconclusive-excluded')))
+                                mode=('lenient-counted' if lenient else 'inconclusive-excluded'),
+                                inconclusive_reason_split=inc_split))
