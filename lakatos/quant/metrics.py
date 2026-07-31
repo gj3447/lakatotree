@@ -767,14 +767,23 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         _cf_active = (_cf.get('active_float_tags')
                       if _cf.get('active_float_tags') is not None
                       else _cf.get('float_tags') or [])
-        alerts = [*alerts, (
-            f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
-            f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). "
-            f"anchored_ratio={anchored['anchored_ratio']}; "
-            f"COUNTS-aligned float={_cf_drift} "
-            f"(counts_force.anchored_ratio={_cf_ratio}); "
-            f"active_float={len(_active)} superseded_float={len(_super)} "
-            f"(COUNTS active={len(_cf_active)})")]
+        if not _active and _super:
+            # 역사 float 만 남고 전부 자식 L2 nsa 재봉인 — P3b 위기 아님(append-only residual).
+            alerts = [*alerts, (
+                f"역사 novel float residual {_drift}건 — 전부 L2 supersession "
+                f"(active_float=0, superseded={len(_super)}). "
+                f"anchored_ratio={anchored['anchored_ratio']}; "
+                f"COUNTS-aligned float residual={_cf_drift} "
+                f"(counts_force.anchored_ratio={_cf_ratio}, COUNTS active=0)")]
+        else:
+            alerts = [*alerts, (
+                f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
+                f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). "
+                f"anchored_ratio={anchored['anchored_ratio']}; "
+                f"COUNTS-aligned float={_cf_drift} "
+                f"(counts_force.anchored_ratio={_cf_ratio}); "
+                f"active_float={len(_active)} superseded_float={len(_super)} "
+                f"(COUNTS active={len(_cf_active)})")]
     if closed_q - receipted_closed_q > 0:
         alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 "
                            f"force_of_row≠COUNTS(무채점·무영수증·client_asserted 미검증 등). "

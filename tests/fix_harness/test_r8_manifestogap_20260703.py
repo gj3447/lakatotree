@@ -164,8 +164,24 @@ def test_p0b_superseded_float_via_l2_child():
     assert a['superseded_float_tags'] == ['mcp_float']
     assert a['active_float_tags'] == ['active_float']
     assert a['counts_force']['active_float_tags'] == ['active_float']
-    hit = [x for x in m['alerts'] if '서버앵커 안 된 novel' in x][0]
+    hit = [x for x in m['alerts'] if '서버앵커 안 된 novel' in x or '역사 novel float residual' in x][0]
     assert 'active_float=1' in hit and 'superseded_float=1' in hit
+
+
+def test_p0b_all_superseded_float_is_residual_alert_not_p3b_crisis():
+    def _counts(tag, nsa, parent=None):
+        return dict(tag=tag, verdict='progressive', novel_server_anchored=nsa,
+                    verdict_source='scripted', current_receipt_sha='ab' * 32,
+                    parent=parent, parents=[parent] if parent else [],
+                    parent_edges=[], node_state='JUDGED_SCRIPTED')
+    m = tree_metrics([
+        _counts('legacy_float', False),
+        _counts('l2_seal', True, parent='legacy_float'),
+    ], [])
+    crisis = [x for x in m['alerts'] if 'P3b notebook-drift' in x]
+    residual = [x for x in m['alerts'] if '역사 novel float residual' in x]
+    assert not crisis, crisis
+    assert residual and 'active_float=0' in residual[0]
 
 
 # ── P0c: line19 각주(doc-honesty) ─────────────────────────────────────────────────────────
