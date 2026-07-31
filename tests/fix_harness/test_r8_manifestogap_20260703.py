@@ -184,6 +184,25 @@ def test_p0b_all_superseded_float_is_residual_alert_not_p3b_crisis():
     assert residual and 'active_float=0' in residual[0]
 
 
+def test_legacy_inconclusive_annotate_residual_alert():
+    """limitation marker demotes green-alert from active crisis to residual hygiene."""
+    nodes = [
+        dict(tag='a', verdict='progressive', parent=None, parents=[], parent_edges=[],
+             verdict_source='scripted', current_receipt_sha='',  # forceful without receipt
+             limitation='legacy_inconclusive_annotate: pre-receipt progressive; not programme force.',
+             algorithm='legacy', comment='legacy green catalogued'),
+        dict(tag='b', verdict='progressive', parent='a', parents=['a'], parent_edges=[],
+             verdict_source='scripted', current_receipt_sha='',
+             limitation='', algorithm='x', comment='still active'),
+    ]
+    m = tree_metrics(nodes, [])
+    residual = [x for x in m['alerts'] if 'legacy green residual' in x or 'active-inconclusive' in x]
+    assert residual, m['alerts']
+    # one annotated + one active → active-inconclusive phrasing
+    assert any('active-inconclusive' in x for x in m['alerts'])
+    assert any('annotated_legacy=1' in x for x in m['alerts'])
+
+
 # ── P0c: line19 각주(doc-honesty) ─────────────────────────────────────────────────────────
 def test_p0c_line19_qualified():
     md = (ROOT / 'TOUCH_THE_SKY.md').read_text(encoding='utf-8')

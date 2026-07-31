@@ -729,10 +729,21 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     # 2026-07-31 고도화: inconclusive 사유 세분 (client_asserted vs 원장부재 vs 기타) —
     # "verdict_source 없이" 일괄 문구가 L0 client_asserted(소스 있음)를 오도하던 것 교정.
     _raw_by = {r.get('tag'): r for r in raw_nodes}
+    # 2026-08-01 annotate-only policy: limitation 에 legacy_inconclusive_annotate 마커가 있으면
+    # 위기 잔여가 아니라 *정직한 역사 주석* — 집계 제외는 유지, 경보만 residual 로 강등.
+    _LEGACY_MARK = 'legacy_inconclusive_annotate'
     inc_split = {'client_asserted_unverified': 0, 'forceful_without_receipt': 0,
-                 'empty_verdict_source': 0, 'other': 0}
+                 'empty_verdict_source': 0, 'annotated_legacy': 0, 'other': 0}
+    annotated_legacy_tags = []
+    active_inc = []
     for _tag in inconclusive:
         _r = _raw_by.get(_tag) or {}
+        lim = str(_r.get('limitation') or '')
+        if _LEGACY_MARK in lim:
+            inc_split['annotated_legacy'] += 1
+            annotated_legacy_tags.append(_tag)
+            continue
+        active_inc.append(_tag)
         if (_r.get('measurement_grade') == 'client_asserted'
                 and _r.get('replay_status') != 'verified'):
             inc_split['client_asserted_unverified'] += 1
@@ -743,13 +754,21 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
         else:
             inc_split['other'] += 1
     if inconclusive:
-        _parts = [f"{k}={v}" for k, v in inc_split.items() if v]
-        alerts = [*alerts, (
-            f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개 inconclusive "
-            f"({', '.join(_parts)}) "
-            + ("→ 진보 집계서 제외(L2 result_path+replay 또는 legacy 주석). provenance 참조"
-               if not lenient
-               else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
+        if active_inc:
+            _parts = [f"{k}={v}" for k, v in inc_split.items() if v and k != 'annotated_legacy']
+            _leg = (f"; annotated_legacy={inc_split['annotated_legacy']}"
+                    if inc_split['annotated_legacy'] else "")
+            alerts = [*alerts, (
+                f"영수증 없는 green: 진보어휘 노드 {len(active_inc)}개 active-inconclusive "
+                f"({', '.join(_parts)}{_leg}) "
+                + ("→ 진보 집계서 제외(L2 result_path+replay 또는 legacy 주석). provenance 참조"
+                   if not lenient
+                   else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
+        elif inc_split['annotated_legacy']:
+            alerts = [*alerts, (
+                f"legacy green residual {inc_split['annotated_legacy']}건 — 전부 "
+                f"legacy_inconclusive_annotate 주석(active-inconclusive=0). "
+                f"진보 집계 제외 유지; 역사 노드 append-only.")]
     if refuted and not lenient:
         alerts = [*alerts, (
             f"측정 반증된 green: replay_status='mismatch' 노드 {len(refuted)}개(영수증은 있으나 서버 "

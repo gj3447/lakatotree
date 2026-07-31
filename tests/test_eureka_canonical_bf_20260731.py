@@ -33,6 +33,23 @@ def test_former_canonical_keeps_progressive_bf_after_demotion():
     assert ev.bf == bayes_factor("progressive", delta=-12.0, noise_band=0.0)
 
 
+def test_missing_pred_baseline_is_inconclusive_not_bf_marginal():
+    """Path early nodes without pred_baseline must not fake delta=0 → bf_marginal."""
+    from lakatos.eureka import _node_to_eureka_input
+    row = dict(
+        novel_registered=True, novel_confirmed=True, verdict="former_canonical",
+        metric_value=62.0, pred_baseline=None, pred_noise_band=None,
+        closed_question_count=0, questions=[], source_trust=1.0,
+    )
+    inp = _node_to_eureka_input(row)
+    assert inp["measurement_absent"] is True
+    ev = classify(inp, require_promotion=False)
+    assert ev.felt is True
+    assert ev.inconclusive is True
+    assert ev.hallucinated is False
+    assert not any(str(r).startswith("bf_marginal") for r in ev.reasons)
+
+
 def test_canonical_with_novel_closure_can_be_true_eureka():
     """CANONICAL head with measurement delta + novel + closed question → true."""
     # classify() reads noise_band/delta keys (eureka input shape), not pred_*.

@@ -115,9 +115,12 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     if not node.get("novel_confirmed"):
         reasons.append("novel_unconfirmed")  # the decisive false-aha signature
     raw_verdict = node.get("verdict", "")
+    measurement_absent = bool(node.get("measurement_absent"))
     bf = bayes_factor(eureka_verdict(raw_verdict), node.get("delta", 0.0),
                       node.get("noise_band"), node.get("source_trust", 1.0))
-    if bf <= bf_substantial:
+    # 미측정(delta 재구성 불가) 이면 BF 게이트를 통과/실패로 쓰지 않는다 — 가짜 delta=0 → bf_marginal
+    # 환각 금지(finding B 동형). 다른 red 사유가 없을 때 inconclusive 로 기권.
+    if not measurement_absent and bf <= bf_substantial:
         reasons.append(f"bf_marginal:{bf:.3f}<={bf_substantial}")
     closed_n, opened_n = int(node.get("closed", 0)), int(node.get("opened", 0))
     balance = problem_balance(closed_n, opened_n)
@@ -141,7 +144,8 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
         if not ok:
             reasons.extend(gate_reasons)
 
-    inconclusive = ledger_absent and not reasons   # would be true, but the Laudan axis has no data
+    # would be true, but Laudan ledger and/or metric BF axis has no honest data
+    inconclusive = (not reasons) and (ledger_absent or measurement_absent)
     true = (not reasons) and not inconclusive
     return EurekaVerdict(felt=True, true=true,
                          hallucinated=(not true and not inconclusive),
@@ -171,12 +175,15 @@ def _node_to_eureka_input(node: dict) -> dict:
     * ``closed = |CLOSES_QUESTION|`` (questions actually closed by a committed adjudication),
       ``opened = |questions|`` (questions the node raises) → per-node problem balance
     * ``verdict`` / ``novel_registered`` / ``novel_confirmed`` / ``source_trust`` — direct
+    * ``measurement_absent`` — pred_baseline 또는 metric_value 부재 시 delta=0 가짜 BF 금지
+      (finding B 동형: 미측정 ≠ bf_marginal 환각; SelfDev path early former_canonical 2026-08-01)
 
     ``stands``/``reproducible`` are deliberately absent — they belong to the standing layer
     (see :func:`eureka_over_tree`, which runs with ``require_promotion=False``).
     """
     mv, base = node.get("metric_value"), node.get("pred_baseline")
-    delta = (float(mv) - float(base)) if mv is not None and base is not None else 0.0
+    measurement_absent = mv is None or base is None
+    delta = (float(mv) - float(base)) if not measurement_absent else 0.0
     return {
         "novel_registered": node.get("novel_registered"),
         "novel_confirmed": node.get("novel_confirmed"),
@@ -186,6 +193,7 @@ def _node_to_eureka_input(node: dict) -> dict:
         "source_trust": node.get("source_trust", 1.0),
         "closed": closed_count(node.get("closed_question_count")),
         "opened": len(node.get("questions") or []),
+        "measurement_absent": measurement_absent,
     }
 
 
@@ -222,14 +230,22 @@ def eureka_over_tree(nodes: list) -> dict:
         1 for v in verdicts if v.hallucinated
         and not any(str(r).startswith("bf_marginal") for r in v.reasons)
         and "novel_unconfirmed" not in v.reasons)
+    # ledger-only vs measurement-absent (both are inconclusive abstains, not hallucinations)
+    n_ledger = sum(1 for i, v in zip(inputs, verdicts)
+                   if v.inconclusive and not i.get("measurement_absent")
+                   and int(i.get("closed", 0)) == 0 and int(i.get("opened", 0)) == 0)
+    n_meas_abs = sum(1 for i, v in zip(inputs, verdicts)
+                     if v.inconclusive and i.get("measurement_absent"))
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
         "inconclusive": inconclusive, "assessable": assessable,
         "true_rate": round(true / assessable, 3) if assessable else 0.0,
         "hallucination_rate": round(hallucinated / assessable, 3) if assessable else 0.0,
-        "problem_ledger_absent": inconclusive,
+        "problem_ledger_absent": n_ledger,
+        "measurement_absent": n_meas_abs,
         "hallucinated_reason_split": {
-            "problem_ledger_absent": inconclusive,
+            "problem_ledger_absent": n_ledger,
+            "measurement_absent": n_meas_abs,
             "measurement_failed": hallucinated,
             "bf_marginal": n_bf,
             "novel_unconfirmed": n_novel,
