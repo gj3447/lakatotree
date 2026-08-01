@@ -437,6 +437,43 @@ def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
     return eureka_over_tree([tv.by[t] for t in tv.path]) if tv.path else eureka_over_tree(tv.nodes)
 
 
+def _programme_appraisal_layer(tv: '_TreeView | list', nodes: list | None = None) -> dict:
+    """MSRP dual-layer (prom-lt-msrp-vocab): programme_appraisal over canonical path series.
+
+    Separate from node progressive. diagnostic_only — never grants promotion authority.
+    chain of series-known verdicts < 2 → UNAPPRAISED (honest default).
+    """
+    from lakatos.programme.series import series_from_path
+    if not isinstance(tv, _TreeView):
+        tv = _tv(nodes=nodes if nodes is not None else tv)
+    path_nodes = [tv.by[t] for t in tv.path if t in tv.by]
+    ap = series_from_path(path_nodes)
+    if ap.steps < 2:
+        status = 'UNAPPRAISED'
+    elif ap.trend == 'progressive':
+        status = 'PROGRESSIVE'
+    elif ap.trend == 'degenerating':
+        status = 'DEGENERATING'
+    elif ap.trend in ('off_axis', 'insufficient'):
+        status = 'UNAPPRAISED'
+    else:
+        status = 'STAGNANT'  # mixed / weak
+    return dict(
+        status=status,
+        trend=ap.trend,
+        authority=ap.authority,
+        promotion_authority=False,
+        steps=ap.steps,
+        progressive_count=ap.progressive_count,
+        nonprogressive_count=ap.nonprogressive_count,
+        off_axis_count=ap.off_axis_count,
+        reasons=list(ap.reasons),
+        note=('dual-layer: node progressive is independent; programme_appraisal is '
+              'diagnostic_only over series-known verdicts on canonical path '
+              '(prom-lt-selfdev-20260801).'),
+    )
+
+
 def _anchored_ratio(nodes: list) -> dict:
     """P0b(ManifestoGap R8): cross-metric novel 판결(novel_server_anchored 필드 보유) 중 *서버앵커*
     비율 — FF1 이 default-ON(신규 anchored 트리)인지, 아니면 novel 이 client float 한 줄로 서는지의
@@ -717,6 +754,9 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     multiplicity = _multiplicity_screen(nodes)
     structure = _structure_layer(nodes)
     coverage = _coverage(cfg)
+    # 2026-08-01 prom dual-layer: node progressive ≠ MSRP programme_appraisal
+    programme_appraisal = _programme_appraisal_layer(tv)
+
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=path_annotated, n=max(len(path), 1),
                               coverage=coverage,
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
@@ -835,6 +875,7 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
                 eureka=eureka, eprocess=eproc, anchored=anchored, multiplicity=multiplicity,
                 structure=structure,
+                programme_appraisal=programme_appraisal,
                 alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
                                 mode=('lenient-counted' if lenient else 'inconclusive-excluded'),
