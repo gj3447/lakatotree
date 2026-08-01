@@ -47,7 +47,12 @@ python ooptdd_receipts/ARGUMENT_INTEGRITY/real_harness.py \
   --artifact-dir /tmp/argument-integrity-harness
 ```
 
-성공은 현재 코드 GREEN → 수정 전 revision RED → 현재 코드 restored GREEN의 세 단계를 모두
-요구한다. Docker/testcontainers가 없거나 음성 오라클 revision을 읽을 수 없으면 exit 2로
-fail-closed하며, 비밀번호·URI·전체 환경변수는 receipt에 기록하지 않는다. CI의
+성공은 현재 코드 ARG-1..5 GREEN → 역사 revision의 ARG-1..4 exact non-infrastructure RED →
+현재 source archive에서 `ON CREATE` claim assignment만 제거한 ARG-5 `AssertionError` RED →
+현재 코드 restored ARG-1..5 GREEN의 네 단계를 모두 요구한다. 고정 SHA의
+`judges/arg5_targeted_negative_oracle.py`가 phase/hash/mutation binding을 다시 채점해 gap=0이어야
+최종 receipt가 complete다. Git-locked preregistration은 이 CI 측정을 구속하지만 LakatoTree 서버
+등록이나 과학적 verdict 권위는 주장하지 않는다. Docker/testcontainers가 없거나 음성 오라클
+revision을 읽을 수 없으면 exit 2로 fail-closed하며, 비밀번호·URI·전체 환경변수는 receipt에
+기록하지 않는다. CI의
 `argument-integrity-harness` job은 이 절차를 allow-failure 없이 실행하고 결과 bundle을 업로드한다.

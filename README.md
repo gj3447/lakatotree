@@ -176,7 +176,7 @@ This compact roster is machine-checked against the package. See the architecture
 `bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate` `eprocess`
 
 ### `programme/`
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge` `multi_run`
 
 ### `io/`
 `lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`

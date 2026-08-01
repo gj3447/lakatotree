@@ -60,9 +60,9 @@ jobs:
         run: python -m pytest tests/integration -q
 
   argument-integrity-harness:
-    # ARG-1..5는 일반 allow-failure 통합티어보다 강한 차단 영수증이다. 현재 실 DB GREEN,
-    # 수정 전 revision RED, 현재 실 DB restored GREEN을 동일 테스트/환경에서 순서대로 실행한다.
-    name: argument-integrity — real Neo4j+PG positive/revert/restored receipt
+    # ARG-1..5는 일반 allow-failure 통합티어보다 강한 차단 영수증이다. current GREEN,
+    # historical ARG-1..4 semantic RED, targeted ARG-5 claim RED, restored GREEN을 순서대로 실행한다.
+    name: argument-integrity — real Neo4j+PG targeted semantic-negative receipt
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
