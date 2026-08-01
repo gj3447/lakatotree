@@ -1,0 +1,64 @@
+{
+  "schema_version": "lakatotree-local-preregistration/v1",
+  "experiment_id": "ARG5_TARGETED_CLAIM_OWNERSHIP_SEMANTIC_NEGATIVE_20260801",
+  "registered_at": "2026-08-01T14:43:42Z",
+  "registration_authority": {
+    "kind": "git_locked_local",
+    "status": "NOT_LAKATOTREE_SERVER_REGISTERED",
+    "note": "This prospective local lock constrains the implementation and CI measurement but has no KG promotion or scientific-verdict authority."
+  },
+  "question": "Does the real ARG-5 test fail semantically when the ON CREATE ownership claim assignment alone is removed while disposable Neo4j and PostgreSQL remain healthy?",
+  "lane": "ENGINEERING",
+  "base": {
+    "git_commit": "75850766e908c2d73e029282a8bd9e8799ab7fc6",
+    "requirements_sha256": "f08b67b8e11feea310e7b80ac23b0214fd5d2f06edd6ad39907cf129fa40afb7",
+    "harness_manifest_sha256": "41b8efa2cc14a8929def5ba2aba0b2bb330be4fddad40720e51b334f21a077c3",
+    "integration_test_sha256": "f125e4f9ac4d10584c3e95d1eeab7bd9e6525841a36022f529a07b10962cbef9",
+    "service_sha256": "6c9c579ee66f522a32f2a2e66a7c78ec55a0ce547887ad7412e348a130d9afa1",
+    "producer_sha256": "e3d94440bcc274d957138bebf92c8238e5943d2eb5ce7724546308b593e33e80"
+  },
+  "judge": {
+    "path": "judges/arg5_targeted_negative_oracle.py",
+    "sha256": "eedeacea5d066814708221e682ce0883f1566259812ae1a845d405aedffb9e20",
+    "metric_name": "arg5_targeted_semantic_negative_gaps",
+    "baseline": 1,
+    "direction": "lower",
+    "threshold": 0,
+    "noise_band": 0
+  },
+  "intervention": {
+    "mutation_id": "arg5-remove-on-create-claim",
+    "source": "server/contexts/tree/evidence_claim_service.py",
+    "scope": "temporary Git archive of the measured current HEAD only",
+    "exact_change": "Remove exactly one ON CREATE assignment of a._argument_create_claim=$create_claim; make no other source change.",
+    "canonical_worktree_mutation_allowed": false,
+    "production_datastore_allowed": false
+  },
+  "prediction": {
+    "positive": "All five current-source ARG tests pass.",
+    "historical_control": "ARG-1 through ARG-4 alone fail without infrastructure signatures on the historical pre-fix service.",
+    "targeted_control": "ARG-5 alone fails with a pytest AssertionError after the exact ownership-claim mutation, with no PoolError, connection, container, timeout, import, or collection failure.",
+    "restored": "All five current-source ARG tests pass again after the isolated controls.",
+    "aggregate": "The preregistered judge returns metric 0 only if every phase and hash binding is exact."
+  },
+  "invalidators": [
+    "The exact mutation marker is absent or occurs more than once.",
+    "The targeted ARG-5 test passes after mutation.",
+    "The targeted failure is not an AssertionError.",
+    "Any negative phase contains an infrastructure failure signature.",
+    "Any unselected test is executed in a scoped negative control.",
+    "Restored current source is not GREEN.",
+    "The canonical checkout, production datastore, or production environment is consumed or mutated."
+  ],
+  "planned_artifacts": [
+    "positive.json",
+    "negative_historical.json",
+    "negative_arg5_claim.json",
+    "arg5_claim_mutation.json",
+    "restored_positive.json",
+    "receipt.json",
+    "judge.json",
+    "bundle_manifest.json"
+  ],
+  "claim_boundary": "A passing result establishes mutation sensitivity of the disposable-datastore ARG-5 ownership oracle only. It does not establish production migration safety, all scheduler interleavings, deployment safety, or scientific progress."
+}

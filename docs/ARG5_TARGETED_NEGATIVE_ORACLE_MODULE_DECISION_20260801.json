@@ -1,0 +1,54 @@
+{
+  "schema_version": "engine-decision/v1",
+  "name": "arg5-targeted-negative-oracle",
+  "verdict": "module",
+  "purpose": "Deterministically distinguish an ARG-5 ownership-claim semantic RED from datastore or harness infrastructure failure.",
+  "current_consumers": [
+    "ooptdd_receipts/ARGUMENT_INTEGRITY/real_harness.py"
+  ],
+  "planned_consumers": [
+    "registered LakatoTree progress-judge adapter"
+  ],
+  "rationale": [
+    "The classifier has one current call path and owns no durable state, scheduling, retries, or external effects.",
+    "Its stable mechanism is a pure evaluation of content-addressed phase artifacts, so an engine protocol would be premature."
+  ],
+  "boundary": {
+    "owns": "Bundle shape, phase ordering, exact test sets, semantic failure classification, mutation binding, and hash verification",
+    "mechanism": "Map one frozen ARG-5 harness bundle to a deterministic gap count and typed failure list",
+    "policy_outside": [
+      "Production migration approval",
+      "LakatoTree prediction registration and verdict promotion",
+      "Which future requirements warrant targeted controls"
+    ],
+    "non_goals": [
+      "Running databases",
+      "Mutating source or artifacts",
+      "Writing KG state",
+      "Issuing a scientific progress verdict"
+    ],
+    "state_authority": "The immutable artifact bundle is the sole input authority; the module owns no mutable state"
+  },
+  "contract": "judge(argument_integrity_bundle_v2) -> JudgeResultV1(metric_name, gap_count, failures)",
+  "invariants": [
+    "Identical artifact bytes and judge bytes produce identical output.",
+    "Pool, connection, container, and timeout failures never count as semantic mutation sensitivity.",
+    "Metric zero requires current GREEN, exact targeted ARG-5 assertion RED, restored GREEN, and exact hash bindings."
+  ],
+  "failure_model": [
+    "Missing, malformed, hash-drifted, wrong-phase, or infrastructure-failed evidence yields one or more explicit gaps and no mutation."
+  ],
+  "verification": [
+    "Synthetic positive bundle returns zero gaps.",
+    "Injected PoolError returns nonzero gaps and the targeted infrastructure classification.",
+    "The disposable-datastore CI bundle is judged after producer completion."
+  ],
+  "promotion_gates": [
+    "At least two independent harness families share a stable bundle protocol.",
+    "Durable admission, concurrency, recovery, or single-writer state becomes part of the classifier contract."
+  ],
+  "falsifiers": [
+    "If the targeted control can pass after removal of ON CREATE ownership, the test is not mutation-sensitive.",
+    "If infrastructure exceptions can yield metric zero, the module contract is false."
+  ]
+}
