@@ -27,16 +27,23 @@ def _load_seeder():
     return module
 
 
-def test_manifest_validator_proves_the_declared_dense_topology():
+def test_manifest_validator_proves_declared_topology_portably(monkeypatch, tmp_path):
+    seeder = _load_seeder()
+    monkeypatch.setitem(seeder._REPO_ROOTS, "HSWM", tmp_path / "absent-hswm")
+    monkeypatch.setitem(
+        seeder._REPO_ROOTS, "SYMPOSIUM", tmp_path / "absent-symposium"
+    )
     data = _load()
-    report = _load_seeder().validate_manifest(data)
+    report = seeder.validate_manifest(data)
 
     assert report["ok"] is True
     assert report["scientific_progress_verdicts"] == 0
     assert report["efficacy_claims"] == 0
-    assert report["source_bindings_verified"] == 14
-    assert report["fragment_bindings_verified"] == 10
-    assert report["source_authorities_unavailable"] == []
+    assert len(data["source_bindings"]) == 14
+    assert len(data["fragment_bindings"]) == 10
+    assert report["source_bindings_verified"] == 5
+    assert report["fragment_bindings_verified"] == 2
+    assert report["source_authorities_unavailable"] == ["HSWM", "SYMPOSIUM"]
     assert report["topology"] == {
         "nodes": 19,
         "edges": 52,
@@ -48,6 +55,23 @@ def test_manifest_validator_proves_the_declared_dense_topology():
         "questions": 8,
         "foundations": 12,
     }
+
+
+def test_available_external_roots_verify_every_declared_binding():
+    seeder = _load_seeder()
+    missing = sorted(
+        authority
+        for authority, root in seeder._REPO_ROOTS.items()
+        if not root.is_dir()
+    )
+    if missing:
+        pytest.skip(f"external source roots unavailable: {', '.join(missing)}")
+
+    report = seeder.validate_manifest(_load(), require_external_sources=True)
+
+    assert report["source_bindings_verified"] == 14
+    assert report["fragment_bindings_verified"] == 10
+    assert report["source_authorities_unavailable"] == []
 
 
 def test_every_parent_edge_is_typed_evidenced_and_topologically_ordered():

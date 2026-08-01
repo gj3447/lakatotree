@@ -47,9 +47,15 @@ def _service(container, monkeypatch):
                             producer_replay_for_node=app._producer_replay_for_node)
 
 
-def _anchored(kg, tag):
-    rows = kg('MATCH (e {tag:$tag}) RETURN e.measurement_externally_anchored AS mea', tag=tag)
-    return rows[0]['mea'] if rows else None
+def _anchored(kg, tag, tree='T'):
+    rows = kg(
+        '''MATCH (:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+           RETURN e.measurement_externally_anchored AS mea''',
+        tree=tree,
+        tag=tag,
+    )
+    assert len(rows) == 1, f"tree-scoped anchor readback must resolve exactly one node, got {len(rows)}"
+    return rows[0]['mea']
 
 
 def test_live_producer_replay_persists_true_for_honest_metric(neo4j_driver, tmp_path, monkeypatch):

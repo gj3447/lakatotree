@@ -443,7 +443,7 @@ def _programme_appraisal_layer(tv: '_TreeView | list', nodes: list | None = None
     Separate from node progressive. diagnostic_only — never grants promotion authority.
     chain of series-known verdicts < 2 → UNAPPRAISED (honest default).
     """
-    from lakatos.programme.series import series_from_path
+    from lakatos.quant.programme_series import series_from_path
     if not isinstance(tv, _TreeView):
         tv = _tv(nodes=nodes if nodes is not None else tv)
     path_nodes = [tv.by[t] for t in tv.path if t in tv.by]

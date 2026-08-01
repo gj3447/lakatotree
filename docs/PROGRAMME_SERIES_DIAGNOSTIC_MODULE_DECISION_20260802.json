@@ -1,0 +1,53 @@
+{
+  "schema_version": "engine-decision/v1",
+  "name": "programme-series-diagnostic-kernel",
+  "verdict": "module",
+  "purpose": "Compute a deterministic diagnostic-only appraisal from an ordered programme series without granting promotion authority.",
+  "current_consumers": [
+    "lakatos.quant.metrics",
+    "server.contexts.tree.programme_service",
+    "ooptdd_receipts/SERIES_SEA_OF_ANOMALIES"
+  ],
+  "planned_consumers": [],
+  "rationale": [
+    "The mechanism is a pure stateless function over explicit records and has no scheduling, persistence, recovery, or external effects.",
+    "Moving the implementation to quant removes an upward dependency while a programme-layer facade preserves the stable public API."
+  ],
+  "boundary": {
+    "owns": "Programme-series record validation, diagnostic trend aggregation, and path-to-record projection",
+    "mechanism": "Map explicit ordered records or path nodes to a diagnostic appraisal with promotion_authority false",
+    "policy_outside": [
+      "Canonical promotion or abandonment",
+      "Programme identity selection",
+      "Server persistence and API policy"
+    ],
+    "non_goals": [
+      "Mutable state",
+      "Scheduling, retries, persistence, or external effects",
+      "Changing the historical lakatos.programme.series public import path"
+    ],
+    "state_authority": "The caller owns all inputs; this module owns no mutable state"
+  },
+  "contract": "programme_series_appraisal(records, recent_window) -> ProgrammeSeriesAppraisal(diagnostic_only, promotion_authority=false)",
+  "invariants": [
+    "Identical records and window produce an identical appraisal.",
+    "The result never has promotion authority.",
+    "The programme facade and quant kernel expose the same public objects and preserve historical pickle identity."
+  ],
+  "failure_model": [
+    "Malformed records or window values raise typed ValueError before any mutation."
+  ],
+  "verification": [
+    "Programme-series unit and sea-of-anomalies tests cover trends and invalid inputs.",
+    "A facade identity and pickle roundtrip test protects compatibility.",
+    "Import-linter proves the programme to verdict to quant to io layering without exceptions."
+  ],
+  "promotion_gates": [
+    "Durable programme-series state, concurrent writers, scheduling, recovery, or replaceable adapters become part of the contract.",
+    "A stable command or event protocol is required by multiple operational consumers."
+  ],
+  "falsifiers": [
+    "If a consumer requires stateful coordination rather than pure appraisal, reassess the boundary.",
+    "If compatibility requires quant to import programme, this placement is invalid."
+  ]
+}

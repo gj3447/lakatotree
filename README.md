@@ -154,7 +154,7 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | path | responsibility |
 |---|---|
 | `lakatos/verdict/` | deterministic judgement and dialectical composition |
-| `lakatos/quant/` | credence, problem-solving, calibration, multiplicity |
+| `lakatos/quant/` | credence, problem-solving, calibration, multiplicity, programme-series diagnostics |
 | `lakatos/programme/` | branching, lifecycle, comparison, public authoring |
 | `lakatos/io/` | receipts, lineage, replay, persistence adapters |
 | `formal/` | machine-checked kernel model |
@@ -173,7 +173,7 @@ This compact roster is machine-checked against the package. See the architecture
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`
 
 ### `quant/`
-`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate` `eprocess`
+`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate` `eprocess` `programme_series`
 
 ### `programme/`
 `kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge` `multi_run`
