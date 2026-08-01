@@ -754,8 +754,15 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     multiplicity = _multiplicity_screen(nodes)
     structure = _structure_layer(nodes)
     coverage = _coverage(cfg)
-    # 2026-08-01 prom dual-layer: node progressive ≠ MSRP programme_appraisal
-    programme_appraisal = _programme_appraisal_layer(tv)
+    # 2026-08-01 prom dual-layer: node progressive ≠ MSRP programme_appraisal.
+    # Use raw path nodes (pre-neutralize) so unreceipted path greens still feed series
+    # diagnostic honestly — neutralize blanks verdict to _inconclusive_unscored which
+    # would otherwise force UNAPPRAISED(steps=0) on every dogfood path with L0 history.
+    _raw_by_for_pa = {r.get('tag'): r for r in raw_nodes}
+    _pa_path_nodes = [_raw_by_for_pa[t] for t in path if t in _raw_by_for_pa]
+    programme_appraisal = _programme_appraisal_layer(
+        _TreeView(nodes=raw_nodes, frontier=frontier, by=_raw_by_for_pa, path=path,
+                  children=children, leaves=leaves, open_q=open_q, closed_q=closed_q))
 
     alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=path_annotated, n=max(len(path), 1),
                               coverage=coverage,
