@@ -368,6 +368,9 @@ class CycleIn(BaseModel):
     lakatos_consequence: bool | None = None
     lakatos_excess: bool | None = None
     lakatos_hardcore: bool | None = None
+    # multi_run opt-in (default OFF): client supplies N≥2 independent values; measured must match mean.
+    multi_run: bool = False
+    multi_run_values: list[float] = Field(default_factory=list)
 
 
 class ArtifactIn(BaseModel):

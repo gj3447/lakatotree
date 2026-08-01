@@ -1,0 +1,35 @@
+{
+  "metric": 0,
+  "cid": "selfdev-oo-live-ship-1785557636",
+  "verify_ok": true,
+  "reasons": [],
+  "attempts": 1,
+  "outcomes": 3,
+  "session": {
+    "service": "lakatotree.selfdev.oo_live",
+    "passed": 3,
+    "failed": 0,
+    "total": 3,
+    "skipped": 0
+  },
+  "policy_mode": "warn",
+  "policy": {
+    "level": "ok",
+    "fail_build": false,
+    "message": "\u2705 oo \ub3c4\ucc29 \ud655\uc778 (session 3/3, outcomes=3, 1 attempt)"
+  },
+  "ship_status": {
+    "code": 200,
+    "status": [
+      {
+        "name": "tests",
+        "successful": 4,
+        "failed": 0
+      }
+    ]
+  },
+  "oo_url_host": "192.168.0.27:5081",
+  "mode": "LIVE_READBACK_WARN_NONPROD",
+  "oo_fix": "ZO_NODE_IP=127.0.0.1 + ZO_LOCAL_MODE=true (empty-host gRPC)",
+  "secrets_source": "lxc302_openobserve_env_mapped_to_lxc301_server_env"
+}

@@ -453,6 +453,24 @@ class ProgrammeService:
                     'note': f'트리 채점 예산 {budget} 소진(채점노드 {used}) — 실행 안 함(쓰기 0). '
                             f'submit_result/set_verdict 도 같은 예산으로 429 거부된다. '
                             f'예산을 올리거나(create_tree cycle_budget) 새 트리로 분기할 것'}
+        # multi_run opt-in (default OFF): validate N≥2 values ↔ measured=mean; never flips default.
+        multi_run_summary = None
+        if c.multi_run:
+            from lakatos.programme.multi_run import multi_run_collect
+            vals = list(c.multi_run_values or [])
+            if len(vals) < 2:
+                raise HTTPException(
+                    422,
+                    detail={'error': 422, 'reason': 'multi_run_requires_n_ge_2',
+                            'note': 'multi_run=True 이면 multi_run_values 길이 ≥2 필요(default OFF 유지)'})
+            multi_run_summary = multi_run_collect(
+                lambda i: float(vals[i]), multi_run=True, n=len(vals))
+            if abs(float(multi_run_summary['mean']) - float(c.measured)) > 1e-6:
+                raise HTTPException(
+                    422,
+                    detail={'error': 422, 'reason': 'multi_run_mean_mismatch',
+                            'mean': multi_run_summary['mean'], 'measured': c.measured,
+                            'note': 'measured 는 multi_run_values 평균과 일치해야 함'})
         trial = self._cycle_trial(c)
         if c.dry_run:
             out = dict(tree=name, tag=c.tag, dry_run=True, **trial,
@@ -521,6 +539,8 @@ class ProgrammeService:
                    delta=res.get('delta'), critiques=len(c.critiques),
                    standing=self.standing(name, c.tag),
                    note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        if multi_run_summary is not None:
+            out['multi_run'] = multi_run_summary
         if remaining is not None:
             # 이 사이클이 영수증 1 을 착륙시켰으므로 정확히 1 소모(재채점은 409 로 막혀 있어 성공경로
             #   = 새로 채점된 노드 1). 단 *강제*는 언제나 저장소 재파생이지 이 숫자가 아니다(보고용).
