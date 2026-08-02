@@ -37,7 +37,8 @@ def _anchor(n, sd, gt):
     body = json.dumps({"digest": ad, "gen_time": gt}, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False)
     return {"witness_did": DID[n], "digest": ad, "gen_time": gt,
-            "signature": ed25519_sign(_W[n], _DOMAIN + body.encode()).hex()}
+            "signature": ed25519_sign(_W[n], _DOMAIN + body.encode()).hex(),
+            "channel": "ed25519-witness"}
 
 
 def _p(anchors, threshold, vt="2026-07-23T02:00:00+00:00", sd="sd"):
@@ -67,9 +68,12 @@ def verify(backend, cid):
                   _anchor(2, "sd", "2026-07-23T03:00:03+00:00")], 2, vt="2026-07-23T02:00:00+00:00"),  # 백데이트
               _p([_anchor(1, "sd", "2026-07-23T01:00:00+00:00"),
                   _anchor(9, "sd", "2026-07-23T01:00:03+00:00")], 2),                        # 비허가
+              _p([_anchor(1, "sd", "2026-07-23T01:00:00+00:00"),
+                  _anchor(1, "sd", "2026-07-23T03:00:00+00:00")], 1,
+                 vt="2026-07-23T02:00:00+00:00"),                                           # 중복 최신시각
               None):                                                                          # garbage
         if verify_temporal(p, {})["decision"] == "REJECT":
             rejects += 1
-    assert rejects == 5, f"REJECT 5종 중 {rejects}만(나머지 통과=검증기 구멍)"
+    assert rejects == 6, f"REJECT 6종 중 {rejects}만(나머지 통과=검증기 구멍)"
     backend.ship([_ev(cid, "temporal_gate_reverifies", accept_residual=bool(ok["residual_trust_surface"]),
                       rejects=rejects)])

@@ -1,4 +1,4 @@
-"""Ed25519 (RFC 8032) + did:key — 독립 재구현 (심화 D2, c1verify substrate-B).
+"""LakatoTree strict Ed25519 profile + did:key — 독립 재구현 (심화 D2, c1verify substrate-B).
 
 c1verify 는 lakatos 를 import 하지 않는 독립 외부 검증기다(clean env 테스트). 지금까지 서명 검증
 능력이 없어 substrate 게이트가 issuer AUTHENTICITY 를 'out-of-band residual'로 남겼고, temporal
@@ -6,8 +6,10 @@ witness 를 재검증할 수 없었다. 이 모듈이 그 공백을 메운다: w
 *바이트 동일*하게 재구현(엔진-CI 골든이 상호 대조로 핀). 이로써 c1verify 가 witness 서명·write-cert
 서명을 봉인 번들에서 독립 재검증할 수 있다.
 
-정직 경계: 이 코드는 write_cert 와 같은 순수 수학이므로 '독립 재구현'이지 '독립 알고리즘'은 아니다
-(같은 RFC 8032). 진짜 독립성은 서로 다른 키를 서로 다른 주체가 쥐는 데서 온다(k-of-N).
+정직 경계: 이 코드는 write_cert 와 같은 순수 수학이므로 '독립 재구현'이지 '독립 알고리즘'은 아니다.
+RFC 8032 방정식에 비항등 prime-subgroup ``A``/``R``을 추가한 동일한 LakatoTree profile이며,
+일반 RFC 8032 구현보다 의도적으로 좁다. 진짜 독립성은 서로 다른 키를 서로 다른 주체가 쥐는
+데서 온다(k-of-N).
 # KG: q-extaudit-temporal-witness-20260722 (심화 D2)
 """
 from __future__ import annotations
@@ -73,6 +75,13 @@ def _point_equal(p, q) -> bool:
             and (p[1] * q[2] - q[1] * p[2]) % _P == 0)
 
 
+def _point_is_strict_prime_order(point) -> bool:
+    return (
+        not _point_equal(point, _IDENT)
+        and _point_equal(_point_mul(_L, point), _IDENT)
+    )
+
+
 def _point_decompress(b: bytes):
     if len(b) != 32:
         return None
@@ -86,20 +95,25 @@ def _point_decompress(b: bytes):
 
 
 def ed25519_verify(public32: bytes, msg: bytes, sig64: bytes) -> bool:
-    """RFC 8032 verify — malleability 거부(s < L). write_cert.ed25519_verify 와 바이트 동일 결과."""
+    """LakatoTree strict Ed25519 profile: prime-order non-identity A/R and ``s < L``."""
     if len(public32) != 32 or len(sig64) != 64:
         return False
     a = _point_decompress(public32)
-    if a is None:
+    if a is None or not _point_is_strict_prime_order(a):
         return False
     rp = _point_decompress(sig64[:32])
-    if rp is None:
+    if rp is None or not _point_is_strict_prime_order(rp):
         return False
     s = int.from_bytes(sig64[32:], "little")
     if s >= _L:
         return False
     k = int.from_bytes(_sha512(sig64[:32] + public32 + msg), "little") % _L
     return _point_equal(_point_mul(s, _B), _point_add(rp, _point_mul(k, a)))
+
+
+def ed25519_public_key_is_strict(public32: bytes) -> bool:
+    point = _point_decompress(public32)
+    return point is not None and _point_is_strict_prime_order(point)
 
 
 # ── did:key (multicodec ed25519 0xed01) ────────────────────────────────────────────────────
@@ -109,6 +123,16 @@ _ED25519_PREFIX = b"\xed\x01"
 
 class KeyTypeError(ValueError):
     pass
+
+
+def _b58encode(data: bytes) -> str:
+    n = int.from_bytes(data, "big")
+    out = ""
+    while n:
+        n, rem = divmod(n, 58)
+        out = _B58_ALPHABET[rem] + out
+    pad = len(data) - len(data.lstrip(b"\x00"))
+    return "1" * pad + (out or "1")
 
 
 def _b58decode(s: str) -> bytes:
@@ -134,3 +158,9 @@ def did_key_decode(did: str) -> bytes:
     if len(key) != 32:
         raise KeyTypeError(f"ed25519 키 길이 {len(key)} ≠ 32")
     return key
+
+
+def did_key_encode(public32: bytes) -> str:
+    if len(public32) != 32:
+        raise KeyTypeError(f"ed25519 키 길이 {len(public32)} ≠ 32")
+    return "did:key:z" + _b58encode(_ED25519_PREFIX + public32)

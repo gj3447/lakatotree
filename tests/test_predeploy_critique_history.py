@@ -1078,7 +1078,7 @@ def test_live_fence_executes_private_bytes_after_configured_path_swap(
 
 
 def test_live_fence_rejects_sitecustomize_forged_response(tmp_path):
-    """A mutable Python runtime closure may forge JSON, but not the authority signature."""
+    """A mutable runtime can at most forge JSON, never a valid authority response."""
 
     poisoned = tmp_path / "poisoned-runtime"
     venv.EnvBuilder(with_pip=False, symlinks=False).create(poisoned)
@@ -1131,10 +1131,14 @@ os._exit(0)
         now,
     )
 
-    with pytest.raises(RuntimeError, match="signature is invalid"):
+    with pytest.raises(RuntimeError) as rejected:
         module.verify_live_fence(
             verifier, verifier_sha, drain, _fence_public_key_hex()
         )
+    assert str(rejected.value) in {
+        "writer-fence authority signature is invalid",
+        "external writer-fence verifier rejected the lease",
+    }
 
 
 def test_bounded_neo_migration_never_starts_query_after_lease_expiry(monkeypatch):

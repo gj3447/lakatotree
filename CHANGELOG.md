@@ -48,6 +48,13 @@ distribution.
 
 ### Fixed
 
+- The dependency-free Ed25519 verifiers now apply a LakatoTree strict profile that
+  rejects identity, mixed-order, and small-order public keys and signature `R` points,
+  closing a subgroup forgery path in both the engine verifier and the independent
+  `c1verify` implementation. The non-identity `R` rule is intentionally stricter than
+  general RFC 8032 interoperability. Temporal anchors also
+  reject non-canonical identities, malformed signatures, and non-witness channels.
+
 - Scoped `OpenQuestion` identity per tree: the `MERGE` key was a global `{name}`,
   so two trees opening the same `qname` silently shared one node (body
   last-write-wins, close/`n_visits` leaking across trees — observed in production
@@ -70,6 +77,12 @@ distribution.
 
 ### Added
 
+- A dependency-free production/L3 readiness case evaluator now reverifies exact
+  storage bindings, a signed writer fence, least-privilege role projections, runtime
+  state, and a policy-bound two-ended signed receipt-time component. Arbitrary cases
+  can only become `CASE_ACCEPTED`; `HARNESS_GREEN` belongs to the separately locked
+  OOPTDD fixture-and-attack suite. Live mode remains unsupported and no path sets
+  `production_ready` or claims runtime VAL L3.
 - An explicit HSWM agent-network design contract: agents act through a shared
   causal cut, observations reuse the verdict-free evidence record, LakatoTree
   supplies scientific adjudication, and a changed verdict must causally change

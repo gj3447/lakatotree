@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 
 import c1verify
+from c1verify._ed25519 import ed25519_verify
 from c1verify.jcs import jcs
 
 
@@ -74,3 +75,18 @@ def test_verify_imports_no_engine_module():
     c1verify.verify(_canonical_bundle())
     added = _engine_modules() - before
     assert added == set(), f"verify() imported engine module(s): {sorted(added)}"
+
+
+def test_ed25519_strict_profile_rejects_small_order_a_and_r():
+    identity = bytes.fromhex("01" + "00" * 31)
+    order_two = bytes.fromhex("ec" + "ff" * 30 + "7f")
+    message = b"c1verify-small-order-regression"
+    forged = identity + bytes(32)
+    for public_key in (identity, order_two):
+        assert ed25519_verify(public_key, message, forged) is False
+    normal_public = bytes.fromhex(
+        "d75a980182b10ab7d54bfed3c964073a"
+        "0ee172f3daa62325af021a68f707511a"
+    )
+    for low_order_r in (identity, order_two):
+        assert ed25519_verify(normal_public, message, low_order_r + bytes(32)) is False

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -98,8 +99,9 @@ def test_lastboot_backup_is_atomic_and_mode_0600_under_public_umask(tmp_path):
         "99999999 (python) " + " ".join(["S", *(["0"] * 18), "12345"]) + "\n",
         encoding="utf-8",
     )
+    interpreter = Path(sys.executable).resolve()
     (environ_dir / "cwd").symlink_to(ROOT, target_is_directory=True)
-    (environ_dir / "exe").symlink_to(ROOT / ".venv" / "bin" / "python")
+    (environ_dir / "exe").symlink_to(interpreter)
     env_file = tmp_path / "server.env"
     env_file.write_text(
         "NEO4J_URI=bolt://example.invalid\n"
@@ -114,6 +116,7 @@ def test_lastboot_backup_is_atomic_and_mode_0600_under_public_umask(tmp_path):
         **os.environ,
         "PATH": f"{fake_bin}:/usr/bin:/bin",
         "HOME": str(tmp_path),
+        "LAKATOS_PYTHON": str(interpreter),
         "LAKATOS_SERVER_ENV": str(env_file),
         "LAKATOS_PROC_ROOT": str(proc_root),
     }

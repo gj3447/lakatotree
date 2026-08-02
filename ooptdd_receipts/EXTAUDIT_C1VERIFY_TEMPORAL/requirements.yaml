@@ -21,7 +21,7 @@ requirements:
       must_emit: ed25519_golden_cross_check
 
   - id: CT-2
-    description: temporal 게이트 재검증 — 정족수 통과 ACCEPT(residual 명시), 위조/밀반입/백데이트/미달/Sybil/비허가는 REJECT(fail-closed, total)
+    description: temporal 게이트 재검증 — 정족수 통과 ACCEPT(residual 명시), 위조/밀반입/백데이트/미달/Sybil/비허가/중복 최신시각 및 비정규 anchor는 REJECT(fail-closed, total)
     gate:
       - {event: temporal_gate_reverifies, op: ">=", count: 1}
     longinus:

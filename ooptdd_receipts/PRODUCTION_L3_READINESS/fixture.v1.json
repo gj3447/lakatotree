@@ -1,0 +1,278 @@
+{
+  "expected": {
+    "contract_id": "lakatotree-critique-history-storage/v1",
+    "environment": "fixture",
+    "evaluated_at": "2026-08-02T01:01:05+00:00",
+    "fence_authority_key_sha256": "defe6330f78fcc11efd0fb28614f0d29d7b60d6e66c25c1c5b0f98fe505fc8bb",
+    "fence_nonce": "1111111111111111111111111111111111111111111111111111111111111111",
+    "neo4j_database": "fixture_neo",
+    "operation_sha256": "3575fe91813f9b7a531552d124e197da5638ccff641aa880108007d17aabb2df",
+    "postgresql_database": "fixture_pg",
+    "predeploy_file_sha256": "e559599649262022590e78c67f94198e3fa94232cc5e0477d97181ac8f406f5f",
+    "predeploy_receipt_sha256": "ecd0c769a07771e7a6a9e8eb6e9b75eeb71235304a149f07f30e087f64fe0b6c",
+    "prediction_receipt_sha256": "7161fd843d224b150e9bfd1cd6a5232f8a5d2a2b7f6b79ff54cdd4478a25704a",
+    "receipt_graph_sha256": "a89c38db7def63f101322b36b076e3fe085c7b3ad91c20605ea44964c79b5657",
+    "target_sha256": "1df8f8b96a3fad963167303104d20207a232bff46e0f4db620ddefb9705fc782",
+    "temporal_sidecar_sha256": "00372af2b1cb9d7e7378939a6c974a2fcadbab61397eaacbc2756cb2c57334d9",
+    "verdict_receipt_sha256": "f0f0180fe4666c392fc6edd763aaf06ce0de8f8cb958418b3228ac83a356f9b1",
+    "writer_drain_receipt_sha256": "773f5e6d4688fa0eb96e5035c254ffd07b0d5ef13987137cf094442630fd92d1",
+    "writer_lease_id": "fixture-lease-1"
+  },
+  "mode": "fixture",
+  "schema_version": "lakatotree-production-l3-readiness-case/v1",
+  "storage": {
+    "neo4j_access": {
+      "binding": {
+        "operation_sha256": "3575fe91813f9b7a531552d124e197da5638ccff641aa880108007d17aabb2df",
+        "predeploy_file_sha256": "e559599649262022590e78c67f94198e3fa94232cc5e0477d97181ac8f406f5f",
+        "target_sha256": "1df8f8b96a3fad963167303104d20207a232bff46e0f4db620ddefb9705fc782"
+      },
+      "built_in_admin_roles": [],
+      "database": "fixture_neo",
+      "edition": "enterprise",
+      "migrator_effective_privileges": [
+        "ACCESS_DATABASE",
+        "CONSTRAINT_MANAGEMENT",
+        "MATCH",
+        "WRITE"
+      ],
+      "migrator_principal": "fixture_neo_migrator",
+      "migrator_roles": [
+        "fixture_lakatotree_migrator"
+      ],
+      "predeploy_actor": "fixture_neo_migrator",
+      "public_role_bindings": [],
+      "runtime_effective_privileges": [
+        "ACCESS_DATABASE",
+        "MATCH",
+        "WRITE"
+      ],
+      "runtime_principal": "fixture_neo_runtime",
+      "runtime_roles": [
+        "fixture_lakatotree_runtime"
+      ],
+      "schema_version": "lakatotree-neo4j-access-projection/v1",
+      "startup_actor": "fixture_neo_runtime"
+    },
+    "postgresql_access": {
+      "binding": {
+        "operation_sha256": "3575fe91813f9b7a531552d124e197da5638ccff641aa880108007d17aabb2df",
+        "predeploy_file_sha256": "e559599649262022590e78c67f94198e3fa94232cc5e0477d97181ac8f406f5f",
+        "target_sha256": "1df8f8b96a3fad963167303104d20207a232bff46e0f4db620ddefb9705fc782"
+      },
+      "database": "fixture_pg",
+      "migrator_role": "fixture_migrator",
+      "migrator_role_attributes": {
+        "bypassrls": false,
+        "createdb": false,
+        "createrole": false,
+        "inherit": false,
+        "login": true,
+        "replication": false,
+        "superuser": false
+      },
+      "object_owners": {
+        "public": "fixture_owner",
+        "public.history": "fixture_owner",
+        "public.history_event_claims": "fixture_owner",
+        "public.history_id_seq": "fixture_owner",
+        "public.lineage": "fixture_owner",
+        "public.lineage_id_seq": "fixture_owner",
+        "public.metric_snapshots": "fixture_owner",
+        "public.metric_snapshots_id_seq": "fixture_owner"
+      },
+      "owner_can_login": false,
+      "owner_role": "fixture_owner",
+      "owner_role_attributes": {
+        "bypassrls": false,
+        "createdb": false,
+        "createrole": false,
+        "inherit": false,
+        "login": false,
+        "replication": false,
+        "superuser": false
+      },
+      "predeploy_actor": "fixture_migrator",
+      "public_grants": [],
+      "role_memberships": [],
+      "runtime_ddl": false,
+      "runtime_owns_objects": false,
+      "runtime_role": "fixture_runtime",
+      "runtime_role_attributes": {
+        "bypassrls": false,
+        "createdb": false,
+        "createrole": false,
+        "inherit": false,
+        "login": true,
+        "replication": false,
+        "superuser": false
+      },
+      "runtime_schema_privileges": {
+        "public": [
+          "USAGE"
+        ]
+      },
+      "runtime_sequence_privileges": {
+        "public.history_id_seq": [
+          "SELECT",
+          "USAGE"
+        ],
+        "public.lineage_id_seq": [
+          "SELECT",
+          "USAGE"
+        ],
+        "public.metric_snapshots_id_seq": [
+          "SELECT",
+          "USAGE"
+        ]
+      },
+      "runtime_table_privileges": {
+        "public.history": [
+          "INSERT",
+          "SELECT"
+        ],
+        "public.history_event_claims": [
+          "INSERT",
+          "SELECT"
+        ],
+        "public.lineage": [
+          "INSERT",
+          "SELECT"
+        ],
+        "public.metric_snapshots": [
+          "INSERT",
+          "SELECT"
+        ]
+      },
+      "schema_version": "lakatotree-postgresql-access-projection/v1",
+      "startup_actor": "fixture_runtime"
+    },
+    "predeploy": {
+      "contract_id": "lakatotree-critique-history-storage/v1",
+      "created_at": "2026-08-02T01:00:52+00:00",
+      "environment": "fixture",
+      "file_sha256": "e559599649262022590e78c67f94198e3fa94232cc5e0477d97181ac8f406f5f",
+      "ok": true,
+      "operation_sha256": "3575fe91813f9b7a531552d124e197da5638ccff641aa880108007d17aabb2df",
+      "receipt_sha256": "ecd0c769a07771e7a6a9e8eb6e9b75eeb71235304a149f07f30e087f64fe0b6c",
+      "target_sha256": "1df8f8b96a3fad963167303104d20207a232bff46e0f4db620ddefb9705fc782"
+    },
+    "runtime": {
+      "binding": {
+        "operation_sha256": "3575fe91813f9b7a531552d124e197da5638ccff641aa880108007d17aabb2df",
+        "predeploy_file_sha256": "e559599649262022590e78c67f94198e3fa94232cc5e0477d97181ac8f406f5f",
+        "target_sha256": "1df8f8b96a3fad963167303104d20207a232bff46e0f4db620ddefb9705fc782"
+      },
+      "migration_environment_keys": [],
+      "pending_outbox": 0,
+      "readyz": true,
+      "reconcile_conflicts": 0,
+      "reconcile_replay_count": 0,
+      "schema_version": "lakatotree-runtime-readiness-projection/v1",
+      "storage_authority_current": true,
+      "worker_count": 1,
+      "writer_lease_current": true,
+      "writer_lease_id": "fixture-lease-1"
+    },
+    "writer_fence": {
+      "authority_key_sha256": "defe6330f78fcc11efd0fb28614f0d29d7b60d6e66c25c1c5b0f98fe505fc8bb",
+      "authority_public_key_hex": "91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+      "listener_count": 0,
+      "nonce_reuse_count": 0,
+      "replica_count": 0,
+      "signed_response": {
+        "active": true,
+        "drain_receipt_sha256": "773f5e6d4688fa0eb96e5035c254ffd07b0d5ef13987137cf094442630fd92d1",
+        "environment": "fixture",
+        "evidence_refs": [
+          "fixture://writer-lease/exact-readback"
+        ],
+        "expires_at": "2026-08-02T01:01:20+00:00",
+        "lease_id": "fixture-lease-1",
+        "nonce": "1111111111111111111111111111111111111111111111111111111111111111",
+        "operation_sha256": "3575fe91813f9b7a531552d124e197da5638ccff641aa880108007d17aabb2df",
+        "schema_version": "lakatotree-writer-fence-verification/v2",
+        "signature": "8cafdd431ffbdfcea2b20ca0f4edcc4173dfbad664ab87dffd851b62121d7e93ab6ff6d54bc8a83633458c5913b1390ffa6cfff0fbd5d5371512977bb58af008",
+        "target_sha256": "1df8f8b96a3fad963167303104d20207a232bff46e0f4db620ddefb9705fc782",
+        "verified_at": "2026-08-02T01:00:50+00:00"
+      },
+      "writer_count": 0
+    }
+  },
+  "temporal": {
+    "authority_policy": {
+      "attestor_dids": [
+        "did:key:z6MkeWjVE4oF2JdpkRkMUTbS6BFhvfUFXcXiMMjr9BZhfTne"
+      ],
+      "endpoint_signer_rule": "same-authority-set",
+      "evidence_refs": [
+        "fixture://authority-policy/exact-readback"
+      ],
+      "producer_dids": [
+        "did:key:z6Mkn3sUaRJMRwT4iPbBtHUzTk42mHDSA3M3D8krGpZfGW8D"
+      ],
+      "schema_version": "lakatotree-temporal-authority-policy/v1",
+      "threshold": 2,
+      "witness_allowlist": [
+        "did:key:z6MkixsGj3MVGKMug2VMC2JbtzX3UjaAcfRs7G1RjbSnZJaH",
+        "did:key:z6MkmsRnGW1cEVgonyXVbc8NAsG7qc3vKjLok2Q5KjrmJNfc",
+        "did:key:z6MkqgTgrmU9RmnNpKnggispapnngzYDwgscEr7MWuJnFeYG",
+        "did:key:z6MktPiWbFRRVqD9pY3DQvDHkRMkbKV4FhXxzxkLtLABZ6Rt"
+      ]
+    },
+    "runtime_binding": {
+      "prediction_receipt_sha256": "7161fd843d224b150e9bfd1cd6a5232f8a5d2a2b7f6b79ff54cdd4478a25704a",
+      "readback_ok": true,
+      "receipt_graph_sha256": "a89c38db7def63f101322b36b076e3fe085c7b3ad91c20605ea44964c79b5657",
+      "schema_version": "lakatotree-temporal-runtime-binding/v1",
+      "sidecar_sha256": "00372af2b1cb9d7e7378939a6c974a2fcadbab61397eaacbc2756cb2c57334d9",
+      "verdict_receipt_sha256": "f0f0180fe4666c392fc6edd763aaf06ce0de8f8cb958418b3228ac83a356f9b1"
+    },
+    "sidecar": {
+      "authority_policy_sha256": "b70f4fc18d4ffa00dfa93af92233a537f0e9e5014c08c725a05694525bb0b1c4",
+      "prediction_anchors": [
+        {
+          "channel": "ed25519-witness",
+          "digest": "574f74e1d757e27efbc89c92b39e7a47cdbe1f338b7305ae457b7cd1d44feafc",
+          "gen_time": "2026-08-02T01:00:00+00:00",
+          "signature": "8955452a40061d1e8d89618a1edf995f763f89a3ee60698f8c695d4a0f3b4f42e65eb1386c8120302b1af0ad492f2dd2353ce911ac051a1c11b07db228bf5e01",
+          "witness_did": "did:key:z6MkixsGj3MVGKMug2VMC2JbtzX3UjaAcfRs7G1RjbSnZJaH"
+        },
+        {
+          "channel": "ed25519-witness",
+          "digest": "574f74e1d757e27efbc89c92b39e7a47cdbe1f338b7305ae457b7cd1d44feafc",
+          "gen_time": "2026-08-02T01:00:03+00:00",
+          "signature": "ec489aab2dc74b307b5bc651afa17d4da5adde6af1d2ec47db11aaace8707a88ee043167f60329b4ed22c5b588934560a35d61b46d5a8b4a9d4f0e24cadc5401",
+          "witness_did": "did:key:z6MkmsRnGW1cEVgonyXVbc8NAsG7qc3vKjLok2Q5KjrmJNfc"
+        }
+      ],
+      "prediction_receipt_sha256": "7161fd843d224b150e9bfd1cd6a5232f8a5d2a2b7f6b79ff54cdd4478a25704a",
+      "receipt_graph_sha256": "a89c38db7def63f101322b36b076e3fe085c7b3ad91c20605ea44964c79b5657",
+      "schema_version": "lakatotree-two-ended-temporal-sidecar/v1",
+      "threshold": 2,
+      "verdict_anchors": [
+        {
+          "channel": "ed25519-witness",
+          "digest": "69d5e1545eec92fabe904f0b5433b1d861e95edcf0b34a42941f7946c78ecee1",
+          "gen_time": "2026-08-02T01:01:00+00:00",
+          "signature": "9a031fc23bbb95a513ad8525c0433479a1de737352697dc7194db211ac4a049bfa3e49a3f558416589f3e33da6c56e87415e58625d6d60b1ad7ff1e2da4a6c07",
+          "witness_did": "did:key:z6MkixsGj3MVGKMug2VMC2JbtzX3UjaAcfRs7G1RjbSnZJaH"
+        },
+        {
+          "channel": "ed25519-witness",
+          "digest": "69d5e1545eec92fabe904f0b5433b1d861e95edcf0b34a42941f7946c78ecee1",
+          "gen_time": "2026-08-02T01:01:04+00:00",
+          "signature": "1ec6073c0c592f242ad08e4c2b2141a6c21bab72502ea6e6572bd5e57a9c29dfe499162acf896a408c6a041b4ddb58d59d5493df968168a6d926a6557f2eca09",
+          "witness_did": "did:key:z6MkmsRnGW1cEVgonyXVbc8NAsG7qc3vKjLok2Q5KjrmJNfc"
+        }
+      ],
+      "verdict_receipt_sha256": "f0f0180fe4666c392fc6edd763aaf06ce0de8f8cb958418b3228ac83a356f9b1",
+      "witness_allowlist": [
+        "did:key:z6MkixsGj3MVGKMug2VMC2JbtzX3UjaAcfRs7G1RjbSnZJaH",
+        "did:key:z6MkmsRnGW1cEVgonyXVbc8NAsG7qc3vKjLok2Q5KjrmJNfc",
+        "did:key:z6MkqgTgrmU9RmnNpKnggispapnngzYDwgscEr7MWuJnFeYG",
+        "did:key:z6MktPiWbFRRVqD9pY3DQvDHkRMkbKV4FhXxzxkLtLABZ6Rt"
+      ]
+    }
+  }
+}

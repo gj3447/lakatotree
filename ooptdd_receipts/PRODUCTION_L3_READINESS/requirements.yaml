@@ -1,0 +1,59 @@
+# Fast hermetic sentinel for the production/L3 readiness mechanism. It never
+# substitutes for live PostgreSQL/Neo4j/RBAC/writer-fence/time-authority proof.
+name: lakatotree-production-l3-readiness-harness
+target:
+  mode: in_process
+  callable: production_l3_readiness_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: PL3H-1
+    description: The frozen case and its report pins match while all authority claims remain bounded.
+    gate:
+      - {event: locked_case_accepted_claim_bounded, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_L3_READINESS:locked_case_accepted_claim_bounded
+      source: production_l3_readiness_receipt.py
+      symbol: run_harness_suite
+      must_emit: locked_case_accepted_claim_bounded
+
+  - id: PL3H-2
+    description: Storage digest, signature, target, credential, and privilege attacks are rejected.
+    gate:
+      - {event: storage_authority_attacks_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_L3_READINESS:storage_authority_attacks_rejected
+      source: production_l3_readiness_receipt.py
+      symbol: run_harness_suite
+      must_emit: storage_authority_attacks_rejected
+
+  - id: PL3H-3
+    description: Temporal signature, identity, channel, subgroup, and authority-policy attacks are rejected.
+    gate:
+      - {event: temporal_crypto_policy_attacks_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_L3_READINESS:temporal_crypto_policy_attacks_rejected
+      source: production_l3_readiness_receipt.py
+      symbol: run_harness_suite
+      must_emit: temporal_crypto_policy_attacks_rejected
+
+  - id: PL3H-4
+    description: Disjoint endpoint signers, reversed time, and stale runtime receipt bindings are rejected.
+    gate:
+      - {event: temporal_relation_attacks_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_L3_READINESS:temporal_relation_attacks_rejected
+      source: production_l3_readiness_receipt.py
+      symbol: run_harness_suite
+      must_emit: temporal_relation_attacks_rejected
+
+  - id: PL3H-5
+    description: Live mode cannot claim readiness before independent adapters exist.
+    gate:
+      - {event: live_authority_claim_fail_closed, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_L3_READINESS:live_authority_claim_fail_closed
+      source: production_l3_readiness_receipt.py
+      symbol: run_harness_suite
+      must_emit: live_authority_claim_fail_closed
