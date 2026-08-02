@@ -50,11 +50,12 @@ import urllib.request, urllib.error
 BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, *, extra_headers=None):
     headers = {'Content-Type': 'application/json'}
     tok = os.environ.get('LAKATOS_API_TOKEN')   # 서버 auth 켜져 있으면 토큰 전달 (REG-1)
     if tok:
         headers['Authorization'] = f'Bearer {tok}'
+    headers.update(extra_headers or {})
     req = urllib.request.Request(BASE + path, method=method,
         data=(json.dumps(body).encode() if body is not None else None), headers=headers)
     try:
@@ -161,6 +162,8 @@ def _build_parser() -> argparse.ArgumentParser:
                     help='서버에 보낼 verb payload JSON. 비-default submit 및 다른 verb는 필수')
     sp = sub.add_parser('tree-delete'); sp.add_argument('name')
     sp.add_argument('--cascade', action='store_true', help='노드 포함 전체 삭제(파괴적·복구불가)')
+    sp.add_argument('--idempotency-key', required=True,
+                    help='삭제 재시도를 같은 작업에 묶는 1..256 ASCII 키')
     sp = sub.add_parser('node'); sp.add_argument('name'); sp.add_argument('tag')
     sp.add_argument('--author', default='', help='노드 작성자 actor (FF3: CANONICAL floor human attestation actor≠author 강제)')
     sp.add_argument('--parent', action='append', default=[])
@@ -457,7 +460,11 @@ def main(argv=None):
             command.update(script_sha=script_sha, result_sha256=result_sha)
         out = build_write_cert(bytes.fromhex(a.secret_hex), command)
     elif a.cmd == 'tree-delete':
-        out = call('DELETE', f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''))
+        out = call(
+            'DELETE',
+            f'/api/tree/{a.name}' + ('?cascade=true' if a.cascade else ''),
+            extra_headers={'Idempotency-Key': a.idempotency_key},
+        )
     elif a.cmd == 'node':
         parent_edges = []
         for item in a.inferred_parent:

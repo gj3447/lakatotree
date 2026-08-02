@@ -1,0 +1,67 @@
+# Frontier Question FSM
+
+> Generated view. Authoritative source: `docs/data/frontier_question_fsm.v1.json`.
+> Regenerate with `python scripts/render_frontier_question_fsm.py`.
+
+## Transition table
+
+| From | Event | To | Transition | Effects |
+|---|---|---|---|---|
+| `OPEN` | `OPEN` | `OPEN` | `refresh-open` | UpdateQuestionMetadata |
+| `OPEN` | `CLOSE` | `CLOSED` | `close` | RecordQuestionClosure |
+| `CLOSED` | `CLOSE` | `CLOSED` | `duplicate-close` | none |
+| `OPEN` | `ADJUDICATED [receipt_backed_conclusive]` | `CLOSED` | `adjudication-close` | RecordQuestionClosure |
+| `OPEN` | `ADJUDICATED` | `OPEN` | `adjudication-retain-open` | none |
+| `CLOSED` | `ADJUDICATED` | `CLOSED` | `duplicate-adjudication` | none |
+| `CLOSED` | `REATTRIBUTE [receipt_backed_conclusive]` | `CLOSED` | `reattribute-append` | AppendQuestionCloser |
+| `CLOSED` | `REATTRIBUTE` | `CLOSED` | `reattribute-retain` | none |
+
+Unlisted state/event pairs are rejected without state change. In particular, `CLOSED + OPEN`
+is invalid. `CLOSED` is intentionally atomic rather than final so duplicate `CLOSE` has an
+explicit idempotent self-loop.
+
+`ADJUDICATED` is a transition event, not a client verdict label. The judgement
+service emits it only after minting the content-addressed verdict receipt in the
+same managed transaction. Exact final verdicts `progressive` and `rejected`
+answer the preregistered question positively or negatively only when the
+sealed assurance is replay-verified (L2 or higher) and the result is not a
+qualitative self-report. Partial, equivalent, conditional, unverified, L0/L1,
+and qualitative-self-report outcomes keep the question open.
+
+## State diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN
+    OPEN --> OPEN: OPEN / UpdateQuestionMetadata
+    OPEN --> CLOSED: CLOSE / RecordQuestionClosure
+    CLOSED --> CLOSED: CLOSE / none
+    OPEN --> CLOSED: ADJUDICATED [receipt_backed_conclusive] / RecordQuestionClosure
+    OPEN --> OPEN: ADJUDICATED / none
+    CLOSED --> CLOSED: ADJUDICATED / none
+    CLOSED --> CLOSED: REATTRIBUTE [receipt_backed_conclusive] / AppendQuestionCloser
+    CLOSED --> CLOSED: REATTRIBUTE / none
+```
+
+## Properties
+
+Safety:
+
+- `closed-does-not-reopen`: A CLOSED question cannot return to OPEN through the OPEN command.
+- `close-is-idempotent`: Repeated CLOSE commands do not increment visits or append closure/history events.
+- `self-report-cannot-close`: An adjudication closes a question only with a valid content-addressed receipt, replay-verified assurance at L2 or above, and no qualitative self-report; the application transaction persists that receipt and closure together.
+- `reattribute-does-not-reopen`: REATTRIBUTE on CLOSED never returns OPEN; it appends a closer only for a conclusive L2-or-higher adjudication without qualitative self-report.
+- `reattribute-requires-receipt`: REATTRIBUTE without a valid content-addressed receipt identity is rejected; self-report cannot reattribute.
+
+Liveness:
+
+- `eventual-close`: An OPEN question reaches CLOSED when a CLOSE command or a conclusive, receipt-bound, replay-verified ADJUDICATED event without qualitative self-report is delivered.
+
+## Verification
+
+```bash
+python /path/to/fsm-design/scripts/validate_fsm.py docs/data/frontier_question_fsm.v1.json
+python /path/to/fsm-design/scripts/run_fsm_traces.py docs/data/frontier_question_fsm.v1.json docs/data/frontier_question_fsm.traces.json
+pytest -q tests/test_state_isolation_fsm_20260728.py
+python ooptdd_receipts/run_all.py
+```

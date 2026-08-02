@@ -35,6 +35,37 @@ def test_threshold_1_backward_compatible():
     assert t1 == "2026-07-23T01:00:00+00:00"
 
 
+def test_quorum_uses_absolute_utc_order_not_iso_lexicographic_order():
+    anchors = [
+        _a(1, "2026-07-29T23:00:00+14:00"),  # 09:00Z
+        _a(2, "2026-07-29T12:00:00-12:00"),  # next-day 00:00Z
+    ]
+    t1 = verify_temporal_quorum(
+        anchors,
+        expect_receipt_sha="rsha",
+        witness_allowlist=ALLOW,
+        threshold=2,
+    )
+    assert t1 == "2026-07-30T00:00:00+00:00"
+    assert has_valid_temporal_quorum(
+        anchors,
+        "2026-07-29T10:00:00+00:00",
+        pred_receipt_sha="rsha",
+        witness_allowlist=ALLOW,
+        threshold=2,
+    ) is False
+
+
+def test_naive_witness_time_is_rejected():
+    with pytest.raises(AnchorInvalid, match="증인 정족수 미달"):
+        verify_temporal_quorum(
+            [_a(1, "2026-07-23T01:00:00")],
+            expect_receipt_sha="rsha",
+            witness_allowlist=ALLOW,
+            threshold=1,
+        )
+
+
 # ── 정족수 미달: distinct 증인 < threshold (담합 저항) ─────────────────────────────────────
 def test_single_witness_fails_threshold_2():
     with pytest.raises(AnchorInvalid):

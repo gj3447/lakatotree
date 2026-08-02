@@ -5,22 +5,35 @@
 
 from __future__ import annotations
 
+import hashlib
+import inspect
+import json
+import math
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Any
 
 import psycopg2.extras
 from fastapi import HTTPException
 
 from lakatos.quant.calibrate import brier_score, calibration_error, log_score
+from lakatos.io.reconcile import (
+    HistoryPayloadError,
+    canonical_history_payload,
+    validate_history_record,
+)
 from lakatos.verdict.judge import NovelTarget, Prediction, judge
 from lakatos.programme.explore import rank_questions as default_rank_questions
 from lakatos.programme.heuristic import (appraise_and_plan, branch_pressure as _branch_pressure_pct,
                                expected_progress_gain, realized_reward)
 from lakatos.programme.lifecycle import lifecycle_state
 from lakatos.quant.metrics import branch_inputs
-from lakatos.verdicts import (FORCEFUL_SOURCES, FRONTIER_PROGRESS_VERDICTS,
-                              SCORED_PROGRESS_VERDICTS, TESTED_CORE_VERDICTS)
+from lakatos.verdicts import (ENGINE_VERDICTS, FORCEFUL_SOURCES,
+                              FRONTIER_PROGRESS_VERDICTS,
+                              SCORED_PROGRESS_VERDICTS, SCRIPTED_VERDICTS,
+                              TESTED_CORE_VERDICTS, receipt_content_sha)
 from lakatos.programme.series import series_from_path
 from lakatos.programme.kuhn import incumbent_degenerating
 from lakatos.programme.stack import evaluate_stack
@@ -43,18 +56,50 @@ from server.contexts.tree.schemas import (
     TraditionAppraiseIn,
     TraditionIn,
 )
+from server.contexts.tree.verdict_intents import (
+    VerdictIntentError,
+    validate_verdict_intent_group,
+)
 from server.ports import HistoryAppend, KgQuery, PgFactory
 
 
 TreeDataProvider = Callable[[str], dict]
 MetricsProvider = Callable[[dict], dict]
-NodeAdder = Callable[[str, NodeIn], dict]
+NodeAdder = Callable[[str, NodeIn, str], dict]
 PredictionRegistrar = Callable[[str, str, PredictionIn], dict]
 TestResultSubmitter = Callable[[str, str, TestResultIn], dict]
+CycleCompensator = Callable[[str, str, str], str]
+CycleClaimReleaser = Callable[[str, str, str], None]
 CritiqueAdder = Callable[[str, str, CritiqueIn], dict]
 StandingProvider = Callable[[str, str], dict]
 ArtifactInserter = Callable[[dict], Any]
 QuestionRanker = Callable[[list[dict], int], list[dict]]
+
+
+def _serialized_ledger_command(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        scope = getattr(self, 'ledger_scope', None) or (lambda: nullcontext())
+        with scope():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+_CYCLE_RESULT_VERDICTS = SCRIPTED_VERDICTS | ENGINE_VERDICTS
+recoverable_cycle_lakatos_values = frozenset({
+    "n/a",
+    "unverified",
+    "progressive",
+    "progressive_conditional",
+    "degenerating",
+    "different_programme",
+    "ambiguous",
+    "hard_core_violated_structural",
+    "reproducibility_refuted",
+    "novel_not_server_anchored",
+    "provisional_stale_engine",
+})
 
 
 def issuer_calibration_annotation(cal: dict, min_n: int) -> dict:
@@ -87,12 +132,16 @@ class ProgrammeService:
         tree_data: TreeDataProvider,
         compute_metrics: MetricsProvider,
         add_node: NodeAdder,
+        compensate_cycle_node: CycleCompensator,
+        release_cycle_claim: CycleClaimReleaser,
         register_prediction: PredictionRegistrar,
         submit_test_result: TestResultSubmitter,
         add_critique: CritiqueAdder,
         standing: StandingProvider,
         insert_artifact: ArtifactInserter,
         rank_questions: QuestionRanker = default_rank_questions,
+        ledger_ready: Callable[[], None] | None = None,
+        ledger_scope=None,
     ):
         self.kg = kg
         self.hist = hist
@@ -100,12 +149,16 @@ class ProgrammeService:
         self.tree_data = tree_data
         self.compute_metrics = compute_metrics
         self.add_node = add_node
+        self.compensate_cycle_node = compensate_cycle_node
+        self.release_cycle_claim = release_cycle_claim
         self.register_prediction = register_prediction
         self.submit_test_result = submit_test_result
         self.add_critique = add_critique
         self.standing = standing
         self.insert_artifact = insert_artifact
         self.rank_questions = rank_questions
+        self.ledger_ready = ledger_ready or (lambda: None)
+        self.ledger_scope = ledger_scope or (lambda: nullcontext())
 
     def calibration(self, name: str) -> dict:
         # ADR D2(2026-07-28): receipt-gate 비대칭 수리 — raw novel_confirmed 는 무영수증
@@ -303,6 +356,8 @@ class ProgrammeService:
         except ValueError as e:
             raise HTTPException(422, str(e))
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})
+                  SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                  WITH t
                   MERGE (rt:ResearchTradition {tradition_id:$tid})
                   SET rt.name=$tname, rt.commitments=$commitments,
                       rt.ontology_commitments=$onto, rt.methodology_rules=$meth, rt.exemplars=$exemplars,
@@ -361,7 +416,10 @@ class ProgrammeService:
                 receipt_refs=tuple(a.receipt_refs), compatibility_claim=a.compatibility_claim))
         except ValueError as e:
             raise HTTPException(422, str(e))
-        self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_TRADITION]->(rt:ResearchTradition)
+        self.kg("""MATCH (t:LakatosTree {name:$tree})
+              SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+              WITH t
+              MATCH (t)-[:HAS_TRADITION]->(rt:ResearchTradition)
               CREATE (rt)-[:HAS_TRADITION_REVISION]->(:TraditionRevision {
                   target:$target, operation:$op, outcome:$outcome, conceptual_pressure:$cp,
                   methodology_pressure:$mp, ontology_pressure:$onp, created_at:$ts})""",
@@ -403,48 +461,530 @@ class ProgrammeService:
         """
         return budget_state(self.kg, name)
 
-    def _cycle_node_exists(self, name: str, tag: str) -> bool:
-        """롤백 대상 판별용 존재 확인 — *삭제 결정* 입력이라 불확실은 '존재함'으로(fail-safe:
-        KG 조회 불가 시 절대 안 지운다). 진짜 KG 장애면 어차피 직후 add_node 가 실패해 4xx."""
+    @staticmethod
+    def _cycle_claim(
+        name: str,
+        c: CycleIn,
+        document: list | None = None,
+    ) -> str:
+        document = [name, c.model_dump()] if document is None else document
+        return "cycle-" + hashlib.sha256(
+            json.dumps(
+                document,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+
+    def _recover_cycle_result(
+        self,
+        name: str,
+        tag: str,
+        claim: str,
+    ) -> tuple[dict, dict, str, list[tuple[str, dict, str]]] | None:
+        """Read an exact verdict-transaction intent for whole-command retry."""
+
+        event_id = f"ob-cycle-result-{claim.removeprefix('cycle-')}"
         try:
-            return bool(self.kg('MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag}) '
-                                'RETURN e.tag AS tag', tree=name, tag=tag))
-        except Exception:
-            return True   # 모르면 기존 노드 취급 → 보상 롤백 억제(파괴적 op 는 확신 있을 때만)
+            rows = self.kg(
+                """MATCH (o:OutboxEntry {id:$event_id})
+                   MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                   OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(rec:VerdictReceipt {
+                     receipt_sha:e.current_receipt_sha})
+                   OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {
+                     name:rec.target_id})
+                   OPTIONAL MATCH (q)-[:HAS_CLOSURE]->(closure:QuestionClosure {
+                     id:e.current_receipt_sha})
+                   CALL {
+                     WITH e
+                     OPTIONAL MATCH (group_o:OutboxEntry {
+                       causal_group:e.current_receipt_sha})
+                     WITH [entry IN collect(group_o {
+                       .id, .tree, .op, .node_tag, .payload, .status,
+                       .created_at, .reason, .applied_at, .receipt_sha,
+                       .causal_group, .causal_index, .request_sha256
+                     }) WHERE entry.id IS NOT NULL] AS group_outboxes
+                     RETURN group_outboxes
+                   }
+                   RETURN o.id AS id, o.tree AS tree, o.op AS op,
+                          o.node_tag AS node_tag, o.payload AS payload,
+                          o.status AS status, o.created_at AS created_at,
+                          o.reason AS reason, o.applied_at AS applied_at,
+                          o.receipt_sha AS outbox_receipt_sha,
+                          o.causal_group AS cycle_causal_group,
+                          o.causal_index AS cycle_causal_index,
+                          e.current_receipt_sha AS current_receipt_sha,
+                          e.verdict AS current_verdict,
+                          e.verdict_source AS current_verdict_source,
+                          e.lakatos_status AS current_lakatos_status,
+                          e.metric_value AS current_metric_value,
+                          rec.receipt_sha AS bound_receipt_sha,
+                          rec.tree AS receipt_tree, rec.tag AS receipt_tag,
+                          rec.target_id AS receipt_target_id,
+                          rec.verdict AS receipt_verdict,
+                          rec.verdict_source AS receipt_verdict_source,
+                          rec.metric_name AS receipt_metric_name,
+                          rec.metric_value AS receipt_metric_value,
+                          rec.novel_confirmed AS receipt_novel_confirmed,
+                          rec.lakatos_status AS receipt_lakatos_status,
+                          rec.judged_at AS receipt_judged_at,
+                          rec.judge_script_sha AS receipt_judge_script_sha,
+                          rec.prev_receipt_sha AS receipt_prev_receipt_sha,
+                          rec.measurement_grade AS receipt_measurement_grade,
+                          rec.engine_rule_sha AS receipt_engine_rule_sha,
+                          rec.comment_sha AS receipt_comment_sha,
+                          rec.replay_status AS receipt_replay_status,
+                          rec.replay_reason AS receipt_replay_reason,
+                          rec.regenerated_metric AS receipt_regenerated_metric,
+                          rec.judge_script_path AS receipt_judge_script_path,
+                          rec.result_path AS receipt_result_path,
+                          rec.result_sha256 AS receipt_result_sha256,
+                          rec.measurement_lock_sha AS receipt_measurement_lock_sha,
+                          rec.source_script_path AS receipt_source_script_path,
+                          rec.source_result_path AS receipt_source_result_path,
+                          rec.history_payload_sha256 AS receipt_history_payload_sha256,
+                          q.status AS question_state,
+                          q.closed_by AS question_closed_by,
+                          q.closed_events AS question_closed_events,
+                          closure.id AS closure_id,
+                          closure.closed_by AS closure_closed_by,
+                          closure.at AS closure_at,
+                          closure.tree AS closure_tree,
+                          closure.question AS closure_question,
+                          closure.trigger AS closure_trigger,
+                          closure.verdict AS closure_verdict,
+                          closure.receipt_sha AS closure_receipt_sha,
+                          COUNT { MATCH (q)-[:HAS_CLOSURE]->
+                            (:QuestionClosure {id:e.current_receipt_sha})-
+                            [:CAUSED_BY]->(rec) } AS closure_bound_count,
+                          COUNT { MATCH (:QuestionClosure {
+                            id:e.current_receipt_sha}) } AS closure_global_count,
+                          COUNT { MATCH (e)-[:CLOSES_QUESTION]->(q) }
+                            AS closes_rel_count,
+                          head([(e)-[rel:CLOSES_QUESTION]->(q) |
+                            rel.receipt_sha]) AS closes_rel_receipt_sha,
+                          head([(e)-[rel:CLOSES_QUESTION]->(q) |
+                            rel.verdict]) AS closes_rel_verdict,
+                          head([(e)-[rel:CLOSES_QUESTION]->(q) |
+                            rel.at]) AS closes_rel_at,
+                          group_outboxes
+                   """,
+                event_id=event_id,
+                tree=name,
+                tag=tag,
+            )
+        except Exception:  # noqa: BLE001 - compatibility seam; real writes still fail closed later
+            return None
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise HTTPException(500, "cycle result intent cardinality conflict")
+        row = rows[0]
+        if (
+            row.get("id") != event_id
+            or row.get("tree") != name
+            or row.get("op") != "cycle_result"
+            or row.get("node_tag") != tag
+            or row.get("reason") != "cycle_result_commit_intent"
+            or not (
+                (row.get("status") == "pending" and row.get("applied_at") is None)
+                or (row.get("status") == "applied" and row.get("applied_at") is not None)
+            )
+        ):
+            raise HTTPException(500, "cycle result intent immutable binding conflict")
+        try:
+            if not isinstance(row.get("created_at"), str):
+                raise ValueError("created_at must be ISO text")
+            parsed_created_at = datetime.fromisoformat(row["created_at"])
+            if parsed_created_at.utcoffset() is None:
+                raise ValueError("created_at must include a timezone")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(500, "cycle result intent timestamp corrupt") from exc
 
-    def _rollback_cycle_node(self, name: str, tag: str) -> None:
-        """보상 롤백 — *이 사이클이 만든* 신규 노드만 제거(실패시 신규노드 0).
+        def unique_object(pairs):
+            out = {}
+            for key, value in pairs:
+                if key in out:
+                    raise ValueError(f"duplicate key: {key}")
+                out[key] = value
+            return out
 
-        영수증-안전 가드: verdict_source 가 붙었거나 :VerdictReceipt 가 달린 노드는 절대 안 지운다
-        (G1 불변영수증·G9 증거불멸 존중 — 롤백은 미채점 debris 청소지 역사 소거가 아님)."""
-        self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-              WHERE e.verdict_source IS NULL AND NOT (e)-[:HAS_RECEIPT]->()
-              DETACH DELETE e''', tree=name, tag=tag)
+        try:
+            raw_payload = row.get("payload")
+            payload = json.loads(raw_payload, object_pairs_hook=unique_object)
+            if canonical_history_payload(payload) != raw_payload:
+                raise ValueError("cycle result payload is not canonical")
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(500, "cycle result intent payload corrupt") from exc
+        result = payload.get("result") if isinstance(payload, dict) else None
+        dependent_ids = (
+            payload.get("dependent_history_event_ids")
+            if isinstance(payload, dict)
+            else None
+        )
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != {
+                "cycle_claim", "cycle_request", "dependent_history_event_ids",
+                "result", "verdict_receipt_sha",
+            }
+            or payload.get("cycle_claim") != claim
+            or not isinstance(payload.get("cycle_request"), list)
+            or len(payload["cycle_request"]) != 2
+            or payload["cycle_request"][0] != name
+            or not isinstance(payload["cycle_request"][1], dict)
+            or hashlib.sha256(json.dumps(
+                payload["cycle_request"],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")).hexdigest() != claim.removeprefix("cycle-")
+            or not isinstance(result, dict)
+            or set(result) != {
+                "delta",
+                "lakatos",
+                "novel",
+                "novel_server_anchored",
+                "verdict",
+            }
+            or not isinstance(payload.get("verdict_receipt_sha"), str)
+            or len(payload["verdict_receipt_sha"]) != 64
+            or row.get("outbox_receipt_sha") != payload["verdict_receipt_sha"]
+            or row.get("current_receipt_sha") != payload["verdict_receipt_sha"]
+            or row.get("bound_receipt_sha") != payload["verdict_receipt_sha"]
+            or row.get("receipt_tree") != name
+            or row.get("receipt_tag") != tag
+            or row.get("cycle_causal_group") != payload["verdict_receipt_sha"]
+            or row.get("cycle_causal_index") != 2
+            or row.get("current_verdict_source") != "scripted"
+            or row.get("current_verdict") != result.get("verdict")
+            or row.get("current_lakatos_status") != result.get("lakatos")
+            or row.get("receipt_verdict_source") != "scripted"
+            or row.get("receipt_verdict") != result.get("verdict")
+            or row.get("receipt_lakatos_status") != result.get("lakatos")
+            or not isinstance(dependent_ids, list)
+            or not dependent_ids
+            or any(
+                not isinstance(item, str) or not item.startswith("ob-")
+                for item in dependent_ids
+            )
+            or len(set(dependent_ids)) != len(dependent_ids)
+            or not isinstance(result.get("verdict"), str)
+            or result.get("verdict") not in _CYCLE_RESULT_VERDICTS
+            or not isinstance(result.get("lakatos"), str)
+            or result.get("lakatos") not in recoverable_cycle_lakatos_values
+            or type(result.get("delta")) not in (int, float)
+            or not math.isfinite(float(result["delta"]))
+            or result.get("novel") is not None
+               and type(result.get("novel")) is not bool
+            or type(result.get("novel_server_anchored")) is not bool
+        ):
+            raise HTTPException(500, "cycle result intent payload shape conflict")
+        receipt_fields = {
+            "tree": row.get("receipt_tree"),
+            "tag": row.get("receipt_tag"),
+            "target_id": row.get("receipt_target_id"),
+            "verdict": row.get("receipt_verdict"),
+            "verdict_source": row.get("receipt_verdict_source"),
+            "metric_name": row.get("receipt_metric_name"),
+            "metric_value": row.get("receipt_metric_value"),
+            "novel_confirmed": row.get("receipt_novel_confirmed"),
+            "lakatos_status": row.get("receipt_lakatos_status"),
+            "judged_at": row.get("receipt_judged_at"),
+            "judge_script_sha": row.get("receipt_judge_script_sha"),
+            "prev_receipt_sha": row.get("receipt_prev_receipt_sha"),
+            "measurement_grade": row.get("receipt_measurement_grade"),
+            "engine_rule_sha": row.get("receipt_engine_rule_sha"),
+            "comment_sha": row.get("receipt_comment_sha"),
+            "replay_status": row.get("receipt_replay_status"),
+            "replay_reason": row.get("receipt_replay_reason"),
+            "regenerated_metric": row.get("receipt_regenerated_metric"),
+            "judge_script_path": row.get("receipt_judge_script_path"),
+            "result_path": row.get("receipt_result_path"),
+            "result_sha256": row.get("receipt_result_sha256"),
+            "measurement_lock_sha": row.get("receipt_measurement_lock_sha"),
+            "source_script_path": row.get("receipt_source_script_path"),
+            "source_result_path": row.get("receipt_source_result_path"),
+            "history_payload_sha256": row.get(
+                "receipt_history_payload_sha256"
+            ),
+        }
+        if receipt_content_sha(receipt_fields) != payload["verdict_receipt_sha"]:
+            raise HTTPException(500, "cycle verdict receipt content hash mismatch")
+        if dependent_ids[0] != f"ob-test-result-{payload['verdict_receipt_sha']}":
+            raise HTTPException(500, "cycle dependency order conflict")
+        if len(dependent_ids) > 2 or (
+            len(dependent_ids) == 2
+            and dependent_ids[1]
+                != f"ob-question-close-{payload['verdict_receipt_sha']}"
+        ):
+            raise HTTPException(500, "cycle dependency manifest conflict")
+        dependent_rows = row.get("group_outboxes")
+        if not isinstance(dependent_rows, list):
+            raise HTTPException(500, "cycle causal group snapshot missing")
+        by_id = {dep.get("id"): dep for dep in (dependent_rows or [])}
+        if (
+            len(by_id) != len(dependent_rows or [])
+            or len(by_id) != len(dependent_ids) + 1
+            or event_id not in by_id
+        ):
+            raise HTTPException(500, "cycle dependency manifest is incomplete")
 
+        current_snapshot = {
+            "current_receipt_sha": row.get("current_receipt_sha"),
+            "verdict": row.get("current_verdict"),
+            "verdict_source": row.get("current_verdict_source"),
+            "lakatos_status": row.get("current_lakatos_status"),
+            "metric_value": row.get("current_metric_value"),
+        }
+        receipt_snapshot = dict(receipt_fields)
+        receipt_snapshot["receipt_sha"] = row.get("bound_receipt_sha")
+        closure_snapshot = {
+            "question_state": row.get("question_state"),
+            "question_closed_by": row.get("question_closed_by"),
+            "question_closed_events": row.get("question_closed_events"),
+            "closure_id": row.get("closure_id"),
+            "closure_closed_by": row.get("closure_closed_by"),
+            "closure_at": row.get("closure_at"),
+            "closure_tree": row.get("closure_tree"),
+            "closure_question": row.get("closure_question"),
+            "closure_trigger": row.get("closure_trigger"),
+            "closure_verdict": row.get("closure_verdict"),
+            "closure_receipt_sha": row.get("closure_receipt_sha"),
+            "closure_bound": row.get("closure_bound_count") == 1,
+            "closure_global_count": row.get("closure_global_count"),
+            "closes_rel_count": row.get("closes_rel_count"),
+            "closes_rel_receipt_sha": row.get("closes_rel_receipt_sha"),
+            "closes_rel_verdict": row.get("closes_rel_verdict"),
+            "closes_rel_at": row.get("closes_rel_at"),
+        }
+        try:
+            validated_group = validate_verdict_intent_group(
+                tree=name,
+                tag=tag,
+                receipt_sha=payload["verdict_receipt_sha"],
+                receipt=receipt_snapshot,
+                current=current_snapshot,
+                outboxes=list(dependent_rows or []),
+                closure=closure_snapshot,
+                require_cycle=True,
+            )
+        except VerdictIntentError as exc:
+            raise HTTPException(
+                500, f"cycle verdict intent group corrupt: {exc}"
+            ) from exc
+        if validated_group.cycle_payload != payload:
+            raise HTTPException(500, "cycle result intent changed during recovery")
+        dependent_history: list[tuple[str, dict, str]] = []
+        for index, dependent_id in enumerate(dependent_ids):
+            dep = by_id.get(dependent_id) or {}
+            expected_op = "test_result" if index == 0 else "question_close"
+            expected_reason = f"{expected_op}_commit_intent"
+            try:
+                if not isinstance(dep.get("created_at"), str):
+                    raise ValueError("created_at must be ISO text")
+                dependent_created_at = datetime.fromisoformat(dep["created_at"])
+                if dependent_created_at.utcoffset() is None:
+                    raise ValueError("created_at must include a timezone")
+                dependent_payload = json.loads(
+                    dep.get("payload"), object_pairs_hook=unique_object
+                )
+                if canonical_history_payload(dependent_payload) != dep.get("payload"):
+                    raise ValueError("dependent payload is not canonical")
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise HTTPException(500, "cycle dependency payload corrupt") from exc
+            if not (
+                dep.get("tree") == name
+                and dep.get("op") == expected_op
+                and dep.get("node_tag") == tag
+                and dep.get("reason") == expected_reason
+                and dep.get("receipt_sha") == payload["verdict_receipt_sha"]
+                and dep.get("causal_group") == payload["verdict_receipt_sha"]
+                and dep.get("causal_index") == index
+                and (
+                    (dep.get("status") == "pending" and dep.get("applied_at") is None)
+                    or (dep.get("status") == "applied"
+                        and dep.get("applied_at") is not None)
+                )
+            ):
+                raise HTTPException(500, "cycle dependency immutable binding conflict")
+            if index == 0 and not (
+                dependent_payload.get("receipt_sha")
+                    == payload["verdict_receipt_sha"]
+                and dependent_payload.get("verdict") == result.get("verdict")
+                and dependent_payload.get("lakatos") == result.get("lakatos")
+                and dependent_payload.get("delta") == result.get("delta")
+                and dependent_payload.get("novel") == result.get("novel")
+                and dependent_payload.get("novel_server_anchored")
+                    == result.get("novel_server_anchored")
+                and dependent_payload.get("cycle_claim") == claim
+                and dependent_payload.get("cycle_request_sha256")
+                    == claim.removeprefix("cycle-")
+            ):
+                raise HTTPException(500, "cycle test-result dependency semantic mismatch")
+            if index == 1 and not (
+                dependent_payload.get("receipt_sha")
+                    == payload["verdict_receipt_sha"]
+                and dependent_payload.get("verdict") == result.get("verdict")
+                and dependent_payload.get("trigger") == "ADJUDICATED"
+                and dependent_payload.get("question")
+                    == row.get("receipt_target_id")
+            ):
+                raise HTTPException(500, "cycle question-close dependency semantic mismatch")
+            dependent_history.append((expected_op, dependent_payload, dependent_id))
+        return dict(result), payload, event_id, dependent_history
+
+    @staticmethod
+    def _cycle_multi_run_summary(c: CycleIn) -> dict | None:
+        """Derive the deterministic multi-run view bound by the cycle claim."""
+
+        if not c.multi_run:
+            return None
+        from lakatos.programme.multi_run import multi_run_collect
+
+        vals = list(c.multi_run_values or [])
+        if len(vals) < 2:
+            raise HTTPException(
+                422,
+                detail={
+                    'error': 422,
+                    'reason': 'multi_run_requires_n_ge_2',
+                    'note': (
+                        'multi_run=True 이면 multi_run_values 길이 ≥2 필요'
+                        '(default OFF 유지)'
+                    ),
+                },
+            )
+        summary = multi_run_collect(
+            lambda i: float(vals[i]), multi_run=True, n=len(vals)
+        )
+        if abs(float(summary['mean']) - float(c.measured)) > 1e-6:
+            raise HTTPException(
+                422,
+                detail={
+                    'error': 422,
+                    'reason': 'multi_run_mean_mismatch',
+                    'mean': summary['mean'],
+                    'measured': c.measured,
+                    'note': 'measured 는 multi_run_values 평균과 일치해야 함',
+                },
+            )
+        return summary
+
+    def _complete_recovered_cycle(
+        self,
+        name: str,
+        c: CycleIn,
+        recovered: tuple[dict, dict, str, list[tuple[str, dict, str]]],
+    ) -> dict:
+        """Finish projections/critique after an exact committed cycle replay."""
+
+        res, cycle_payload, cycle_event_id, dependent_history = recovered
+        for op, payload, event_id in dependent_history:
+            projected = self.hist(
+                name,
+                op,
+                c.tag,
+                payload,
+                event_id=event_id,
+            )
+            if projected is False:
+                raise HTTPException(
+                    503, f"{op} history pending; causal successors deferred"
+                )
+        cycle_projected = self.hist(
+            name,
+            "cycle_result",
+            c.tag,
+            cycle_payload,
+            event_id=cycle_event_id,
+        )
+        if cycle_projected is False:
+            raise HTTPException(503, "cycle history projection remains pending")
+        for critique in c.critiques:
+            self.add_critique(name, c.tag, critique)
+        budget, used = self._cycle_budget_state(name)
+        remaining = remaining_budget(budget, used)
+        out = dict(
+            tree=name,
+            tag=c.tag,
+            verdict=res.get("verdict"),
+            novel=res.get("novel"),
+            lakatos=res.get("lakatos"),
+            delta=res.get("delta"),
+            critiques=len(c.critiques),
+            standing=self.standing(name, c.tag),
+            idempotent=True,
+            note="durable cycle_result exact replay — committed verdict reused",
+        )
+        if remaining is not None:
+            out["remaining_budget"] = remaining
+        multi_run_summary = self._cycle_multi_run_summary(c)
+        if multi_run_summary is not None:
+            out["multi_run"] = multi_run_summary
+        out["novel_server_anchored"] = res["novel_server_anchored"]
+        if res.get("lakatos") in (
+            "novel_not_server_anchored",
+            "provisional_stale_engine",
+        ):
+            tip = advice_for(res["lakatos"])
+            if tip:
+                out["advice"], out["advice_mode"] = tip, "suggest-only"
+        return out
+
+    @_serialized_ledger_command
     def run_cycle(self, name: str, c: CycleIn) -> dict:
         """봉인 1-verb 정직 사이클(git-흡수 G3, P3 porcelain 경제학 역전) — 사전등록→채점→제출→영수증을
         client 호출 *한 번*에. note 경로(2-verb)보다 정직경로가 구조적으로 싸다.
 
         ① incore trial(쓰기 0)이 먼저 4xx 격추 · dry_run=True 면 여기서 미리보기 반환(영수증 아님).
-        ② write 후 실패는 보상 롤백 — 이 사이클이 만든 신규 노드 0 (고아 예측노드 debris 금지).
-        ③ 판결 영수증 착륙이 내구점: 그 후(critique) 실패는 롤백 금지(G1/G9 — 영수증 파괴 불가).
+        ② prediction 영수증 전 실패는 exact creation-marker 소유분만 보상 삭제한다.
+        ③ prediction 영수증이 첫 내구점: submit/critique 실패는 노드+receipt를 보존한다.
         4xx 엔 advice 레지스트리가 다음 명령을 제안(suggest-only, 게이트 우회 off-switch 없음).
         ⓪ 루프-경계 예산(PROM16 S1/S5, opt-in): 트리가 cycle_budget 을 선언했고 소진됐으면 *실행
            대신* 타입 거부(status='budget_exhausted') — 첫 write 전. 미선언=무제한(응답 shape 불변)."""
+        # Preflight the *entire* command before recovery reads, node ownership,
+        # prediction receipts, or any other mutation. Neo4j accepts text that
+        # PostgreSQL JSONB cannot represent; discovering it after the prediction
+        # receipt would strand an irreversible partial cycle.
+        cycle_request = [name, c.model_dump()]
+        try:
+            validate_history_record(
+                name,
+                "cycle_result",
+                c.tag,
+                {"cycle_request": cycle_request},
+                "ob-cycle-result-preflight",
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422,
+                "cycle request contains text PostgreSQL JSONB cannot represent",
+            ) from exc
+        claim = self._cycle_claim(name, c, cycle_request)
+        if not c.dry_run:
+            # Recovery projection and every durable cycle mutation share the
+            # same audited writer authority as direct ledger verbs.  This is
+            # deliberately before the first recovery read/add-node step.
+            self.ledger_ready()
+            recovered = self._recover_cycle_result(name, c.tag, claim)
+            if recovered is not None:
+                return self._complete_recovered_cycle(name, c, recovered)
+
         # ⓪ 예산 게이트 — trial(판정) 보다도 먼저. 못 도는 사이클은 미리보기조차 오도이고, 루프
         #    드라이버는 이유코드로 즉시 멈춰야 한다.
         #    범위(과대주장 금지): 이 게이트는 run_cycle 표면의 *조기* 거부일 뿐이고, 강제 자체는
         #    judgement_service 초크포인트(submit_test_result/set_verdict)의 같은 게이트가 한다 —
-        #    그래서 3-verb 경로로 갈아타도 채점은 안 된다(verb-교체 우회 없음). 단 '에이전트 자기판단과
-        #    독립'은 *무조건*이 아니라 두 겹으로 조건부다: (1) KG 가용성 — 예산 조회 실패 시 fail-safe 로
-        #    무제한. (2) ★상한 불변성 — cycle_budget 에 단조 ratchet 이 없어(writer.py: plain
-        #    last-write-wins) 소진된 에이전트가 같은 트리에 create_tree(cycle_budget=N) 을 불러 자기
-        #    천장을 올릴 수 있고, 표면엔 운영자↔에이전트 구분이 없어 그걸 막는 것도 없다 ⇒ 이 정지는
-        #    *협조적* 에이전트에만 선다(적대적 에이전트엔 안 선다). 전체 목록: cycle_budget.py 모듈
-        #    docstring. 또 add_node/register_prediction 은 애초에 예산 밖이라 소진 트리도 구조 write 는
-        #    계속 된다.
+        #    그래서 3-verb 경로로 갈아타도 채점은 안 된다(verb-교체 우회 없음). 이 선조회는 빠른 UX와
+        #    dry-run 표시용이고, 실제 권위는 submit_test_result/set_verdict 의 첫 mutation statement가
+        #    트리 락 아래 다시 세는 LOCKED_BUDGET_GUARD다. KG 장애·동시 writer 에서 mutation은 fail-closed.
+        #    상향에는 명시 확인(및 attestor 트리 write-cert)이 필요하지만 운영자 authn 구분은 아직 없다.
+        #    add_node/register_prediction 은 예산 밖이라 소진 트리도 구조 write 는 계속 된다.
         budget, used = self._cycle_budget_state(name)
-        remaining = remaining_budget(budget, used)   # 미선언=None(무제한) · 음수는 0 clamp(TOCTOU 초과분)
+        remaining = remaining_budget(budget, used)   # 미선언=None(무제한) · 레거시 초과분은 0 clamp
         if remaining == 0:
             return {'tree': name, 'tag': c.tag, 'status': 'budget_exhausted',
                     # 'scored_nodes' — 세는 대상의 정직한 이름. 이건 *판결받은 노드 수*이지 호출횟수가
@@ -453,6 +993,8 @@ class ProgrammeService:
                     'note': f'트리 채점 예산 {budget} 소진(채점노드 {used}) — 실행 안 함(쓰기 0). '
                             f'submit_result/set_verdict 도 같은 예산으로 429 거부된다. '
                             f'예산을 올리거나(create_tree cycle_budget) 새 트리로 분기할 것'}
+        # multi_run opt-in (default OFF): validate N≥2 values ↔ measured=mean; never flips default.
+        multi_run_summary = self._cycle_multi_run_summary(c)
         trial = self._cycle_trial(c)
         if c.dry_run:
             out = dict(tree=name, tag=c.tag, dry_run=True, **trial,
@@ -463,7 +1005,8 @@ class ProgrammeService:
             #   (KG-less fake/운영 단절)=힌트 생략: 불확실한 정책으로 예고를 지어내지 않는다.
             #   ※ 이 read 는 dry_run 분기 전용. (2026-07-15 정정: "비-dry 경로엔 새 kg 쿼리 0" 이라던
             #     종전 주석은 더 이상 참이 아니다 — PROM16 예산 게이트가 _cycle_budget_state 1-read 를
-            #     양 경로 공통으로 추가했다. 같은 fail-safe 규율은 지킨다: 조회 실패=무제한 진행.)
+            #     양 경로 공통으로 추가했다. 조회 실패 시 dry-run 힌트는 생략하며, live write 권위는
+            #     judgement_service 의 lock-held mutation guard다.)
             try:
                 rows = self.kg('MATCH (t:LakatosTree {name:$tree}) '
                                'RETURN t.require_novel_anchor AS require_novel_anchor, '
@@ -483,16 +1026,31 @@ class ProgrammeService:
                     and not c.novel_script
                     and trial.get('verdict_preview') in SCORED_PROGRESS_VERDICTS)
             return out
-        created = not self._cycle_node_exists(name, c.tag)
+        # A process crash must not strand an unrecoverable deterministic
+        # ownership token; a different payload derives a different claim.
+        prediction_durable = False
         try:
-            self.add_node(name, NodeIn(tag=c.tag, parent=(c.parent or None),
-                                       algorithm=c.algorithm, comment=c.comment))
+            self.add_node(
+                name,
+                NodeIn(tag=c.tag, parent=(c.parent or None),
+                       algorithm=c.algorithm, comment=c.comment),
+                claim,
+            )
             self.register_prediction(name, c.tag, PredictionIn(
                 metric_name=c.metric_name, direction=c.direction, baseline_value=c.baseline,
                 noise_band=c.noise_band, novel_metric=c.novel_metric, novel_direction=c.novel_direction,
                 novel_threshold=c.novel_threshold, judge_script_sha=c.script_sha,
                 closes_question=c.closes_question, credence=c.credence))
-            res = self.submit_test_result(name, c.tag, TestResultIn(
+            # register_prediction atomically mints the immutable prediction
+            # receipt/current head. From here the node is durable and rollback
+            # would erase evidence. Releasing a marker can only reduce delete
+            # authority, so a concurrent clear is harmless.
+            prediction_durable = True
+            try:
+                self.release_cycle_claim(name, c.tag, claim)
+            except Exception:
+                pass  # receipt guards compensation even if marker cleanup is delayed
+            result_input = TestResultIn(
                 metric_value=c.measured, script=c.script, script_sha=c.script_sha,
                 novel_measured=c.novel_measured,
                 novel_script=c.novel_script,   # R2-NOVEL(s1): 서버앵커 소스 관통 — 없으면 FF1 partial
@@ -501,15 +1059,72 @@ class ProgrammeService:
                 ce_excess_content=c.ce_excess_content, ce_novel_corroborated=c.ce_novel_corroborated,
                 ce_in_heuristic_spirit=c.ce_in_heuristic_spirit,
                 lakatos_anomaly=c.lakatos_anomaly, lakatos_consequence=c.lakatos_consequence,
-                lakatos_excess=c.lakatos_excess, lakatos_hardcore=c.lakatos_hardcore))
+                lakatos_excess=c.lakatos_excess, lakatos_hardcore=c.lakatos_hardcore)
+            submit_parameters = inspect.signature(self.submit_test_result).parameters.values()
+            parameter_names = {parameter.name for parameter in submit_parameters}
+            accepts_kwargs = any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in submit_parameters
+            )
+            durable_submit = (
+                "cycle_claim" in parameter_names or accepts_kwargs
+            )
+            durable_cycle_request = (
+                "cycle_request" in parameter_names or accepts_kwargs
+            )
+            if durable_submit and durable_cycle_request:
+                res = self.submit_test_result(
+                    name, c.tag, result_input,
+                    cycle_claim=claim,
+                    cycle_request=cycle_request,
+                )
+            elif durable_submit:
+                # Compatibility for old injected test doubles only.  The live
+                # app exposes both bindings and always takes the branch above.
+                res = self.submit_test_result(
+                    name, c.tag, result_input, cycle_claim=claim
+                )
+            else:
+                # Narrow compatibility path for legacy in-memory test doubles.
+                res = self.submit_test_result(name, c.tag, result_input)
         except HTTPException as e:
-            if created:
-                self._rollback_cycle_node(name, c.tag)   # 영수증-안전 가드 포함(신규·미채점만)
+            # A concurrent identical cycle may have committed after our initial
+            # recovery read but before this invocation reached prediction or
+            # verdict CAS.  Re-read the immutable cycle receipt before exposing
+            # a false conflict; exact payload binding prevents cross-request
+            # result reuse.
+            recovered = self._recover_cycle_result(name, c.tag, claim)
+            if recovered is not None:
+                return self._complete_recovered_cycle(name, c, recovered)
+            if not prediction_durable:
+                try:
+                    self.compensate_cycle_node(name, c.tag, claim)
+                except Exception:
+                    pass  # never mask the original cycle verdict/error
             raise with_advice(e)
         except Exception:
-            if created:
-                self._rollback_cycle_node(name, c.tag)
+            if not prediction_durable:
+                try:
+                    self.compensate_cycle_node(name, c.tag, claim)
+                except Exception:
+                    pass  # exact token makes fail-safe preservation preferable
             raise
+        cycle_event_id = res.get("_cycle_event_id")
+        cycle_payload = res.get("_cycle_payload")
+        if durable_submit and (
+            cycle_event_id is None or not isinstance(cycle_payload, dict)
+        ):
+            raise HTTPException(500, "cycle verdict lacks durable cycle_result intent")
+        if cycle_event_id is not None and isinstance(cycle_payload, dict):
+            cycle_projected = self.hist(
+                name,
+                "cycle_result",
+                c.tag,
+                cycle_payload,
+                event_id=cycle_event_id,
+            )
+            if cycle_projected is False:
+                raise HTTPException(503, "cycle history projection remains pending")
         # ── 영수증 착륙(내구점) 이후 — critique 실패는 4xx+advice 로 전파하되 롤백하지 않는다.
         try:
             for critique in c.critiques:
@@ -521,6 +1136,8 @@ class ProgrammeService:
                    delta=res.get('delta'), critiques=len(c.critiques),
                    standing=self.standing(name, c.tag),
                    note='in-process 오케스트레이션 — bash(build/judge)는 client/CLI 책임(서버 no-RCE)')
+        if multi_run_summary is not None:
+            out['multi_run'] = multi_run_summary
         if remaining is not None:
             # 이 사이클이 영수증 1 을 착륙시켰으므로 정확히 1 소모(재채점은 409 로 막혀 있어 성공경로
             #   = 새로 채점된 노드 1). 단 *강제*는 언제나 저장소 재파생이지 이 숫자가 아니다(보고용).
@@ -542,6 +1159,8 @@ class ProgrammeService:
 
     def add_element(self, name: str, el: ElementIn) -> dict:
         self.kg("""MATCH (t:LakatosTree {name:$tree})
+              SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+              WITH t
               MERGE (el:LakatosElement {name:$elname})
               SET el.definition=$definition, el.implication=$implication,
                   el.lifecycle=$lifecycle, el.scope=$scope, el.updated_at=$ts
@@ -553,7 +1172,10 @@ class ProgrammeService:
         return {'ok': True, 'name': el.name}
 
     def attach_element(self, name: str, tag: str, element_name: str, use: ElementUseIn) -> dict:
-        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})
+                  SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                  WITH t
+                  MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                   MATCH (t)-[:HAS_ELEMENT]->(el:LakatosElement {name:$elname})
                   MERGE (e)-[u:USES_ELEMENT]->(el)
                   SET u.note=$note, u.evidence_ref=$evidence_ref, u.at=$ts
@@ -568,6 +1190,8 @@ class ProgrammeService:
     def add_foundation_requirement(self, name: str, req: FoundationRequirementIn) -> dict:
         engine_req = req.to_engine()
         self.kg("""MATCH (t:LakatosTree {name:$tree})
+              SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+              WITH t
               MERGE (fr:FoundationRequirement {name:$tree+'/'+$name})
               SET fr.short_name=$name, fr.kind=$kind, fr.question=$question,
                   fr.why_needed=$why_needed, fr.acceptance_criteria=$acceptance_criteria,
@@ -595,7 +1219,7 @@ class ProgrammeService:
     def history(self, name: str, limit: int = 100) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 1000))
         with self.pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute('SELECT ts, op, node_tag, payload FROM history WHERE tree=%s '
+            cur.execute('SELECT ts, op, node_tag, payload FROM public.history WHERE tree=%s '
                         'ORDER BY id DESC LIMIT %s', (name, limit))
             return [dict(row, ts=row['ts'].isoformat()) for row in cur.fetchall()]
 

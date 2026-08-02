@@ -1,7 +1,7 @@
-"""P8 위생: _clamp01 단일정본 + uvicorn 워커 노브 (TDD).
+"""P8 위생: _clamp01 단일정본 + uvicorn 워커 정합성 (TDD).
 
 ENG-DU-5-duplicate-clamp01: _clamp01 가 engine/claim 중복 정의 → engine 단일정본을 claim 이 import.
-OPS-UVICORN-1: run.sh 가 단일워커 고정 → UVICORN_WORKERS env 노브(기본 1).
+OPS-UVICORN-1: process-local storage audit authority → 두 launcher 모두 단일 워커 fail-closed.
 """
 import os
 
@@ -17,6 +17,13 @@ def test_clamp01_still_works():
     assert claim._clamp01(1.5) == 1.0 and claim._clamp01(-0.2) == 0.0 and claim._clamp01(0.3) == 0.3
 
 
-def test_run_sh_has_worker_knob():
-    text = open(os.path.join(os.path.dirname(__file__), '..', 'server', 'run.sh'), encoding='utf-8').read()
-    assert 'UVICORN_WORKERS' in text and '--workers' in text
+def test_launchers_reject_multiworker_split_storage_authority():
+    for name in ('run.sh', 'run_internal.sh'):
+        text = open(
+            os.path.join(os.path.dirname(__file__), '..', 'server', name),
+            encoding='utf-8',
+        ).read()
+        assert 'UVICORN_WORKERS:-1' in text
+        assert 'WORKER_COUNT" != "1' in text
+        assert '--workers 1' in text
+        assert '--workers=*' in text and '-w=*' in text

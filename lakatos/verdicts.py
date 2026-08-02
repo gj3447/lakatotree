@@ -95,6 +95,16 @@ CONFIRMED_NOVEL_PROGRESS = frozenset({
     "progressive",
 })
 
+# frontier_state: a question is closed when its preregistered yes/no target has
+# received an exact answer. ``progressive`` answers positively and ``rejected``
+# answers negatively. Dialectical/off-axis or provisional verdicts do not answer
+# that target and therefore keep it open. This is intentionally narrower than
+# REJECTING_VERDICTS and is owned here with the rest of the verdict vocabulary.
+QUESTION_ANSWER_VERDICTS = frozenset({
+    "progressive",
+    "rejected",
+})
+
 
 def is_progress_verdict(verdict: str) -> bool:
     return verdict in PROGRESS_VERDICTS
@@ -196,6 +206,11 @@ PNR_CONDITIONAL_SOURCE_VERDICTS = ("progressive", "progressive_unverified")
 #   INCONCLUSIVE; 그 외(admin/구조 또는 비진보)는 SELF_REPORT. 키 *부재*(레거시/테스트 픽스처)는 신뢰(집계 보존).
 #   ★verdict_source 는 server-set-only — client 입력으로 받으면 모든 구멍이 동시에 재개방된다(스키마 가드).
 FORCEFUL_SOURCES = frozenset({'scripted', 'engine', 'reproducible', 'human'})
+# Mutation mirrors must preserve both evidentiary verdicts and structural
+# CANONICAL promotions.  ``admin`` is intentionally not forceful for scoring,
+# but it is just as immutable to generic upsert/sync writers: otherwise a
+# mirror refresh can silently demote a CANONICAL node back to draft state.
+MUTATION_PROTECTED_SOURCES = FORCEFUL_SOURCES | frozenset({'admin'})
 # 명시적 *무영수증* 마커(Occam step 5): 레거시 노드가 영수증 체제(prom-honesty) *이전*에 승격됐고
 #   검증 가능한 영수증이 없음을 *명시*한다 — NULL(미기록인지 의도적 withhold 인지 모호)보다 정직하다.
 #   force 가 아니므로 COUNTS 되지 않고, 진보집계에서 빠지도록 INCONCLUSIVE 로 매핑(NULL 진보어휘와 동일 취급).
@@ -291,6 +306,14 @@ def force_of_row(row: dict) -> str:
     if (base == 'COUNTS' and row.get('measurement_grade') == 'client_asserted'
             and row.get('replay_status') != 'verified'):
         return 'INCONCLUSIVE'   # 주장된 값(무검증) = 영수증 미도래와 동급 — credit 은 replay 가 산다
+    # Admin CANONICAL promotion rewrites verdict_source→admin (SELF_REPORT), which would
+    # drop L2 server_regenerated heads from progress/close credit. Measurement sovereignty:
+    # regenerated+verified+receipt still COUNTS after promotion (2026-07-31 고도화).
+    if (base != 'COUNTS'
+            and row.get('measurement_grade') == 'server_regenerated'
+            and row.get('replay_status') == 'verified'
+            and row.get('current_receipt_sha')):
+        return 'COUNTS'
     return base
 
 
@@ -431,6 +454,7 @@ _RECEIPT_ENCODING_VERSION_V2 = 'v2'
 _RECEIPT_ENCODING_VERSION_V3 = 'v3'   # EXTAUDIT S4: comment_sha 봉인 세대 — 별도 헤더로 sha-space 도메인 분리
 _RECEIPT_ENCODING_VERSION_V4 = 'v4'   # replay 진단(status/reason/regenerated) 봉인 세대
 _RECEIPT_ENCODING_VERSION_V5 = 'v5'   # replay artifact identity 봉인 세대
+_RECEIPT_ENCODING_VERSION_V6 = 'v6'   # canonical test-result summary commitment
 # 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
 #   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
 #   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
@@ -465,7 +489,8 @@ RECEIPT_FIELDS_V5 = RECEIPT_FIELDS_V4 + (
     'judge_script_path', 'result_path', 'result_sha256', 'measurement_lock_sha',
     'source_script_path', 'source_result_path',
 )
-RECEIPT_FIELDS = RECEIPT_FIELDS_V5
+RECEIPT_FIELDS_V6 = RECEIPT_FIELDS_V5 + ('history_payload_sha256',)
+RECEIPT_FIELDS = RECEIPT_FIELDS_V6
 
 _RECEIPT_ARTIFACT_IDENTITY_FIELDS = (
     'judge_script_path', 'result_path', 'result_sha256', 'measurement_lock_sha',
@@ -506,24 +531,28 @@ def canonical_receipt_blob(fields: dict, *, fieldset: tuple | None = None) -> by
     if fieldset is None:
         # A non-null artifact identity member selects v5.  Historical v4 maps lack these
         # properties (or project them as null), so their exact v4 bytes remain re-derivable.
+        v6 = fields.get('history_payload_sha256') is not None
         v5 = any(fields.get(key) is not None for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
         v4 = fields.get('replay_status') is not None
         v3 = fields.get('comment_sha') is not None
         v2 = fields.get('engine_rule_sha') is not None
-        keys = (RECEIPT_FIELDS_V5 if v5 else
+        keys = (RECEIPT_FIELDS_V6 if v6 else
+                (RECEIPT_FIELDS_V5 if v5 else
                 (RECEIPT_FIELDS_V4 if v4 else
                  (RECEIPT_FIELDS_V3 if v3 else
-                  (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1))))
+                  (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)))))
     else:
+        v6 = 'history_payload_sha256' in fieldset
         v5 = any(key in fieldset for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
         v4 = 'replay_status' in fieldset
         v3 = 'comment_sha' in fieldset
         v2 = 'engine_rule_sha' in fieldset
         keys = fieldset
-    ver = (_RECEIPT_ENCODING_VERSION_V5 if v5 else
+    ver = (_RECEIPT_ENCODING_VERSION_V6 if v6 else
+           (_RECEIPT_ENCODING_VERSION_V5 if v5 else
            (_RECEIPT_ENCODING_VERSION_V4 if v4 else
             (_RECEIPT_ENCODING_VERSION_V3 if v3 else
-             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))))
+             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION)))))
     payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
     if 'regenerated_metric' in payload:
@@ -538,6 +567,42 @@ def receipt_content_sha(fields: dict, *, fieldset: tuple | None = None) -> str:
     """내용주소 sha256(full 64-hex). 노드는 이 값을 current_receipt_sha 포인터로 든다. (G4 미러의 [:16] 절단은
     drift 알람 휴리스틱이라 별개 — 같은 primitive 를 공유하되 receipt 무결성은 full 해시.)"""
     return hashlib.sha256(canonical_receipt_blob(fields, fieldset=fieldset)).hexdigest()
+
+
+def verdict_history_payload_sha(payload_without_receipt: dict) -> str:
+    """Seal the canonical test-result summary without its circular receipt id."""
+
+    body = json.dumps(
+        payload_without_receipt,
+        sort_keys=True,
+        separators=(',', ':'),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode('utf-8')
+    return hashlib.sha256(b'verdict-history-payload\x00v1\n' + body).hexdigest()
+
+
+def prediction_history_payload_sha(payload: dict) -> str:
+    """Seal the complete preregistration request carried into history.
+
+    Prediction receipt v3 commits the full canonical request, including the
+    write certificate and submitted temporal-anchor material.  Earlier
+    prediction receipt generations sealed the scoring fields and anchor-bundle
+    digest, but not every history-only field; those generations therefore
+    cannot authorize automatic outbox recovery under the exact storage
+    contract.
+    """
+
+    body = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(',', ':'),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode('utf-8')
+    return hashlib.sha256(
+        b'prediction-history-payload\x00v1\n' + body
+    ).hexdigest()
 
 
 # ── jp3 (JP 캠페인): 인코딩 계보 + read-time recompute 판별 ─────────────────────────────────
@@ -576,7 +641,9 @@ def match_receipt_encoding(receipt: dict, stored_sha: str) -> str | None:
 #   남는 residual(정직 경계): 체인 통째 위조는 authenticity(substrate-B Ed25519)·벽시계 순서는
 #   temporal witness 의 몫 — 이 커널이 주는 것은 "spec-봉인 ≺ verdict-mint 의 해시-인과 순서"다.
 _PREDICTION_ENCODING_VERSION = 'v1'
-PREDICTION_RECEIPT_FIELDS = (
+_PREDICTION_ENCODING_VERSION_V2 = 'v2'
+_PREDICTION_ENCODING_VERSION_V3 = 'v3'
+PREDICTION_RECEIPT_FIELDS_V1 = (
     'receipt_kind',   # 'prediction' 고정 — 도메인 판별자(봉인 안에 포함)
     'tree', 'tag',
     'metric_name', 'direction', 'baseline_value', 'noise_band', 'scale_type',
@@ -584,6 +651,22 @@ PREDICTION_RECEIPT_FIELDS = (
     'judge_script_sha', 'closes_question', 'credence', 'baseline_lineage',
     'registered_at', 'prev_receipt_sha',
 )
+PREDICTION_RECEIPT_FIELDS_V2 = (
+    *PREDICTION_RECEIPT_FIELDS_V1,
+    # Hash of the canonical immutable witness-policy + submitted-anchor
+    # bundle.  The bundle itself is persisted on the receipt; sealing its
+    # digest prevents an exact prediction retry from swapping anchor material
+    # while retaining the same prediction receipt identity.
+    'anchor_bundle_sha256',
+)
+PREDICTION_RECEIPT_FIELDS_V3 = (
+    *PREDICTION_RECEIPT_FIELDS_V2,
+    # Digest of the complete canonical ``PredictionIn`` history payload.
+    # This closes the recovery gap where a syntactically valid outbox could
+    # retain the scoring receipt while swapping history-only request fields.
+    'history_payload_sha256',
+)
+PREDICTION_RECEIPT_FIELDS = PREDICTION_RECEIPT_FIELDS_V3
 _PREDICTION_NUMERIC_FIELDS = ('baseline_value', 'noise_band', 'novel_threshold', 'credence')
 
 
@@ -592,12 +675,24 @@ def canonical_prediction_blob(fields: dict) -> bytes:
 
     수치 필드는 _coerce_metric_value(int/float 통일·비유한→None), registered_at 는 _coerce_judged_at
     — write·rederive 양쪽이 이 함수를 거쳐 legacy 타입이 sha 를 발산시키지 못한다(verdict 커널 동형)."""
-    payload = {k: fields.get(k) for k in PREDICTION_RECEIPT_FIELDS}
+    v3 = fields.get('history_payload_sha256') is not None
+    v2 = fields.get('anchor_bundle_sha256') is not None
+    keys = (
+        PREDICTION_RECEIPT_FIELDS_V3
+        if v3
+        else (PREDICTION_RECEIPT_FIELDS_V2 if v2 else PREDICTION_RECEIPT_FIELDS_V1)
+    )
+    payload = {k: fields.get(k) for k in keys}
     for k in _PREDICTION_NUMERIC_FIELDS:
         payload[k] = _coerce_metric_value(payload.get(k))
     payload['registered_at'] = _coerce_judged_at(payload.get('registered_at'))
     body = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-    header = f'prediction-receipt\x00{_PREDICTION_ENCODING_VERSION}\n'
+    version = (
+        _PREDICTION_ENCODING_VERSION_V3
+        if v3
+        else (_PREDICTION_ENCODING_VERSION_V2 if v2 else _PREDICTION_ENCODING_VERSION)
+    )
+    header = f'prediction-receipt\x00{version}\n'
     return header.encode('utf-8') + body.encode('utf-8')
 
 

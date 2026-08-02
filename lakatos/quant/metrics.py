@@ -33,6 +33,35 @@ def _primary_parent(row: dict) -> str | None:
     return parents[0] if parents else None
 
 
+_MANAGED_ATTEMPT_KEYS = frozenset({
+    "current_receipt_sha", "judged_at", "measurement_grade", "replay_status",
+})
+_ATTEMPT_OUTCOME_KEYS = (
+    "judged_at", "metric_value", "measurement_grade", "replay_status",
+)
+
+
+def _attempted_chain(chain: list[dict]) -> list[dict]:
+    """Return nodes that consumed scientific-attempt budget, in chronology.
+
+    Managed read-model rows expose attempt-state keys even when their values
+    are empty.  Graph depth, a forceful-looking label, or a prediction receipt
+    alone is not an outcome and cannot spend Laudan's zero-hit budget.  A
+    judgement/measurement/replay marker does spend it.  Key-absent legacy
+    fixtures retain their historical one-node/one-attempt interpretation.
+    """
+
+    attempted = []
+    for row in chain:
+        managed_shape = any(key in row for key in _MANAGED_ATTEMPT_KEYS)
+        if not managed_shape:
+            attempted.append(row)
+            continue
+        if any(row.get(key) not in (None, "") for key in _ATTEMPT_OUTCOME_KEYS):
+            attempted.append(row)
+    return attempted
+
+
 def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
                   window: int | None = None) -> dict:
     """가지(leaf) 또는 정본 leaf 의 stack/lifecycle 입력 묶음 — 서버/CLI 단일 어댑터.
@@ -54,6 +83,7 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
         seen.add(cur)
         chain.append(by[cur])
         cur = _primary_parent(by[cur])
+    attempts = _attempted_chain(chain)
     seq = []
     for r in reversed(chain):                      # 베이즈는 시간순(root→leaf)
         d = {'verdict': r['verdict']}
@@ -62,23 +92,24 @@ def branch_inputs(nodes: list, frontier: list, leaf: str | None = None,
             d['noise_band'] = r.get('pred_noise_band')   # 부재(None)와 선언-0을 보존
         seq.append(d)
     consec = 0
-    for r in chain:                                # leaf 쪽부터 연속 비진보
+    for r in attempts:                             # leaf 쪽부터 실제 시도만 연속 비진보
         if r['verdict'] in NONPROGRESSIVE:
             consec += 1
         else:
             break
     recent = chain[:window]
-    # finding A(2026-07-12): 폐기 규칙③ 은 영수증 있는(verdict_source ∈ FORCEFUL) 닫은 노드가 낸
-    # close 만 credit — 무채점 self-report close 가 문제수지를 부풀려 폐기를 면제하는 것을 차단.
-    _rtags = {t for t, r in by.items() if r.get('verdict_source') in FORCEFUL_SOURCES}
+    # finding A + Sprint A: force_of_row COUNTS 만 credit (라벨-only FORCEFUL 제외).
+    _rtags = {t for t, r in by.items() if force_of_row(r) == 'COUNTS'}
     return dict(
         leaf=leaf, window=window, verdicts=seq,
         # root→leaf 시간순 정본경로 (tag,verdict) — programme.series 진단의 입력(#5). additive 키.
         path=[{'tag': r['tag'], 'verdict': r['verdict']} for r in reversed(chain)],
-        consecutive_nonprogressive=consec, nodes_spent=len(chain),
+        consecutive_nonprogressive=consec, nodes_spent=len(attempts),
         # M3: 폐기규칙②·bandit reward 가 묻는 *적중*은 confirmed-novel 진보만(미확증 conditional/
         #     former_canonical 제외) — 넓은 PROGRESS_VERDICTS 로 세면 미확증이 폐기를 면제·reward 오염.
-        prediction_hits=sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS),
+        prediction_hits=sum(
+            1 for r in attempts if r['verdict'] in CONFIRMED_NOVEL_PROGRESS
+        ),
         problem_balance_windowed=branch_problem_balance_windowed(chain, frontier,
                                                                  window=window,
                                                                  receipted_tags=_rtags),
@@ -161,30 +192,80 @@ def _verdict_seq(tv: '_TreeView | list', tags: list | dict) -> list:
 
 # ── 지표 개념별 순수함수 (한 개념 = 한 함수 = 한 테스트) ──────────────────────────────
 def _progress_metric(tv: '_TreeView | list', by: dict | None = None) -> dict | None:
-    """진보율 — 같은 scope 정본경로의 metric 개선 %. 방향 인식(ENG-HON-1) + first=0 가드(F-FG-8)."""
+    """진보율 — 같은 scope 정본경로의 metric 개선 %. 방향 인식(ENG-HON-1) + first=0 가드(F-FG-8).
+
+    Scope 선택 (2026-07-31 고도화):
+      1) 정본 *헤드* 노드의 metric_scope 가 path 위 2점 이상이면 그 scope 우선
+         (레거시 count 스코프가 헤드 unreceipted_closes 등을 가리는 정체 오경보 완화)
+      2) 그 중 server_regenerated path 끝점을 가진 scope 가 있으면 가산
+      3) 아니면 종전: 노드 최다 scope (tie → 이름순)
+    """
     if not isinstance(tv, _TreeView):
         tv = _tv(by=by, path=tv)
     by = tv.by
-    pm = [(t, by[t]['metric_value'], by[t].get('metric_scope'), by[t].get('pred_direction') or 'lower')
-          for t in tv.path if by[t].get('metric_value') is not None]
+    # Group key: metric_name when present (unreceipted_closes vs tests), else metric_scope.
+    # Mixing different metric_name under scope=None was collapsing head hygiene into legacy tests.
+    pm = []
+    for t in tv.path:
+        row = by[t]
+        if row.get('metric_value') is None:
+            continue
+        key = row.get('metric_name') or row.get('metric_scope')
+        pm.append((t, row['metric_value'], key,
+                   row.get('pred_direction') or 'lower',
+                   row.get('measurement_grade')))
     if len(pm) < 2:
         return None
     scopes = defaultdict(list)
-    for t, m, sc, d in pm:
-        scopes[sc].append((t, m, d))
-    # dogfood: 다중 scope 중 노드 최다 scope 측정 + *어느 scope 인지* 정직 표기. tie 면 이름순(결정성).
-    scope_name = max(scopes, key=lambda k: (len(scopes[k]), str(k)))
-    sc = scopes[scope_name]
-    if len(sc) < 2:
-        return None
-    first_m, last_m, direction = sc[0][1], sc[-1][1], sc[0][2]
-    gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)   # 개선=양수
-    common = dict(first={'tag': sc[0][0], 'm': first_m},
-                  last={'tag': sc[-1][0], 'm': last_m}, direction=direction, scope=scope_name)
-    if first_m != 0:
-        return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
-    return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))   # 기준 0 → 절대증가
+    for t, m, key, d, mg in pm:
+        scopes[key].append((t, m, d, mg))
 
+    head_key = None
+    for t in reversed(tv.path):
+        if by[t].get('metric_value') is not None:
+            head_key = by[t].get('metric_name') or by[t].get('metric_scope')
+            break
+
+    def _scope_key(sc_name):
+        rows = scopes[sc_name]
+        n = len(rows)
+        regen_tip = 1 if rows and rows[-1][3] == 'server_regenerated' else 0
+        head_match = 1 if sc_name == head_key and n >= 2 else 0
+        return (head_match, regen_tip, n, str(sc_name))
+
+    def _finish(first_tag, first_m, last_tag, last_m, direction, scope_name, *, first_as=None):
+        gain = (last_m - first_m) if direction == 'higher' else (first_m - last_m)
+        first = {'tag': first_tag, 'm': first_m}
+        if first_as:
+            first['as'] = first_as
+        common = dict(first=first, last={'tag': last_tag, 'm': last_m},
+                      direction=direction, scope=scope_name)
+        if first_m != 0:
+            return dict(common, improvement_pct=round(100 * gain / abs(first_m), 1))
+        return dict(common, improvement_pct=None, abs_gain=round(last_m - first_m, 4))
+
+    # Head series wins over longer legacy scopes (programme-head is the progress claim).
+    if head_key is not None and head_key in scopes:
+        head_rows = scopes[head_key]
+        if len(head_rows) >= 2:
+            direction = head_rows[-1][2]
+            return _finish(head_rows[0][0], head_rows[0][1],
+                           head_rows[-1][0], head_rows[-1][1], direction, head_key)
+        if len(head_rows) == 1:
+            t, last_m, direction, _mg = head_rows[0]
+            base = by[t].get('pred_baseline')
+            if base is not None:
+                return _finish(t, float(base), t, last_m, direction, head_key,
+                               first_as='pred_baseline')
+
+    eligible = [k for k, rows in scopes.items() if len(rows) >= 2]
+    if not eligible:
+        return None
+    scope_name = max(eligible, key=_scope_key)
+    sc = scopes[scope_name]
+    first_m, last_m = sc[0][1], sc[-1][1]
+    direction = sc[-1][2]
+    return _finish(sc[0][0], first_m, sc[-1][0], last_m, direction, scope_name)
 
 def _degeneration_depth(tv: '_TreeView | list', children: dict | None = None) -> int:
     """퇴행 깊이 — 정본경로 노드들의 최대 연속 비진보 자식 체인 (≥3 경보)."""
@@ -221,25 +302,27 @@ def _laudan_layer(tv: '_TreeView | list', frontier: list | None = None,
         tv = _tv(nodes=tv, frontier=frontier, by=by, path=path, leaves=leaves,
                  open_q=open_q, closed_q=closed_q)
     abandon = []
-    # finding A(2026-07-12): 폐기 규칙③ 은 영수증 있는(verdict_source ∈ FORCEFUL) close 만 credit —
-    # 무채점 self-report close 가 문제수지를 부풀려 폐기를 면제(조용한 false-retain)하는 것을 차단.
-    _rtags = {r.get('tag') for r in tv.nodes if r.get('verdict_source') in FORCEFUL_SOURCES}
+    # finding A(2026-07-12) + Sprint A(2026-07-31): 폐기 규칙③ 은 force_of_row COUNTS close 만
+    # credit — FORCEFUL 라벨만 있고 원장/검증 없는 closer 가 문제수지를 부풀리는 것을 차단
+    # (close_ratio_receipted 술어와 정렬).
+    _rtags = {r.get('tag') for r in tv.nodes if force_of_row(r) == 'COUNTS'}
     for leaf in tv.leaves:
         if leaf in tv.path:
             continue
         chain = _branch_chain(tv, leaf)
+        attempts = _attempted_chain(chain)
         consec = 0
-        for r in chain:                          # leaf→분기점 방향 연속 비진보
+        for r in attempts:                       # leaf→분기점 방향 실제 시도만 연속 비진보
             if r['verdict'] in NONPROGRESSIVE:
                 consec += 1
             else:
                 break
         # M3: confirmed-novel 진보만 적중 — 미확증 progressive_conditional 을 적중으로 세면 규칙②
         #     (예산 소진 ∧ 적중 0)가 면제돼 degenerating 가지가 무기한 산다(폐기 지연).
-        hits = sum(1 for r in chain if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
+        hits = sum(1 for r in attempts if r['verdict'] in CONFIRMED_NOVEL_PROGRESS)
         # gap4: 규칙③ — per-branch 질문귀속 (노드 questions=연 질문, frontier closed_by=닫은 노드)
         pb_windowed = branch_problem_balance_windowed(chain, tv.frontier, receipted_tags=_rtags)
-        ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(chain),
+        ok, reason = should_abandon(consecutive_nonprogressive=consec, nodes_spent=len(attempts),
                                     prediction_hits=hits, problem_balance_windowed=pb_windowed)
         if ok:
             abandon.append(dict(leaf=leaf, branch_len=len(chain), reason=reason))
@@ -354,16 +437,99 @@ def _eureka_layer(tv: '_TreeView | list', by: dict | None = None,
     return eureka_over_tree([tv.by[t] for t in tv.path]) if tv.path else eureka_over_tree(tv.nodes)
 
 
+def _programme_appraisal_layer(tv: '_TreeView | list', nodes: list | None = None) -> dict:
+    """MSRP dual-layer (prom-lt-msrp-vocab): programme_appraisal over canonical path series.
+
+    Separate from node progressive. diagnostic_only — never grants promotion authority.
+    chain of series-known verdicts < 2 → UNAPPRAISED (honest default).
+    """
+    from lakatos.quant.programme_series import series_from_path
+    if not isinstance(tv, _TreeView):
+        tv = _tv(nodes=nodes if nodes is not None else tv)
+    path_nodes = [tv.by[t] for t in tv.path if t in tv.by]
+    ap = series_from_path(path_nodes)
+    if ap.steps < 2:
+        status = 'UNAPPRAISED'
+    elif ap.trend == 'progressive':
+        status = 'PROGRESSIVE'
+    elif ap.trend == 'degenerating':
+        status = 'DEGENERATING'
+    elif ap.trend in ('off_axis', 'insufficient'):
+        status = 'UNAPPRAISED'
+    else:
+        status = 'STAGNANT'  # mixed / weak
+    return dict(
+        status=status,
+        trend=ap.trend,
+        authority=ap.authority,
+        promotion_authority=False,
+        steps=ap.steps,
+        progressive_count=ap.progressive_count,
+        nonprogressive_count=ap.nonprogressive_count,
+        off_axis_count=ap.off_axis_count,
+        reasons=list(ap.reasons),
+        note=('dual-layer: node progressive is independent; programme_appraisal is '
+              'diagnostic_only over series-known verdicts on canonical path '
+              '(prom-lt-selfdev-20260801).'),
+    )
+
+
 def _anchored_ratio(nodes: list) -> dict:
     """P0b(ManifestoGap R8): cross-metric novel 판결(novel_server_anchored 필드 보유) 중 *서버앵커*
     비율 — FF1 이 default-ON(신규 anchored 트리)인지, 아니면 novel 이 client float 한 줄로 서는지의
-    단일 관측. 분모 = novel_server_anchored 가 판정된 노드(True/False), 분자 = True. G5 단일 프로젝터."""
+    관측. 분모 = novel_server_anchored 가 판정된 노드(True/False), 분자 = True.
+
+    2026-07-31 빗방울 고도화: close_ratio_receipted / e-process 와 같이 force_of_row==COUNTS
+    정렬 부프로젝터를 병행한다. all_nodes 는 P0b 계약(레거시 L0 float 포함) 유지; counts_force
+    는 진보·영수증 힘이 있는 노드만 — L0 client_asserted float 를 진보 잔여로 오인하지 않게.
+    """
     judged = [r for r in nodes if r.get('novel_server_anchored') is not None]
     anchored = sum(1 for r in judged if r.get('novel_server_anchored'))
-    return dict(scope='all_nodes', novel_measured=len(judged), server_anchored=anchored,
-                anchored_ratio=round(anchored / len(judged), 3) if judged else None,
-                note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
-                     'None=novel 판정 노드 없음.')
+    counts = [r for r in judged if force_of_row(r) == 'COUNTS']
+    counts_anch = sum(1 for r in counts if r.get('novel_server_anchored'))
+    float_all = sorted(r.get('tag') for r in judged if not r.get('novel_server_anchored') and r.get('tag'))
+    float_counts = sorted(r.get('tag') for r in counts if not r.get('novel_server_anchored') and r.get('tag'))
+    # 2026-08-01: L2 supersession residual — child with novel_server_anchored=True
+    # means the float lineage was re-sealed; historical float tag remains (append-only)
+    # but is not an active programme force gap.
+    children_by_parent: dict[str, list] = defaultdict(list)
+    for r in nodes:
+        for p in (r.get('parents') or ([] if not r.get('parent') else [r.get('parent')])):
+            if p:
+                children_by_parent[str(p)].append(r)
+
+    def _superseded(tags: list[str]) -> list[str]:
+        out = []
+        for ft in tags:
+            kids = children_by_parent.get(ft) or []
+            if any(k.get('novel_server_anchored') for k in kids):
+                out.append(ft)
+        return out
+
+    super_all = _superseded(float_all)
+    super_counts = _superseded(float_counts)
+    active_all = [t for t in float_all if t not in set(super_all)]
+    active_counts = [t for t in float_counts if t not in set(super_counts)]
+    return dict(
+        scope='all_nodes',
+        novel_measured=len(judged),
+        server_anchored=anchored,
+        anchored_ratio=round(anchored / len(judged), 3) if judged else None,
+        float_tags=float_all,
+        superseded_float_tags=super_all,
+        active_float_tags=active_all,
+        counts_force=dict(
+            novel_measured=len(counts),
+            server_anchored=counts_anch,
+            anchored_ratio=round(counts_anch / len(counts), 3) if counts else None,
+            float_tags=float_counts,
+            superseded_float_tags=super_counts,
+            active_float_tags=active_counts,
+        ),
+        note='cross-metric novel 중 서버앵커 영수증 보유 비율(FF1 default-ON 관측). '
+             'all_nodes=P0b; counts_force=force_of_row COUNTS 정렬(진보 힘). '
+             'superseded_float_tags=자식 L2 nsa 재봉인 있는 역사 float. '
+             'None=novel 판정 노드 없음.')
 
 
 def _multiplicity_screen(nodes: list) -> dict:
@@ -405,6 +571,94 @@ def _coverage(cfg: dict) -> dict:
                 backlog_count=len(backlog), exhaustive=(status == 'exhaustive'))
 
 
+def _structure_layer(nodes: list[dict]) -> dict:
+    """Report graph density facts without turning them into a quality verdict.
+
+    Research density is not raw node count. This layer makes fragmentation,
+    multi-parent synthesis, and typed-relation use observable while preserving
+    malformed legacy rows as explicit unnamed/duplicate/dangling counts.
+    """
+
+    n = len(nodes)
+    tags: dict[str, list[int]] = {}
+    parent_edges: list[list[dict]] = []
+    for index, row in enumerate(nodes):
+        tag = str(row.get('tag') or '')
+        tags.setdefault(tag, []).append(index)
+        edges = row.get('parent_edges')
+        if not isinstance(edges, list):
+            parents = row.get('parents') or ([] if not row.get('parent') else [row.get('parent')])
+            edges = [{'tag': parent, 'relation_kind': 'knowledge_inheritance'}
+                     for parent in parents if parent]
+        parent_edges.append([edge for edge in edges
+                             if isinstance(edge, dict) and edge.get('tag')])
+
+    adjacency = [set() for _ in nodes]
+    raw_edges = sum(len(edges) for edges in parent_edges)
+    edge_count = typed_edges = dangling_edges = duplicate_edges = 0
+    multi_parent_nodes = 0
+    resolved_parent_counts = [0 for _ in nodes]
+    for child, edges in enumerate(parent_edges):
+        resolved_parents: set[int] = set()
+        seen_parent_tags: set[str] = set()
+        for edge in edges:
+            parent_tag = str(edge.get('tag'))
+            if parent_tag in seen_parent_tags:
+                duplicate_edges += 1
+                continue
+            seen_parent_tags.add(parent_tag)
+            if (edge.get('relation_kind') or 'knowledge_inheritance') != 'knowledge_inheritance':
+                is_typed = True
+            else:
+                is_typed = False
+            candidates = tags.get(parent_tag, [])
+            if len(candidates) != 1:
+                dangling_edges += 1
+                continue
+            parent = candidates[0]
+            resolved_parents.add(parent)
+            edge_count += 1
+            if is_typed:
+                typed_edges += 1
+            adjacency[child].add(parent)
+            adjacency[parent].add(child)
+        if len(resolved_parents) > 1:
+            multi_parent_nodes += 1
+        resolved_parent_counts[child] = len(resolved_parents)
+
+    components = 0
+    largest = 0
+    unseen = set(range(n))
+    while unseen:
+        components += 1
+        stack = [unseen.pop()]
+        size = 0
+        while stack:
+            current = stack.pop()
+            size += 1
+            neighbours = adjacency[current] & unseen
+            unseen.difference_update(neighbours)
+            stack.extend(neighbours)
+        largest = max(largest, size)
+
+    duplicate_tag_nodes = sum(len(indices) for tag, indices in tags.items()
+                              if tag and len(indices) > 1)
+    return {
+        'roots': sum(1 for count in resolved_parent_counts if count == 0),
+        'components': components,
+        'raw_edges': raw_edges,
+        'edges': edge_count,
+        'duplicate_edges': duplicate_edges,
+        'multi_parent_nodes': multi_parent_nodes,
+        'typed_edges': typed_edges,
+        'typed_edge_ratio': round(typed_edges / edge_count, 3) if edge_count else None,
+        'largest_component_ratio': round(largest / n, 3) if n else None,
+        'dangling_edges': dangling_edges,
+        'unnamed_nodes': len(tags.get('', [])),
+        'duplicate_tag_nodes': duplicate_tag_nodes,
+    }
+
+
 def _assemble_alerts(*, stalled: int, prog: dict | None, annotated: int, n: int,
                      coverage: dict, abandon: list, multiplicity: dict) -> list:
     """경보 조립 — 퇴행/정체/주석미완/커버리지/폐기후보/다중비교를 사람 읽는 문자열로."""
@@ -441,9 +695,10 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     #   (tree_metrics)과 리더보드(score_competitor→predictive_fertility)가 *같은* 술어를 쓴다 — 열매
     #   (fertility)를 한 곳에서 receipt-gate('가짜 열매로 cross-pollinate 금지', 하네스=열매). inconclusive=
     #   force_of_row=='INCONCLUSIVE'(영수증 미도래 + FORCEFUL 라벨 원장부재 포함), refuted=replay 반증인데 COUNTS.
-    inconclusive, refuted = partition_unreceipted(nodes)
+    raw_nodes = nodes  # pre-neutralize (alert reason split / provenance honesty)
+    inconclusive, refuted = partition_unreceipted(raw_nodes)
     lenient = bool(cfg.get('provenance_lenient'))
-    nodes = neutralize_unreceipted(nodes, lenient=lenient)
+    nodes = neutralize_unreceipted(raw_nodes, lenient=lenient)
     by = {r['tag']: r for r in nodes}
     n = len(nodes)
     path = _canonical_path(nodes, by)
@@ -453,15 +708,34 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     rejected = [r['tag'] for r in nodes if r['verdict'] == 'rejected']
     open_q = sum(1 for q in frontier if q['status'] == 'OPEN')
     closed_q = sum(1 for q in frontier if q['status'] == 'CLOSED')
-    # R7: receipted close — closed_by 노드가 영수증(FORCEFUL) 판결을 실제로 보유한 close 만 분자.
-    #   무채점(draft/미존재) closer 의 close 는 unreceipted 로 세분(기존 close_ratio 는 불변 병행).
+    # R7 + Sprint A (2026-07-31): receipted close 분자는 force_of_row==COUNTS 만.
+    #   예전은 verdict_source∈FORCEFUL_SOURCES 라벨만 봐서, FORCEFUL 라벨인데
+    #   current_receipt_sha 부재 / client_asserted∧¬verified 인 closer 도 분자에 삼(SelfDev 실측
+    #   FORCEFUL 9 vs COUNTS 4 과대 5건). 진보 집계(neutralize_unreceipted)와 동일 술어로 정렬.
+    #   구 라벨 지표는 close_ratio_label_forceful 로 병행 공시(비파괴 관측).
     _by_tag = {r.get('tag'): r for r in nodes}
+
+    def _closer_counts(cb: str) -> bool:
+        row = _by_tag.get(cb)
+        return bool(row) and force_of_row(row) == 'COUNTS'
+
+    def _closer_label_forceful(cb: str) -> bool:
+        return (_by_tag.get(cb) or {}).get('verdict_source') in FORCEFUL_SOURCES
+
     receipted_closed_q = sum(
         1 for q in frontier if q['status'] == 'CLOSED'
-        and any((_by_tag.get(cb) or {}).get('verdict_source') in FORCEFUL_SOURCES
-                for cb in (q.get('closed_by') or [])))
+        and any(_closer_counts(cb) for cb in (q.get('closed_by') or [])))
+    label_forceful_closed_q = sum(
+        1 for q in frontier if q['status'] == 'CLOSED'
+        and any(_closer_label_forceful(cb) for cb in (q.get('closed_by') or [])))
     annotated = sum(1 for r in nodes
                     if r.get('algorithm') and r.get('comment') and r.get('limitation'))
+    # 정본경로 주석 (2026-07-31): 전 트리 100% 주석은 dogfood 현실과 불합치 → 경로 완전성만 경보.
+    path_annotated = sum(
+        1 for t in path
+        if (by.get(t) or {}).get('algorithm')
+        and (by.get(t) or {}).get('comment')
+        and (by.get(t) or {}).get('limitation'))
     # 공유 트리 구조 1회 계산 → 각 지표 함수는 tv 하나만 받는다(결합을 1급 객체로).
     tv = _TreeView(nodes=nodes, frontier=frontier, by=by, path=path, children=children,
                    leaves=leaves, open_q=open_q, closed_q=closed_q)
@@ -478,29 +752,113 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
     eproc = _eprocess_layer(tv)          # S9: anytime-valid challenger (K=3 병행, 판정 비구속)
     anchored = _anchored_ratio(nodes)   # P0b(MG R8): cross-metric novel 중 서버앵커 비율
     multiplicity = _multiplicity_screen(nodes)
+    structure = _structure_layer(nodes)
     coverage = _coverage(cfg)
-    alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=annotated, n=n,
+    # 2026-08-01 prom dual-layer: node progressive ≠ MSRP programme_appraisal.
+    # Use raw path nodes (pre-neutralize) so unreceipted path greens still feed series
+    # diagnostic honestly — neutralize blanks verdict to _inconclusive_unscored which
+    # would otherwise force UNAPPRAISED(steps=0) on every dogfood path with L0 history.
+    _raw_by_for_pa = {r.get('tag'): r for r in raw_nodes}
+    _pa_path_nodes = [_raw_by_for_pa[t] for t in path if t in _raw_by_for_pa]
+    programme_appraisal = _programme_appraisal_layer(
+        _TreeView(nodes=raw_nodes, frontier=frontier, by=_raw_by_for_pa, path=path,
+                  children=children, leaves=leaves, open_q=open_q, closed_q=closed_q))
+
+    alerts = _assemble_alerts(stalled=stalled, prog=prog, annotated=path_annotated, n=max(len(path), 1),
                               coverage=coverage,
                               abandon=laudan['abandon_candidates'], multiplicity=multiplicity)
+    # 정본경로 주석 경보 문구 (전 트리 n 대신 path 완전성).
+    alerts = [
+        (f'정본경로 주석 미완 {path_annotated}/{len(path)}'
+         if a == '주석 미완 노드 존재' and path else a)
+        for a in alerts
+    ]
+    # 2026-07-31 고도화: inconclusive 사유 세분 (client_asserted vs 원장부재 vs 기타) —
+    # "verdict_source 없이" 일괄 문구가 L0 client_asserted(소스 있음)를 오도하던 것 교정.
+    _raw_by = {r.get('tag'): r for r in raw_nodes}
+    # 2026-08-01 annotate-only policy: limitation 에 legacy_inconclusive_annotate 마커가 있으면
+    # 위기 잔여가 아니라 *정직한 역사 주석* — 집계 제외는 유지, 경보만 residual 로 강등.
+    _LEGACY_MARK = 'legacy_inconclusive_annotate'
+    inc_split = {'client_asserted_unverified': 0, 'forceful_without_receipt': 0,
+                 'empty_verdict_source': 0, 'annotated_legacy': 0, 'other': 0}
+    annotated_legacy_tags = []
+    active_inc = []
+    for _tag in inconclusive:
+        _r = _raw_by.get(_tag) or {}
+        lim = str(_r.get('limitation') or '')
+        if _LEGACY_MARK in lim:
+            inc_split['annotated_legacy'] += 1
+            annotated_legacy_tags.append(_tag)
+            continue
+        active_inc.append(_tag)
+        if (_r.get('measurement_grade') == 'client_asserted'
+                and _r.get('replay_status') != 'verified'):
+            inc_split['client_asserted_unverified'] += 1
+        elif 'current_receipt_sha' in _r and not _r.get('current_receipt_sha'):
+            inc_split['forceful_without_receipt'] += 1
+        elif not _r.get('verdict_source'):
+            inc_split['empty_verdict_source'] += 1
+        else:
+            inc_split['other'] += 1
     if inconclusive:
-        alerts = [*alerts, (
-            f"영수증 없는 green: 진보어휘 노드 {len(inconclusive)}개가 verdict_source 없이 self-report = inconclusive "
-            + ("→ 진보 집계서 제외(재검증=run the receipt 로 해소). provenance 참조" if not lenient
-               else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
+        if active_inc:
+            _parts = [f"{k}={v}" for k, v in inc_split.items() if v and k != 'annotated_legacy']
+            _leg = (f"; annotated_legacy={inc_split['annotated_legacy']}"
+                    if inc_split['annotated_legacy'] else "")
+            alerts = [*alerts, (
+                f"영수증 없는 green: 진보어휘 노드 {len(active_inc)}개 active-inconclusive "
+                f"({', '.join(_parts)}{_leg}) "
+                + ("→ 진보 집계서 제외(L2 result_path+replay 또는 legacy 주석). provenance 참조"
+                   if not lenient
+                   else "이지만 lenient 모드라 집계에 포함됨(green 부풀림 — 주의)"))]
+        elif inc_split['annotated_legacy']:
+            alerts = [*alerts, (
+                f"legacy green residual {inc_split['annotated_legacy']}건 — 전부 "
+                f"legacy_inconclusive_annotate 주석(active-inconclusive=0). "
+                f"진보 집계 제외 유지; 역사 노드 append-only.")]
     if refuted and not lenient:
         alerts = [*alerts, (
             f"측정 반증된 green: replay_status='mismatch' 노드 {len(refuted)}개(영수증은 있으나 서버 "
             f"재실행이 값을 반증) → 진보/발전성 credit 서 제외(재실험·분기 권고). "
             f"fsck MEASUREMENT_REFUTED_BUT_STANDING 대응")]
-
     if anchored.get('anchored_ratio') is not None and anchored['anchored_ratio'] < 1.0:
         _drift = anchored['novel_measured'] - anchored['server_anchored']
-        alerts = [*alerts, f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
-                           f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). anchored_ratio="
-                           f"{anchored['anchored_ratio']}"]
+        _cf = anchored.get('counts_force') or {}
+        _cf_drift = (_cf.get('novel_measured') or 0) - (_cf.get('server_anchored') or 0)
+        _cf_ratio = _cf.get('anchored_ratio')
+        _super = anchored.get('superseded_float_tags') or []
+        _active = anchored.get('active_float_tags')
+        if _active is None:
+            _active = [t for t in (anchored.get('float_tags') or []) if t not in set(_super)]
+        _cf_active = (_cf.get('active_float_tags')
+                      if _cf.get('active_float_tags') is not None
+                      else _cf.get('float_tags') or [])
+        if not _active and _super:
+            # 역사 float 만 남고 전부 자식 L2 nsa 재봉인 — P3b 위기 아님(append-only residual).
+            alerts = [*alerts, (
+                f"역사 novel float residual {_drift}건 — 전부 L2 supersession "
+                f"(active_float=0, superseded={len(_super)}). "
+                f"anchored_ratio={anchored['anchored_ratio']}; "
+                f"COUNTS-aligned float residual={_cf_drift} "
+                f"(counts_force.anchored_ratio={_cf_ratio}, COUNTS active=0)")]
+        else:
+            alerts = [*alerts, (
+                f"서버앵커 안 된 novel {_drift}건 — cross-metric novel 이 client float 로 "
+                f"섰다(P3b notebook-drift: FF1 default-ON 미적용/legacy tier). "
+                f"anchored_ratio={anchored['anchored_ratio']}; "
+                f"COUNTS-aligned float={_cf_drift} "
+                f"(counts_force.anchored_ratio={_cf_ratio}); "
+                f"active_float={len(_active)} superseded_float={len(_super)} "
+                f"(COUNTS active={len(_cf_active)})")]
     if closed_q - receipted_closed_q > 0:
-        alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 무채점 "
-                           f"노드(close_ratio 는 유지, close_ratio_receipted 로 세분 공시; 재귀속은 ADR+GO)"]
+        alerts = [*alerts, f"영수증 없는 close {closed_q - receipted_closed_q}건 — closed_by 가 "
+                           f"force_of_row≠COUNTS(무채점·무영수증·client_asserted 미검증 등). "
+                           f"close_ratio 유지 / close_ratio_receipted=COUNTS 정렬 / "
+                           f"close_ratio_label_forceful=구 FORCEFUL 라벨 병행; 재귀속=REATTRIBUTE 또는 ADR+GO"]
+    if label_forceful_closed_q - receipted_closed_q > 0:
+        alerts = [*alerts, f"close 술어 드리프트: FORCEFUL 라벨 close {label_forceful_closed_q}건 중 "
+                           f"{label_forceful_closed_q - receipted_closed_q}건은 force_of_row 미통과"
+                           f"(라벨만 영수증 — COUNTS 정렬 전 과대계상 잔여)"]
     if eproc.get('abandon'):
         alerts = [*alerts, f"e-process 폐기 신호(challenger): wealth {eproc['e_max']} ≥ 1/α="
                            f"{eproc['threshold']} (n={eproc['stream_n']}, fired_at={eproc['fired_at']}) "
@@ -510,15 +868,22 @@ def tree_metrics(nodes: list, frontier: list, cfg: dict | None = None) -> dict:
                 rejected=rejected, max_degeneration_depth=stalled,
                 frontier=dict(open=open_q, closed=closed_q,
                               close_ratio=round(closed_q / max(1, open_q + closed_q), 2),
-                              # R7: 병행 공시(기존 close_ratio 비파괴) — 분자 = CLOSED 중 closed_by
-                              # 노드가 영수증(FORCEFUL) 판결 보유. 무채점 close 가 Pareto/close_ratio 를
-                              # 떠받치는 왜곡을 사실로 노출한다(재귀속은 ADR+user GO 별도).
+                              # R7+SprintA: 분자 = CLOSED 중 closed_by 가 force_of_row COUNTS.
+                              # 무채점·FORCEFUL-without-receipt·client_asserted 미검증 closer 는 제외.
                               close_ratio_receipted=round(
                                   receipted_closed_q / max(1, open_q + closed_q), 2),
-                              unreceipted_closes=closed_q - receipted_closed_q),
+                              unreceipted_closes=closed_q - receipted_closed_q,
+                              # 구 술어(verdict_source∈FORCEFUL only) — 정렬 전 과대계상 관측용.
+                              close_ratio_label_forceful=round(
+                                  label_forceful_closed_q / max(1, open_q + closed_q), 2),
+                              label_forceful_closes=label_forceful_closed_q,
+                              label_minus_counts_closes=label_forceful_closed_q - receipted_closed_q),
                 annotation_coverage=round(annotated / max(1, n), 2),
                 coverage=coverage, laudan=laudan, bayes=bayes, fertility=fert,
                 eureka=eureka, eprocess=eproc, anchored=anchored, multiplicity=multiplicity,
+                structure=structure,
+                programme_appraisal=programme_appraisal,
                 alerts=alerts,
                 provenance=dict(inconclusive_progress=inconclusive, count=len(inconclusive),
-                                mode=('lenient-counted' if lenient else 'inconclusive-excluded')))
+                                mode=('lenient-counted' if lenient else 'inconclusive-excluded'),
+                                inconclusive_reason_split=inc_split))

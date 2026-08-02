@@ -12,6 +12,23 @@ distribution.
 
 ### Changed
 
+- Storage-backed verdict operations now use one fenced writer scope across the Neo4j
+  commit, PostgreSQL history projection, and outbox applied mark. Writer readiness is
+  injected into live services, PostgreSQL advisory waits are bounded, and admin
+  predecessor projection covers direct and compound-demotion histories.
+- Administrative `set_verdict` and measured test-result receipts now mint v6
+  history-payload seals, while prediction receipts mint v3 seals over the exact
+  preregistration history payload; legacy standing and stale-demotion producers retain
+  their frozen earlier receipt versions. The storage audit and
+  reconciler validate canonical prediction intent, receipt ownership, complete
+  head-to-genesis ancestry, and causal/admin predecessor ancestry before projection.
+- Storage predeploy now binds a signed writer-drain/fence authority, exact database
+  identities, migrations, installed artifacts, and a write-once receipt. Launchers
+  require an explicit Neo4j database, reject migration credentials at runtime, keep
+  the storage-audit cache single-worker, and make production `run.sh` enforce a private
+  canonical env file. `run_internal.sh` validates that file when present and otherwise
+  permits an explicitly injected caller environment for internal/test use.
+
 - engine-unify 잔여 정리 (q-lkt-engine-unify 종결): verdict 어휘 *분류 집합*의
   소비자측 재유도 15지점을 `lakatos/verdicts.py` SSOT 로 흡수
   (`CANONICAL_STATE_VERDICTS`·`SCORED_PROGRESS_VERDICTS`·`FRONTIER_EXPLANATION_VERDICTS`·

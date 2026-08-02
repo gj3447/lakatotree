@@ -155,7 +155,9 @@ def test_provisional_freshen_upgrades_when_fresh():
     cap: list = []
     svc = _svc(cap, provider=_FRESH, vsrc='scripted',
                existing={'verdict': 'partial', 'lstat': 'provisional_stale_engine', 'metric_value': 1.0})
-    svc.submit_test_result('T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0))
+    svc.submit_test_result(
+        'T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0,
+                         freshen=True, supersedes_receipt_sha='aa' * 32))
     p = _params(cap)
     assert p['lstat'] != 'provisional_stale_engine' and p['prev_rsha'] == 'aa' * 32
 
@@ -165,7 +167,9 @@ def test_provisional_freshen_409_while_still_stale():
     svc = _svc([], provider=_STALE, vsrc='scripted',
                existing={'verdict': 'partial', 'lstat': 'provisional_stale_engine', 'metric_value': 1.0})
     with pytest.raises(HTTPException) as e:
-        svc.submit_test_result('T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0))
+        svc.submit_test_result(
+            'T', 'n', Result(metric_value=1.0, script='inline', novel_measured=1.0,
+                             freshen=True, supersedes_receipt_sha='aa' * 32))
     assert e.value.status_code == 409 and 'aaaa111' in str(e.value.detail)
 
 
@@ -174,7 +178,9 @@ def test_provisional_freshen_409_on_changed_metric():
     svc = _svc([], provider=_FRESH, vsrc='scripted',
                existing={'verdict': 'partial', 'lstat': 'provisional_stale_engine', 'metric_value': 1.0})
     with pytest.raises(HTTPException) as e:
-        svc.submit_test_result('T', 'n', Result(metric_value=2.0, script='inline', novel_measured=1.0))
+        svc.submit_test_result(
+            'T', 'n', Result(metric_value=2.0, script='inline', novel_measured=1.0,
+                             freshen=True, supersedes_receipt_sha='aa' * 32))
     assert e.value.status_code == 409
 
 

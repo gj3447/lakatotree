@@ -63,10 +63,18 @@ def test_mutation_service_rejects_missing_parent_before_bulk_write():
 
 def test_mutation_service_upsert_tree_writes_tree_nodes_edges_and_questions():
     txs = []
+
+    def kg_tx(ops):
+        batch = list(ops)
+        txs.append(batch)
+        return [[{"guard_status": "ok", "created": True}]] + [
+            [] for _ in batch[1:]
+        ]
+
     svc = TreeMutationService(
-        writer=TreeKgWriter(lambda ops: txs.append(ops) or [[]], chunk_size=2),
+        writer=TreeKgWriter(kg_tx, chunk_size=2),
         validator=LakatosSemanticValidator(),
-        hist=lambda *a: None,
+        hist=lambda *a, **kw: None,
     )
     spec = TreeSpec(
         name="T",

@@ -20,6 +20,7 @@ from server.contexts.tree.repository import normalize_text, normalize_tree_row
 from server.contexts.tree.service import TreeService
 from server.contexts.tree.validation import LakatosSemanticValidator
 from server.file_hashing import path_sha
+from server.settings import ServerSettings
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,58 @@ def test_server_app_import_has_no_neo4j_env_requirement():
     )
     assert cp.returncode == 0, cp.stderr
     assert cp.stdout.strip() == "ok"
+
+
+def test_neo4j_database_is_explicit_and_secrets_are_not_repr(monkeypatch):
+    from server.adapters import neo4j as neo4j_adapter
+
+    class _Driver:
+        def __init__(self):
+            self.calls = []
+
+        def session(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return object()
+
+        def close(self):
+            return None
+
+    driver = _Driver()
+    monkeypatch.setenv("NEO4J_URI", "bolt://example.invalid:7687")
+    monkeypatch.setenv("NEO4J_USER", "runtime")
+    monkeypatch.setenv("NEO4J_PASSWORD", "neo-secret")
+    monkeypatch.setenv("NEO4J_DATABASE", "research")
+    monkeypatch.setenv("LAKATOS_PG_PASSWORD", "pg-secret")
+    monkeypatch.setenv("LAKATOS_MONGO_URI", "mongodb://mongo-secret@example.invalid")
+    settings = ServerSettings.from_env()
+    monkeypatch.setattr(neo4j_adapter.GraphDatabase, "driver", lambda *_a, **_k: driver)
+    adapter = neo4j_adapter.LazyNeo4jDriver(settings_factory=lambda: settings)
+
+    adapter.session()
+
+    assert driver.calls == [((), {"database": "research"})]
+    with pytest.raises(RuntimeError, match="differs"):
+        adapter.session(database="other")
+    rendered = repr(settings)
+    assert "neo-secret" not in rendered
+    assert "pg-secret" not in rendered
+    assert "mongo-secret" not in rendered
+
+    unsafe = ServerSettings(
+        **{
+            **settings.__dict__,
+            "neo4j_uri": "bolt://alice:uri-secret@example.invalid:7687",
+        }
+    )
+    with pytest.raises(RuntimeError, match="must not contain credentials"):
+        unsafe.require_neo4j()
+    assert "uri-secret" not in repr(unsafe)
+
+
+def test_neo4j_database_has_no_implicit_home_database_fallback(monkeypatch):
+    monkeypatch.delenv("NEO4J_DATABASE", raising=False)
+    with pytest.raises(RuntimeError, match="NEO4J_DATABASE"):
+        ServerSettings.from_env().require_neo4j_database()
 
 
 def test_tree_service_uses_explicit_ports_for_add_node():

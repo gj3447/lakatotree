@@ -14,7 +14,10 @@ DOC = ROOT / "docs" / "GATE_DEFAULT_INVENTORY_2026-07-24.md"
 SCAN_DIRS = ("server", "lakatos", "judges", "c1verify", "scripts", "tests", "examples")
 
 # env 가 아니라 모듈 상수인 토큰 (문서 §D 참고 기록과 동기화)
-NON_ENV_CONSTANTS = {"LAKATOS_PRODUCER", "LAKATOS_LOCATIONS"}
+NON_ENV_CONSTANTS = {
+    "LAKATOS_PRODUCER", "LAKATOS_LOCATIONS", "LAKATOS_STATUSES",
+    "LAKATOS_1976_VERDICTS",
+}
 
 
 def _env_flags() -> set[str]:
@@ -23,9 +26,9 @@ def _env_flags() -> set[str]:
         for f in (ROOT / d).rglob("*.py"):
             if "__pycache__" in f.parts:
                 continue
-            flags.update(re.findall(r"LAKATOS_[A-Z_]+", f.read_text(encoding="utf-8")))
+            flags.update(re.findall(r"LAKATOS_[A-Z0-9_]+", f.read_text(encoding="utf-8")))
     for f in (ROOT / "scripts").rglob("*.sh"):
-        flags.update(re.findall(r"LAKATOS_[A-Z_]+", f.read_text(encoding="utf-8")))
+        flags.update(re.findall(r"LAKATOS_[A-Z0-9_]+", f.read_text(encoding="utf-8")))
     return flags - NON_ENV_CONSTANTS
 
 

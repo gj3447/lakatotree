@@ -61,7 +61,8 @@ def test_freshen_upgrades_anchor_demoted_partial(tmp_path):
     j.write_bytes(b"print('measure: 1.0')\n")
     cap: list = []
     out = _svc(cap).submit_test_result('T', 'n', Result(
-        metric_value=1.0, script=str(j), novel_measured=1.0, novel_script=str(j)))
+        metric_value=1.0, script=str(j), novel_measured=1.0, novel_script=str(j),
+        freshen=True, supersedes_receipt_sha='aa' * 32))
     p = _params(cap)
     assert p['v'] == 'progressive_unverified', p
     assert p['novel'] is True, p
@@ -75,7 +76,8 @@ def test_freshen_refuses_changed_metric_value(tmp_path):
     j.write_bytes(b"print('measure')\n")
     with pytest.raises(HTTPException) as e:
         _svc([]).submit_test_result('T', 'n', Result(
-            metric_value=2.0, script=str(j), novel_measured=1.0, novel_script=str(j)))
+            metric_value=2.0, script=str(j), novel_measured=1.0, novel_script=str(j),
+            freshen=True, supersedes_receipt_sha='aa' * 32))
     assert e.value.status_code == 409
 
 
@@ -84,7 +86,8 @@ def test_freshen_refuses_unanchored_resubmission():
     — client 문자열 재제출로 승급을 살 수 없다(FF1 봉합 유지)."""
     with pytest.raises(HTTPException) as e:
         _svc([]).submit_test_result('T', 'n', Result(
-            metric_value=1.0, script='inline', novel_measured=1.0))
+            metric_value=1.0, script='inline', novel_measured=1.0,
+            freshen=True, supersedes_receipt_sha='aa' * 32))
     assert e.value.status_code == 409
 
 
@@ -95,5 +98,7 @@ def test_non_anchor_demoted_scripted_nodes_stay_locked(tmp_path):
     j.write_bytes(b"print('measure')\n")
     with pytest.raises(HTTPException) as e:
         _svc([], existing_verdict='progressive', existing_lstat='unverified').submit_test_result(
-            'T', 'n', Result(metric_value=1.0, script=str(j), novel_measured=1.0, novel_script=str(j)))
+            'T', 'n', Result(metric_value=1.0, script=str(j), novel_measured=1.0,
+                             novel_script=str(j), freshen=True,
+                             supersedes_receipt_sha='aa' * 32))
     assert e.value.status_code == 409

@@ -1,0 +1,76 @@
+{
+  "schema_version": "symposium-ooptdd-receipt/v1",
+  "template_only": false,
+  "receipt_id": "lakatotree-state-isolation-frontier-fsm-20260728",
+  "cycle_id": "lakatotree-next-work-20260728",
+  "requirement_group": "STATE-ISOLATION-FSM",
+  "spec": {
+    "path": "ooptdd_receipts/STATE_ISOLATION_FSM/requirements.yaml",
+    "sha256": "0a7edf6635ec27cd72fcf526a50c7dc7d186877ad92ac292cf1defc28641a896",
+    "locked_before_positive_run": true
+  },
+  "producer": {
+    "command": ".venv/bin/python ooptdd_receipts/run_all.py",
+    "cwd": "/Users/lagyeongjun/CD/lakatotree-pub",
+    "git_head": "03462102462e8c285caa7b45b5c6a7e2450ab22b",
+    "entrypoint": "state_isolation_fsm_receipt:verify",
+    "source_path": "lakatos/frontier_state.py",
+    "source_symbol": "step",
+    "real_code_path": true,
+    "exit_code": 0
+  },
+  "correlation": {
+    "cid": "state-isolation-frontier-fsm-20260728"
+  },
+  "requirements": [
+    {
+      "id": "ISO-1",
+      "role": "guard_mechanism",
+      "event": "tree_scoped_belief_identity"
+    },
+    {
+      "id": "FSM-1",
+      "role": "guard_defect",
+      "event": "frontier_reopen_rejected"
+    },
+    {
+      "id": "FSM-2",
+      "role": "guard_mechanism",
+      "event": "frontier_close_idempotent"
+    }
+  ],
+  "positive": {
+    "observed_verdict": "green",
+    "receipt_path": "ooptdd_receipts/STATE_ISOLATION_FSM/results/positive.json",
+    "receipt_sha256": "f4504cbf0ef7bdeb38decc339d2cb42832ab615841e57e70d68d1c73a69dbec9",
+    "evidence_tier": "arrived",
+    "charge_ratio": 1.0,
+    "forbidden_events_passed": true,
+    "loop": {
+      "complete": true,
+      "methodology_ok": true,
+      "done": 3,
+      "total": 3
+    }
+  },
+  "negative_oracle": {
+    "spec_sha256": "0a7edf6635ec27cd72fcf526a50c7dc7d186877ad92ac292cf1defc28641a896",
+    "technique": "fault_injection",
+    "injection": "Temporarily add the forbidden CLOSED plus OPEN transition to the real reducer table.",
+    "observed_verdict": "red",
+    "receipt_path": "ooptdd_receipts/STATE_ISOLATION_FSM/results/negative.json",
+    "receipt_sha256": "0af6262c4581510bc3e8a07adb9be049f70f1738442770b7725b8102651a3f8c",
+    "restored": true
+  },
+  "oracle": {
+    "separate_source": false,
+    "corroborated": false,
+    "emit_identity": "memory://ooptdd-loop/state-isolation-fsm",
+    "read_identity": "memory://ooptdd-loop/state-isolation-fsm"
+  },
+  "source_binding": {
+    "path": "lakatos/frontier_state.py",
+    "symbol": "step",
+    "sha256": "ba008235bb95da289bf745f30af9df2428bfdeae8b8c28a8179e238d49143ba3"
+  }
+}

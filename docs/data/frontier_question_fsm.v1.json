@@ -1,0 +1,385 @@
+{
+  "schema_version": "fsm-spec/v1",
+  "name": "frontier-question-lifecycle",
+  "execution": {
+    "step_interface": "step(configuration, typed_event) -> next_configuration, effect_commands",
+    "event_queue": "API commands are reduced one at a time against the persisted question state.",
+    "run_to_completion": "One event selects at most one transition before the next command.",
+    "action_order": "Read persisted state, reduce purely, then commit the declared effect atomically."
+  },
+  "context_schema": {},
+  "event_schemas": {
+    "OPEN": {
+      "type": "object",
+      "required": [
+        "tree",
+        "question",
+        "event_id"
+      ],
+      "properties": {
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string"
+        }
+      }
+    },
+    "CLOSE": {
+      "type": "object",
+      "required": [
+        "tree",
+        "question",
+        "event_id"
+      ],
+      "properties": {
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "event_id": {
+          "type": "string"
+        }
+      }
+    },
+    "ADJUDICATED": {
+      "type": "object",
+      "required": [
+        "tree",
+        "question",
+        "verdict",
+        "receipt_sha",
+        "assurance_level",
+        "qualitative_self_report"
+      ],
+      "properties": {
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "receipt_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "assurance_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "qualitative_self_report": {
+          "type": "boolean"
+        }
+      }
+    },
+    "REATTRIBUTE": {
+      "type": "object",
+      "required": [
+        "tree",
+        "question",
+        "verdict",
+        "receipt_sha",
+        "assurance_level",
+        "qualitative_self_report",
+        "closed_by"
+      ],
+      "properties": {
+        "tree": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "receipt_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "assurance_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "qualitative_self_report": {
+          "type": "boolean"
+        },
+        "closed_by": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "guards": {
+    "receipt_backed_conclusive": {
+      "reads": [],
+      "event_reads": [
+        "verdict",
+        "receipt_sha",
+        "assurance_level",
+        "qualitative_self_report"
+      ],
+      "pure": true,
+      "synchronous": true
+    }
+  },
+  "effects": {
+    "UpdateQuestionMetadata": {
+      "kind": "command",
+      "payload_schema": {
+        "type": "object",
+        "required": [
+          "tree",
+          "question",
+          "event_id"
+        ],
+        "properties": {
+          "tree": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "RecordQuestionClosure": {
+      "kind": "command",
+      "payload_schema": {
+        "type": "object",
+        "required": [
+          "tree",
+          "question",
+          "event_id"
+        ],
+        "properties": {
+          "tree": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AppendQuestionCloser": {
+      "kind": "command",
+      "payload_schema": {
+        "type": "object",
+        "required": [
+          "tree",
+          "question",
+          "closed_by",
+          "event_id"
+        ],
+        "properties": {
+          "tree": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "closed_by": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "machines": [
+    {
+      "id": "frontier-question",
+      "initial": "OPEN",
+      "states": [
+        {
+          "id": "OPEN",
+          "kind": "atomic"
+        },
+        {
+          "id": "CLOSED",
+          "kind": "atomic"
+        }
+      ],
+      "events": [
+        "OPEN",
+        "CLOSE",
+        "ADJUDICATED",
+        "REATTRIBUTE"
+      ],
+      "invalid_event_policy": {
+        "mode": "reject",
+        "guard_false": "reject",
+        "state_change": "none"
+      },
+      "transitions": [
+        {
+          "id": "refresh-open",
+          "from": "OPEN",
+          "event": "OPEN",
+          "to": "OPEN",
+          "effects": [
+            "UpdateQuestionMetadata"
+          ],
+          "effect_bindings": {
+            "UpdateQuestionMetadata": {
+              "tree": "event.tree",
+              "question": "event.question",
+              "event_id": "event.event_id"
+            }
+          }
+        },
+        {
+          "id": "close",
+          "from": "OPEN",
+          "event": "CLOSE",
+          "to": "CLOSED",
+          "effects": [
+            "RecordQuestionClosure"
+          ],
+          "effect_bindings": {
+            "RecordQuestionClosure": {
+              "tree": "event.tree",
+              "question": "event.question",
+              "event_id": "event.event_id"
+            }
+          }
+        },
+        {
+          "id": "duplicate-close",
+          "from": "CLOSED",
+          "event": "CLOSE",
+          "to": "CLOSED",
+          "effects": [],
+          "effect_bindings": {}
+        },
+        {
+          "id": "adjudication-close",
+          "from": "OPEN",
+          "event": "ADJUDICATED",
+          "to": "CLOSED",
+          "guard": "receipt_backed_conclusive",
+          "priority": 0,
+          "effects": [
+            "RecordQuestionClosure"
+          ],
+          "effect_bindings": {
+            "RecordQuestionClosure": {
+              "tree": "event.tree",
+              "question": "event.question",
+              "event_id": "event.receipt_sha"
+            }
+          }
+        },
+        {
+          "id": "adjudication-retain-open",
+          "from": "OPEN",
+          "event": "ADJUDICATED",
+          "to": "OPEN",
+          "priority": 1,
+          "effects": [],
+          "effect_bindings": {}
+        },
+        {
+          "id": "duplicate-adjudication",
+          "from": "CLOSED",
+          "event": "ADJUDICATED",
+          "to": "CLOSED",
+          "effects": [],
+          "effect_bindings": {}
+        },
+        {
+          "id": "reattribute-append",
+          "from": "CLOSED",
+          "event": "REATTRIBUTE",
+          "to": "CLOSED",
+          "guard": "receipt_backed_conclusive",
+          "priority": 0,
+          "effects": [
+            "AppendQuestionCloser"
+          ],
+          "effect_bindings": {
+            "AppendQuestionCloser": {
+              "tree": "event.tree",
+              "question": "event.question",
+              "closed_by": "event.closed_by",
+              "event_id": "event.receipt_sha"
+            }
+          }
+        },
+        {
+          "id": "reattribute-retain",
+          "from": "CLOSED",
+          "event": "REATTRIBUTE",
+          "to": "CLOSED",
+          "priority": 1,
+          "effects": [],
+          "effect_bindings": {}
+        }
+      ]
+    }
+  ],
+  "safety_properties": [
+    {
+      "id": "closed-does-not-reopen",
+      "statement": "A CLOSED question cannot return to OPEN through the OPEN command.",
+      "verification": "Invalid-event trace, reducer conformance test, and OOPTDD injected-fault oracle."
+    },
+    {
+      "id": "close-is-idempotent",
+      "statement": "Repeated CLOSE commands do not increment visits or append closure/history events.",
+      "verification": "Duplicate-close trace plus application service contract test."
+    },
+    {
+      "id": "self-report-cannot-close",
+      "statement": "An adjudication closes a question only with a valid content-addressed receipt, replay-verified assurance at L2 or above, and no qualitative self-report; the application transaction persists that receipt and closure together.",
+      "verification": "Guard-false trace, reducer conformance test, service transaction test, and OOPTDD injected-fault oracle."
+    },
+    {
+      "id": "reattribute-does-not-reopen",
+      "statement": "REATTRIBUTE on CLOSED never returns OPEN; it appends a closer only for a conclusive L2-or-higher adjudication without qualitative self-report.",
+      "verification": "Reducer conformance test + service contract: status stays CLOSED; closed_by grows append-only."
+    },
+    {
+      "id": "reattribute-requires-receipt",
+      "statement": "REATTRIBUTE without a valid content-addressed receipt identity is rejected; self-report cannot reattribute.",
+      "verification": "Guard-false / InvalidQuestionTransition on missing sha."
+    }
+  ],
+  "liveness_properties": [
+    {
+      "id": "eventual-close",
+      "statement": "An OPEN question reaches CLOSED when a CLOSE command or a conclusive, receipt-bound, replay-verified ADJUDICATED event without qualitative self-report is delivered.",
+      "assumptions": [
+        "A valid event is eventually delivered and persistence is available."
+      ],
+      "verification": "Open-close abstract trace and service integration test."
+    }
+  ],
+  "trace_fixtures": [
+    "docs/data/frontier_question_fsm.traces.json"
+  ],
+  "conformance": {
+    "implementation_step": "lakatos.frontier_state.step",
+    "model_trace_runner": "fsm-design/scripts/run_fsm_traces.py",
+    "contract_tests": "tests/test_state_isolation_fsm_20260728.py compares every state/event cell with the semantic source and drives TreeService effects."
+  }
+}

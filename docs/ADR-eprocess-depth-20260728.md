@@ -32,7 +32,10 @@
   포함 — 그 수정 이전 판관을 "오늘도 신뢰"로 선언하는 것은 부정직하다. 기존 노드는 L2 캡이
   옳은 상태이며, L3 가 필요한 주장은 현행 엔진 재제출(run the receipt)로 회복한다.
   등재는 향후에도 *알려진 결함 없는* 판관 sha 에 한해 사람 검토 커밋으로만.
-- 실증: 현행 엔진 full-chain 은 읽기 표면 L3 도달 — `scripts/probe_l3_readpath_live.py`
-  (LakatoTree_L3ReadProbe_20260728_r2, get_tree/standing 모두 `partial@L3(attested_witnessed)`).
+- 과거 실증 기록: `scripts/probe_l3_readpath_live.py`는 T1 예측 앵커와 서버 시각을 T2처럼
+  사용하던 당시 경로에서 읽기 표면 L3를 관측했다. 현재 계약에서는 그 결과를 L3 증거로
+  인정하지 않는다. 서명되고 verdict receipt에 묶인 독립 T2 앵커가 아직 없으므로 submit과
+  영구 읽기 표면 모두 `temporal_witness=False`로 fail-closed하며 최대 L2다. L3 회복은 현행
+  엔진 재제출만으로 충분하지 않고, T1≤T2를 검증할 receipt-bound T2 구현과 새 실증이 필요하다.
 
 # KG: plan-lktadv-p4-eprocess-s9-20260728 / plan-lktadv-p3-val-l3-readpath-20260728

@@ -8,12 +8,21 @@ demote 시 의존 CANONICAL 노드를 엔진이 auto-rejudge(→former_canonical
 import importlib
 import os
 
+import pytest
+
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
+
 
 def load_app():
     os.environ.setdefault('NEO4J_URI', 'bolt://localhost:7687')
     os.environ.setdefault('NEO4J_USER', 'neo4j')
     os.environ.setdefault('NEO4J_PASSWORD', 'test')
     return importlib.import_module('server.app')
+
+
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
 
 
 def test_agm_revise_without_tree_stays_stateless(monkeypatch):
@@ -59,6 +68,8 @@ def test_agm_hard_core_contraction_auto_demotes_dependent_canonical(monkeypatch)
         if 'HAS_BELIEF' in q and 'RETURN' in q:
             return [dict(belief_id='hc', statement='hc', kind='hard_core',
                          credence=0.9, problem_balance=0, connectivity=0, depends_on=[])]
+        if 'e.tag IN $demote' in q and 'current_receipt_sha AS prev' in q:
+            return [dict(tag='hc', prev='1' * 64)]
         return []
     txs = []
     monkeypatch.setattr(app, 'kg', kg)
@@ -82,6 +93,8 @@ def test_agm_auto_demote_respects_human_lock_valid_until_rebutted(monkeypatch):
         if 'HAS_BELIEF' in q and 'RETURN' in q:
             return [dict(belief_id='hc', statement='hc', kind='hard_core',
                          credence=0.9, problem_balance=0, connectivity=0, depends_on=[])]
+        if 'e.tag IN $demote' in q and 'current_receipt_sha AS prev' in q:
+            return [dict(tag='hc', prev='1' * 64)]
         return []
     txs = []
     monkeypatch.setattr(app, 'kg', kg)

@@ -1,0 +1,33 @@
+{
+  "schema_version": "lakatotree-scientific-backtest-protocol/v1",
+  "claim": "paired classification accuracy on a class-balanced external sealed holdout",
+  "comparisons": ["lakatotree_vs_naive", "lakatotree_vs_popper_like"],
+  "conjunctive": true,
+  "primary_event": "classification_error",
+  "effect_direction": "error_lakatotree_minus_control_negative_favors_lakatotree",
+  "confirmatory_fixed": {
+    "familywise_alpha": 0.05,
+    "pairwise_alpha": 0.025,
+    "min_power": 0.8,
+    "conditional_accuracy_advantage": 0.8,
+    "sensitivity_alternative": 0.9,
+    "min_sensitivity_wilson_lb": 0.7,
+    "minimum_witness_threshold": 2,
+    "minimum_synthetic_sabotage_share": 0.25
+  },
+  "synthetic_sabotage_role": "separate_nonprogressive_stress_stratum",
+  "result_grades": {
+    "producer": "producer_generated/pending",
+    "independent_replay": "externally_signed_replay/verified"
+  },
+  "required_signed_roles": [
+    "blind_ground_truth_curators",
+    "prior_exposure_curators",
+    "case_ordering_attestors",
+    "role_separated_temporal_witnesses",
+    "role_separated_replayer"
+  ],
+  "joint_power_rule": "three required gates each >= 14/15 by union bound; exact unconditional power at actual N",
+  "time_trust_boundary": "witness-signed gen_time is an authenticated statement, not a cryptographic trusted-timestamp proof",
+  "claim_boundary": "retrospective classification only; no prospective productivity or HSWM efficacy claim"
+}

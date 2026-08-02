@@ -1,0 +1,5 @@
+{
+  "metric": 15,
+  "metric_name": "eureka_l2_true_count",
+  "note": "path eureka headline may stay low: CANONICAL BF=1; ancestors neutralized. This metric counts L2 verified true eureka nodes."
+}

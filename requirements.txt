@@ -14,6 +14,7 @@ pydantic==2.13.4        # 나생문 #18: server schemas import 직접(BaseModel/
 psycopg2-binary==2.9.12
 pymongo==4.17.0
 neo4j==6.2.0
+cryptography==49.0.0   # predeploy writer-fence authority Ed25519 signature verification
 
 # --- MCP surface ---
 mcp==1.28.0             # lakatos/mcp_server.py:from mcp.server.fastmcp import FastMCP (was missing)

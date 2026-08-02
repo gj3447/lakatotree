@@ -34,24 +34,31 @@ class _StatefulKg:
 
     def __call__(self, query, **p):
         if "MERGE (a:Argument" in query:            # critique 등재 — 노드 존재(RETURN e.tag) 모델(#13 fail-loud)
-            return [{"tag": p.get("tag")}]
+            return [{"tag": p.get("tag"), "target_valid": True,
+                     "created": True, "idempotent": False, "existing_count": 1,
+                     "attacks": p.get("normalized_attacks"),
+                     "intent_count": 1, "intent_valid": True}]
         if _READ in query and "collect({id:a.id" in query:   # :127 스냅샷 read — CANONICAL + 미방어 doubt
             return [{"verdict": "CANONICAL", "vur": True,
-                     "args": [{"id": "T/d1", "attacks": "n"}]}]   # d1 이 verdict 직접공격 → stands=False
+                     "args": [{"id": "T/d1", "attacks": "n", "by": "critic"}]}]   # d1 이 verdict 직접공격 → stands=False
         if _DEMOTE in query:                        # :142 강등 CAS write
             self.demote_queries.append(query)
             if self.race and (p.get("exp_verdict") or "") != "CANONICAL":
                 return []   # CAS param 이 현 state 와 불일치(이 모킹에선 race 시 exp 불일치 가정)
             # race 시 현 verdict 는 더 이상 CANONICAL 아님 → exp_verdict=CANONICAL 과 불일치 → 0행
-            return [] if self.race else [{"tag": p.get("tag")}]
+            return [] if self.race else [{"tag": p.get("tag"), "outbox_valid": True}]
         return [{"tag": p.get("tag")}]
 
 
-def _svc(kg):
+def _svc(kg, *, hist=None, on_semantic_divergence=None):
+    def kg_tx(ops):
+        return [kg(query, **params) for query, params in ops]
+
     return EvidenceClaimService(
-        kg=kg, kg_tx=lambda ops: [[{"ok": 1}] for _ in ops], hist=lambda *a, **k: None,
+        kg=kg, kg_tx=kg_tx, hist=hist or (lambda *a, **k: None),
         foundation=lambda *a, **k: None, load_lineage=lambda *a, **k: None,
-        reproducible_for_node=lambda *a, **k: None)
+        reproducible_for_node=lambda *a, **k: None,
+        on_semantic_divergence=on_semantic_divergence)
 
 
 def test_add_critique_demote_is_atomic_cas():
@@ -73,3 +80,38 @@ def test_add_critique_demote_skipped_on_concurrent_change():
     out = _svc(kg).add_critique("T", "n", CritiqueIn(arg_id="d1", attacks="n", by="critic", kind="doubt"))
     assert out["ok"] is True, "critique 자체는 등재돼야(강등 skip 이 add_critique 를 실패시키지 않음)"
     assert out["standing"].get("demote_skipped"), "동시변경인데 stale 강등이 그대로 적용됨(skip 표식 없음)"
+
+
+def test_add_critique_closes_gate_when_post_commit_demotion_is_unresolved():
+    kg = _StatefulKg(race=True)
+    reasons = []
+
+    out = _svc(kg, on_semantic_divergence=reasons.append).add_critique(
+        "T", "n", CritiqueIn(arg_id="d1", attacks="n", by="critic", kind="doubt")
+    )
+
+    assert out["standing"].get("demote_skipped")
+    assert reasons == ["runtime.critique_standing.reconciliation_incomplete"]
+
+
+def test_standing_projection_waits_for_durable_critique_projection():
+    kg = _StatefulKg(race=False)
+    calls = []
+    reasons = []
+
+    def pending_cause(*args, **kwargs):
+        calls.append((args, kwargs))
+        return False
+
+    out = _svc(
+        kg,
+        hist=pending_cause,
+        on_semantic_divergence=reasons.append,
+    ).add_critique(
+        "T", "n", CritiqueIn(arg_id="d1", attacks="n", by="critic", kind="doubt")
+    )
+
+    assert len(calls) == 1 and calls[0][0][1] == "critique"
+    assert out["standing"]["demoted"] is True
+    assert out["standing_reconciliation_pending"] is True
+    assert reasons == ["runtime.critique_standing.causal_projection_pending"]

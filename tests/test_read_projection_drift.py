@@ -26,6 +26,10 @@ READ_MODELS = ROOT / 'server' / 'read_models.py'
 # 새 항목은 반드시 근거와 함께 — silent-drift 를 여기로 숨기지 말 것.
 _WRITE_ONLY_INTERNAL = {
     '_cas',   # compare-and-swap 동시성 카운터(낙관적 락) — 노드 데이터 아님
+    '_tree_write_cas',  # tree-scoped eager-lock marker, not domain data
+    '_cycle_created_by',  # transient exact-compensation ownership marker
+    '_cycle_claimed_at',  # transient ownership timestamp, removed at durability
+    '_cycle_create_claim',  # same-statement CREATE witness, removed before commit
 }
 
 # 노드 alias `e` 에 대한 SET 대입(`e.foo = ...`)과 projection(`e.foo AS foo`) 추출.

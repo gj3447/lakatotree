@@ -22,12 +22,14 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+import inspect
 
 from server.contexts.tree import cycle_budget as cb
 from server.contexts.tree.judgement import create_judgement_router
 from server.contexts.tree.judgement_service import JudgementService
 from server.contexts.tree.schemas import PredictionIn, VerdictIn
 from server.contexts.tree.schemas import TestResultIn as _TestResultIn  # noqa: N814 (pytest 수집 회피)
+from server.ports import KgTxGuardFailed
 
 
 # 미채점 노드의 사전등록 읽기(submit_test_result 초입) — 게이트가 없으면 여기로 흘러 채점된다.
@@ -45,28 +47,68 @@ class _World:
     writes 는 판결이 실제로 민팅됐는지의 증거: 거부라면 반드시 비어 있어야 한다.
     """
 
-    def __init__(self, budget=None, scored=0):
+    def __init__(self, budget=None, scored=0, *, diagnostic_fails=False,
+                 locked_reject=False):
         self.budget, self.scored = budget, scored
+        self.diagnostic_fails = diagnostic_fails
+        self.locked_reject = locked_reject
         self.queries: list[str] = []
         self.writes: list = []
+        self.outboxes: dict[str, dict] = {}
+        self.prediction: dict = {}
 
     def kg(self, q, **p):
         self.queries.append(q)
+        if "reason:'verdict_commit_intent'" in q:  # set_verdict 의 lock-held mutation
+            if self.locked_reject:
+                return []
+            self.writes.append(q)
+            return [{'tag': p.get('tag')}]
         if 'cycle_budget' in q:
+            if self.diagnostic_fails:
+                raise RuntimeError('neo4j diagnostic unavailable')
             return [{'cycle_budget': self.budget, 'used': self.scored}]
         if 'RETURN e.current_receipt_sha AS prev_rsha' in q:
-            return [{'prev_rsha': None}]
+            return [{
+                'prev_rsha': self.prediction.get('rsha'),
+                'pred_receipt_sha': self.prediction.get('rsha'),
+                'pred_registered_at': self.prediction.get('ts'),
+                'pred_prev_receipt_sha': None,
+                'pred_baseline_lineage': self.prediction.get('baseline_lineage'),
+            }]
+        if 'MATCH (o:OutboxEntry {id:$id})' in q:
+            row = self.outboxes.get(p['id'])
+            return [dict(row)] if row is not None else []
+        if 'SET e.pred_metric' in q:
+            self.prediction.update(
+                rsha=p['rsha'],
+                ts=p['ts'],
+                baseline_lineage=p['baseline_lineage'],
+            )
+            self.outboxes[p['history_event_id']] = {
+                'id': p['history_event_id'],
+                'tree': p['tree'],
+                'op': 'prediction_register',
+                'node_tag': p['tag'],
+                'payload': p['history_payload_json'],
+                'status': 'pending',
+                'created_at': p['ts'],
+                'reason': 'prediction_register_commit_intent',
+                'applied_at': None,
+                'receipt_sha': p['rsha'],
+            }
+            self.writes.append(q)
+            return [{'tag': p.get('tag')}]
         if 'RETURN e.pred_metric' in q:
             return [dict(_PRED_ROW)]
         if 'RETURN e.verdict AS verdict, e.verdict_source' in q:
             return [dict(_STATE_ROW)]
-        if 'MERGE (rec:VerdictReceipt' in q:      # set_verdict 의 행정 판결 write
-            self.writes.append(q)
-            return [{'tag': p.get('tag')}]
         return []
 
     def kg_tx(self, ops):                          # submit_test_result 의 판결 write(원자 tx)
         ops = list(ops)
+        if self.locked_reject:
+            raise KgTxGuardFailed('lock-held cycle budget guard rejected')
         self.writes.append(ops)
         return [[{'claimed': 'v'}]] + [[] for _ in ops[1:]]
 
@@ -164,28 +206,34 @@ def test_scoring_proceeds_when_budget_remains_or_unset(budget, scored):
     assert out['ok'] is True and w.writes, '잔여/미선언인데 채점이 안 됨(거동 파괴)'
 
 
-def test_kg_read_failure_fails_safe_to_unlimited_at_the_chokepoint():
-    """★정직한 한계를 실행가능하게 박제(soft bypass): *예산 조회만* 실패하면 소진 트리(1/99)도 채점된다.
+def test_diagnostic_read_failure_cannot_bypass_lock_held_guard():
+    """빠른 선조회가 실패해도 authoritative mutation guard는 생략되지 않는다.
 
-    fail-CLOSED 가 아니다 — 그러므로 "에이전트 자기판단과 독립된 정지"는 무조건적 주장이 아니라 KG
-    가용성에 *조건부*다. 부분장애 중엔 예산이 조용히 우회된다. 이 테스트는 그 우회를 고발이 아니라
-    *계약*으로 못 박는다(CLAUDE.md §4: fake-heavy 경로의 kg 조회는 fail-safe). hard bound 가 필요해지면
-    cycle_budget.budget_state 의 except 를 fail-closed 로 뒤집는 게 그 지점이다.
+    fake는 첫 진단 read 장애 + 실제 mutation의 guard 거부를 재현한다. 거부 원인을 strict readback으로
+    분류할 수도 없는 장애이므로 503이 정직한 답이고, 가장 중요한 불변식은 판결 write 0이다.
     """
-    w = _World(budget=1, scored=99)      # 소진 상태 — 조회만 되면 반드시 429 여야 하는 트리
-    real_kg = w.kg
+    w = _World(
+        budget=1,
+        scored=99,
+        diagnostic_fails=True,
+        locked_reject=True,
+    )
+    with pytest.raises(HTTPException) as exc:
+        _svc(w).submit_test_result('T', 'n1', _result())
+    assert exc.value.status_code == 503
+    assert w.writes == []
 
-    def flaky(q, **p):
-        if 'cycle_budget' in q:
-            raise RuntimeError('neo4j 연결 불가(부분 장애)')
-        return real_kg(q, **p)
 
-    svc = JudgementService(kg=flaky, kg_tx=w.kg_tx, hist=lambda *a, **k: None,
-                           foundation=lambda *a, **k: None,
-                           reproducible_for_node=lambda *a, **k: None)
-    out = svc.submit_test_result('T', 'n1', _result())
-    assert out['ok'] is True and w.writes, \
-        'KG 장애 시 채점이 죽으면 안 됨(fail-safe 계약) — 소진 트리가 여기선 그대로 뚫린다'
+def test_all_public_verdict_mutations_embed_the_authoritative_guard():
+    """submit + set_verdict 양 분기(CANONICAL/일반)가 같은 lock-held 정본을 포함한다."""
+    submit_source = inspect.getsource(JudgementService.submit_test_result)
+    admin_source = inspect.getsource(JudgementService.set_verdict)
+    assert submit_source.count('LOCKED_BUDGET_GUARD') == 1
+    assert admin_source.count('LOCKED_BUDGET_GUARD') == 2
+    assert 'SET t._cycle_budget_lock = true' in cb.LOCKED_BUDGET_GUARD
+    assert 'REMOVE t._cycle_budget_lock' in cb.LOCKED_BUDGET_GUARD
+    assert 'budget_used < t.cycle_budget' in cb.LOCKED_BUDGET_GUARD
+    assert "WHERE budget_status IN ['unlimited','proceed']" in cb.LOCKED_BUDGET_GUARD
 
 
 # ── 경계(정직): 예산은 *판결*의 상한이지 write 의 상한이 아니다 ──────────────────────────

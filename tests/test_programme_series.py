@@ -1,5 +1,7 @@
 """Programme-as-series diagnostic OOPTDD receipts."""
 
+import pickle
+
 import pytest
 
 from lakatos.programme.series import (
@@ -9,6 +11,26 @@ from lakatos.programme.series import (
     series_from_path,
 )
 from lakatos.quant.laudan import RivalProblemRecord
+
+
+def test_programme_series_facade_preserves_public_identity():
+    from lakatos.programme import series as facade
+    from lakatos.quant import programme_series as kernel
+
+    for name in (
+        "ProgrammeSeriesRecord",
+        "ProgrammeSeriesAppraisal",
+        "programme_series_appraisal",
+        "series_from_path",
+    ):
+        assert getattr(facade, name) is getattr(kernel, name)
+
+
+def test_programme_series_record_preserves_historical_pickle_identity():
+    record = ProgrammeSeriesRecord(tag="n", verdict="progressive")
+
+    assert type(record).__module__ == "lakatos.programme.series"
+    assert pickle.loads(pickle.dumps(record)) == record
 
 
 # ── #5: bridge — series_from_path 가 laudan 개념/비교 진단을 실제로 호출(두 고아 절반 연결) ──

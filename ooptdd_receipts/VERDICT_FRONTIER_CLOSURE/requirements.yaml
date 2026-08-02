@@ -1,0 +1,37 @@
+# Locked 2026-07-28 before implementation. Hermetic: real frontier reducer and
+# real adjudication policy are driven through the repository OOPTDD memory backend.
+name: lakatotree-verdict-frontier-closure
+target:
+  mode: in_process
+  callable: verdict_frontier_closure_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: VFC-1
+    description: A replay-verified L2-or-higher progressive adjudication without qualitative self-report closes its declared OPEN question through the frontier FSM.
+    gate:
+      - {event: adjudication_closed_question, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:VERDICT_FRONTIER_CLOSURE:adjudication_closed_question
+      source: verdict_frontier_closure_receipt.py
+      symbol: verify
+      must_emit: adjudication_closed_question
+  - id: VFC-2
+    description: A nonconclusive adjudication keeps the question OPEN and emits no closure effect.
+    gate:
+      - {event: nonconclusive_question_retained, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:VERDICT_FRONTIER_CLOSURE:nonconclusive_question_retained
+      source: verdict_frontier_closure_receipt.py
+      symbol: verify
+      must_emit: nonconclusive_question_retained
+  - id: VFC-3
+    description: Replaying the adjudication against an already CLOSED question is idempotent.
+    gate:
+      - {event: duplicate_adjudication_idempotent, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:VERDICT_FRONTIER_CLOSURE:duplicate_adjudication_idempotent
+      source: verdict_frontier_closure_receipt.py
+      symbol: verify
+      must_emit: duplicate_adjudication_idempotent

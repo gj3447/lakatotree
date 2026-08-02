@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lakatotree.dev/schema/scientific-backtest-anchor-v1.json",
+  "title": "LakatoTree scientific backtest temporal anchor receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_kind",
+    "target_sha256",
+    "threshold",
+    "anchors",
+    "anchor_set_sha256",
+    "exact_readback"
+  ],
+  "properties": {
+    "schema_version": {"const": "lakatotree-scientific-backtest-anchor/v1"},
+    "target_kind": {"const": "measurement_lock_sha256"},
+    "target_sha256": {"$ref": "#/$defs/sha256"},
+    "threshold": {"type": "integer", "minimum": 2},
+    "anchors": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/anchor"}
+    },
+    "anchor_set_sha256": {"$ref": "#/$defs/sha256"},
+    "exact_readback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["readback_at", "returned_target_sha256", "returned_anchor_set_sha256"],
+      "properties": {
+        "readback_at": {"type": "string", "format": "date-time"},
+        "returned_target_sha256": {"$ref": "#/$defs/sha256"},
+        "returned_anchor_set_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["witness_did", "digest", "gen_time", "signature", "channel"],
+      "properties": {
+        "witness_did": {"type": "string", "pattern": "^did:key:"},
+        "digest": {"$ref": "#/$defs/sha256"},
+        "gen_time": {"type": "string", "format": "date-time"},
+        "signature": {"type": "string", "pattern": "^[0-9a-fA-F]{128}$"},
+        "channel": {"const": "ed25519-witness"}
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "cases": [
+    {
+      "id": "refresh-open",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "OPEN", "guard_results": {}, "expected_state": "OPEN", "expected_effects": ["UpdateQuestionMetadata"]}
+      ]
+    },
+    {
+      "id": "open-close",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "CLOSE", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]}
+      ]
+    },
+    {
+      "id": "duplicate-close",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "CLOSE", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "CLOSE", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": []}
+      ]
+    },
+    {
+      "id": "reject-reopen",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "CLOSE", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "OPEN", "guard_results": {}, "expected_state": "CLOSED", "expected_effects": []}
+      ]
+    },
+    {
+      "id": "adjudication-close",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": true}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]}
+      ]
+    },
+    {
+      "id": "adjudication-retain-open",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": false}, "expected_state": "OPEN", "expected_effects": []}
+      ]
+    },
+    {
+      "id": "duplicate-adjudication",
+      "machine": "frontier-question",
+      "steps": [
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": true}, "expected_state": "CLOSED", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "ADJUDICATED", "guard_results": {"receipt_backed_conclusive": true}, "expected_state": "CLOSED", "expected_effects": []}
+      ]
+    }
+  ]
+}

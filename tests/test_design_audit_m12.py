@@ -24,7 +24,8 @@ class _Kg:
     def __call__(self, query, **p):
         if "RETURN cur.verdict AS verdict" in query and "HAS_ARGUMENT" in query:
             return [{"verdict": "progressive", "verdict_source": None, "source_trust": None,
-                     "novel_confirmed": True, "qualitative_self_report": False, "args": []}]
+                     "novel_confirmed": True, "qualitative_self_report": False,
+                     "args": [], "oldrecs": []}]
         if "SET cur.verdict='CANONICAL'" in query:
             self.writes.append(query)
             return [{"tag": p["tag"]}]

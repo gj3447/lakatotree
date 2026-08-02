@@ -10,6 +10,10 @@ _reproducible_for_node 가 영구 None → certificate 가 MCP-only 워크플로
 """
 from __future__ import annotations
 
+import json
+
+import pytest
+
 import lakatos.mcp_server as mcp
 
 
@@ -47,6 +51,35 @@ def test_mcp_submit_result_omits_empty_result_path(monkeypatch):
     monkeypatch.setattr(mcp, "_post", lambda p, b: (seen.append((p, b)), {"ok": True})[1])
     mcp.submit_result("T", "n1", 1.0, "pytest tests/x.py")
     assert "result_path" not in seen[0][1]
+
+
+def test_mcp_submit_result_forwards_explicit_head_bound_freshen(monkeypatch):
+    seen: list = []
+    monkeypatch.setattr(
+        mcp, "_post", lambda p, b: (seen.append((p, b)), {"ok": True})[1]
+    )
+
+    mcp.submit_result(
+        "T", "n1", 1.0, "pytest tests/x.py",
+        freshen=True, supersedes_receipt_sha="a" * 64,
+    )
+
+    assert seen[0][1]["freshen"] is True
+    assert seen[0][1]["supersedes_receipt_sha"] == "a" * 64
+
+
+def test_mcp_submit_result_rejects_unpaired_freshen_without_post(monkeypatch):
+    monkeypatch.setattr(
+        mcp,
+        "_post",
+        lambda *_args, **_kwargs: pytest.fail("unpaired freshen must not POST"),
+    )
+
+    out = json.loads(mcp.submit_result(
+        "T", "n1", 1.0, "pytest tests/x.py", freshen=True,
+    ))
+
+    assert out["error"] == "invalid_freshen_binding"
 
 
 def test_mcp_register_prediction_forwards_closes_question(monkeypatch):

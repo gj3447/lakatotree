@@ -1,0 +1,855 @@
+{
+  "schema_version": "lakatotree-research-programme/v1",
+  "name": "LakatosTree_HSWM_LargerAI_20260728_v2",
+  "generated_at": "2026-07-28T00:00:00+09:00",
+  "authority_policy": {
+    "user_canon": "Only direct user-ratified HSWM statements may enter the hard core.",
+    "secondary_formalization": "Mathematical and software mappings are protective-belt hypotheses, even when grounded in primary literature.",
+    "efficacy": "No performance, transfer, retention, or consolidation claim is promoted without a preregistered prediction and a server-minted verdict receipt.",
+    "priority": "Related-work inclusion is not a novelty or priority claim."
+  },
+  "source_snapshot": {
+    "observed_at": "2026-07-28T23:31:00+09:00",
+    "hswm_git_head": "f7bbd4d957b2185adaf4e315012a5ff1861c1328",
+    "hswm_worktree_state": "dirty-read-only",
+    "policy": "Every local repository source is bound to exact file bytes; every JSON Pointer or line locator is additionally bound to the exact resolved target. Upstream runtime state may advance without silently changing this research snapshot."
+  },
+  "source_bindings": [
+    {"reference": "repo://HSWM/LONGINUS_HSWM_CELLULAR_DEFINITION_BINDING_2026-07-26.json", "sha256": "9a02323c389526ace093b61cc7edf3195563a39eda5657d05c6535fc7b8bb5eb"},
+    {"reference": "repo://HSWM/receipts/HSWM_CELLULAR_DEFINITION_VALIDATION_20260726.json", "sha256": "e0467233e9808b78c12d1a7bb92f99d2b9a8a52648c990f16c938c93fd005f2e"},
+    {"reference": "repo://HSWM/receipts/HSWM_CELLULAR_LAKATOTREE_READBACK_20260726.json", "sha256": "6b139f2f35fb38ff3be578fd2f9c98b449646b616fd8bffcec818930c9b6f0e7"},
+    {"reference": "repo://HSWM/receipts/HSWM_CELLULAR_LEAN_COMPILE_20260726.json", "sha256": "4ab159e0409e9109dc707118c18fa9f5991c397ae62d040f3cb1565df29946dd"},
+    {"reference": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json", "sha256": "5f813e396ffef0c59e1020c008a658006ff8907bd1680b4e454150ff5816f426"},
+    {"reference": "repo://HSWM/research/PREREG_HSWM_SCALAR_W_CAUSAL_MEDIATION.v1.json", "sha256": "a3d830f029e3f8a82493149a7f9fd712ec92d355b36d27bf14d3b92dcc5c263e"},
+    {"reference": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md", "sha256": "b4bb79620682b5b37cd2b5fe3ec08d9e90aca19156fa2a1995b11abd41fa3663"},
+    {"reference": "repo://SYMPOSIUM/HSWM/SPEC_OPEN_SELF_SIMILAR_HSWM_2026-07-22.md", "sha256": "b49c5d2faa15de11c5e718e1da6d1423a621d09ea68ffc9c5b90b5336aa7af70"},
+    {"reference": "repo://SYMPOSIUM/HSWM/SPEC_SHARED_HYPERGRAPH_NN_SEMANTIC_WEIGHT_2026-07-22.md", "sha256": "61e7b1b80cfdf8093eaa4b49018bd9f607904d88b96277418168fac65e9d42e9"},
+    {"reference": "repo://lakatotree/docs/HSWM_AGENT_NETWORK.md", "sha256": "f1337519695f69c998cf4d9dbe9e1f18d8fa023646247460fe24847cc74a5fd6"},
+    {"reference": "repo:docs/FRONTIER_QUESTION_FSM.md", "sha256": "e3c09697ab3751b4a67d18765384595ee6d4d1a7b412ec9337113e5b983c8d40"},
+    {"reference": "repo:docs/HSWM_AGENT_NETWORK.md", "sha256": "f1337519695f69c998cf4d9dbe9e1f18d8fa023646247460fe24847cc74a5fd6"},
+    {"reference": "repo:docs/HSWM_RESEARCH_PROGRAMME.md", "sha256": "2df75c86432badd7083af76606580b6d0042e6327694487506c4873b1fbc9883"},
+    {"reference": "repo:server/contexts/tree/judgement_service.py", "sha256": "5f8eb30bae75edcde69b26adb27ff7f7541d2b4a4fbd83f8fac26391cdab5f16"}
+  ],
+  "fragment_bindings": [
+    {"reference": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/0", "target_sha256": "30183ba06bb26e4ab130ceac89249f6e774a0c671cdd0cf3e0339f6b983499e5"},
+    {"reference": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/4", "target_sha256": "c2d247081b497b8713ce26f1a25ca03e0bb632903a83a5f8049f5cd6895125fc"},
+    {"reference": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/5", "target_sha256": "8ed04ab625a7396dec552c4a98560327ccaec9833ab08d9a20d90da3b9974ef1"},
+    {"reference": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/6", "target_sha256": "752925321f96156f7b25dab0d99aced2e61a11cf98a8f4f2996512d5374333a2"},
+    {"reference": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md#L48", "target_sha256": "328c568e1032540b33d713e5b12c7f6d58c85560e956ad2486fbdcb5504e1df4"},
+    {"reference": "repo://SYMPOSIUM/HSWM/SPEC_OPEN_SELF_SIMILAR_HSWM_2026-07-22.md#L88", "target_sha256": "7ca03cab3d40f7348603d06cf9c97b24d10968a097f52efd481a426a24306e21"},
+    {"reference": "repo://SYMPOSIUM/HSWM/SPEC_SHARED_HYPERGRAPH_NN_SEMANTIC_WEIGHT_2026-07-22.md#L24", "target_sha256": "a8800d0b82c8d5c33e77c808da8ea8a8095caef1f50b2eb5416e85ad9fcde4b5"},
+    {"reference": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md#L149", "target_sha256": "52fe796986a264e4a507dc2f36e0582683b5e84faf575c36c16caa945c3e90a5"},
+    {"reference": "repo:docs/HSWM_RESEARCH_PROGRAMME.md#L118", "target_sha256": "14f61c15f953e98ad9dd3d7c7561639f1b5f173af5749e1d0de6be4603b6e605"},
+    {"reference": "repo:docs/HSWM_RESEARCH_PROGRAMME.md#L91", "target_sha256": "22e7a3c0d97b12e8c26fc528ff01193243d53506fa0d285cc2662b28cea58ae3"}
+  ],
+  "tree": {
+    "manifest_owner": "codex-research-2026-07-28",
+    "manifest_digest": "84851fab808be4454adab441212ae686d5cd400fe6f3bb053a4381219c223fc7",
+    "title": "HSWM Larger AI — receipt-gated dense research programme",
+    "hard_core": "사용자 정전: HSWM은 합의(合意)를 포함하는 더 큰 범위의 AI이며 OM family #8/CHU 축에 놓인다. 그 기질은 함수가 LLM에 의해 실행되는 의미론적 하이퍼그래프 신경망이고, 구조는 열려 있고 자기유사적이며 조합 가능하고 가소적이다. 성능·전이·기억 효능은 hard core가 아니며 영수증 기반 실험으로만 판정한다.",
+    "frontier_rule": "A frontier question closes only through a preregistered target and an atomic server verdict receipt; progressive answers positively and rejected answers negatively. Partial, unverified, conditional, off-axis, or manually asserted outcomes remain open.",
+    "doc": "This versioned successor preserves the immutable v1 materialization while closing its live annotation gap; it is not a rewrite of the older sparse HSWM tree or a silent replacement of the HSWM repository ledger that still names LakatosTree_HSWM_20260719 as active. User canon, secondary formalization, engineering evidence, open experiments, and interface boundaries are intentionally separated. Existing states are preserved: durable runtime and scalar metric contracts are engineering-validated; F1 is running without a scientific outcome; transfer and one consolidation operator are exploratory-refuted; topology is exploratory-supported but not independently adjudicated. Sources ground comparisons and mechanisms; they do not establish HSWM efficacy.",
+    "coverage_status": "partial",
+    "coverage_statement": "Covers the HSWM identity boundary, compositional and hypergraph formalizations, durable provenance, four discriminating experiment families, and the CHU/LakatoTree/333/ORRR interface. Runtime efficacy remains deliberately unconfirmed.",
+    "coverage_backlog": [
+      "generic attached-agent causal redispatch runtime",
+      "H1 equal-compute retention benchmark",
+      "H2 non-hypergraph topology ablation",
+      "cross-agent transfer benchmark against plain shared memory",
+      "consolidation benchmark with preregistered kill criteria",
+      "systematic related-work review and priority audit"
+    ],
+    "ontology": {
+      "closed_world": true,
+      "require_entity": true,
+      "closed_world_metrics": true,
+      "entities": {
+        "programme_root": {
+          "required": ["author", "comment", "result_path"]
+        },
+        "user_canon": {
+          "required": ["author", "comment", "result_path"]
+        },
+        "secondary_formalization": {
+          "required": ["author", "comment", "limitation", "result_path"]
+        },
+        "engineering_evidence": {
+          "required": ["author", "comment", "limitation", "result_path"]
+        },
+        "open_experiment": {
+          "required": ["author", "comment", "limitation", "open_question", "result_path"]
+        },
+        "interface_boundary": {
+          "required": ["author", "comment", "limitation", "result_path"]
+        }
+      },
+      "metrics": {
+        "consensus_inclusion_fidelity": {"direction": "higher"},
+        "retention_error": {"direction": "lower"},
+        "operator_mediation_gain": {"direction": "higher"},
+        "topology_mediation_gain": {"direction": "higher"},
+        "cross_agent_transfer_score": {"direction": "higher"},
+        "consolidation_retention": {"direction": "higher"},
+        "engine_probe_error": {"direction": "lower"}
+      }
+    },
+    "require_novel_anchor": true,
+    "require_certified_evidence": false,
+    "assurance_tier": "receipted",
+    "cycle_budget": 24
+  },
+  "nodes": [
+    {
+      "tag": "hswm-programme-root",
+      "algorithm": "programme_root",
+      "author": "codex-research-2026-07-28",
+      "comment": "HSWM 연구 프로그램의 권위 경계다. 사용자 정전만 hard core에 두고, 수학적 대응은 secondary formalization, 구현 관측은 engineering evidence, 아직 측정하지 않은 주장은 open experiment로 분리한다. 이 루트는 ‘촘촘함’을 노드 수가 아니라 타입이 있는 인과 연결, 출처, 열린 질문, 영수증으로 정의한다. 기존 희소 트리를 덮어쓰지 않고 후속 프로그램으로 보존한다.",
+      "limitation": "권위·분리·밀도 계약만 고정하며 HSWM의 성능, 수학적 완결성, 표준 지위는 증명하지 않는다.",
+      "result_path": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json",
+      "parent_edges": []
+    },
+    {
+      "tag": "hswm-larger-ai-containing-consensus",
+      "algorithm": "user_canon",
+      "author": "codex-research-2026-07-28",
+      "comment": "사용자 정전의 첫 정체성 명제다: HSWM은 합의와 동의어가 아니라 합의를 포함하는 더 큰 범위의 AI다. 따라서 합의 알고리즘은 가능한 내부 기능 또는 비교축이지 HSWM 전체의 정의가 아니다. DeGroot류 합의 모델은 보호대의 비교 기반으로만 사용하며 이 정전을 대체하지 않는다.",
+      "limitation": "사용자 정전의 존재론적 경계이며 합의 포함의 수학적 구현이나 효능은 아직 검증하지 않는다.",
+      "result_path": "kg://user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23",
+      "parent_edges": [
+        {"tag": "hswm-programme-root", "relation_kind": "DEFINES_IDENTITY", "evidence_ref": "canon:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-llm-executed-semantic-hypergraph",
+      "algorithm": "user_canon",
+      "author": "codex-research-2026-07-28",
+      "comment": "HSWM의 계산 기질에 관한 사용자 정전이다. 의미 단위와 고차 관계는 하이퍼그래프로 놓이고, 그 위의 함수 또는 연산은 LLM이 실행한다. 이 명제는 특정 GNN 아키텍처나 학습 규칙을 아직 고정하지 않는다. Zhou와 AllSet은 가능한 형식화의 비교문헌일 뿐 정전의 원천이 아니다.",
+      "limitation": "특정 GNN, 학습 규칙, 스케일링 법칙 또는 pairwise graph 대비 우월성을 함의하지 않는다.",
+      "result_path": "kg://user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23",
+      "parent_edges": [
+        {"tag": "hswm-programme-root", "relation_kind": "DEFINES_SUBSTRATE", "evidence_ref": "canon:user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23", "inferred": false},
+        {"tag": "hswm-larger-ai-containing-consensus", "relation_kind": "CONTAINS_FUNCTION", "evidence_ref": "canon:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-om8-chu-placement",
+      "algorithm": "user_canon",
+      "author": "codex-research-2026-07-28",
+      "comment": "HSWM은 재배맨 #4의 표준이 아니라 OM family #8의 직접 commander이며 CHU의 존재·계산 축에 놓인다. 비행기맨 #4는 HSWM에 접속하는 관문일 수 있지만 소유자가 아니다. 이 경계는 오래된 문서의 ‘재배맨 #4/standard’ 표류를 새 트리에 재도입하지 않기 위한 fail-closed 정체성 제약이다.",
+      "limitation": "정전상 위치만 고정하며 실행 가능한 OM/CHU 통합이나 클라우드 관문 구현을 증명하지 않는다.",
+      "result_path": "kg://verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21",
+      "parent_edges": [
+        {"tag": "hswm-programme-root", "relation_kind": "LOCATES_IN_CANON", "evidence_ref": "canon:verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21", "inferred": false},
+        {"tag": "hswm-larger-ai-containing-consensus", "relation_kind": "CONSTRAINS_SCOPE", "evidence_ref": "canon:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-open-self-similar-composable-plastic",
+      "algorithm": "user_canon",
+      "author": "codex-research-2026-07-28",
+      "comment": "HSWM 구조의 사용자 정전 속성은 open, self-similar, composable, plastic이다. 여기서 open은 외부 포트와 입력을 가질 수 있음을, self-similar는 부분 구조가 전체와 유사한 조합 규칙을 가질 수 있음을 뜻한다. composable과 plastic은 각각 결합 가능성과 갱신 가능성이지 자동 성능 보장이 아니다. 정확한 형식 의미는 보호대 질문으로 남긴다.",
+      "limitation": "속성의 정전 의미만 보존하며 조합 폐쇄, 동역학적 안정성, 가소성 효능은 실험 전이다.",
+      "result_path": "kg://user-canon-open-self-similar-hswm-2026-07-22",
+      "parent_edges": [
+        {"tag": "hswm-programme-root", "relation_kind": "DEFINES_ARCHITECTURE", "evidence_ref": "canon:user-canon-open-self-similar-hswm-2026-07-22", "inferred": false},
+        {"tag": "hswm-llm-executed-semantic-hypergraph", "relation_kind": "CONSTRAINS_SUBSTRATE", "evidence_ref": "canon:user-canon-open-self-similar-hswm-2026-07-22", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-state-h-w-a-f-pi",
+      "algorithm": "secondary_formalization",
+      "author": "codex-research-2026-07-28",
+      "comment": "보호대 통합 형식화 후보로 H=(가변 의미 하이퍼그래프), W=(slow/fast semantic weights), A=(run-local activation), F=(typed LLM-executed function nodes), Pi=(provenance, ledger, receipts, gates의 결정론적 control plane)를 둔다. 이는 흩어진 정의를 계산 가능한 좌표로 통합한 SECONDARY_AI 제안이며 사용자 정전 그 자체가 아니다. 충분성, 최소성, operator-valued W에서 scalar shadow로의 사영은 열린 질문이다.",
+      "limitation": "H,W,A,F,Pi 통합은 사용자 ratification이 없는 secondary formalization이며 operator-valued synapse와 plasticity loop는 완전 구현되지 않았다.",
+      "result_path": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md#L48",
+      "parent_edges": [
+        {"tag": "hswm-larger-ai-containing-consensus", "relation_kind": "FORMALIZES", "evidence_ref": "repo:docs/HSWM_RESEARCH_PROGRAMME.md", "inferred": false},
+        {"tag": "hswm-llm-executed-semantic-hypergraph", "relation_kind": "SPECIFIES_STATE", "evidence_ref": "repo:docs/HSWM_AGENT_NETWORK.md", "inferred": false},
+        {"tag": "hswm-open-self-similar-composable-plastic", "relation_kind": "FORMALIZES", "evidence_ref": "repo:docs/HSWM_RESEARCH_PROGRAMME.md", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-ports-connectors-composition",
+      "algorithm": "secondary_formalization",
+      "author": "codex-research-2026-07-28",
+      "comment": "HSWM의 open/composable 속성을 포트와 커넥터의 명시적 인터페이스 대수로 형식화하는 후보 노드다. decorated cospans, wiring diagrams, open dynamical systems는 경계를 가진 시스템의 조합을 설명하는 독립 1차 문헌 축이다. HSWM 매핑은 아직 증명되지 않았으므로 relation은 형식화 가설이고, 실제 런타임은 포트 타입·효과·실패 의미를 별도 구현해야 한다.",
+      "limitation": "동일 타입 합성의 공학 closure는 일부 존재하지만 macro-cell 행동 보존, 자동 후보 생성, larger-AI 효능은 입증되지 않았다.",
+      "result_path": "repo://SYMPOSIUM/HSWM/SPEC_OPEN_SELF_SIMILAR_HSWM_2026-07-22.md#L88",
+      "parent_edges": [
+        {"tag": "hswm-llm-executed-semantic-hypergraph", "relation_kind": "SPECIFIES_INTERFACE", "evidence_ref": "https://arxiv.org/abs/1502.00872", "inferred": false},
+        {"tag": "hswm-open-self-similar-composable-plastic", "relation_kind": "FORMALIZES_COMPOSITION", "evidence_ref": "https://arxiv.org/abs/1305.0297", "inferred": false},
+        {"tag": "hswm-state-h-w-a-f-pi", "relation_kind": "SPECIFIES_PI", "evidence_ref": "https://arxiv.org/abs/1408.1598", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-semantic-w-operators",
+      "algorithm": "secondary_formalization",
+      "author": "codex-research-2026-07-28",
+      "comment": "W를 하나의 불투명 weight가 아니라 semantic relation weight, fast working update, slow consolidated update, 그리고 LLM/operator가 제안하는 구조변경으로 분해한다. 하이퍼그래프 학습, e-prop, three-factor plasticity는 서로 다른 비교축이며 한 이론으로 뭉개지 않는다. HSWM에서 어떤 연산이 유효한지는 operator mediation과 topology ablation으로 판별해야 한다.",
+      "limitation": "현재 구현과 metric contract는 scalar slow-W causal shadow까지이며 operator-valued semantic W는 미구현·미판정이다.",
+      "result_path": "repo://SYMPOSIUM/HSWM/SPEC_SHARED_HYPERGRAPH_NN_SEMANTIC_WEIGHT_2026-07-22.md#L24",
+      "parent_edges": [
+        {"tag": "hswm-llm-executed-semantic-hypergraph", "relation_kind": "FORMALIZES_WEIGHT", "evidence_ref": "https://proceedings.neurips.cc/paper_files/paper/2006/hash/dff8e9c2ac33381546d96deea9922999-Abstract.html", "inferred": false},
+        {"tag": "hswm-state-h-w-a-f-pi", "relation_kind": "SPECIFIES_W", "evidence_ref": "https://www.nature.com/articles/s41467-020-17236-y", "inferred": false},
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "MEDIATED_BY", "evidence_ref": "https://www.frontiersin.org/journals/neural-circuits/articles/10.3389/fncir.2015.00085/full", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-formal-contract-engineering-evidence",
+      "algorithm": "engineering_evidence",
+      "author": "codex-research-2026-07-28",
+      "comment": "Lean compile, typed composition checks, route-disable fail-closed theorem, and Longinus source-symbol bindings show that parts of the cellular HSWM contract are structurally realizable. These are real engineering receipts rather than a prose-only design. They validate type shape, composition closure, and binding integrity only; they do not show learning, retention, transfer, or larger-AI efficacy.",
+      "limitation": "Engineering PASS is not a scientific verdict. The operator-valued synapse, full plasticity loop, and causal behavioural mediation remain unjudged.",
+      "result_path": "repo://HSWM/receipts/HSWM_CELLULAR_DEFINITION_VALIDATION_20260726.json",
+      "parent_edges": [
+        {"tag": "hswm-state-h-w-a-f-pi", "relation_kind": "VERIFIES_TYPE_SHAPE", "evidence_ref": "repo://HSWM/receipts/HSWM_CELLULAR_LEAN_COMPILE_20260726.json", "inferred": false},
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "VERIFIES_STRUCTURAL_CLOSURE", "evidence_ref": "repo://HSWM/receipts/HSWM_CELLULAR_LEAN_COMPILE_20260726.json", "inferred": false},
+        {"tag": "hswm-semantic-w-operators", "relation_kind": "CONSTRAINS_REALIZATION", "evidence_ref": "repo://HSWM/LONGINUS_HSWM_CELLULAR_DEFINITION_BINDING_2026-07-26.json", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-durable-runtime-ledger",
+      "algorithm": "engineering_evidence",
+      "author": "codex-research-2026-07-28",
+      "comment": "SQLite event store, transactional outbox, typed CellPort, replay, fault probes, and one live model activation have engineering receipts. LakatoTree prediction/verdict receipts and W3C PROV provide the adjudication/provenance side. This establishes a durable execution substrate, not that HSWM forms a larger AI; generic attachment, verdict-driven redispatch, and scalar-credit-to-cell orchestration remain gaps.",
+      "limitation": "Scientific status is UNJUDGED. Exactly-once model execution, durable approval ownership, lease expiry, forward migrations, and the closed plasticity loop are not claimed.",
+      "result_path": "repo://HSWM/receipts/HSWM_CELLULAR_LAKATOTREE_READBACK_20260726.json",
+      "parent_edges": [
+        {"tag": "hswm-state-h-w-a-f-pi", "relation_kind": "PERSISTS_STATE", "evidence_ref": "repo:server/contexts/tree/judgement_service.py", "inferred": false},
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "RECORDS_EFFECTS", "evidence_ref": "https://www.w3.org/TR/prov-o/", "inferred": false},
+        {"tag": "hswm-semantic-w-operators", "relation_kind": "RECORDS_UPDATES", "evidence_ref": "repo:docs/FRONTIER_QUESTION_FSM.md", "inferred": false},
+        {"tag": "hswm-formal-contract-engineering-evidence", "relation_kind": "DEPENDS_ON_VERIFIED_CONTRACT", "evidence_ref": "repo://HSWM/receipts/HSWM_CELLULAR_DEFINITION_VALIDATION_20260726.json", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-f1-retention",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "F1 sealed comparative baseline and retention run is currently running, with no scientific outcome claimed. Earlier r3 transport refusal was instrumentation failure, and durable-transport repairs are engineering evidence only. The admissible target remains an equal-compute 1500-call/500-item comparison with deterministic judge and LakatoTree exact readback; retention_error(lower) is not scored until that chain completes.",
+      "limitation": "Current ledger state is running. An absent judge, incomplete counts, identity conflict, or missing LakatoTree readback makes the cohort VOID rather than positive evidence.",
+      "open_question": "q-hswm-f1-retention",
+      "result_path": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/0",
+      "parent_edges": [
+        {"tag": "hswm-semantic-w-operators", "relation_kind": "TESTS_RETENTION", "evidence_ref": "repo:docs/HSWM_RESEARCH_PROGRAMME.md#L91", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_RECEIPT", "evidence_ref": "repo:server/contexts/tree/judgement_service.py", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-operator-w-mediation",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "Operator-W causal mediation is planned, not measured. A scalar slow-W metric contract is engineering-validated, but it authorizes no measurement and does not implement operator-valued semantic W. The discriminating test must commit outcome-derived delta-W on frozen fresh tasks, remove or shuffle only W, restore the exact snapshot, and compare equal-context/equal-compute controls.",
+      "limitation": "F2 credit correlation and the scalar shadow are precursor evidence only. The operator-valued outcome-to-credit-to-delta-W path is unimplemented and unjudged.",
+      "open_question": "q-hswm-operator-mediation",
+      "result_path": "repo://HSWM/research/PREREG_HSWM_SCALAR_W_CAUSAL_MEDIATION.v1.json",
+      "parent_edges": [
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "CONSTRAINS_OPERATOR", "evidence_ref": "https://arxiv.org/abs/1305.0297", "inferred": false},
+        {"tag": "hswm-semantic-w-operators", "relation_kind": "TESTS_OPERATOR", "evidence_ref": "https://www.nature.com/articles/s41467-020-17236-y", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_RECEIPT", "evidence_ref": "repo:docs/HSWM_RESEARCH_PROGRAMME.md", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-topology-mediation",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "Current ledger status is exploratory_supported, not a programme-level verdict. F4 r2 reports learned sparse topology above shuffled, clique, and random controls, but headroom_band_ok=false and no pinned independent judge establishes causal mediation. The successor test freezes W and information exposure, intervenes only on topology, and requires removal/restoration curves.",
+      "limitation": "Positive mechanical observations may be confounded with semantic weight and are not an independent causal verdict. Failure prunes the hypergraph-mediation claim, not the HSWM identity.",
+      "open_question": "q-hswm-topology-mediation",
+      "result_path": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/5",
+      "parent_edges": [
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "CONTROLS_INTERFACE", "evidence_ref": "https://arxiv.org/abs/1408.1598", "inferred": false},
+        {"tag": "hswm-semantic-w-operators", "relation_kind": "TESTS_TOPOLOGY", "evidence_ref": "https://arxiv.org/abs/2106.13264", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_RECEIPT", "evidence_ref": "repo:docs/HSWM_RESEARCH_PROGRAMME.md#L118", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-cross-agent-transfer",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "Current ledger status is exploratory_refuted: sealed F3 r3 found no donor-specific gain or survival beyond B-self in that testbed. This refutes that environment, not every possible transfer mechanism. A successor requires causally identified W first, then transfers only an authenticated learned-W packet to a frozen receiver against B-self, raw-log, placebo, shared-memory, and context controls.",
+      "limitation": "The current negative is environment-specific, and F3v2 has no sealed result. Transfer is not interpretable until the transferred W is itself causally identified.",
+      "open_question": "q-hswm-cross-agent-transfer",
+      "result_path": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/4",
+      "parent_edges": [
+        {"tag": "hswm-larger-ai-containing-consensus", "relation_kind": "TESTS_COLLECTIVE_SCOPE", "evidence_ref": "https://www.tandfonline.com/doi/abs/10.1080/01621459.1974.10480137", "inferred": false},
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "ROUTES_TRANSFER", "evidence_ref": "https://arxiv.org/abs/2402.16823", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_CAUSAL_TRACE", "evidence_ref": "https://arxiv.org/abs/2505.18279", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-consolidation",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "Current ledger status preserves exploratory_refuted for the earlier downscale-style F5 operator: the sealed environment fired K1 because append-only stayed within the preregistered delta of wake-plus-sleep. This rejects that operator and environment, not consolidation in general. The USER_PRIMARY F5v2 successor fixes B-prime query-agnostic durable slow-W/H as the consolidation treatment.",
+      "limitation": "USER_PRIMARY successor state is RATIFIED v2 (사용자 C4 verdict 2026-07-28). It is NOT MACHINE-LOCKED / NO MEASUREMENT AUTHORIZED, not server-registered, and unmeasured. The earlier F5 exploratory_refuted result remains intact. Long-term claims still require multiple lags, retention curves, cost accounting, rollback, and false-memory guards.",
+      "open_question": "q-hswm-consolidation",
+      "result_path": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/6",
+      "parent_edges": [
+        {"tag": "hswm-open-self-similar-composable-plastic", "relation_kind": "TESTS_PLASTICITY", "evidence_ref": "canon:user-canon-open-self-similar-hswm-2026-07-22", "inferred": false},
+        {"tag": "hswm-semantic-w-operators", "relation_kind": "TESTS_SLOW_FAST_W", "evidence_ref": "https://www.nature.com/articles/s41467-020-17236-y", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_RECEIPT", "evidence_ref": "https://www.w3.org/TR/prov-o/", "inferred": false},
+        {"tag": "hswm-exp-f1-retention", "relation_kind": "JOINTLY_EVALUATED_WITH", "evidence_ref": "https://arxiv.org/abs/2603.23234", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-interface-chu-lakatotree-333-orrr",
+      "algorithm": "interface_boundary",
+      "author": "codex-research-2026-07-28",
+      "comment": "HSWM의 경계는 CHU가 계산 가능한 상태·타입을 주고, LakatoTree가 연구 프로그램과 영수증 판정을 보존하며, 333/ORRR이 합의 또는 반복조정의 내부 기능 후보를 제공하는 형태로 둔다. 이는 구성요소 동일시가 아니라 명시적 포트 계약이다. 비행기맨/agent harness가 접속할 수는 있어도 HSWM의 정전 소유권을 재배맨 #4로 옮기지 않는다.",
+      "limitation": "This is an interface proposal. Generic agent attachment and verdict-driven redispatch are still unimplemented, and 333/ORRR integration has no efficacy verdict.",
+      "result_path": "repo://lakatotree/docs/HSWM_AGENT_NETWORK.md",
+      "parent_edges": [
+        {"tag": "hswm-larger-ai-containing-consensus", "relation_kind": "EXPOSES_CONSENSUS_PORT", "evidence_ref": "canon:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23", "inferred": false},
+        {"tag": "hswm-llm-executed-semantic-hypergraph", "relation_kind": "EXPOSES_EXECUTION_PORT", "evidence_ref": "canon:user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23", "inferred": false},
+        {"tag": "hswm-om8-chu-placement", "relation_kind": "BINDS_CHU_AXIS", "evidence_ref": "canon:verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21", "inferred": false},
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "SPECIFIES_INTERFACE", "evidence_ref": "https://arxiv.org/abs/1502.00872", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "BINDS_LAKATOTREE", "evidence_ref": "repo:docs/HSWM_AGENT_NETWORK.md", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-consensus-containment",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "‘합의를 포함하는 더 큰 AI’라는 정체성 명제를 계산 가능한 경계로 바꾸는 실험 노드다. Consensus-only, shared-state, and HSWM-interface conditions must be distinguished by preregistered interventions; resemblance or richer prose is not an efficacy result.",
+      "limitation": "No operational sufficiency criterion or measurement is authorized yet. A negative result revises the protective-belt interface test, not the direct user canon statement.",
+      "open_question": "q-hswm-consensus-containment",
+      "result_path": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md#L149",
+      "parent_edges": [
+        {"tag": "hswm-larger-ai-containing-consensus", "relation_kind": "TESTS_IDENTITY_BOUNDARY", "evidence_ref": "canon:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_RECEIPT", "evidence_ref": "repo:server/contexts/tree/judgement_service.py", "inferred": false},
+        {"tag": "hswm-interface-chu-lakatotree-333-orrr", "relation_kind": "INTERVENES_ON_INTERFACE", "evidence_ref": "repo:docs/HSWM_AGENT_NETWORK.md", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-state-sufficiency",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "H,W,A,F,Pi 후보 상태가 replay, learning update, composition, and recovery를 재현하는 데 충분하며 중복되지 않는지 component-removal and reconstruction tests로 판별하는 노드다.",
+      "limitation": "This tests a SECONDARY_AI formalization, not user canon. No minimality, sufficiency, or behavioural equivalence result exists yet.",
+      "open_question": "q-hswm-state-sufficiency",
+      "result_path": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md#L48",
+      "parent_edges": [
+        {"tag": "hswm-state-h-w-a-f-pi", "relation_kind": "TESTS_STATE_SUFFICIENCY", "evidence_ref": "repo://SYMPOSIUM/HSWM/HSWM_MATH_DEFINITION_UNIFIED_2026-07-26.md#L48", "inferred": false},
+        {"tag": "hswm-formal-contract-engineering-evidence", "relation_kind": "USES_TYPE_CONTRACT", "evidence_ref": "repo://HSWM/receipts/HSWM_CELLULAR_DEFINITION_VALIDATION_20260726.json", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_REPLAY", "evidence_ref": "repo://HSWM/receipts/HSWM_CELLULAR_LAKATOTREE_READBACK_20260726.json", "inferred": false}
+      ]
+    },
+    {
+      "tag": "hswm-exp-interface-composition",
+      "algorithm": "open_experiment",
+      "author": "codex-research-2026-07-28",
+      "comment": "CHU/LakatoTree/333/ORRR와 agent harness 사이 typed port 계약을 retry, duplicate delivery, partial failure, and replay under explicit fault injection으로 판별하는 노드다.",
+      "limitation": "Interface algebra and some engineering closure exist, but no end-to-end composition receipt or larger-AI efficacy verdict exists.",
+      "open_question": "q-hswm-interface-composition",
+      "result_path": "repo://SYMPOSIUM/HSWM/SPEC_OPEN_SELF_SIMILAR_HSWM_2026-07-22.md#L88",
+      "parent_edges": [
+        {"tag": "hswm-ports-connectors-composition", "relation_kind": "TESTS_TYPED_COMPOSITION", "evidence_ref": "repo://SYMPOSIUM/HSWM/SPEC_OPEN_SELF_SIMILAR_HSWM_2026-07-22.md#L88", "inferred": false},
+        {"tag": "hswm-durable-runtime-ledger", "relation_kind": "REQUIRES_FAILURE_RECEIPT", "evidence_ref": "repo:server/contexts/tree/judgement_service.py", "inferred": false},
+        {"tag": "hswm-interface-chu-lakatotree-333-orrr", "relation_kind": "TESTS_INTERFACE", "evidence_ref": "repo:docs/HSWM_AGENT_NETWORK.md", "inferred": false}
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "qname": "q-hswm-consensus-containment",
+      "body": "어떤 관측과 인터페이스가 ‘합의를 포함하지만 합의와 동일하지 않은 더 큰 AI’라는 경계를 반증 가능하게 만드는가?",
+      "expected_gain": 0.9,
+      "cost": 3.0
+    },
+    {
+      "qname": "q-hswm-state-sufficiency",
+      "body": "H,W,A,F,Pi가 실행·학습·조합·복구를 재현하는 데 충분하고 최소한의 상태 분해인가?",
+      "expected_gain": 0.8,
+      "cost": 4.0
+    },
+    {
+      "qname": "q-hswm-f1-retention",
+      "body": "Equal-compute 조건에서 full HSWM의 retention_error가 plain agent, shared KG, LakatoTree audit baseline보다 낮은가?",
+      "expected_gain": 1.0,
+      "cost": 8.0
+    },
+    {
+      "qname": "q-hswm-operator-mediation",
+      "body": "Operator/LLM-mediated W update가 정적 또는 직접 update보다 검증된 operator_mediation_gain을 만드는가?",
+      "expected_gain": 0.8,
+      "cost": 6.0
+    },
+    {
+      "qname": "q-hswm-topology-mediation",
+      "body": "Non-hypergraph ablation 대비 higher-order topology가 topology_mediation_gain을 독립적으로 설명하는가?",
+      "expected_gain": 1.0,
+      "cost": 8.0
+    },
+    {
+      "qname": "q-hswm-cross-agent-transfer",
+      "body": "Shared log/KG와 collaborative-memory baseline을 넘는 causal cross-agent transfer가 발생하는가?",
+      "expected_gain": 0.9,
+      "cost": 7.0
+    },
+    {
+      "qname": "q-hswm-consolidation",
+      "body": "Fast-to-slow consolidation이 재사용성을 높이면서 이전 task retention을 보존하는가?",
+      "expected_gain": 0.8,
+      "cost": 7.0
+    },
+    {
+      "qname": "q-hswm-interface-composition",
+      "body": "CHU/LakatoTree/333/ORRR와 agent harness 사이의 typed port 계약이 실패·재시도·idempotency까지 닫히는가?",
+      "expected_gain": 0.7,
+      "cost": 5.0
+    }
+  ],
+  "foundations": [
+    {
+      "name": "hswm-user-canon-larger-ai",
+      "kind": "domain",
+      "question": "HSWM의 정체성 경계는 무엇인가?",
+      "why_needed": "합의와 HSWM을 동일시하는 표류를 막는다.",
+      "acceptance_criteria": ["사용자 ratified canon node가 존재한다", "합의 포함과 동일시 금지가 함께 기록된다"],
+      "evidence_refs": ["kg:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "user-canon",
+      "risk_if_missing": "HSWM이 단순 consensus engine으로 축소된다."
+    },
+    {
+      "name": "hswm-user-canon-om8-chu",
+      "kind": "domain",
+      "question": "HSWM은 어느 family와 축에 놓이는가?",
+      "why_needed": "재배맨 #4/standard 표류를 막는다.",
+      "acceptance_criteria": ["OM #8 direct commander와 CHU placement가 확인된다"],
+      "evidence_refs": ["kg:verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "user-canon",
+      "risk_if_missing": "정전 소유권과 구현 경계가 뒤섞인다."
+    },
+    {
+      "name": "hswm-user-canon-hypergraph-llm",
+      "kind": "domain",
+      "question": "HSWM 기질과 실행 함수는 무엇인가?",
+      "why_needed": "하이퍼그래프와 LLM 실행의 역할을 고정한다.",
+      "acceptance_criteria": ["semantic hypergraph와 LLM-executed function을 별도 요소로 기록한다"],
+      "evidence_refs": ["kg:user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "user-canon",
+      "risk_if_missing": "일반 multi-agent graph와 구분할 수 없다."
+    },
+    {
+      "name": "hswm-compositional-open-systems",
+      "kind": "theory",
+      "question": "Open/composable HSWM을 어떤 인터페이스 수학으로 비교할 것인가?",
+      "why_needed": "포트와 결합을 자유텍스트 비유가 아닌 명시적 형식화 후보로 만든다.",
+      "acceptance_criteria": ["decorated cospan", "wiring diagram", "open dynamical system의 차이를 기록한다"],
+      "evidence_refs": ["https://arxiv.org/abs/1502.00872", "https://arxiv.org/abs/1305.0297", "https://arxiv.org/abs/1408.1598"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "research",
+      "risk_if_missing": "composable 주장이 비유에 머문다."
+    },
+    {
+      "name": "hswm-hypergraph-learning-baselines",
+      "kind": "theory",
+      "question": "Higher-order topology의 표준 비교군은 무엇인가?",
+      "why_needed": "pairwise graph와 hypergraph의 차이를 실험 설계에 반영한다.",
+      "acceptance_criteria": ["고전 hypergraph learning", "현대 multiset-function baseline을 포함한다"],
+      "evidence_refs": ["https://proceedings.neurips.cc/paper_files/paper/2006/hash/dff8e9c2ac33381546d96deea9922999-Abstract.html", "https://arxiv.org/abs/2106.13264"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "research",
+      "risk_if_missing": "topology 효과와 모델 용량 효과가 혼동된다."
+    },
+    {
+      "name": "hswm-plasticity-comparison",
+      "kind": "theory",
+      "question": "Slow/fast/operator update를 어떤 학습 규칙과 비교할 것인가?",
+      "why_needed": "가소성을 단일 weight update 은유로 축소하지 않는다.",
+      "acceptance_criteria": ["e-prop", "three-factor rule을 비교축으로 분리한다"],
+      "evidence_refs": ["https://www.nature.com/articles/s41467-020-17236-y", "https://www.frontiersin.org/journals/neural-circuits/articles/10.3389/fncir.2015.00085/full"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "research",
+      "risk_if_missing": "operator 효과와 로컬 학습 효과가 혼동된다."
+    },
+    {
+      "name": "hswm-provenance-model",
+      "kind": "reproducibility",
+      "question": "실행·관측·판정의 인과계보를 어떻게 보존할 것인가?",
+      "why_needed": "자기보고 성과를 실제 영수증과 분리한다.",
+      "acceptance_criteria": ["PROV entity/activity/agent 관계", "LakatoTree receipt causality를 함께 사용한다"],
+      "evidence_refs": ["https://www.w3.org/TR/prov-o/", "repo:server/contexts/tree/judgement_service.py"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "engine",
+      "risk_if_missing": "HSWM 효능이 재현 불가능한 서술로 남는다."
+    },
+    {
+      "name": "hswm-agent-graph-baseline",
+      "kind": "method",
+      "question": "Graph-mediated agent orchestration의 비교군은 무엇인가?",
+      "why_needed": "일반 graph orchestration을 HSWM 고유기여로 오인하지 않는다.",
+      "acceptance_criteria": ["GPTSwarm 등 graph baseline을 포함한다"],
+      "evidence_refs": ["https://arxiv.org/abs/2402.16823"],
+      "status": "satisfied",
+      "optional": false,
+      "owner": "research",
+      "risk_if_missing": "기존 graph-agent 성과를 HSWM 성과로 잘못 귀속한다."
+    },
+    {
+      "name": "hswm-retention-dataset",
+      "kind": "data",
+      "question": "서로 다른 task family에서 장기 retention을 측정할 데이터는 무엇인가?",
+      "why_needed": "F1을 단일 데모가 아닌 반복 가능한 시험으로 만든다.",
+      "acceptance_criteria": ["두 개 이상의 task family", "고정 split", "동일 데이터 순서"],
+      "evidence_refs": [],
+      "status": "needed",
+      "optional": false,
+      "owner": "experiment",
+      "risk_if_missing": "retention_error가 선택 편향을 가진다."
+    },
+    {
+      "name": "hswm-equal-compute-protocol",
+      "kind": "method",
+      "question": "Baseline과 HSWM의 compute/tool budget을 어떻게 같게 할 것인가?",
+      "why_needed": "구조 효과와 추가 계산량을 분리한다.",
+      "acceptance_criteria": ["token/tool/wall-clock budget 고정", "seed와 실패정책 고정"],
+      "evidence_refs": [],
+      "status": "needed",
+      "optional": false,
+      "owner": "experiment",
+      "risk_if_missing": "모든 효능 비교가 무효가 된다."
+    },
+    {
+      "name": "hswm-transfer-baselines",
+      "kind": "method",
+      "question": "Cross-agent transfer의 최소 비교군은 무엇인가?",
+      "why_needed": "shared memory 효과와 HSWM 구조 효과를 분리한다.",
+      "acceptance_criteria": ["plain text passing", "shared log/KG", "collaborative memory"],
+      "evidence_refs": ["https://arxiv.org/abs/2505.18279", "https://arxiv.org/abs/2603.23234"],
+      "status": "needed",
+      "optional": false,
+      "owner": "experiment",
+      "risk_if_missing": "메모리 공유 자체를 HSWM 효과로 오인한다."
+    },
+    {
+      "name": "hswm-preregistered-kill-criteria",
+      "kind": "metric",
+      "question": "어떤 결과에서 각 보호대 주장을 prune할 것인가?",
+      "why_needed": "사후 fitting과 무한 보조가설을 막는다.",
+      "acceptance_criteria": ["H1/H2/transfer/consolidation별 threshold", "multiple-comparison correction", "receipt-bound question target"],
+      "evidence_refs": ["repo:docs/HSWM_RESEARCH_PROGRAMME.md"],
+      "status": "needed",
+      "optional": false,
+      "owner": "experiment",
+      "risk_if_missing": "결과와 무관하게 HSWM을 살리는 degenerating programme가 된다."
+    }
+  ],
+  "tradition": {
+    "tradition_id": "hswm-larger-ai-tradition-20260728",
+    "name": "HSWM Larger AI research tradition",
+    "commitments": [
+      {
+        "commitment_id": "identity-larger-ai-containing-consensus",
+        "kind": "ontology",
+        "statement": "HSWM은 합의를 포함하는 더 큰 AI이며 합의와 동일하지 않다.",
+        "revisability": "identity_boundary",
+        "source_refs": ["kg:user-canon-hswm-is-the-larger-ai-containing-consensus-2026-07-23"]
+      },
+      {
+        "commitment_id": "identity-om8-chu",
+        "kind": "ontology",
+        "statement": "HSWM은 OM family #8/CHU 축이며 재배맨 #4 표준이 아니다.",
+        "revisability": "identity_boundary",
+        "source_refs": ["kg:verdict-omc-direct-commanders-and-lgm-reassignment-2026-07-21"]
+      },
+      {
+        "commitment_id": "identity-semantic-hypergraph-llm-functions",
+        "kind": "ontology",
+        "statement": "HSWM은 의미론적 하이퍼그래프와 LLM-executed functions를 기질로 삼는다.",
+        "revisability": "identity_boundary",
+        "source_refs": ["kg:user-canon-hswm-functions-are-llm-executed-neural-net-2026-07-23"]
+      },
+      {
+        "commitment_id": "method-receipt-gated-efficacy",
+        "kind": "methodology",
+        "statement": "효능 주장은 preregistration, real measurement, server verdict receipt 없이 승격하지 않는다.",
+        "revisability": "costly",
+        "source_refs": ["repo:docs/FRONTIER_QUESTION_FSM.md", "repo:server/contexts/tree/judgement_service.py"]
+      },
+      {
+        "commitment_id": "formalization-hwafpi",
+        "kind": "background_theory",
+        "statement": "H,W,A,F,Pi 분해는 교체 가능한 secondary formalization이다.",
+        "revisability": "routine",
+        "source_refs": ["repo:docs/HSWM_RESEARCH_PROGRAMME.md"]
+      },
+      {
+        "commitment_id": "problem-causal-redispatch",
+        "kind": "problem_type",
+        "statement": "verdict 변화가 다음 dispatch를 실제로 바꾸는 causal runtime을 판별한다.",
+        "revisability": "costly",
+        "source_refs": ["repo:docs/HSWM_AGENT_NETWORK.md"]
+      }
+    ],
+    "ontology_commitments": [
+      "larger AI containing consensus",
+      "OM family #8 and CHU axis",
+      "semantic hypergraph with LLM-executed functions",
+      "open, self-similar, composable, plastic"
+    ],
+    "methodology_rules": [
+      "separate user canon from secondary formalization",
+      "preregister every efficacy target",
+      "close questions only through receipt-backed adjudication",
+      "retain failures and off-axis verdicts as provenance"
+    ],
+    "exemplars": [
+      "LakatosTree prediction and verdict receipt chain",
+      "typed HSWM LargerAI research DAG"
+    ],
+    "accepted_problem_types": [
+      "consensus containment boundary",
+      "compositional interface semantics",
+      "operator and topology mediation",
+      "long-horizon retention",
+      "cross-agent transfer",
+      "memory consolidation"
+    ],
+    "background_theories": [
+      "Lakatos research programmes",
+      "open-system composition",
+      "hypergraph learning",
+      "provenance and content-addressed receipts"
+    ],
+    "revision_policy": "User-ratified identity commitments are identity boundaries. H,W,A,F,Pi and all performance mechanisms are revisable protective-belt content. Empirical failure prunes the narrow claim named by its preregistered question.",
+    "compatibility_notes": "Diagnostic only: this tradition layer cannot mint verdicts or silently rewrite the user hard core."
+  },
+  "observations": [
+    {
+      "tag": "hswm-larger-ai-containing-consensus",
+      "event_id": "obs-degroot-consensus",
+      "url": "https://www.tandfonline.com/doi/abs/10.1080/01621459.1974.10480137",
+      "source_type": "peer_reviewed_primary",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "536163eb4149fc66b701998f09a2851df4b14b907a89bcc3156d33839804fc07",
+      "lakatos_location": "protective_belt",
+      "content": "DeGroot formalizes consensus as repeated averaging over a trust-weighted influence matrix. It supports a secondary consensus baseline, not the claim that HSWM is equivalent to consensus.",
+      "theory_basis": "Consensus is a contained comparison axis, not the HSWM identity.",
+      "foundation_refs": ["hswm-user-canon-larger-ai"],
+      "longinus_refs": [{"sourceId": "hswm-source-degroot-consensus", "sourcePath": "https://www.tandfonline.com/doi/abs/10.1080/01621459.1974.10480137", "layer": "external-primary", "note": "Consensus baseline; not HSWM identity."}],
+      "rival_name": "DeGroot-consensus-baseline",
+      "rival_relation": "qualifies",
+      "rival_node": "trust-weighted-repeated-averaging",
+      "comparison_axes": ["consensus", "scope_boundary"]
+    },
+    {
+      "tag": "hswm-ports-connectors-composition",
+      "event_id": "obs-fong-decorated-cospans",
+      "url": "https://arxiv.org/abs/1502.00872",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "cba462410558a78ac75659c520756e49fd50779ad244bd2f4dbf259767dca934",
+      "lakatos_location": "protective_belt",
+      "content": "Decorated cospans give a compositional syntax for open systems with interfaces. This supports the ports-and-connectors formalization while leaving the HSWM mapping as a hypothesis.",
+      "theory_basis": "Secondary formalization of open composition.",
+      "foundation_refs": ["hswm-compositional-open-systems"],
+      "longinus_refs": [{"sourceId": "hswm-source-fong-decorated-cospans", "sourcePath": "https://arxiv.org/abs/1502.00872", "layer": "external-primary", "note": "Open-system composition formalization."}],
+      "rival_name": "decorated-cospan-open-systems",
+      "rival_relation": "qualifies",
+      "rival_node": "open-system-interface-composition",
+      "comparison_axes": ["composition", "interfaces"]
+    },
+    {
+      "tag": "hswm-ports-connectors-composition",
+      "event_id": "obs-spivak-wiring-diagrams",
+      "url": "https://arxiv.org/abs/1305.0297",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "539b9f10b8904c159d744218f18dc3a102e0d2a6fd460dc84906f39de4dfd201",
+      "lakatos_location": "protective_belt",
+      "content": "Wiring diagrams organize systems by exposed ports and composition. They motivate an interface algebra for HSWM; they do not establish that the present HSWM runtime implements that algebra.",
+      "theory_basis": "Typed port hypothesis.",
+      "foundation_refs": ["hswm-compositional-open-systems"],
+      "longinus_refs": [{"sourceId": "hswm-source-spivak-wiring-diagrams", "sourcePath": "https://arxiv.org/abs/1305.0297", "layer": "external-primary", "note": "Typed ports and wiring formalization."}],
+      "rival_name": "wiring-diagram-interface-algebra",
+      "rival_relation": "qualifies",
+      "rival_node": "typed-ports-and-wiring",
+      "comparison_axes": ["ports", "wiring"]
+    },
+    {
+      "tag": "hswm-interface-chu-lakatotree-333-orrr",
+      "event_id": "obs-open-dynamical-systems",
+      "url": "https://arxiv.org/abs/1408.1598",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "2773ae8bfb34f4b9d0cf3ae97aeef4f9c4eaebedbccb5df36014b49191c300a0",
+      "lakatos_location": "protective_belt",
+      "content": "Open dynamical systems can be composed through shared interfaces. This is evidence for treating HSWM components as open systems, not evidence of empirical HSWM performance.",
+      "theory_basis": "Interface-bound open-system comparison.",
+      "foundation_refs": ["hswm-compositional-open-systems"],
+      "longinus_refs": [{"sourceId": "hswm-source-open-dynamical-systems", "sourcePath": "https://arxiv.org/abs/1408.1598", "layer": "external-primary", "note": "Shared-interface open-system comparison."}],
+      "rival_name": "open-dynamical-systems",
+      "rival_relation": "qualifies",
+      "rival_node": "shared-interface-composition",
+      "comparison_axes": ["open_systems", "composition"]
+    },
+    {
+      "tag": "hswm-semantic-w-operators",
+      "event_id": "obs-zhou-hypergraph-learning",
+      "url": "https://proceedings.neurips.cc/paper_files/paper/2006/hash/dff8e9c2ac33381546d96deea9922999-Abstract.html",
+      "source_type": "peer_reviewed_primary",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "52e87f9a9c96caeba509d67417b788365a963087fa39556893dd3e204055d787",
+      "lakatos_location": "protective_belt",
+      "content": "Hypergraph learning represents higher-order relations directly rather than reducing every interaction to a pairwise edge. It grounds the hypergraph substrate comparison only.",
+      "theory_basis": "Higher-order topology baseline.",
+      "foundation_refs": ["hswm-hypergraph-learning-baselines"],
+      "longinus_refs": [{"sourceId": "hswm-source-zhou-hypergraph-learning", "sourcePath": "https://proceedings.neurips.cc/paper_files/paper/2006/hash/dff8e9c2ac33381546d96deea9922999-Abstract.html", "layer": "external-primary", "note": "Higher-order topology baseline."}],
+      "rival_name": "pairwise-graph-learning",
+      "rival_relation": "qualifies",
+      "rival_node": "higher-order-relation-baseline",
+      "comparison_axes": ["hypergraph", "pairwise_graph"]
+    },
+    {
+      "tag": "hswm-exp-topology-mediation",
+      "event_id": "obs-allset-hypergraph",
+      "url": "https://arxiv.org/abs/2106.13264",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "c53ffa5c17241c2474a6e36aaf60dd56606f5e44c443bff8f0e65c97733496b0",
+      "lakatos_location": "positive_heuristic",
+      "content": "AllSet identifies hypergraph neural networks with multiset-function architectures and provides a modern comparison class. The HSWM relation remains a secondary engineering hypothesis.",
+      "theory_basis": "Non-hypergraph and multiset-function ablation design.",
+      "foundation_refs": ["hswm-hypergraph-learning-baselines"],
+      "longinus_refs": [{"sourceId": "hswm-source-allset-hypergraph", "sourcePath": "https://arxiv.org/abs/2106.13264", "layer": "external-primary", "note": "Multiset-function hypergraph comparator."}],
+      "rival_name": "AllSet-multiset-hypergraph-network",
+      "rival_relation": "qualifies",
+      "rival_node": "multiset-function-architecture",
+      "comparison_axes": ["hypergraph", "multiset_functions", "ablation"]
+    },
+    {
+      "tag": "hswm-semantic-w-operators",
+      "event_id": "obs-eprop-local-learning",
+      "url": "https://www.nature.com/articles/s41467-020-17236-y",
+      "source_type": "peer_reviewed_primary",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "066c099527c36d50f9483e25e85f998e3e55fe4429b2f22fe420518cc131cfc0",
+      "lakatos_location": "protective_belt",
+      "content": "E-prop derives online local learning signals for recurrent networks using eligibility traces. It motivates a slow-fast update comparison for HSWM weights without proving that HSWM should use e-prop.",
+      "theory_basis": "Local online learning comparison.",
+      "foundation_refs": ["hswm-plasticity-comparison"],
+      "longinus_refs": [{"sourceId": "hswm-source-eprop-local-learning", "sourcePath": "https://www.nature.com/articles/s41467-020-17236-y", "layer": "external-primary", "note": "Eligibility-trace online learning comparator."}],
+      "rival_name": "e-prop-local-online-learning",
+      "rival_relation": "qualifies",
+      "rival_node": "eligibility-trace-update",
+      "comparison_axes": ["online_learning", "eligibility_trace"]
+    },
+    {
+      "tag": "hswm-exp-operator-w-mediation",
+      "event_id": "obs-three-factor-plasticity",
+      "url": "https://www.frontiersin.org/journals/neural-circuits/articles/10.3389/fncir.2015.00085/full",
+      "source_type": "peer_reviewed_review",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "7c0f2d1203776487444db066c14fec2f649cee3cf7ce681ee3fe0c7115e3d9df",
+      "lakatos_location": "protective_belt",
+      "content": "Three-factor learning rules combine pre/post activity with a modulatory signal. This supplies a biological comparison for operator-mediated weight updates, not an HSWM efficacy result.",
+      "theory_basis": "Modulatory learning comparison.",
+      "foundation_refs": ["hswm-plasticity-comparison"],
+      "longinus_refs": [{"sourceId": "hswm-source-three-factor-plasticity", "sourcePath": "https://www.frontiersin.org/journals/neural-circuits/articles/10.3389/fncir.2015.00085/full", "layer": "external-review", "note": "Modulatory plasticity comparison."}],
+      "rival_name": "three-factor-plasticity",
+      "rival_relation": "qualifies",
+      "rival_node": "modulatory-learning-rule",
+      "comparison_axes": ["three_factor_learning", "operator_mediation"]
+    },
+    {
+      "tag": "hswm-durable-runtime-ledger",
+      "event_id": "obs-w3c-prov",
+      "url": "https://www.w3.org/TR/prov-o/",
+      "source_type": "standard_primary",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "560bdb983937dcce40a312cdabda49ba701ce85226e932555e6f352250ab1e6a",
+      "lakatos_location": "positive_heuristic",
+      "content": "PROV-O provides interoperable entities, activities, agents, and derivation relations for provenance. It supports a durable research ledger and causal receipt vocabulary.",
+      "theory_basis": "Provenance vocabulary for receipts and actions.",
+      "foundation_refs": ["hswm-provenance-model"],
+      "longinus_refs": [{"sourceId": "hswm-source-w3c-prov-o", "sourcePath": "https://www.w3.org/TR/prov-o/", "layer": "external-standard", "note": "Provenance vocabulary baseline."}],
+      "rival_name": "W3C-PROV-O-provenance-baseline",
+      "rival_relation": "supports",
+      "rival_node": "entity-activity-agent-derivation",
+      "comparison_axes": ["provenance", "causal_receipt"]
+    },
+    {
+      "tag": "hswm-exp-cross-agent-transfer",
+      "event_id": "obs-gptswarm",
+      "url": "https://arxiv.org/abs/2402.16823",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "58df4c4bd64d63a0fc9a9e0827d945a09eacb5bbc22633a91a4acdd34790f231",
+      "lakatos_location": "protective_belt",
+      "content": "GPTSwarm models language-model agents as a graph whose topology and prompts can be optimized. It is a relevant competing baseline for graph-mediated multi-agent coordination.",
+      "theory_basis": "Competing graph-agent baseline.",
+      "foundation_refs": ["hswm-agent-graph-baseline"],
+      "longinus_refs": [{"sourceId": "hswm-source-gptswarm", "sourcePath": "https://arxiv.org/abs/2402.16823", "layer": "external-primary", "note": "Graph-agent topology comparator."}],
+      "rival_name": "GPTSwarm-agent-graph",
+      "rival_relation": "qualifies",
+      "rival_node": "optimized-agent-topology",
+      "comparison_axes": ["agent_graph", "topology_optimization"]
+    },
+    {
+      "tag": "hswm-exp-cross-agent-transfer",
+      "event_id": "obs-collaborative-memory",
+      "url": "https://arxiv.org/abs/2505.18279",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "08a682fa62359499ea21e4fb178e3012de424c91f06500108176956f837a6cf9",
+      "lakatos_location": "protective_belt",
+      "content": "Collaborative Memory studies shared memory for multi-agent systems. It supplies a baseline for cross-agent transfer and makes plain shared memory a required comparator.",
+      "theory_basis": "Shared-memory baseline.",
+      "foundation_refs": ["hswm-transfer-baselines"],
+      "longinus_refs": [{"sourceId": "hswm-source-collaborative-memory", "sourcePath": "https://arxiv.org/abs/2505.18279", "layer": "external-primary", "note": "Shared-memory transfer comparator."}],
+      "rival_name": "Collaborative-Memory-baseline",
+      "rival_relation": "qualifies",
+      "rival_node": "plain-shared-memory-transfer",
+      "comparison_axes": ["shared_memory", "cross_agent_transfer"]
+    },
+    {
+      "tag": "hswm-exp-consolidation",
+      "event_id": "obs-memcollab",
+      "url": "https://arxiv.org/abs/2603.23234",
+      "source_type": "primary_preprint",
+      "retrieved_at": "2026-07-28T00:00:00+09:00",
+      "content_hash": "3678aff4ed0232dc398a5f4a229982767e7eeb82f5aec625bae848ef21378100",
+      "lakatos_location": "protective_belt",
+      "content": "MemCollab studies multi-agent collaborative memory and is a recent comparison point for consolidation and transfer experiments. It does not validate HSWM itself.",
+      "theory_basis": "Collaborative-memory comparison.",
+      "foundation_refs": ["hswm-transfer-baselines"],
+      "longinus_refs": [{"sourceId": "hswm-source-memcollab", "sourcePath": "https://arxiv.org/abs/2603.23234", "layer": "external-primary", "note": "Collaborative-memory consolidation comparator."}],
+      "rival_name": "MemCollab-collaborative-memory",
+      "rival_relation": "qualifies",
+      "rival_node": "multi-agent-memory-consolidation",
+      "comparison_axes": ["collaborative_memory", "consolidation"]
+    }
+  ],
+  "observation_defaults": {
+    "actor": "codex-research-2026-07-28",
+    "source_class_weight": 0.9,
+    "link_authority": 0.9,
+    "primary_source_bonus": 0.2,
+    "provenance_score": 0.35,
+    "corroboration_score": 0.45,
+    "recency_score": 0.6,
+    "supply_chain_score": 0.25
+  },
+  "expected_topology": {
+    "nodes": 19,
+    "edges": 52,
+    "roots": 1,
+    "components": 1,
+    "multi_parent_nodes": 17,
+    "typed_edge_ratio": 1.0,
+    "observations": 12,
+    "questions": 8,
+    "foundations": 12
+  }
+}

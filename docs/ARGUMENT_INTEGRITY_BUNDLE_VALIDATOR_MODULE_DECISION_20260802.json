@@ -1,0 +1,60 @@
+{
+  "schema_version": "engine-decision/v1",
+  "name": "argument-integrity-bundle-validator",
+  "verdict": "module",
+  "purpose": "Deterministically reject structurally invalid ARGUMENT_INTEGRITY evidence bundles without changing the frozen experiment judge or issuing a verdict.",
+  "current_consumers": [
+    "tests/test_argument_integrity_bundle_validator.py",
+    "offline replay of frozen ARG-5 v1 bundles"
+  ],
+  "planned_consumers": [
+    "future ARGUMENT_INTEGRITY successor experiments"
+  ],
+  "rationale": [
+    "The validator has one current call path and owns no mutable state, scheduling, retries, persistence, or external effects.",
+    "Its stable mechanism is a pure mapping from content-addressed artifact bytes plus the byte-frozen v1 judge source to explicit structural gaps, so an engine protocol would be premature."
+  ],
+  "boundary": {
+    "owns": "Phase execution-state, raw JUnit content and cardinality, complete receipt bindings, exact bundle allowlist, phase hashes, and frozen-judge replay validation",
+    "mechanism": "Map one ARGUMENT_INTEGRITY artifact directory to a deterministic valid flag, gap count, and typed failure list",
+    "policy_outside": [
+      "Scientific progress judgment",
+      "Which service mutation is theoretically meaningful",
+      "Production migration or deployment approval"
+    ],
+    "non_goals": [
+      "Running tests or databases",
+      "Mutating source, artifacts, KG, or production",
+      "Replacing or reinterpreting the frozen ARG-5 v1 judge"
+    ],
+    "state_authority": "The supplied artifact bytes and byte-frozen v1 judge source are the input authority; the module owns no mutable state"
+  },
+  "contract": "validate_bundle(argument_integrity_artifact_dir) -> BundleValidationV1(valid, gap_count, failures)",
+  "invariants": [
+    "Identical artifact, validator, and byte-frozen judge bytes produce identical output.",
+    "Any non-empty infrastructure, timeout, unexpected-test, missing-test, or detail-mismatch field produces a nonzero gap count.",
+    "Infrastructure markers anywhere in raw JUnit type, message, or body produce a nonzero gap even beyond producer-summary truncation.",
+    "The exact receipt binding set, terminal bundle manifest, and artifact allowlist must fold without missing, extra, duplicate, or drifted bytes.",
+    "The recorded judge result must equal a fresh replay of the byte-frozen v1 judge and retain its exact experiment identity.",
+    "Validation never changes the frozen v1 judge result or grants scientific verdict authority."
+  ],
+  "failure_model": [
+    "Missing, malformed, hash-drifted, structurally inconsistent, or producer-dirty evidence yields explicit gaps and no mutation."
+  ],
+  "verification": [
+    "An exact synthetic bundle returns zero gaps.",
+    "Each structural false-green field independently returns a typed nonzero gap.",
+    "A raw JUnit infrastructure marker beyond the producer summary window is rejected.",
+    "Duplicate summary or raw JUnit cases and boolean or non-contract exit codes are rejected.",
+    "A receipt that disagrees with its phase payload is rejected even after hashes are recomputed.",
+    "A rehashed fake judge and a bundle with missing bindings or extra artifacts are rejected."
+  ],
+  "promotion_gates": [
+    "At least two independent evidence families share a stable structural bundle protocol.",
+    "Durable admission, concurrency, recovery, or single-writer state becomes part of validation."
+  ],
+  "falsifiers": [
+    "If a recomputed bundle with non-empty infra_failures validates, the contract is false.",
+    "If validation mutates artifacts or changes the frozen v1 scientific authority boundary, the module is invalid."
+  ]
+}

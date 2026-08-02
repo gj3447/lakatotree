@@ -26,7 +26,8 @@ def _svc(*, args, author):
             return []
         if "OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]" in q:    # set_verdict pre-query
             return [dict(verdict="proof", verdict_source=None, source_trust=None,
-                         novel_confirmed=False, author=author, args=args)]
+                         novel_confirmed=False, author=author, args=args,
+                         oldrecs=[])]
         if "RETURN e.tag AS tag" in q:                     # promotion 후 최종 read
             return [dict(tag="n")]
         return []

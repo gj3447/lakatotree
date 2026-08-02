@@ -1,0 +1,41 @@
+# Locked 2026-07-28 before the receipt adapter and live materialization run.
+# Hermetic CI drives the real HSWM seeder validation/materialization/readback
+# functions through a faithful converged HTTP seam.  The completion envelope in
+# receipt.json additionally binds the same spec to the live two-pass readback.
+name: lakatotree-hswm-dense-programme
+target:
+  mode: in_process
+  callable: hswm_dense_programme_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: HSWM-DENSE-1
+    description: The dense HSWM manifest reaches an exact semantic readback covering identity, topology, nodes, frontier, foundations, tradition, and embedded observations.
+    gate:
+      - {event: hswm_dense_exact_readback_arrived, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HSWM_DENSE_PROGRAMME:hswm_dense_exact_readback_arrived
+      source: hswm_dense_programme_receipt.py
+      symbol: verify
+      must_emit: hswm_dense_exact_readback_arrived
+
+  - id: HSWM-DENSE-2
+    description: Reapplying an already converged programme preserves the pinned identity and performs no duplicate observation writes.
+    gate:
+      - {event: hswm_restart_converged_without_observation_rewrite, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HSWM_DENSE_PROGRAMME:hswm_restart_converged_without_observation_rewrite
+      source: hswm_dense_programme_receipt.py
+      symbol: verify
+      must_emit: hswm_restart_converged_without_observation_rewrite
+
+  - id: HSWM-DENSE-3
+    description: A same-identity readback with one altered node comment is rejected by the real exact-comparison gate.
+    gate:
+      - {event: hswm_tampered_readback_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HSWM_DENSE_PROGRAMME:hswm_tampered_readback_rejected
+      source: hswm_dense_programme_receipt.py
+      symbol: verify
+      must_emit: hswm_tampered_readback_rejected

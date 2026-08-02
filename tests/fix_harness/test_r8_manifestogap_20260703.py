@@ -31,12 +31,18 @@ class _FakeKg:
         out = []
         for query, params in ops:
             if 'MERGE (e:LakatosNode' in query and 'e.verdict' in query:
-                guarded = 'CASE WHEN coalesce(e.verdict_source' in query
+                guarded = 'AS preserve_node_authority' in query
                 forceful = params.get('forceful') or []
                 for row in (params.get('rows') or [params]):
                     tag = row.get('tag', params.get('tag'))
                     node = self.store.setdefault(f"{params.get('tree')}/{tag}", {})
-                    if not (guarded and node.get('verdict_source') in forceful):
+                    authoritative = (
+                        node.get('verdict_source') in forceful
+                        or node.get('verdict') not in (None, '', 'proof')
+                        or node.get('node_state', 'DRAFT') != 'DRAFT'
+                        or node.get('current_receipt_sha') is not None
+                    )
+                    if not (guarded and authoritative):
                         node['verdict'] = row.get('verdict')
             out.append([{'t': params.get('tree')}])
         return out
@@ -112,6 +118,10 @@ def test_p0b_anchored_ratio_projector():
     a = m['anchored']
     assert a['novel_measured'] == 3 and a['server_anchored'] == 2, a   # None 은 분모 제외
     assert a['anchored_ratio'] == round(2 / 3, 3)
+    assert a['float_tags'] == ['b'], a
+    # bare progressive fixture 는 force_of_row≠COUNTS → counts_force 분모 0
+    assert a['counts_force']['novel_measured'] == 0
+    assert a['counts_force']['anchored_ratio'] is None
     # novel 판정 노드 0 → None(거짓 0 아님).
     assert tree_metrics([_n('x', None)], [])['anchored']['anchored_ratio'] is None
 
@@ -119,10 +129,84 @@ def test_p0b_anchored_ratio_projector():
 # ── P3b: notebook-drift alert ─────────────────────────────────────────────────────────────
 def test_p3b_notebook_drift_alert():
     m = tree_metrics([_n('a', True), _n('b', False)], [])   # 1/2 서버앵커
-    assert any('서버앵커 안 된 novel' in x for x in m['alerts']), m['alerts']
+    hit = [x for x in m['alerts'] if '서버앵커 안 된 novel' in x]
+    assert hit, m['alerts']
+    assert 'COUNTS-aligned float=' in hit[0]
     # 전부 앵커 = 알럿 없음(정상).
     m2 = tree_metrics([_n('a', True), _n('b', True)], [])
     assert not any('서버앵커 안 된 novel' in x for x in m2['alerts'])
+
+
+def test_p0b_counts_force_anchored_ratio():
+    """force_of_row==COUNTS 노드만 counts_force 분모 — L0 float 와 진보 힘 float 분리."""
+    def _counts(tag, nsa, parent=None):
+        return dict(tag=tag, verdict='progressive', novel_server_anchored=nsa,
+                    verdict_source='scripted', current_receipt_sha='ab' * 32,
+                    parent=parent, parents=[parent] if parent else [],
+                    parent_edges=[], node_state='JUDGED_SCRIPTED')
+    m = tree_metrics([_counts('ok', True), _counts('float', False), _n('l0float', False)], [])
+    a = m['anchored']
+    assert a['novel_measured'] == 3 and a['server_anchored'] == 1
+    assert a['float_tags'] == ['float', 'l0float']
+    cf = a['counts_force']
+    assert cf['novel_measured'] == 2 and cf['server_anchored'] == 1
+    assert cf['anchored_ratio'] == 0.5
+    assert cf['float_tags'] == ['float']
+
+
+def test_p0b_superseded_float_via_l2_child():
+    """자식 novel_server_anchored=True 이면 역사 float 는 superseded residual."""
+    def _counts(tag, nsa, parent=None):
+        return dict(tag=tag, verdict='progressive', novel_server_anchored=nsa,
+                    verdict_source='scripted', current_receipt_sha='ab' * 32,
+                    parent=parent, parents=[parent] if parent else [],
+                    parent_edges=[], node_state='JUDGED_SCRIPTED')
+    m = tree_metrics([
+        _counts('mcp_float', False),
+        _counts('l2_seal', True, parent='mcp_float'),
+        _counts('active_float', False),
+    ], [])
+    a = m['anchored']
+    assert a['superseded_float_tags'] == ['mcp_float']
+    assert a['active_float_tags'] == ['active_float']
+    assert a['counts_force']['active_float_tags'] == ['active_float']
+    hit = [x for x in m['alerts'] if '서버앵커 안 된 novel' in x or '역사 novel float residual' in x][0]
+    assert 'active_float=1' in hit and 'superseded_float=1' in hit
+
+
+def test_p0b_all_superseded_float_is_residual_alert_not_p3b_crisis():
+    def _counts(tag, nsa, parent=None):
+        return dict(tag=tag, verdict='progressive', novel_server_anchored=nsa,
+                    verdict_source='scripted', current_receipt_sha='ab' * 32,
+                    parent=parent, parents=[parent] if parent else [],
+                    parent_edges=[], node_state='JUDGED_SCRIPTED')
+    m = tree_metrics([
+        _counts('legacy_float', False),
+        _counts('l2_seal', True, parent='legacy_float'),
+    ], [])
+    crisis = [x for x in m['alerts'] if 'P3b notebook-drift' in x]
+    residual = [x for x in m['alerts'] if '역사 novel float residual' in x]
+    assert not crisis, crisis
+    assert residual and 'active_float=0' in residual[0]
+
+
+def test_legacy_inconclusive_annotate_residual_alert():
+    """limitation marker demotes green-alert from active crisis to residual hygiene."""
+    nodes = [
+        dict(tag='a', verdict='progressive', parent=None, parents=[], parent_edges=[],
+             verdict_source='scripted', current_receipt_sha='',  # forceful without receipt
+             limitation='legacy_inconclusive_annotate: pre-receipt progressive; not programme force.',
+             algorithm='legacy', comment='legacy green catalogued'),
+        dict(tag='b', verdict='progressive', parent='a', parents=['a'], parent_edges=[],
+             verdict_source='scripted', current_receipt_sha='',
+             limitation='', algorithm='x', comment='still active'),
+    ]
+    m = tree_metrics(nodes, [])
+    residual = [x for x in m['alerts'] if 'legacy green residual' in x or 'active-inconclusive' in x]
+    assert residual, m['alerts']
+    # one annotated + one active → active-inconclusive phrasing
+    assert any('active-inconclusive' in x for x in m['alerts'])
+    assert any('annotated_legacy=1' in x for x in m['alerts'])
 
 
 # ── P0c: line19 각주(doc-honesty) ─────────────────────────────────────────────────────────

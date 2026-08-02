@@ -42,14 +42,30 @@ BF_SUBSTANTIAL = 3.162
 
 
 def eureka_verdict(verdict: str) -> str:
-    """Map the Lakatos-unverified metric verdict onto Eureka's orthogonal discovery axis.
+    """Map programme/status verdicts onto Eureka's orthogonal discovery axis.
 
     The abandon-stack reads ``progressive_unverified`` as neutral BF=1.0. Eureka still
     evaluates the independently confirmed novelty/problem-closure gates, so it reads the
     same metric result as ``progressive``. ``classify`` owns this normalization so every public
     measurement caller receives the same semantics; promotion still sees the raw verdict.
+
+    ``CANONICAL`` is the programme-head *status* of progressive evidence (promotion), not a
+    Bayesian neutral event. Mapping it to progressive preserves measurement-grade true-eureka
+    after set_verdict(CANONICAL) — otherwise promoting L2 progressive kills path eureka BF
+    (BF_BASE default 1.0 → always marginal). Eureka is not the promotion gate.
+
+    ``former_canonical`` is the same class after a later promote: the node still *measured*
+    progressive evidence; only programme-head status moved. Without the map, every path
+    demotion (new CANONICAL) mass-hallucinates prior true-eurekas as bf_marginal (SelfDev
+    2026-08-01 rain: L2 unreceipted head → former_canonical → true_rate collapse).
     """
-    return "progressive" if verdict == "progressive_unverified" else verdict
+    # OR-chain (not multi-element vocab set/tuple) — engine_unify_vocab AST 가
+    # 정본 밖 ≥2어휘 리터럴 집합을 센다. 의미는 동일: status 어휘 → discovery 축 progressive.
+    if (verdict == "progressive_unverified"
+            or verdict == "CANONICAL"
+            or verdict == "former_canonical"):
+        return "progressive"
+    return verdict
 
 
 @dataclass(frozen=True)
@@ -99,9 +115,12 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
     if not node.get("novel_confirmed"):
         reasons.append("novel_unconfirmed")  # the decisive false-aha signature
     raw_verdict = node.get("verdict", "")
+    measurement_absent = bool(node.get("measurement_absent"))
     bf = bayes_factor(eureka_verdict(raw_verdict), node.get("delta", 0.0),
                       node.get("noise_band"), node.get("source_trust", 1.0))
-    if bf <= bf_substantial:
+    # 미측정(delta 재구성 불가) 이면 BF 게이트를 통과/실패로 쓰지 않는다 — 가짜 delta=0 → bf_marginal
+    # 환각 금지(finding B 동형). 다른 red 사유가 없을 때 inconclusive 로 기권.
+    if not measurement_absent and bf <= bf_substantial:
         reasons.append(f"bf_marginal:{bf:.3f}<={bf_substantial}")
     closed_n, opened_n = int(node.get("closed", 0)), int(node.get("opened", 0))
     balance = problem_balance(closed_n, opened_n)
@@ -125,7 +144,8 @@ def classify(node: dict, *, bf_substantial: float = BF_SUBSTANTIAL,
         if not ok:
             reasons.extend(gate_reasons)
 
-    inconclusive = ledger_absent and not reasons   # would be true, but the Laudan axis has no data
+    # would be true, but Laudan ledger and/or metric BF axis has no honest data
+    inconclusive = (not reasons) and (ledger_absent or measurement_absent)
     true = (not reasons) and not inconclusive
     return EurekaVerdict(felt=True, true=true,
                          hallucinated=(not true and not inconclusive),
@@ -152,15 +172,18 @@ def _node_to_eureka_input(node: dict) -> dict:
 
     * ``delta = metric_value − pred_baseline``  (exactly ``judge.judge``'s effect)
     * ``noise_band = pred_noise_band``
-    * ``closed = |pred_closes|`` (questions this prediction closes),
+    * ``closed = |CLOSES_QUESTION|`` (questions actually closed by a committed adjudication),
       ``opened = |questions|`` (questions the node raises) → per-node problem balance
     * ``verdict`` / ``novel_registered`` / ``novel_confirmed`` / ``source_trust`` — direct
+    * ``measurement_absent`` — pred_baseline 또는 metric_value 부재 시 delta=0 가짜 BF 금지
+      (finding B 동형: 미측정 ≠ bf_marginal 환각; SelfDev path early former_canonical 2026-08-01)
 
     ``stands``/``reproducible`` are deliberately absent — they belong to the standing layer
     (see :func:`eureka_over_tree`, which runs with ``require_promotion=False``).
     """
     mv, base = node.get("metric_value"), node.get("pred_baseline")
-    delta = (float(mv) - float(base)) if mv is not None and base is not None else 0.0
+    measurement_absent = mv is None or base is None
+    delta = (float(mv) - float(base)) if not measurement_absent else 0.0
     return {
         "novel_registered": node.get("novel_registered"),
         "novel_confirmed": node.get("novel_confirmed"),
@@ -168,8 +191,9 @@ def _node_to_eureka_input(node: dict) -> dict:
         "delta": delta,
         "noise_band": node.get("pred_noise_band"),
         "source_trust": node.get("source_trust", 1.0),
-        "closed": closed_count(node.get("pred_closes")),   # R7: 글자수 버그 봉합(str 질문명=1)
+        "closed": closed_count(node.get("closed_question_count")),
         "opened": len(node.get("questions") or []),
+        "measurement_absent": measurement_absent,
     }
 
 
@@ -197,14 +221,36 @@ def eureka_over_tree(nodes: list) -> dict:
     # confirmed+substantial-BF but no declared pred_closes → inconclusive, honestly unmeasured.)
     inconclusive = sum(1 for v in verdicts if v.inconclusive)
     assessable = felt - inconclusive
+    # 2026-08-01: split measurement_failed so path dogfood sees bf_marginal vs novel_unconfirmed
+    # (status demotion to former_canonical used to look like mass novel failure).
+    n_bf = sum(1 for v in verdicts if v.hallucinated
+               and any(str(r).startswith("bf_marginal") for r in v.reasons))
+    n_novel = sum(1 for v in verdicts if v.hallucinated and "novel_unconfirmed" in v.reasons)
+    n_other = sum(
+        1 for v in verdicts if v.hallucinated
+        and not any(str(r).startswith("bf_marginal") for r in v.reasons)
+        and "novel_unconfirmed" not in v.reasons)
+    # ledger-only vs measurement-absent (both are inconclusive abstains, not hallucinations)
+    n_ledger = sum(1 for i, v in zip(inputs, verdicts)
+                   if v.inconclusive and not i.get("measurement_absent")
+                   and int(i.get("closed", 0)) == 0 and int(i.get("opened", 0)) == 0)
+    n_meas_abs = sum(1 for i, v in zip(inputs, verdicts)
+                     if v.inconclusive and i.get("measurement_absent"))
     return {
         "felt": felt, "true": true, "hallucinated": hallucinated,
         "inconclusive": inconclusive, "assessable": assessable,
         "true_rate": round(true / assessable, 3) if assessable else 0.0,
         "hallucination_rate": round(hallucinated / assessable, 3) if assessable else 0.0,
-        "problem_ledger_absent": inconclusive,
-        "hallucinated_reason_split": {"problem_ledger_absent": inconclusive,
-                                      "measurement_failed": hallucinated},
+        "problem_ledger_absent": n_ledger,
+        "measurement_absent": n_meas_abs,
+        "hallucinated_reason_split": {
+            "problem_ledger_absent": n_ledger,
+            "measurement_absent": n_meas_abs,
+            "measurement_failed": hallucinated,
+            "bf_marginal": n_bf,
+            "novel_unconfirmed": n_novel,
+            "other": n_other,
+        },
         "measurement_grade": True,
     }
 

@@ -42,10 +42,10 @@ class _Cell:
             return [{'tag': p['tag']}] if p['tag'] in self.nodes else []
         return []
 
-    def add_node(self, name, node: NodeIn):
+    def add_node(self, name, node: NodeIn, claim: str):
         self.pipeline.append('node')
         self.nodes.setdefault(node.tag, {})
-        return {'ok': True, 'tag': node.tag}
+        return {'ok': True, 'tag': node.tag, '_cycle_created': True}
 
     def register_prediction(self, name, tag, p: PredictionIn):
         self.pipeline.append('predict')
@@ -65,7 +65,10 @@ def _svc(cell: _Cell) -> ProgrammeService:
     return ProgrammeService(
         kg=cell.kg, hist=lambda *a, **k: None, pg=lambda: None,
         tree_data=lambda n: {'nodes': [], 'frontier': []}, compute_metrics=lambda td: {},
-        add_node=cell.add_node, register_prediction=cell.register_prediction,
+        add_node=cell.add_node,
+        compensate_cycle_node=lambda *_a: 'deleted',
+        release_cycle_claim=lambda *_a: None,
+        register_prediction=cell.register_prediction,
         submit_test_result=cell.submit_test_result, add_critique=cell.add_critique,
         standing=lambda n, t: {'stands': True}, insert_artifact=lambda a: None)
 

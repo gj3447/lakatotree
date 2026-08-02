@@ -87,6 +87,12 @@ def test_lifespan_closes_on_shutdown(monkeypatch):
     neo = type('N', (), {'close': lambda s: closed.append('neo')})()
     mongo = type('M', (), {'client': type('C', (), {'close': lambda s: closed.append('mongo')})()})()
     monkeypatch.setattr(app, '_container', AppContainer(neo=neo, mongo=mongo, pg_kw={}))
+    monkeypatch.setattr(app, '_require_storage_contract', lambda: {'ok': True})
+    monkeypatch.setattr(
+        app,
+        '_startup_reconcile',
+        lambda **_kw: {'ok': True, 'still_pending': 0, 'conflict_count': 0},
+    )
     with TestClient(app.app):
         pass                                              # __exit__ → shutdown → _close_resources
     assert 'neo' in closed and 'mongo' in closed
@@ -98,10 +104,15 @@ def test_server_has_named_logger():
     assert app.logger.name == 'lakatotree.server'
 
 
-# ── OPS-BOOTSTRAP-1: run.sh schema 실패 구분 (source 가드) ──────────────────
-def test_run_sh_schema_not_blanket_suppressed():
+# ── P1-Ca: launcher never migrates; critique service owns the narrow gate ──
+def test_run_sh_never_auto_migrates_or_blocks_core_on_optional_pg():
     text = open(os.path.join(os.path.dirname(__file__), '..', 'server', 'run.sh'), encoding='utf-8').read()
-    schema_block = text.split('schema.sql', 1)[1][:400]
-    assert 'ON_ERROR_STOP' in text, 'schema.sql 오류가 비-0 종료하도록 ON_ERROR_STOP 필요'
-    # PG 가동중 schema 실패 시 loud exit (진짜 오류와 benign skip 구분)
-    assert 'exit 1' in text, 'schema.sql 진짜 실패 시 exit 1 (silent skip 금지)'
+    assert '-m server.storage_contract' not in text
+    assert '-f schema.sql' not in text
+    app_text = open(os.path.join(os.path.dirname(__file__), '..', 'server', 'app.py'), encoding='utf-8').read()
+    service_text = open(
+        os.path.join(os.path.dirname(__file__), '..', 'server', 'contexts', 'tree',
+                     'evidence_claim_service.py'), encoding='utf-8'
+    ).read()
+    assert 'critique_ready=_require_critique_history_ready' in app_text
+    assert 'ready()' in service_text

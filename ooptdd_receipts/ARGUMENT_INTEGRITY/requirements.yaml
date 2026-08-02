@@ -1,0 +1,56 @@
+# Locked before the positive run.  This fast receipt is a hermetic response-contract sentinel.
+# The blocking real-datastore proof is harness.json + tests/integration/
+# test_argument_integrity_real_neo4j.py; it must not be replaced by this in-memory port.
+name: lakatotree-argument-pipeline-integrity
+target:
+  mode: in_process
+  callable: argument_integrity_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: ARG-1
+    description: A dangling attack target is rejected instead of disappearing from the AF.
+    gate:
+      - {event: dangling_attack_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:ARGUMENT_INTEGRITY:dangling_attack_rejected
+      source: argument_integrity_receipt.py
+      symbol: verify
+      must_emit: dangling_attack_rejected
+  - id: ARG-2
+    description: Reusing an argument id with different content is rejected as an immutable conflict.
+    gate:
+      - {event: argument_overwrite_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:ARGUMENT_INTEGRITY:argument_overwrite_rejected
+      source: argument_integrity_receipt.py
+      symbol: verify
+      must_emit: argument_overwrite_rejected
+  - id: ARG-3
+    description: An exact retry is an idempotent no-op and emits no duplicate history.
+    gate:
+      - {event: identical_retry_idempotent, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:ARGUMENT_INTEGRITY:identical_retry_idempotent
+      source: argument_integrity_receipt.py
+      symbol: verify
+      must_emit: identical_retry_idempotent
+  - id: ARG-4
+    description: The write query locks tree-scoped argument identity before checking and creating it.
+    gate:
+      - {event: tree_locked_first_write, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:ARGUMENT_INTEGRITY:tree_locked_first_write
+      source: argument_integrity_receipt.py
+      symbol: verify
+      must_emit: tree_locked_first_write
+  - id: ARG-5
+    description: Creation is acknowledged only when this transaction owns the ON CREATE claim token.
+    gate:
+      - {event: create_claim_verified, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:ARGUMENT_INTEGRITY:create_claim_verified
+      source: argument_integrity_receipt.py
+      symbol: verify
+      must_emit: create_claim_verified

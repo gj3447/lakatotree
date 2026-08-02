@@ -20,15 +20,18 @@ git-흡수 G4 는 receive-pack 격리(quarantine-then-migrate)를 이식해 `scr
    `resolve_prefix` 는 `NamingRegistryError`(fail-loud). 한계비용 0 으로 KG 이름공간 드리프트(같은 프로그램이
    두 프리픽스로 갈라짐)를 봉합.
 
-4. **staging 격리 → 원자 migrate**(receive-pack 이식). `build_staging_cypher` 는 배치를
-   `:LakatosNodeStaging{import_batch}` 로만 write(라이브 라벨 불변). 전행 `verify_content` green 일 때만
-   `build_migrate_cypher`(**단일 Cypher statement** — apoc 없이 원자, 부분 공개 불가)로 라벨 스왑. 변조 배치는
-   staging 에 격리 잔존.
+4. **무권한 staging prototype 폐기**(2026-08-02 안전성 재심). 과거
+   `build_staging_cypher`/`build_migrate_cypher`는 실제 verifier·tree lock·receipt와 결합되지
+   않았고 live properties 전체를 덮을 수 있었다. 세 호환 함수는 이제 호출 즉시 fail-closed 한다.
+   유일한 mutation authority는 namespace, exact constraints, tree lock, protected-node guard,
+   operation identity와 durable receipt를 한 트랜잭션에 묶는 `do_apply`다.
 
 ## 보류 (user GO 대기)
 - **exporter 방향 반전**(엔진 DB → 허브, 현행 모듈 → KG 의 역): 허브 13개 3-way 처분표(재주행/notebook 강등/
   은퇴) 확정 후로 DEFER — 일부 허브는 진행중 프로그램 등록처라 은퇴 불가(설계결정 선행).
-- **268행 content_sha 백필 `--apply`**: KG write 이므로 user GO 게이트. staging 경로의 실전 첫 고객으로 태울 것.
+- **268행 content_sha 백필 `--apply`**: KG write 이므로 user GO 게이트. 별도 staging 경로를
+  부활시키지 말고 현재 guarded `do_apply` 계약 안에서만 수행할 것.
 
 ## 상태
-ACCEPTED (코드+가드 착륙; 백필·방향반전은 GO 대기). 가드: `tests/fix_harness/test_r11_sync_20260703.py`.
+ACCEPTED, amended 2026-08-02 (prototype 폐기 + guarded direct apply 단일 권위;
+백필·방향반전은 GO 대기). 가드: `tests/fix_harness/test_r11_sync_20260703.py`.

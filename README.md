@@ -13,8 +13,10 @@ The project is useful when an AI agent, research workflow, or evaluation harness
 > **Honest scope.** An artifact-bound managed submit does more than retain a client path: the server
 > hashes the allowed source files, copies the scorer and result into private content-addressed
 > immutable snapshots, executes from those snapshots, and mints a `MeasurementLock` over the exact
-> command, dependency hashes, environment fingerprint, output, grade, and replay status. A v5 verdict
-> receipt seals both snapshot and source identities plus the lock SHA. Replay provenance is
+> command, dependency hashes, environment fingerprint, output, grade, and replay status. The v5
+> artifact identity is retained by the current v6 verdict receipt, which additionally seals the
+> exact append-only history payload; prediction receipt v3 applies the same history binding to
+> preregistration. Replay provenance is
 > authoritative only while the unique current receipt and lock rehash, their semantics and node
 > caches agree, the environment matches, and both snapshots still rehash to their sealed digests.
 > Legacy/unbound submits remain explicitly non-authoritative and cannot earn replay-owned assurance.
@@ -70,13 +72,15 @@ generate a question          read a measurement
 
 The conjecture side proposes experiments; the verification side scores them. A claim of novelty is not enough: `progressive` requires both improvement beyond the noise band and a corroborated structural `NovelTarget`. Improvement without novelty is `partial`. A refutation is `rejected`; movement within the declared noise band is `equivalent`.
 
-The diagram states the research-programme lifecycle, not a claim that the current default runtime is already a generic closed-loop agent network. LakatoTree currently derives verdicts and exposes programme, credence, lifecycle, and frontier calculations. It does **not yet** provide a generic agent-attachment protocol, an append-only causal-cut runtime, or automatic verdict-driven redispatch. Until a changed verdict causes a changed next action, the implemented surface is a judgement and audit engine rather than a complete behavioural feedback loop.
+The diagram states the research-programme lifecycle, not a claim that the current default runtime is already a generic closed-loop agent network. LakatoTree currently derives verdicts and exposes programme, credence, lifecycle, and frontier calculations. A receipt-backed exact `progressive` or `rejected` result now closes its preregistered frontier question atomically with the verdict receipt; partial, equivalent, conditional, and unverified outcomes keep it open. LakatoTree does **not yet** provide a generic agent-attachment protocol, an append-only causal-cut runtime, or automatic verdict-driven redispatch. Until a changed verdict causes a changed next action, the implemented surface is a judgement and audit engine rather than a complete behavioural feedback loop.
 
 ### HSWM agent-network direction
 
 In the HSWM interpretation, applying HSWM means that agents attach to a shared causal-hypergraph network and act *through* it: an agent reads the current committed cut, proposes a versioned transition, executes an authorised operator, returns a producer-verdict-free receipt, receives an independently derived LakatoTree verdict, and is redispatched from the resulting cut. Merely writing results to Neo4j, Markdown, or an MCP server does not satisfy that definition.
 
 LakatoTree can host the scientific-policy part of that network and become its first reference implementation. BHGMAN is not required; it is one possible executor adapter. The minimal causal test is deliberately strict: with the same initial cut, changing only the verdict must change the next dispatch. The full design contract, current capability boundary, agent lifecycle, and vertical-slice acceptance tests are in [HSWM agent network](docs/HSWM_AGENT_NETWORK.md). The separate [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md) records why this direction is worth one bounded experiment, the equal-compute baselines, primary metric, ablations, and conditions for pruning it.
+
+The content-addressed [HSWM Larger-AI programme manifest](docs/data/hswm_larger_ai_programme_20260728.json) provides a denser executable reference tree: 19 nodes, 52 typed evidence edges, 17 multi-parent nodes, 8 open questions, 12 primary-source observations, and 12 foundations. User canon, secondary formalisation, engineering evidence, open experiments, interface boundaries, and a revisable research tradition remain distinct. Fourteen source files and ten exact fragments are content-bound. [`scripts/seed_hswm_larger_ai_programme.py`](scripts/seed_hswm_larger_ai_programme.py) validates it offline by default, requires explicit `--apply` for writes, and performs exact remote readback; a converged rerun performs no mutation. The manifest records no scientific progress verdict or HSWM efficacy claim.
 
 Programme-level layers add context without weakening that kernel rule:
 
@@ -124,7 +128,7 @@ The input format is a small, **tool-agnostic** JSON contract you can adopt on it
 
 The CLI is available as a module, for example `python -m lakatos.cli --help`. Commands that read or mutate a named tree require a configured LakatoTree server and its backing stores; the repository's current server launch scripts contain deployment-specific assumptions and are not a portable public quickstart. The pure library and Euler demo do not require that service.
 
-Optional dependency groups are declared in `pyproject.toml`: `server`, `db`, `prov`, `receipts`, `dev`, `integration`, and `all`. From a checkout, install one with `python -m pip install -e ".[dev]"` or the relevant extra.
+Optional dependency groups are declared in `pyproject.toml`: `storage`, `server`, `db`, `prov`, `receipts`, `dev`, `integration`, and `all`. From a checkout, install one with `python -m pip install -e ".[dev]"` or the relevant extra.
 
 ## Proof signals and limits
 
@@ -152,7 +156,7 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | path | responsibility |
 |---|---|
 | `lakatos/verdict/` | deterministic judgement and dialectical composition |
-| `lakatos/quant/` | credence, problem-solving, calibration, multiplicity |
+| `lakatos/quant/` | credence, problem-solving, calibration, multiplicity, programme-series diagnostics |
 | `lakatos/programme/` | branching, lifecycle, comparison, public authoring |
 | `lakatos/io/` | receipts, lineage, replay, persistence adapters |
 | `formal/` | machine-checked kernel model |
@@ -165,16 +169,16 @@ Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual mo
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts`
+`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`
 
 ### `quant/`
-`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate` `eprocess`
+`bayes` `laudan` `metrics` `multiplicity` `fertility` `calibrate` `eprocess` `programme_series`
 
 ### `programme/`
-`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge`
+`kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge` `multi_run`
 
 ### `io/`
 `lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`
@@ -196,6 +200,7 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 - **Understand the design:** [THEORY.md](THEORY.md) and [PIDNA](docs/PIDNA.md)
 - **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)
 - **Evaluate, continue, or prune it:** [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md)
+- **Audit the progress judge scientifically:** [backtest protocol](docs/BACKTEST_PROTOCOL_2026-07-24.md)
 - **Inspect formal claims:** [formal/Pidna.lean](formal/Pidna.lean)
 - **Review measurement limits:** [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md)
 - **Read the philosophical rationale:** [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md)

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lakatotree.dev/schema/scientific-backtest-pilot-v1.json",
+  "title": "LakatoTree scientific backtest pilot receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "source_phase", "total_pilot_cases", "contrasts",
+    "accuracy_discordance_rate_floor", "pilot_cases", "source_entity_ids",
+    "component_ids"
+  ],
+  "properties": {
+    "schema_version": {"const": "lakatotree-scientific-backtest-pilot/v1"},
+    "source_phase": {"const": "development"},
+    "total_pilot_cases": {"type": "integer", "minimum": 1},
+    "accuracy_discordance_rate_floor": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+    "pilot_cases": {
+      "type": "array", "minItems": 1,
+      "items": {"$ref": "#/$defs/pilot_case"}
+    },
+    "source_entity_ids": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "component_ids": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "contrasts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lakatotree_vs_naive", "lakatotree_vs_popper_like"],
+      "properties": {
+        "lakatotree_vs_naive": {"$ref": "#/$defs/contrast"},
+        "lakatotree_vs_popper_like": {"$ref": "#/$defs/contrast"}
+      }
+    }
+  },
+  "$defs": {
+    "pilot_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sampling_unit_id", "component_id", "source_entity_ids"],
+      "properties": {
+        "sampling_unit_id": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "source_entity_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "contrast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_pairs", "discordant_pairs", "observed_discordance_rate", "wilson95_lower"
+      ],
+      "properties": {
+        "total_pairs": {"type": "integer", "minimum": 1},
+        "discordant_pairs": {"type": "integer", "minimum": 0},
+        "observed_discordance_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "wilson95_lower": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}

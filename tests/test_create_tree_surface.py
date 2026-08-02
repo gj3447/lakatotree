@@ -22,7 +22,12 @@ def _svc(captured: list):
         captured.append(ops)
         return [[{"ok": True}] for _ in ops]
 
-    return TreeService(kg=kg, kg_tx=kg_tx, hist=lambda *a: None, pg=lambda: None)
+    return TreeService(
+        kg=kg,
+        kg_tx=kg_tx,
+        hist=lambda *a, **kw: None,
+        pg=lambda: None,
+    )
 
 
 def test_service_create_tree_merges_tree_and_returns_ok():

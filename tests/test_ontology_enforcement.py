@@ -92,16 +92,39 @@ _MONTO = json.dumps({"metrics": {"seam_mm": {"direction": "lower"}}, "closed_wor
 
 
 def _judge(ontology: str):
+    outboxes = {}
+
     def kg(query, **k):
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": ontology}]
         if "RETURN e.current_receipt_sha AS prev_rsha" in query:
-            return [{"prev_rsha": None}]
+            return [{
+                "prev_rsha": None,
+                "pred_receipt_sha": None,
+                "pred_registered_at": None,
+                "pred_prev_receipt_sha": None,
+                "pred_baseline_lineage": None,
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in query:
+            row = outboxes.get(k["id"])
+            return [dict(row)] if row is not None else []
         if "SET e.pred_metric" in query:
+            outboxes[k["history_event_id"]] = {
+                "id": k["history_event_id"],
+                "tree": k["tree"],
+                "op": "prediction_register",
+                "node_tag": k["tag"],
+                "payload": k["history_payload_json"],
+                "status": "pending",
+                "created_at": k["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": k["rsha"],
+            }
             return [{"tag": "n"}]
         return []
     return JudgementService(kg=kg, kg_tx=lambda ops: [[{"ok": 1}] for _ in ops],
-                            hist=lambda *a: None,
+                            hist=lambda *a, **k: None,
                             foundation=lambda *a, **k: None,
                             reproducible_for_node=lambda *a, **k: None)
 

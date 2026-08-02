@@ -217,7 +217,8 @@ def _canon_svc(*, tier: str | None, replay):
         if 'cur.verdict AS verdict' in query:
             return [{'verdict': 'progressive', 'verdict_source': 'scripted', 'node_state': None,
                      'source_trust': 1.0, 'novel_confirmed': True, 'qualitative_self_report': False,
-                     'author': '', 'args': [], 'assurance_tier': tier}]
+                     'author': '', 'args': [], 'oldrecs': [],
+                     'assurance_tier': tier}]
         if "cur.verdict='CANONICAL'" in query:
             return [{'tag': p.get('tag')}]
         return []

@@ -62,14 +62,17 @@ def assurance_with_context(row: dict, *, tree_attestors=None, engine_rule_floor=
     L1 천장이었다(라이브 실측: SelfDev 47노드 전부 val<=1, L3 프로브가 partial@L1 되읽힘).
     - lock_bound = bool(measurement_lock_sha) — submit 의 bool(_lsha) 와 동형. row 에 이미 있으면
       보존(기존 fixture 계약). 파생은 사본에만(원본 row shape 불변 — fsck record sha 최소 교란).
-    - temporal_witness = 저장 미러(e.temporal_witness_verified — submit 이 정족수 검증 후 SET).
+    - temporal_witness = False until the ledger stores a signed, receipt-bound
+      T2 verdict anchor.  Historical ``temporal_witness_verified`` values were
+      derived from a T1 prediction anchor plus the server clock and therefore
+      cannot support L3 on permanent read surfaces.
     - floor 대조 대상은 head receipt 봉인 sha(노드별 가변) — 현 프로세스 상수를 넘기면
       항진명제가 읽기 시점으로 이동할 뿐이라 금지."""
     if 'measurement_lock_bound' not in row and row.get('measurement_lock_sha'):
         row = {**row, 'measurement_lock_bound': True}
     return verdict_assurance(row, tree_attestors=tree_attestors,
                              engine_rule_floor=engine_rule_floor,
-                             temporal_witness=bool(row.get('temporal_witness_verified')))
+                             temporal_witness=False)
 
 
 def normalize_node_row(row: dict, *, tree_attestors=None, engine_rule_floor=None) -> dict:
@@ -107,6 +110,7 @@ def normalize_frontier_row(row: dict) -> dict:
     out["status"] = normalize_text(out.get("status")) or "OPEN"
     out["body"] = normalize_text(out.get("body"))
     out["closed_by"] = normalize_text_list(out.get("closed_by"))
+    out["closed_events"] = normalize_text_list(out.get("closed_events"))
     return out
 
 
@@ -173,6 +177,11 @@ class TreeKgRepository:
             # PROM16 루프상한: 선언된 사이클 예산도 사전 공시 — 드라이버가 budget_exhausted 를 맞기
             #   *전에* 남은 예산을 알 수 있어야(정책은 읽을 수 있어야 정책이다).
             "t.cycle_budget AS cycle_budget, "
+            # Durable bundle lineage is audit state: expose it rather than
+            # hiding it behind the generic mutation boundary.
+            "t.tree_incarnation_id AS tree_incarnation_id, "
+            "t.tree_upsert_generation AS tree_upsert_generation, "
+            "t.last_tree_upsert_event_id AS last_tree_upsert_event_id, "
             "t.updated_at AS updated_at",
             n=name,
         )
@@ -188,6 +197,8 @@ class TreeKgRepository:
         WITH e, [pe IN raw_parent_edges WHERE pe.tag IS NOT NULL] AS parent_edges,
              collect(DISTINCT q.name) AS questions
         OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(hr:VerdictReceipt {receipt_sha: e.current_receipt_sha})
+        OPTIONAL MATCH (e)-[:CLOSES_QUESTION]->(closedq:OpenQuestion)
+        WITH e, parent_edges, questions, hr, count(DISTINCT closedq) AS closed_question_count
         RETURN e.tag AS tag, e.verdict AS verdict, e.note AS note, e.script AS script,
                e.result_path AS result_path, e.result_sha256 AS result_sha256,
                e.source_judge_script_path AS source_judge_script_path,
@@ -209,6 +220,8 @@ class TreeKgRepository:
                e.verdict_source AS verdict_source, e.node_state AS node_state,
                e.pred_baseline AS pred_baseline, e.pred_noise_band AS pred_noise_band,
                e.pred_direction AS pred_direction, e.pred_closes AS pred_closes,
+               e.pred_question_bound AS pred_question_bound,
+               closed_question_count AS closed_question_count,
                e.pred_metric AS pred_metric, e.pred_registered_at AS pred_registered_at,
                e.judged_at AS judged_at,
                e.pred_scale_type AS pred_scale_type, e.pred_novel AS pred_novel,
@@ -248,7 +261,8 @@ class TreeKgRepository:
         frontier = self.kg(
             "MATCH (t:LakatosTree {name:$n})-[:HAS_FRONTIER]->(q) "
             "RETURN q.name AS name, q.status AS status, q.body AS body, "
-            "q.closed_by AS closed_by, q.expected_gain AS expected_gain, "
+            "q.closed_by AS closed_by, q.closed_events AS closed_events, "
+            "q.expected_gain AS expected_gain, "
             "q.cost AS cost, q.n_visits AS n_visits",
             n=name,
         )

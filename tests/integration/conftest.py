@@ -5,8 +5,8 @@ characterize 한다 — 원자성 *강요*가 아니라, kg_tx(execute_write, al
 MERGE 재실행이 수렴함을 영수증으로 고정한다. prom C 의 atomic bind(B1-step1) / A4 / submit_test_result
 가 의존하는 ROB-1 이 실 Neo4j 에서 성립함을 검증.
 
-게이트: LAKATOS_IT 미설정 시 tier 전체 skip(로컬/CI 단위 = 빠름·docker 불필요) — 기존 CONSUMER_LOGS_E2E 패턴 미러.
-clean clone 에 testcontainers 가 없어도 collection 이 깨지지 않게 fixture 안에서 lazy importorskip.
+게이트: LAKATOS_IT 미설정 시 tier 전체 skip(로컬 단위 = 빠름·docker 불필요). 게이트가
+켜진 차단 CI에서는 의존성 누락이나 단 하나의 skip도 성공으로 강등하지 않고 실패시킨다.
 """
 import os
 from pathlib import Path
@@ -24,13 +24,13 @@ def pytest_configure(config):
 
 @pytest.fixture(scope='session')
 def neo4j_driver():
-    """세션 1회 실 Neo4j 컨테이너 + 드라이버. LAKATOS_IT 없으면 skip, testcontainers 없으면 importorskip."""
+    """세션 1회 실 Neo4j 컨테이너 + 드라이버."""
     if not LAKATOS_IT:
         pytest.skip('LAKATOS_IT 미설정 — 통합티어 skip (hermetic 단위 suite 보존)')
-    neo4j_mod = pytest.importorskip('testcontainers.neo4j')
+    from testcontainers import neo4j as neo4j_mod
     from neo4j import GraphDatabase
 
-    with neo4j_mod.Neo4jContainer('neo4j:5') as neo:
+    with neo4j_mod.Neo4jContainer('neo4j:5.26') as neo:
         uri = neo.get_connection_url()
         password = getattr(neo, 'password', None) or 'password'
         driver = GraphDatabase.driver(uri, auth=('neo4j', password))
@@ -46,7 +46,7 @@ def pg_kw():
     """세션 1회 실 PostgreSQL 컨테이너 + schema.sql 적용 → psycopg2 연결 kwargs(B1 reconcile 영수증용)."""
     if not LAKATOS_IT:
         pytest.skip('LAKATOS_IT 미설정 — 통합티어 skip (hermetic 단위 suite 보존)')
-    pg_mod = pytest.importorskip('testcontainers.postgres')
+    from testcontainers import postgres as pg_mod
     import psycopg2
     with pg_mod.PostgresContainer('postgres:16-alpine') as pg:
         kw = dict(host=pg.get_container_host_ip(), port=int(pg.get_exposed_port(5432)),
@@ -58,3 +58,14 @@ def pg_kw():
         finally:
             conn.close()
         yield kw
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """A blocking integration run may never turn missing evidence into GREEN."""
+
+    if not LAKATOS_IT:
+        return
+    reporter = session.config.pluginmanager.getplugin("terminalreporter")
+    skipped = reporter.stats.get("skipped", []) if reporter is not None else []
+    if skipped:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED

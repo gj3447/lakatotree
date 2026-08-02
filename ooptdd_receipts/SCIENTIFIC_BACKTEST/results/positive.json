@@ -1,0 +1,13 @@
+{
+  "run": "scientific-backtest-infrastructure-positive-20260729",
+  "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 0,
+  "target": "SCIENTIFIC_BACKTEST",
+  "target_result": "GREEN",
+  "target_done": 8,
+  "target_total": 8,
+  "suite_green": 58,
+  "suite_total": 58,
+  "confirmatory_measurement_performed": false,
+  "claim": "infrastructure conformance only; scientific efficacy remains UNTESTED"
+}

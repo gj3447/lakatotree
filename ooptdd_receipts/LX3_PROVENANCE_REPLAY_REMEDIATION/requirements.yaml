@@ -13,7 +13,7 @@ requirements:
     longinus: {kg_anchor: "ref_site:LX3_PR:claim_metadata_boundary", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_claim_metadata_cannot_synthesize_evidence}
 
   - id: LX3-PR-2
-    description: replay status/reason/regenerated metric은 v4에서 도입되고 현 artifact mint v5에도 내용주소로 봉인된다
+    description: replay status/reason/regenerated metric은 v4에서 도입되고 v5 artifact identity를 보존하는 현 verdict receipt v6에도 내용주소로 봉인된다
     gate:
       - {event: lx3_replay_diagnostics_v4_sealed, op: ">=", count: 1}
     longinus: {kg_anchor: "ref_site:LX3_PR:replay_v4_seal", source: lx3_provenance_replay_receipt.py, symbol: verify, must_emit: lx3_replay_diagnostics_v4_sealed}

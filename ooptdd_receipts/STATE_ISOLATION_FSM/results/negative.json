@@ -1,0 +1,13 @@
+{
+  "run": "injected-negative",
+  "command": "LKT_STATE_ISOLATION_INJECT=allow-reopen .venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 1,
+  "target": "STATE_ISOLATION_FSM",
+  "target_result": "RED",
+  "target_done": 0,
+  "target_total": 0,
+  "failure": "AssertionError: CLOSED question reopened: status=None",
+  "suite_green": 53,
+  "suite_total": 54,
+  "restored_positive_after_injection": true
+}

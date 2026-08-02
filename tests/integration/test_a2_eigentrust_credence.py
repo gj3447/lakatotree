@@ -13,6 +13,9 @@ mock 으로는 못 떨군 영수증: 실 Neo4j 에 트리+노드+다출처 inter
 VerdictReceipt 관계와 current_receipt_sha를 함께 만들어 이 drift를 닫는다. 항-drift 가드:
 ooptdd_receipts/A2 (hermetic, R02+R10).
 """
+import hashlib
+from uuid import uuid4
+
 import pytest
 
 from server.container import AppContainer
@@ -32,18 +35,34 @@ class _DummyMongo:
         pass
 
 
+class _BorrowedDriver:
+    def __init__(self, driver):
+        self._driver = driver
+
+    def session(self, *args, **kwargs):
+        return self._driver.session(*args, **kwargs)
+
+    def close(self):
+        pass
+
+
 def _seed_tree(c, name):
+    p1_rsha = hashlib.sha256(f"{name}:p1".encode()).hexdigest()
+    top_rsha = hashlib.sha256(f"{name}:top".encode()).hexdigest()
     c.kg_tx([
         ("MERGE (t:LakatosTree {name:$n})", {"n": name}),
         ("""MATCH (t:LakatosTree {name:$n})
-            MERGE (root:LakatosNode {tag:'root'}) SET root.verdict='canonical_stage',
+            MERGE (root:LakatosNode {name:$n+'/root'}) SET root.tag='root',
+                  root.verdict='canonical_stage',
                   root.metric_value=1.0, root.metric_scope='s'
             MERGE (t)-[:HAS_NODE]->(root)
-            MERGE (p1:LakatosNode {tag:'p1'}) SET p1.verdict='progressive', p1.metric_value=0.5,
+            MERGE (p1:LakatosNode {name:$n+'/p1'}) SET p1.tag='p1',
+                  p1.verdict='progressive', p1.metric_value=0.5,
                   p1.metric_scope='s', p1.pred_baseline=1.0, p1.pred_noise_band=0.02, p1.pred_closes='q1',
                   p1.verdict_source='engine', p1.current_receipt_sha=$p1_rsha
             MERGE (t)-[:HAS_NODE]->(p1)
-            MERGE (top:LakatosNode {tag:'top'}) SET top.verdict='CANONICAL', top.metric_value=0.4,
+            MERGE (top:LakatosNode {name:$n+'/top'}) SET top.tag='top',
+                  top.verdict='CANONICAL', top.metric_value=0.4,
                   top.metric_scope='s', top.verdict_source='engine',
                   top.current_receipt_sha=$top_rsha
             MERGE (t)-[:HAS_NODE]->(top)
@@ -55,7 +74,7 @@ def _seed_tree(c, name):
             MERGE (top)-[:HAS_RECEIPT]->(topr)
             MERGE (p1)-[:BRANCHED_FROM]->(root)
             MERGE (top)-[:BRANCHED_FROM]->(p1)""", {
-                "n": name, "p1_rsha": "1" * 64, "top_rsha": "2" * 64}),
+                "n": name, "p1_rsha": p1_rsha, "top_rsha": top_rsha}),
         # 정본경로 노드 p1 을 받치는 두 internet 관측: 블로그(먼저=노드 source) + peer_reviewed(seed).
         # co-support(같은 노드 2관측) → eigentrust 가 블로그 신뢰를 1.0 미만으로 정규화.
         ("""MATCH (t:LakatosTree {name:$n})-[:HAS_NODE]->(p1 {tag:'p1'})
@@ -71,22 +90,45 @@ def _seed_tree(c, name):
 
 
 def test_eigentrust_map_moves_canonical_credence_on_real_db(neo4j_driver):
-    c = AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw={})
-    name = "a2tree_credence"
-    _seed_tree(c, name)
+    c = AppContainer(
+        neo=_BorrowedDriver(neo4j_driver), mongo=_DummyMongo(), pg_kw={}
+    )
+    name = f"a2tree_credence_{uuid4().hex}"
+    try:
+        _seed_tree(c, name)
 
-    td = load_tree_data(name, kg=c.kg)
-    by = {r["tag"]: r for r in td["nodes"]}
-    assert by["p1"]["source"] == "blog://x"          # 실DB 관측에서 노드 source 바인딩(첫=블로그)
-    assert any(o["source"] == "peer://a" for o in td["observations"])   # 관측 그래프 방출
+        td = load_tree_data(name, kg=c.kg)
+        by = {r["tag"]: r for r in td["nodes"]}
+        assert by["p1"]["source"] == "blog://x"
+        assert any(o["source"] == "peer://a" for o in td["observations"])
 
-    m_with = compute_tree_metrics(td)
-    m_without = compute_tree_metrics({**td, "observations": []})         # 맵 없음 baseline
-    tc = m_with["bayes"]["trust_coverage"]
-    assert tc["map_supplied"] is True and tc["path_sources_matched"] >= 1
-    # 글로벌 eigentrust 신뢰가 판결 신뢰도를 *움직인다*(A2 prod-wired): 맵 주입 ≠ baseline, 크기 있는 이동.
-    # 방향은 prior-상대적(여기선 blog 0.5 가 증거가중↓ → credence 가 prior 쪽 복귀 ↑). 핵심 = inert 아님.
-    cred_with = m_with["bayes"]["canonical_credence"]
-    cred_without = m_without["bayes"]["canonical_credence"]
-    assert cred_with is not None and cred_without is not None
-    assert cred_with != cred_without and abs(cred_with - cred_without) > 0.05
+        m_with = compute_tree_metrics(td)
+        m_without = compute_tree_metrics({**td, "observations": []})
+        tc = m_with["bayes"]["trust_coverage"]
+        assert tc["map_supplied"] is True and tc["path_sources_matched"] >= 1
+        cred_with = m_with["bayes"]["canonical_credence"]
+        cred_without = m_without["bayes"]["canonical_credence"]
+        assert cred_with is not None and cred_without is not None
+        assert cred_with != cred_without and abs(cred_with - cred_without) > 0.05
+    finally:
+        try:
+            c.kg(
+                "MATCH (r:VerdictReceipt {tree:$name}) DETACH DELETE r",
+                name=name,
+            )
+            c.kg(
+                "MATCH (e:ResearchEvent) WHERE e.id STARTS WITH $prefix "
+                "DETACH DELETE e",
+                prefix=f"{name}/",
+            )
+            c.kg(
+                "MATCH (t:LakatosTree {name:$name})-[:HAS_NODE]->(n) "
+                "DETACH DELETE n",
+                name=name,
+            )
+            c.kg(
+                "MATCH (t:LakatosTree {name:$name}) DETACH DELETE t",
+                name=name,
+            )
+        finally:
+            c.close()

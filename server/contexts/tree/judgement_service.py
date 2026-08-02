@@ -6,10 +6,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import os
 import tempfile
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -18,8 +22,19 @@ from lakatos import assurance, layout as layout_mod, longinus, temporal as tempo
 from lakatos import measurement_lock as mlock_mod
 from lakatos import replay_artifacts as replay_artifact_mod
 from lakatos.io import envfp as envfp_mod
+from lakatos.io.reconcile import (
+    HistoryPayloadError,
+    canonical_history_payload,
+    validate_history_record,
+)
 from lakatos.io.replay import ProducerReplayVerdict
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
+from lakatos.frontier_state import (
+    QuestionEvent,
+    QuestionState,
+    receipt_backed_conclusive,
+    step as step_question,
+)
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
 from lakatos.trust import INTERNAL_SOURCE_TRUST
 from lakatos.verdict.argue import assemble_af, grounded_extension
@@ -30,25 +45,85 @@ from lakatos.verdict.judge import NovelTarget, Prediction, PredictionMissing, ju
 from lakatos.verdict.pnr import CounterexampleType, ProofGeneratedConcept, Response, appraise_response
 from lakatos.io.prov import prov_triples, replay_command
 from lakatos.verdict.spine import credibility_from_trust, dialectical_verdict, synthesize_promotion
-from lakatos.verdicts import (ADMIN_VERDICTS, FORCEFUL_SOURCES, comment_seal_sha,
+from lakatos.verdicts import (ADMIN_VERDICTS, FORCEFUL_SOURCES, RECEIPT_FIELDS,
+                              comment_seal_sha,
                               fold_receipt_chain, is_admin_verdict, normalize_source,
-                              prediction_content_sha, receipt_content_sha)
+                              prediction_content_sha, prediction_history_payload_sha,
+                              receipt_content_sha,
+                              verdict_history_payload_sha)
 from lakatos.write_cert import (CertError, CertSignerNotAllowed, operation_payload_sha256,
                                 verify_write_cert)
 from server.contexts.audit import fsck as audit_fsck
-from server.contexts.tree.cycle_budget import assert_scoring_budget
+from server.contexts.tree.cycle_budget import (
+    LOCKED_BUDGET_GUARD,
+    assert_scoring_budget,
+    raise_after_locked_budget_rejection,
+)
+from server.contexts.tree.admin_intents import (
+    AdminIntentError,
+    validate_admin_verdict_intent,
+)
+from server.contexts.tree.prediction_intents import effective_prediction_anchors
 from server.contexts.tree.layout_gate import resolve_role_layout
 from server.contexts.tree.judgement_policy import (apply_verdict_demotes, build_receipt_fields,
                                                    engine_freshness_fires, qualitative_flags,
                                                    resolve_measurement, response_assurance)
 from server.engine_freshness import freshness_provider_from_env
 from server.contexts.tree.schemas import PredictionIn, TestResultIn, VerdictIn
+from server.contexts.tree.verdict_intents import (
+    VerdictIntentError,
+    validate_verdict_intent_group,
+)
 from server.file_hashing import file_sha
-from server.ports import GuardedKgOps, HistoryAppend, KgQuery, KgTx, KgTxGuardFailed
+from server.ports import (
+    GuardedKgOps,
+    HistoryAppend,
+    KgQuery,
+    KgTx,
+    KgTxGuardFailed,
+    WriterFenceLost,
+)
 
 
 FoundationProvider = Callable[[str], FoundationMap | None]
 ReproducibleProvider = Callable[[str, str], bool | None]
+
+
+def _serialized_ledger_command(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        scope = getattr(self, 'ledger_scope', None) or (lambda: nullcontext())
+        with scope():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+def _canonical_history_object(payload_text: object) -> dict:
+    """Decode one canonical durable-history JSON object without key smuggling."""
+    if not isinstance(payload_text, str):
+        raise ValueError('history payload must be canonical JSON text')
+
+    def unique_object(pairs):
+        out = {}
+        for key, value in pairs:
+            if key in out:
+                raise ValueError(f'duplicate JSON key: {key}')
+            out[key] = value
+        return out
+
+    value = json.loads(
+        payload_text,
+        object_pairs_hook=unique_object,
+        parse_constant=lambda token: (_ for _ in ()).throw(
+            ValueError(f'non-finite JSON number: {token}')
+        ),
+    )
+    if not isinstance(value, dict):
+        raise ValueError('history payload must be an object')
+    if canonical_history_payload(value) != payload_text:
+        raise ValueError('history payload is not canonical')
+    return value
 
 
 # FF4 (보안, deep-dive 2026-06-26): judge-script sha 재유도가 *임의* 절대파일을 읽지 않도록 허용 루트 안으로
@@ -147,6 +222,9 @@ class JudgementService:
         producer_replay_for_node: ReproducibleProvider | None = None,
         producer_replay_submit=None,
         engine_freshness=None,
+        ledger_ready: Callable[[], None] | None = None,
+        ledger_kg_tx: KgTx | None = None,
+        ledger_scope=None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
@@ -162,6 +240,200 @@ class JudgementService:
         #   비파괴; 테스트는 명시 주입으로만 무장). app.py 무편집 라이브 배선 = 이 env-default.
         self.engine_freshness = (engine_freshness if engine_freshness is not None
                                  else freshness_provider_from_env())
+        # The production composition root injects the cross-store readiness
+        # gate and the writer-fenced Neo4j transaction port.  Keeping both
+        # optional preserves the small in-memory application-service seam used
+        # by unit tests and non-server library consumers; it does not weaken
+        # the live HTTP path, where both are mandatory by construction.
+        self.ledger_ready = ledger_ready or (lambda: None)
+        self.ledger_kg_tx = ledger_kg_tx
+        self.ledger_scope = ledger_scope or (lambda: nullcontext())
+
+    def _require_ledger_ready(self) -> None:
+        self.ledger_ready()
+
+    def _ledger_write(self, query: str, **params) -> list[dict]:
+        """Execute one ledger mutation through the live writer fence.
+
+        Legacy application-service tests inject only ``kg``.  The fallback is
+        deliberately confined to that uncomposed seam; ``server.app`` always
+        supplies ``ledger_kg_tx``.  A live ledger statement must return its
+        success row while the managed callback is still open; an empty final
+        projection rolls the complete statement back.
+        """
+
+        if self.ledger_kg_tx is None:
+            return self.kg(query, **params)
+        try:
+            results = self.ledger_kg_tx(GuardedKgOps([(query, params)]))
+        except KgTxGuardFailed:
+            # Raised inside execute_write before commit: callers retain their
+            # empty-row CAS handling without admitting partial ledger effects.
+            return []
+        if not isinstance(results, list) or len(results) != 1:
+            raise HTTPException(500, 'ledger mutation returned an invalid transaction shape')
+        rows = results[0]
+        if not isinstance(rows, list):
+            raise HTTPException(500, 'ledger mutation returned an invalid row shape')
+        return rows
+
+    def _ledger_transaction(self, ops) -> list:
+        return (self.ledger_kg_tx or self.kg_tx)(ops)
+
+    def _project_pending_admin_predecessors(
+        self, name: str, tag: str
+    ) -> None:
+        """Project every pending admin intent that still owns this head.
+
+        A compound CANONICAL transition owns both the promoted and demoted
+        receipt effects.  Advancing either head while its PostgreSQL event is
+        pending would make the immutable intent unrecoverable.  The process
+        readiness gate normally prevents that; this receipt-bound check is the
+        independent domain fence and also protects callers with stale cached
+        readiness.
+        """
+
+        rows = self.kg(
+            """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+               OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(head_receipt:VerdictReceipt {
+                 receipt_sha:e.current_receipt_sha})
+               OPTIONAL MATCH (direct:OutboxEntry {
+                 id:'ob-verdict-'+e.current_receipt_sha})
+               OPTIONAL MATCH (predecessor:OutboxEntry {
+                 demoted_receipt_sha:e.current_receipt_sha,
+                 status:'pending'})
+               RETURN properties(head_receipt) AS head_receipt,
+                      properties(direct) AS direct_outbox,
+                      [item IN collect(properties(predecessor))
+                       WHERE item.id IS NOT NULL] AS pending_predecessors""",
+            tree=name,
+            tag=tag,
+        )
+        if not rows:
+            return
+        if len(rows) != 1:
+            raise HTTPException(500, 'administrative head fence cardinality conflict')
+        row = rows[0]
+        receipt = row.get('head_receipt') or {}
+        direct = row.get('direct_outbox')
+        is_admin_v6 = (
+            receipt.get('verdict_source') == 'admin'
+            and receipt.get('history_payload_sha256') is not None
+        )
+        if is_admin_v6 and not isinstance(direct, dict):
+            raise HTTPException(500, 'V6 administrative receipt lacks its intent')
+        if isinstance(direct, dict) and not is_admin_v6:
+            raise HTTPException(
+                500, 'administrative outbox is attached to a non-admin V6 head'
+            )
+
+        candidates: dict[str, dict] = {}
+        if isinstance(direct, dict):
+            direct_id = direct.get('id')
+            if not isinstance(direct_id, str) or not direct_id:
+                raise HTTPException(500, 'administrative intent lacks an id')
+            candidates[direct_id] = direct
+        predecessors = row.get('pending_predecessors') or []
+        if not isinstance(predecessors, list):
+            raise HTTPException(500, 'administrative predecessor set is malformed')
+        for predecessor in predecessors:
+            if (
+                not isinstance(predecessor, dict)
+                or not isinstance(predecessor.get('id'), str)
+                or not predecessor['id']
+            ):
+                raise HTTPException(500, 'administrative predecessor is malformed')
+            candidates[predecessor['id']] = predecessor
+
+        for event_id, candidate in candidates.items():
+            status = candidate.get('status')
+            if status == 'applied':
+                if candidate.get('applied_at') is None:
+                    raise HTTPException(500, 'administrative applied intent lacks timestamp')
+                continue
+            if status != 'pending' or candidate.get('applied_at') is not None:
+                raise HTTPException(500, 'administrative intent has an invalid state')
+            authority_rows = self.kg(
+                """MATCH (o:OutboxEntry {id:$event_id})
+                   OPTIONAL MATCH (t:LakatosTree {name:o.tree})-[:HAS_NODE]->
+                                  (promoted {tag:o.node_tag})
+                   OPTIONAL MATCH (promoted)-[:HAS_RECEIPT]->
+                                  (rec:VerdictReceipt {receipt_sha:o.receipt_sha})
+                   OPTIONAL MATCH (t)-[:HAS_NODE]->(demoted {tag:o.demoted_tag})
+                                  -[:HAS_RECEIPT]->
+                                  (demoted_rec:VerdictReceipt {
+                                    receipt_sha:o.demoted_receipt_sha})
+                   RETURN properties(o) AS outbox,
+                          promoted.current_receipt_sha AS current_receipt_sha,
+                          promoted.verdict AS current_verdict,
+                          promoted.verdict_source AS current_verdict_source,
+                          properties(rec) AS receipt,
+                          CASE WHEN demoted IS NULL THEN null ELSE {
+                            tag:demoted.tag,
+                            current_receipt_sha:demoted.current_receipt_sha,
+                            verdict:demoted.verdict,
+                            verdict_source:demoted.verdict_source
+                          } END AS demoted_current,
+                          properties(demoted_rec) AS demoted_receipt""",
+                event_id=event_id,
+            )
+            if len(authority_rows) != 1:
+                raise HTTPException(500, 'administrative predecessor authority conflict')
+            authority = authority_rows[0]
+            outbox = authority.get('outbox')
+            try:
+                payload = validate_admin_verdict_intent(
+                    tree=outbox.get('tree') if isinstance(outbox, dict) else None,
+                    tag=outbox.get('node_tag') if isinstance(outbox, dict) else None,
+                    receipt_sha=(
+                        outbox.get('receipt_sha')
+                        if isinstance(outbox, dict) else None
+                    ),
+                    receipt=authority.get('receipt'),
+                    current={
+                        'current_receipt_sha': authority.get(
+                            'current_receipt_sha'
+                        ),
+                        'verdict': authority.get('current_verdict'),
+                        'verdict_source': authority.get(
+                            'current_verdict_source'
+                        ),
+                    },
+                    outbox=outbox,
+                    demoted_receipt=authority.get('demoted_receipt'),
+                    demoted_current=authority.get('demoted_current'),
+                    require_current_effect=True,
+                )
+            except (AdminIntentError, AttributeError) as exc:
+                raise HTTPException(
+                    500, f'administrative predecessor intent corrupt: {exc}'
+                ) from exc
+            projected = self.hist(
+                outbox['tree'],
+                'verdict',
+                outbox['node_tag'],
+                payload,
+                event_id=event_id,
+            )
+            if projected is False:
+                raise HTTPException(
+                    503,
+                    'prior administrative verdict history is pending; head advancement deferred',
+                )
+            applied_rows = self.kg(
+                """MATCH (o:OutboxEntry {id:$event_id})
+                   RETURN o.status AS status, o.applied_at AS applied_at""",
+                event_id=event_id,
+            )
+            if not (
+                len(applied_rows) == 1
+                and applied_rows[0].get('status') == 'applied'
+                and applied_rows[0].get('applied_at') is not None
+            ):
+                raise HTTPException(
+                    503,
+                    'administrative verdict projection lacks applied readback; head advancement deferred',
+                )
 
     def _node_eigentrust(self, name: str, tag: str) -> tuple[str | None, float | None, bool]:
         """노드의 인터넷 관측 그래프 eigentrust → (src, eigen, backed). src=None: internal 노드
@@ -279,13 +551,141 @@ class JudgementService:
             return None, str(resolved), {'reason': 'read_error', 'result_path': raw}
         return sha, str(resolved), {'reason': 'file_content_sha'}
 
+    @_serialized_ledger_command
     def set_verdict(self, name: str, tag: str, v: VerdictIn) -> dict:
+        verdict_payload = v.model_dump()
+        try:
+            verdict_payload_json = validate_history_record(
+                name, 'verdict', tag, verdict_payload,
+                'ob-verdict-preflight',
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422, 'verdict history contains text PostgreSQL JSONB cannot represent'
+            ) from exc
         # prom-honesty/3 (적대감사 2026-06-20): 결합 불변식의 핵심 게이트 — scripted 판결 수동 지정 시 403.
         #   회귀가드: tests/test_prom_honesty_node_gating.py::test_set_verdict_403_on_scripted_verdict.
         #   (노드-쓰기 우회는 prom-honesty/1 에서 validator 422 + writer by-construction 으로 차단.)
         if not is_admin_verdict(v.verdict):
             raise HTTPException(403, f'판결 어휘({v.verdict})는 test_result 스크립트 전용 — 수동 지정 금지. '
                                      f'행정 상태만: {sorted(ADMIN_VERDICTS)}')
+        self._require_ledger_ready()
+        self._project_pending_admin_predecessors(name, tag)
+
+        def mint_admin_effect(
+            *,
+            effect_tag: str,
+            effect_verdict: str,
+            source: str,
+            previous: str | None,
+            judged_at: str,
+            effect_summary: dict,
+            history_preimage: dict,
+        ) -> tuple[dict, dict]:
+            fields = {key: None for key in RECEIPT_FIELDS}
+            fields.update(
+                tree=name,
+                tag=effect_tag,
+                verdict=effect_verdict,
+                verdict_source=source,
+                judged_at=judged_at,
+                prev_receipt_sha=previous,
+                engine_rule_sha=ENGINE_RULE_SHA,
+                history_payload_sha256=verdict_history_payload_sha(
+                    history_preimage
+                ),
+            )
+            receipt_sha = receipt_content_sha(fields)
+            effect = {
+                **effect_summary,
+                'receipt_sha': receipt_sha,
+            }
+            return effect, fields
+        # A committed administrative receipt owns a deterministic outbox.  An
+        # exact lost-ACK/history retry must be repaired before the budget gate;
+        # otherwise an already-consumed budget can make recovery impossible.
+        replay_rows = self.kg(
+            """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+               OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(rec:VerdictReceipt {
+                 receipt_sha:e.current_receipt_sha})
+               OPTIONAL MATCH (o:OutboxEntry {
+                 id:'ob-verdict-'+e.current_receipt_sha})
+               OPTIONAL MATCH (t)-[:HAS_NODE]->(demoted {
+                 tag:o.demoted_tag})-[:HAS_RECEIPT]->(demoted_rec:VerdictReceipt {
+                 receipt_sha:o.demoted_receipt_sha})
+               RETURN e.current_receipt_sha AS receipt_sha,
+                      e.verdict AS current_verdict,
+                      e.verdict_source AS current_verdict_source,
+                      properties(rec) AS receipt,
+                      properties(o) AS outbox,
+                      CASE WHEN demoted IS NULL THEN null ELSE {
+                        tag:demoted.tag,
+                        current_receipt_sha:demoted.current_receipt_sha,
+                        verdict:demoted.verdict,
+                        verdict_source:demoted.verdict_source
+                      } END AS demoted_current,
+                      properties(demoted_rec) AS demoted_receipt""",
+            tree=name,
+            tag=tag,
+        )
+        if len(replay_rows or []) > 1:
+            raise HTTPException(500, 'administrative replay cardinality conflict')
+        if replay_rows:
+            replay = replay_rows[0]
+            receipt = replay.get('receipt') or {}
+            outbox = replay.get('outbox')
+            is_admin_v6 = (
+                receipt.get('verdict_source') == 'admin'
+                and receipt.get('history_payload_sha256') is not None
+            )
+            if outbox is not None:
+                if not is_admin_v6:
+                    raise HTTPException(
+                        500,
+                        'administrative outbox is attached to a non-admin V6 head',
+                    )
+                try:
+                    committed_payload = validate_admin_verdict_intent(
+                        tree=name,
+                        tag=tag,
+                        receipt_sha=replay.get('receipt_sha'),
+                        receipt=receipt,
+                        current={
+                            'current_receipt_sha': replay.get('receipt_sha'),
+                            'verdict': replay.get('current_verdict'),
+                            'verdict_source': replay.get('current_verdict_source'),
+                        },
+                        outbox=outbox,
+                        demoted_receipt=replay.get('demoted_receipt'),
+                        demoted_current=replay.get('demoted_current'),
+                    )
+                except AdminIntentError as exc:
+                    raise HTTPException(
+                        500, f'administrative durable intent corrupt: {exc}'
+                    ) from exc
+                expected_event_id = f"ob-verdict-{replay.get('receipt_sha')}"
+                projected = self.hist(
+                    name, 'verdict', tag, committed_payload,
+                    event_id=expected_event_id,
+                )
+                if committed_payload.get('request') == verdict_payload:
+                    return {
+                        'ok': True,
+                        'idempotent': True,
+                        'history_pending': projected is False,
+                    }
+                if projected is False:
+                    raise HTTPException(
+                        503,
+                        'prior administrative verdict history is pending; head advancement deferred',
+                    )
+                # The prior immutable admin transition is fully projected.  A
+                # different request is a legitimate successor, not a replay
+                # conflict; continue through the ordinary FSM/CAS path.
+            elif is_admin_v6:
+                raise HTTPException(
+                    500, 'V6 administrative receipt lacks its intent'
+                )
         # ⓪ 루프-경계 예산(PROM16 S1/S5) — set_verdict 도 verdict + :VerdictReceipt 를 민팅해 scored_nodes
         #    를 늘릴 수 있는 verb 다(미채점 draft 에 행정 판결을 찍으면 새 소모 1). run_cycle 만 막던
         #    첫 구현의 우회 통로 중 하나 — 같은 게이트를 여기서도 지난다(cycle_budget SSOT).
@@ -299,7 +699,9 @@ class JudgementService:
                         OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
                         WHERE old.tag <> $tag
                         WITH t, cur, args,
-                             head(collect({tag: old.tag, prev: old.current_receipt_sha})) AS oldrec
+                             [item IN collect({
+                               tag:old.tag, prev:old.current_receipt_sha
+                             }) WHERE item.tag IS NOT NULL] AS oldrecs
                         RETURN cur.verdict AS verdict,
                                cur.verdict_source AS verdict_source,
                                cur.node_state AS node_state,
@@ -310,12 +712,20 @@ class JudgementService:
                                t.assurance_tier AS assurance_tier,
                                t.attestor_dids AS attestor_dids,
                                cur.current_receipt_sha AS prev_receipt_sha,
-                               oldrec.tag AS old_tag, oldrec.prev AS old_prev,
+                               oldrecs,
                                args AS args''',
                           tree=name, tag=tag)
             if not pre:
                 raise HTTPException(404, f'노드 없음: {tag}')
             cand = pre[0]
+            oldrecs = cand.get('oldrecs')
+            if not isinstance(oldrecs, list):
+                raise HTTPException(500, 'canonical incumbent snapshot is malformed')
+            if len(oldrecs) > 1:
+                raise HTTPException(
+                    500,
+                    'multiple CANONICAL incumbents detected; repair required before promotion',
+                )
             # AG5-IDENT (측정주권 2026-07-03): 비가역 verb(CANONICAL 승격) 서명강제 + verb-바인딩 cert.
             #   dead-σ(FE5 open-but-observable): cert 강제는 트리가 attestor 를 선언(attestor_dids)했을 때만 —
             #   무-attestor 트리는 무인증 CANONICAL 유지(키 없는 배포 안 잠금). cert 명령이 verb 를 실어
@@ -414,17 +824,67 @@ class JudgementService:
             #   pre-read 와 write 사이에 head 전진·canonical 교체가 끼면 0행 → 409(어차피 floor 재평가 대상).
             ts = datetime.now(timezone.utc).isoformat()
             prev_rsha = cand.get('prev_receipt_sha')
-            # jp1: 승격/강등도 판관 행위 — engine_rule_sha 봉인(v2 mint). null-스펙의 측정필드는 여전히 null.
-            _null_spec = dict(tree=name, target_id=None, metric_name=None, metric_value=None,
-                              novel_confirmed=None, lakatos_status=None, judged_at=ts,
-                              judge_script_sha=None, engine_rule_sha=ENGINE_RULE_SHA)
-            rsha = receipt_content_sha(dict(_null_spec, tag=tag, verdict='CANONICAL',
-                                            verdict_source='admin', prev_receipt_sha=prev_rsha))
-            old_tag, old_prev = cand.get('old_tag'), cand.get('old_prev')
-            old_rsha = receipt_content_sha(dict(_null_spec, tag=old_tag, verdict='former_canonical',
-                                                verdict_source='engine', prev_receipt_sha=old_prev)) \
-                if old_tag else None
-            rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
+            old_tag = oldrecs[0]['tag'] if oldrecs else None
+            old_prev = oldrecs[0].get('prev') if oldrecs else None
+            demoted_effect = None
+            demoted_fields = None
+            if old_tag is not None:
+                demoted_summary = {
+                    'tag': old_tag,
+                    'verdict': 'former_canonical',
+                    'verdict_source': 'engine',
+                    'prev_receipt_sha': old_prev,
+                }
+                demoted_effect, demoted_fields = mint_admin_effect(
+                    effect_tag=old_tag,
+                    effect_verdict='former_canonical',
+                    source='engine',
+                    previous=old_prev,
+                    judged_at=ts,
+                    effect_summary=demoted_summary,
+                    history_preimage=demoted_summary,
+                )
+            promoted_summary = {
+                'tag': tag,
+                'verdict': 'CANONICAL',
+                'verdict_source': 'admin',
+                'prev_receipt_sha': prev_rsha,
+            }
+            promotion_preimage = {
+                'request': verdict_payload,
+                'promoted': promoted_summary,
+                'demoted': demoted_effect,
+            }
+            promoted_effect, promoted_fields = mint_admin_effect(
+                effect_tag=tag,
+                effect_verdict='CANONICAL',
+                source='admin',
+                previous=prev_rsha,
+                judged_at=ts,
+                effect_summary=promoted_summary,
+                history_preimage=promotion_preimage,
+            )
+            rsha = promoted_effect['receipt_sha']
+            old_rsha = (
+                demoted_effect['receipt_sha'] if demoted_effect is not None else None
+            )
+            history_event_id = f'ob-verdict-{rsha}'
+            compound_payload = {
+                'request': verdict_payload,
+                'promoted': promoted_effect,
+                'demoted': demoted_effect,
+            }
+            try:
+                history_payload_json = validate_history_record(
+                    name, 'verdict', tag, compound_payload, history_event_id
+                )
+            except HistoryPayloadError as exc:
+                raise HTTPException(
+                    422, 'administrative intent is not PostgreSQL JSONB-safe'
+                ) from exc
+            rows = self._ledger_write(('''MATCH (t:LakatosTree {name:$tree})
+                  ''' + LOCKED_BUDGET_GUARD + '''
+                  MATCH (t)-[:HAS_NODE]->(cur {tag:$tag})
                   SET cur._cas = coalesce(cur._cas,0) + 0
                   WITH t, cur
                   WHERE coalesce(cur.verdict,'') = coalesce($exp_verdict,'')
@@ -438,9 +898,20 @@ class JudgementService:
                   WITH t, cur
                   OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
                   WHERE old.tag <> $tag
-                  WITH t, cur, old
-                  WHERE (old IS NULL AND $old_tag IS NULL)
-                     OR (old.tag = $old_tag AND coalesce(old.current_receipt_sha,'') = coalesce($old_prev,''))
+                  WITH t, cur,
+                       [candidate IN collect(old) WHERE candidate IS NOT NULL]
+                         AS canonical_incumbents
+                  WHERE size(canonical_incumbents) = CASE
+                          WHEN $old_tag IS NULL THEN 0 ELSE 1 END
+                    AND ($old_tag IS NULL OR (
+                      canonical_incumbents[0].tag = $old_tag
+                      AND coalesce(
+                        canonical_incumbents[0].current_receipt_sha, '')
+                        = coalesce($old_prev, '')))
+                  WITH t, cur, head(canonical_incumbents) AS old
+                  OPTIONAL MATCH (prior_history:OutboxEntry {id:$history_event_id})
+                  WITH t, cur, old, count(prior_history) AS prior_history_count
+                  WHERE prior_history_count=0
                   FOREACH (_ IN CASE WHEN old IS NOT NULL THEN [1] ELSE [] END |
                       SET old.verdict='former_canonical', old.verdict_source='engine',
                           old.current_best_pointer=false, old.node_state=$former_state,
@@ -449,7 +920,8 @@ class JudgementService:
                         ON CREATE SET orec.tree=$tree, orec.tag=$old_tag,
                           orec.verdict='former_canonical', orec.verdict_source='engine',
                           orec.judged_at=$ts, orec.prev_receipt_sha=$old_prev,
-                          orec.engine_rule_sha=$engine_rule_sha
+                          orec.engine_rule_sha=$engine_rule_sha,
+                          orec.history_payload_sha256=$old_history_payload_sha256
                       MERGE (old)-[:HAS_RECEIPT]->(orec)
                   )
                   SET cur.verdict='CANONICAL', cur.verdict_source='admin',
@@ -463,10 +935,18 @@ class JudgementService:
                   MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                     ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='CANONICAL',
                       rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
-                      rec.engine_rule_sha=$engine_rule_sha
+                      rec.engine_rule_sha=$engine_rule_sha,
+                      rec.history_payload_sha256=$history_payload_sha256
                   MERGE (cur)-[:HAS_RECEIPT]->(rec)
                   SET cur.current_receipt_sha=$rsha
-                  RETURN cur.tag AS tag''',
+                  CREATE (:OutboxEntry {
+                    id:$history_event_id, tree:$tree, op:'verdict',
+                    node_tag:$tag, payload:$history_payload_json,
+                    status:'pending', created_at:$ts,
+                    reason:'verdict_commit_intent', receipt_sha:$rsha,
+                    demoted_tag:$old_tag, demoted_receipt_sha:$old_rsha
+                  })
+                  RETURN cur.tag AS tag'''),
                     tree=name, tag=tag,
                     exp_verdict=cand.get('verdict'), exp_source=cand.get('verdict_source'),
                     exp_qsr=bool(cand.get('qualitative_self_report')),
@@ -478,8 +958,21 @@ class JudgementService:
                     mea=floor_anchored,
                     ts=ts, prev_rsha=prev_rsha, rsha=rsha,
                     old_tag=old_tag, old_prev=old_prev, old_rsha=old_rsha,
+                    history_event_id=history_event_id,
+                    history_payload_json=history_payload_json,
+                    history_payload_sha256=promoted_fields[
+                        'history_payload_sha256'
+                    ],
+                    old_history_payload_sha256=(
+                        demoted_fields['history_payload_sha256']
+                        if demoted_fields is not None else None
+                    ),
+                    forceful=sorted(FORCEFUL_SOURCES),
                     engine_rule_sha=ENGINE_RULE_SHA)
             if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박/head 전진) → 차단
+                raise_after_locked_budget_rejection(
+                    self.kg, name, 'set_verdict'
+                )
                 raise HTTPException(409, '동시변경 감지(CANONICAL 원자 CAS 0행) — floor 판정 스냅샷'
                                          '(verdict/source/qsr/논증집합/영수증 포인터/직전 canonical)이 승격 직전 '
                                          '변해 무효. 최신상태 재평가 필요.')
@@ -498,33 +991,93 @@ class JudgementService:
             #   mini-CAS(verdict/포인터 스냅샷)로 read→write race 는 0행 → 409.
             ts = datetime.now(timezone.utc).isoformat()
             prev_rsha = state_rows[0].get('prev_receipt_sha')
-            rsha = receipt_content_sha(dict(
-                tree=name, tag=tag, target_id=None, verdict=v.verdict, verdict_source='admin',
-                metric_name=None, metric_value=None, novel_confirmed=None, lakatos_status=None,
-                judged_at=ts, judge_script_sha=None, prev_receipt_sha=prev_rsha,
-                engine_rule_sha=ENGINE_RULE_SHA))
-            rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+            promoted_summary = {
+                'tag': tag,
+                'verdict': v.verdict,
+                'verdict_source': 'admin',
+                'prev_receipt_sha': prev_rsha,
+            }
+            promotion_preimage = {
+                'request': verdict_payload,
+                'promoted': promoted_summary,
+                'demoted': None,
+            }
+            promoted_effect, promoted_fields = mint_admin_effect(
+                effect_tag=tag,
+                effect_verdict=v.verdict,
+                source='admin',
+                previous=prev_rsha,
+                judged_at=ts,
+                effect_summary=promoted_summary,
+                history_preimage=promotion_preimage,
+            )
+            rsha = promoted_effect['receipt_sha']
+            history_event_id = f'ob-verdict-{rsha}'
+            compound_payload = {
+                'request': verdict_payload,
+                'promoted': promoted_effect,
+                'demoted': None,
+            }
+            try:
+                history_payload_json = validate_history_record(
+                    name, 'verdict', tag, compound_payload, history_event_id
+                )
+            except HistoryPayloadError as exc:
+                raise HTTPException(
+                    422, 'administrative intent is not PostgreSQL JSONB-safe'
+                ) from exc
+            rows = self._ledger_write(('''MATCH (t:LakatosTree {name:$tree})
+                      ''' + LOCKED_BUDGET_GUARD + '''
+                      MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                       WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
                         AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                      WITH e
+                      OPTIONAL MATCH (prior_history:OutboxEntry {id:$history_event_id})
+                      WITH e, count(prior_history) AS prior_history_count
+                      WHERE prior_history_count=0
                       SET e.verdict=$verdict, e.verdict_source='admin', e.node_state=$node_state
                       MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                         ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict=$verdict,
                           rec.verdict_source='admin', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
-                          rec.engine_rule_sha=$engine_rule_sha
+                          rec.engine_rule_sha=$engine_rule_sha,
+                          rec.history_payload_sha256=$history_payload_sha256
                       MERGE (e)-[:HAS_RECEIPT]->(rec)
                       SET e.current_receipt_sha=$rsha
-                      RETURN e.tag AS tag''',
+                      CREATE (:OutboxEntry {
+                        id:$history_event_id, tree:$tree, op:'verdict',
+                        node_tag:$tag, payload:$history_payload_json,
+                        status:'pending', created_at:$ts,
+                        reason:'verdict_commit_intent', receipt_sha:$rsha,
+                        demoted_tag:null, demoted_receipt_sha:null
+                      })
+                      RETURN e.tag AS tag'''),
                            tree=name, tag=tag, verdict=v.verdict,
                            node_state=next_state.value,
                            exp_verdict=state_rows[0].get('verdict'),
                            prev_rsha=prev_rsha, rsha=rsha, ts=ts,
+                           history_event_id=history_event_id,
+                           history_payload_json=history_payload_json,
+                           history_payload_sha256=promoted_fields[
+                               'history_payload_sha256'
+                           ],
+                           forceful=sorted(FORCEFUL_SOURCES),
                            engine_rule_sha=ENGINE_RULE_SHA)
             if not rows:   # mini-CAS 0행 = read→write 사이 동시변경(재채점/head 전진) → stale 이동 차단
+                raise_after_locked_budget_rejection(
+                    self.kg, name, 'set_verdict'
+                )
                 raise HTTPException(409, '동시변경 감지(행정 verdict mini-CAS 0행) — 최신상태 재평가 필요.')
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
-        self.hist(name, 'verdict', tag, v.model_dump())
-        return {'ok': True}
+        projected = self.hist(
+            name, 'verdict', tag, compound_payload,
+            event_id=history_event_id,
+        )
+        return {
+            'ok': True,
+            'idempotent': False,
+            'history_pending': projected is False,
+        }
 
     def node_eureka(self, name: str, tag: str) -> dict:
         """A1: 노드별 measurement-grade eureka 읽기 — 판결 seam(submit_test_result)이 같은 kg_tx 로
@@ -562,90 +1115,376 @@ class JudgementService:
         pm = float(rows[0]["parent_measured"])
         return "anchored" if abs(float(p.baseline_value) - pm) <= float(p.noise_band or 0.0) else "unanchored"
 
+    @_serialized_ledger_command
     def register_prediction(self, name: str, tag: str, p: PredictionIn) -> dict:
-        meta = self.kg("""MATCH (t:LakatosTree {name:$n})
-                  RETURN t.ontology AS ontology, t.research_layout AS research_layout,
-                         t.layout_owner_did AS layout_owner_did, t.layout_sig AS layout_sig,
-                         t.witness_dids AS witness_dids, t.witness_threshold AS witness_threshold""", n=name)
-        m0 = meta[0] if meta else {}
-        onto = DomainOntology.from_json(m0.get("ontology")) if meta else None
-        # EXTAUDIT S6b: layout 이 register_prediction step 을 선언하면 예측등록도 서명 필수(무서명 예측 봉합).
-        #   2026-07-28 fail-closed 정합(in-toto 충실도 감사): 만료·서명무효·형식위반 layout 은 이제
-        #   *거부*(422)다 — 침묵 무시하면 만료 순간 cert 요구가 사라져 무서명 예측이 재개됐다.
-        #   layout 미선언 트리는 여전히 None(무회귀).
-        _rl = resolve_role_layout(m0)
+        spec = p.model_dump()
+        try:
+            # Reject PostgreSQL-hostile tree/tag/payload text before storage
+            # authority is consulted or any Neo4j read/repair can occur.
+            history_payload_json = validate_history_record(
+                name, 'prediction_register', tag, spec,
+                'ob-prediction-register-preflight',
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422, 'prediction history contains text PostgreSQL JSONB cannot represent'
+            ) from exc
+        prediction_payload_sha256 = prediction_history_payload_sha(spec)
+        self._require_ledger_ready()
+        self._project_pending_admin_predecessors(name, tag)
         # Read the actual ledger tip before certificate verification.  The same value is signed,
         # sealed into the PredictionReceipt, and CAS-checked by the write below.
-        head_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                  RETURN e.current_receipt_sha AS prev_rsha""", tree=name, tag=tag)
+        def _prediction_head():
+            return self.kg(
+                """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                  OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(pr:VerdictReceipt {
+                    receipt_sha:e.pred_receipt_sha})
+                  OPTIONAL MATCH (po:OutboxEntry {
+                    id:'ob-prediction-register-'+e.pred_receipt_sha})
+                  RETURN e.current_receipt_sha AS prev_rsha,
+                         e.pred_receipt_sha AS pred_receipt_sha,
+                         pr.registered_at AS pred_registered_at,
+                         pr.prev_receipt_sha AS pred_prev_receipt_sha,
+                         pr.baseline_lineage AS pred_baseline_lineage,
+                         pr.anchor_bundle_sha256 AS pred_anchor_bundle_sha256,
+                         pr.anchor_bundle_json AS pred_anchor_bundle_json,
+                         pr.history_payload_sha256 AS pred_history_payload_sha256,
+                         po.payload AS pred_history_payload,
+                         e.pred_anchor_verified AS pred_anchor_verified,
+                         e.pred_anchor_gen_time AS pred_anchor_gen_time,
+                         e.pred_anchor_quorum AS pred_anchor_quorum,
+                         e.pred_anchor_threshold AS pred_anchor_threshold""",
+                tree=name,
+                tag=tag,
+            )
+
+        head_rows = _prediction_head()
         if not head_rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         prev_rsha = head_rows[0].get('prev_rsha')
-        _predict_keys = layout_mod.pubkeys_for_verb(_rl, 'register_prediction') if _rl else None
-        if _predict_keys is not None:
-            if p.write_cert is None:
-                raise HTTPException(403, 'write-cert 필수 — layout 이 register_prediction 역할을 선언한 '
-                                         '트리의 예측등록은 서명 명령만 인정(무서명 예측 봉합, S6b)')
-            _dv = layout_mod.disjoint_violation(_rl, p.write_cert.signer_did, 'register_prediction')
-            if _dv:
-                raise HTTPException(403, f'역할분리 위반: {_dv}')
-            _expected = dict(tree=name, tag=tag, prev_receipt_sha=prev_rsha,
-                             metric_value=None, script_sha=p.judge_script_sha,
-                             verb='register_prediction', command_version='v4',
-                             operation_payload_sha256=operation_payload_sha256(
-                                 'register_prediction',
-                                 p.model_dump(exclude={'write_cert'})))
-            try:
-                verify_write_cert(p.write_cert.model_dump(), expected_command=_expected,
-                                  allowlist=_predict_keys)
-            except CertSignerNotAllowed as e:
-                raise HTTPException(403, str(e))
-            except CertError as e:
-                raise HTTPException(422, str(e))
-        baseline_lineage = self._baseline_lineage(name, tag, p)   # R12: 등록 전 계보 앵커 판정
-        if onto is not None:   # 선언된 metric 어휘 강제(opt-in) — 개선 metric + novel metric 둘 다
-            viols = (onto.metric_violations(p.metric_name, p.direction)
-                     + onto.metric_violations(p.novel_metric, p.novel_direction))
-            if viols:
-                raise HTTPException(422, f"metric 온톨로지 위반: {viols}")
-        # C1 S3-engine: 등록-시점 spec 봉인 — 예측 spec *전체*를 내용주소 PredictionReceipt 로 mint.
-        #   prev 는 노드의 현 체인 head(보통 None=genesis). rsha 를 Python 에서 선계산해야 하므로 head 를
-        #   먼저 읽고, 아래 guarded SET 의 WHERE 에 CAS(coalesce(current)=coalesce($prev_rsha))를 더해
-        #   read-write 사이 경합을 원자적으로 봉쇄(#M5/강등 receipt 의 CAS 패턴 답습 — 불일치=0행=409,
-        #   오염된 mint 없음). submit 은 이미 e.current_receipt_sha 를 prev 로 봉인하므로 verdict receipt 가
-        #   이 prediction sha 를 내용으로 커밋 → spec back-fit 은 체인이 표현 못 한다(ReceiptChainBroken).
-        ts = datetime.now(timezone.utc).isoformat()
-        spec = p.model_dump()
-        pred_receipt_fields = dict(
-            receipt_kind='prediction', tree=name, tag=tag,
-            baseline_lineage=baseline_lineage, registered_at=ts, prev_receipt_sha=prev_rsha,
-            **spec)
-        rsha = prediction_content_sha(pred_receipt_fields)
-        # validate-then-write (q-lkt-nonatomic-registration-anchor-20260723): 앵커 정족수 검증은
-        #   등록 SET 보다 *먼저* — 예전엔 write 이후 검증이라 422 나도 pred_registered_at 이 소비돼
-        #   노드가 stuck(재등록 409) 됐고, 무효 앵커 반복으로 노드 소진 어뷰징이 가능했다.
-        #   422 는 상태를 소비하지 않는다. persist(앵커 mint/플래그)는 write 성공 후에 계속한다.
-        witnesses = [str(d).strip() for d in (m0.get('witness_dids') or []) if d and str(d).strip()]
-        # 심화 D1: k-of-N 증인 정족수 — 단일 temporal_anchor 는 [temporal_anchor] 로 흡수(하위호환).
-        anchors = list(p.temporal_anchors or ([] if p.temporal_anchor is None else [p.temporal_anchor]))
-        threshold = int(m0.get('witness_threshold') or 1)
+        existing_pred_sha = head_rows[0].get('pred_receipt_sha')
+        history_payload_json = ''
+        anchors: list = []
+        witnesses: list[str] = []
+        anchor_rows: list[dict] = []
+        anchor_bundle_json: str | None = None
+        anchor_bundle_sha256: str | None = None
+        anchor_quorum = 0
+        threshold = 1
         sdg = gt = None
-        if anchors and witnesses:
-            try:
-                # 앵커는 예측 *spec* 만 커버(cert/anchor 운송 봉투 제외 — 순환·서명 불포함).
-                sdg = temporal_mod.spec_digest(
-                    {k: v for k, v in spec.items()
-                     if k not in ('write_cert', 'temporal_anchor', 'temporal_anchors')})
-                # 정족수 검증: distinct 증인 ≥ threshold 가 같은 spec 을 서명해야(담합 저항). max(T1) 반환.
-                gt = temporal_mod.verify_temporal_quorum(
-                    anchors, expect_receipt_sha=sdg, witness_allowlist=witnesses, threshold=threshold)
-            except temporal_mod.AnchorInvalid as e:
-                raise HTTPException(422, f'temporal 정족수 무효: {e}')
-        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        retry_snapshot: dict | None = None
+        idempotent_retry = False
+        if existing_pred_sha:
+            retry_snapshot = head_rows[0]
+            retry_fields = dict(
+                receipt_kind='prediction', tree=name, tag=tag,
+                baseline_lineage=head_rows[0].get('pred_baseline_lineage'),
+                registered_at=head_rows[0].get('pred_registered_at'),
+                prev_receipt_sha=head_rows[0].get('pred_prev_receipt_sha'),
+                anchor_bundle_sha256=head_rows[0].get(
+                    'pred_anchor_bundle_sha256'
+                ),
+                history_payload_sha256=head_rows[0].get(
+                    'pred_history_payload_sha256'
+                ),
+                **spec,
+            )
+            if prediction_content_sha(retry_fields) == existing_pred_sha:
+                # The receipt is the first durable point, not the end of the
+                # workflow.  Continue through idempotent anchor/history repair
+                # so a crash immediately after minting cannot strand the node.
+                idempotent_retry = True
+                rsha = existing_pred_sha
+                prediction_event_id = f'ob-prediction-register-{rsha}'
+                ts = head_rows[0].get('pred_registered_at')
+                baseline_lineage = head_rows[0].get('pred_baseline_lineage')
+                anchor_verified_response = bool(
+                    head_rows[0].get('pred_anchor_verified')
+                )
+                anchor_bundle_sha256 = head_rows[0].get(
+                    'pred_anchor_bundle_sha256'
+                )
+                anchor_bundle_json = head_rows[0].get(
+                    'pred_anchor_bundle_json'
+                )
+            else:
+                raise HTTPException(
+                    409,
+                    '이미 다른 예측/후속 영수증이 있는 노드 — exact prediction retry만 허용',
+                )
+        else:
+            meta = self.kg("""MATCH (t:LakatosTree {name:$n})
+                      RETURN t.ontology AS ontology, t.research_layout AS research_layout,
+                             t.layout_owner_did AS layout_owner_did, t.layout_sig AS layout_sig,
+                             t.witness_dids AS witness_dids,
+                             t.witness_threshold AS witness_threshold""", n=name)
+            m0 = meta[0] if meta else {}
+            onto = DomainOntology.from_json(m0.get("ontology")) if meta else None
+            _rl = resolve_role_layout(m0)
+            _predict_keys = (
+                layout_mod.pubkeys_for_verb(_rl, 'register_prediction')
+                if _rl else None
+            )
+            if _predict_keys is not None:
+                if p.write_cert is None:
+                    raise HTTPException(
+                        403, 'write-cert 필수 — layout 이 register_prediction 역할을 선언한 '
+                        '트리의 예측등록은 서명 명령만 인정(무서명 예측 봉합, S6b)'
+                    )
+                _dv = layout_mod.disjoint_violation(
+                    _rl, p.write_cert.signer_did, 'register_prediction'
+                )
+                if _dv:
+                    raise HTTPException(403, f'역할분리 위반: {_dv}')
+                _expected = dict(
+                    tree=name, tag=tag, prev_receipt_sha=prev_rsha,
+                    metric_value=None, script_sha=p.judge_script_sha,
+                    verb='register_prediction', command_version='v4',
+                    operation_payload_sha256=operation_payload_sha256(
+                        'register_prediction', p.model_dump(exclude={'write_cert'})
+                    ),
+                )
+                try:
+                    verify_write_cert(
+                        p.write_cert.model_dump(), expected_command=_expected,
+                        allowlist=_predict_keys,
+                    )
+                except CertSignerNotAllowed as e:
+                    raise HTTPException(403, str(e))
+                except CertError as e:
+                    raise HTTPException(422, str(e))
+            baseline_lineage = self._baseline_lineage(name, tag, p)
+            if onto is not None:
+                viols = (
+                    onto.metric_violations(p.metric_name, p.direction)
+                    + onto.metric_violations(p.novel_metric, p.novel_direction)
+                )
+                if viols:
+                    raise HTTPException(422, f"metric 온톨로지 위반: {viols}")
+            ts = datetime.now(timezone.utc).isoformat()
+            pred_receipt_fields = dict(
+                receipt_kind='prediction', tree=name, tag=tag,
+                baseline_lineage=baseline_lineage, registered_at=ts,
+                prev_receipt_sha=prev_rsha,
+                history_payload_sha256=prediction_payload_sha256,
+                **spec,
+            )
+            rsha = prediction_content_sha(pred_receipt_fields)
+            prediction_event_id = f'ob-prediction-register-{rsha}'
+            raw_witnesses = m0.get('witness_dids')
+            if raw_witnesses is not None and not isinstance(
+                raw_witnesses, list
+            ):
+                raise HTTPException(500, 'tree witness policy is corrupt')
+            witnesses = [
+                str(d).strip() for d in (raw_witnesses or [])
+                if isinstance(d, str) and d.strip()
+            ]
+            anchors = effective_prediction_anchors(spec)
+            raw_threshold = m0.get('witness_threshold')
+            if raw_threshold is None:
+                threshold = 1
+            elif type(raw_threshold) is int and raw_threshold >= 1:
+                threshold = raw_threshold
+            else:
+                raise HTTPException(500, 'tree witness threshold is corrupt')
+            if anchors and not witnesses:
+                raise HTTPException(
+                    422,
+                    'temporal anchors require a non-empty sealed witness policy',
+                )
+            sdg = temporal_mod.spec_digest({
+                k: v for k, v in spec.items()
+                if k not in ('write_cert', 'temporal_anchor', 'temporal_anchors')
+            })
+            if anchors:
+                try:
+                    gt = temporal_mod.verify_temporal_quorum(
+                        anchors, expect_receipt_sha=sdg,
+                        witness_allowlist=witnesses, threshold=threshold,
+                    )
+                except temporal_mod.AnchorInvalid as e:
+                    raise HTTPException(422, f'temporal 정족수 무효: {e}')
+            anchor_bundle = {
+                'schema': 'lakatotree-prediction-anchor-bundle/v1',
+                'spec_digest': sdg,
+                'witness_dids': witnesses,
+                'witness_threshold': threshold,
+                'anchors': anchors,
+            }
+            anchor_bundle_json = canonical_history_payload(anchor_bundle)
+            anchor_bundle_sha256 = hashlib.sha256(
+                anchor_bundle_json.encode('utf-8')
+            ).hexdigest()
+            if anchors and witnesses:
+                adg = temporal_mod.anchor_digest(sdg)
+                anchor_rows = [
+                    {
+                        'digest': adg,
+                        'witness_did': a.get('witness_did'),
+                        'gen_time': a.get('gen_time'),
+                        'channel': a.get('channel'),
+                        'signature': a.get('signature'),
+                    }
+                    for a in anchors
+                    if temporal_mod._safe_verify(a, sdg, witnesses)
+                ]
+                for row in anchor_rows:
+                    row['id'] = 'ta-' + hashlib.sha256(
+                        canonical_history_payload(row).encode('utf-8')
+                    ).hexdigest()
+                anchor_quorum = len({
+                    str(row['witness_did']).strip() for row in anchor_rows
+                })
+            anchor_verified_response = bool(
+                anchor_rows and anchor_quorum >= threshold
+            )
+            pred_receipt_fields['anchor_bundle_sha256'] = anchor_bundle_sha256
+            rsha = prediction_content_sha(pred_receipt_fields)
+            prediction_event_id = f'ob-prediction-register-{rsha}'
+        # The preflight canonical text is independent of the event id.  Re-run
+        # the validator against the final content-addressed identity so future
+        # event-id-sensitive validation cannot silently bypass this binding.
+        try:
+            history_payload_json = validate_history_record(
+                name, 'prediction_register', tag, spec, prediction_event_id,
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422, 'prediction history contains text PostgreSQL JSONB cannot represent'
+            ) from exc
+        if idempotent_retry:
+            if (
+                retry_snapshot is None
+                or retry_snapshot.get('pred_history_payload') != history_payload_json
+            ):
+                raise HTTPException(
+                    409,
+                    'prediction receipt와 durable request가 다름 — exact retry만 허용',
+                )
+            if anchor_bundle_sha256 is not None:
+                if not isinstance(anchor_bundle_json, str):
+                    raise HTTPException(500, 'prediction anchor bundle is missing')
+                try:
+                    anchor_bundle = json.loads(anchor_bundle_json)
+                    canonical_bundle = canonical_history_payload(anchor_bundle)
+                except (json.JSONDecodeError, HistoryPayloadError, TypeError) as exc:
+                    raise HTTPException(500, 'prediction anchor bundle is corrupt') from exc
+                if (
+                    canonical_bundle != anchor_bundle_json
+                    or hashlib.sha256(anchor_bundle_json.encode('utf-8')).hexdigest()
+                        != anchor_bundle_sha256
+                    or not isinstance(anchor_bundle, dict)
+                    or set(anchor_bundle) != {
+                        'schema', 'spec_digest', 'witness_dids',
+                        'witness_threshold', 'anchors',
+                    }
+                    or anchor_bundle.get('schema')
+                        != 'lakatotree-prediction-anchor-bundle/v1'
+                    or not isinstance(anchor_bundle.get('spec_digest'), str)
+                    or not isinstance(anchor_bundle.get('witness_dids'), list)
+                    or not all(
+                        isinstance(item, str) and item
+                        for item in anchor_bundle['witness_dids']
+                    )
+                    or type(anchor_bundle.get('witness_threshold')) is not int
+                    or anchor_bundle['witness_threshold'] < 1
+                    or not isinstance(anchor_bundle.get('anchors'), list)
+                    or not all(isinstance(item, dict) for item in anchor_bundle['anchors'])
+                ):
+                    raise HTTPException(500, 'prediction anchor bundle is corrupt')
+                candidate_sdg = temporal_mod.spec_digest({
+                    k: v for k, v in spec.items()
+                    if k not in ('write_cert', 'temporal_anchor', 'temporal_anchors')
+                })
+                if anchor_bundle['spec_digest'] != candidate_sdg:
+                    raise HTTPException(409, 'prediction anchor bundle is not this request')
+                anchors = list(anchor_bundle['anchors'])
+                witnesses = list(anchor_bundle['witness_dids'])
+                threshold = anchor_bundle['witness_threshold']
+                sdg = anchor_bundle['spec_digest']
+                if anchors:
+                    try:
+                        gt = temporal_mod.verify_temporal_quorum(
+                            anchors,
+                            expect_receipt_sha=sdg,
+                            witness_allowlist=witnesses,
+                            threshold=threshold,
+                        )
+                    except temporal_mod.AnchorInvalid as exc:
+                        raise HTTPException(
+                            500, 'sealed prediction anchor bundle no longer verifies'
+                        ) from exc
+                    adg = temporal_mod.anchor_digest(sdg)
+                    anchor_rows = [
+                        {
+                            'digest': adg,
+                            'witness_did': a.get('witness_did'),
+                            'gen_time': a.get('gen_time'),
+                            'channel': a.get('channel'),
+                            'signature': a.get('signature'),
+                        }
+                        for a in anchors
+                        if temporal_mod._safe_verify(a, sdg, witnesses)
+                    ]
+                    for row in anchor_rows:
+                        row['id'] = 'ta-' + hashlib.sha256(
+                            canonical_history_payload(row).encode('utf-8')
+                        ).hexdigest()
+                    anchor_quorum = len({
+                        str(row['witness_did']).strip() for row in anchor_rows
+                    })
+                anchor_verified_response = bool(
+                    anchor_rows and anchor_quorum >= threshold
+                )
+        if not idempotent_retry:
+            rows = self._ledger_write("""MATCH (t:LakatosTree {name:$tree})
+                  SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                  WITH t
+                  MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
+                  SET e._tree_write_cas=coalesce(e._tree_write_cas,0)+0
+                  WITH t, e
+                  OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {name:$closes_question})
+                  WITH e, q
+                  FOREACH (_ IN CASE WHEN q IS NULL THEN [] ELSE [1] END |
+                    SET q._cas=coalesce(q._cas, 0) + 0)
+                  WITH e, q,
+                    CASE WHEN q IS NULL THEN null
+                         ELSE coalesce(q.status, '__MISSING__') END AS question_state
+                  OPTIONAL MATCH (prior_outbox:OutboxEntry {id:$history_event_id})
+                  WITH e, q, question_state,
+                       [o IN collect(prior_outbox) WHERE o IS NOT NULL] AS prior_outboxes
+                  WITH e, q, question_state, prior_outboxes,
+                    CASE
+                      WHEN size(prior_outboxes)=0 THEN true
+                      WHEN size(prior_outboxes)=1 THEN coalesce(
+                        prior_outboxes[0].tree=$tree
+                        AND prior_outboxes[0].op='prediction_register'
+                        AND prior_outboxes[0].node_tag=$tag
+                        AND prior_outboxes[0].payload=$history_payload_json
+                        AND prior_outboxes[0].reason='prediction_register_commit_intent'
+                        AND prior_outboxes[0].receipt_sha=$rsha
+                        AND prior_outboxes[0].created_at IS NOT NULL
+                        AND prior_outboxes[0].adopted_by IS NULL
+                        AND prior_outboxes[0].adopted_at IS NULL
+                        AND prior_outboxes[0].causal_group IS NULL
+                        AND prior_outboxes[0].causal_index IS NULL
+                        AND prior_outboxes[0].request_sha256 IS NULL
+                        AND prior_outboxes[0].demoted_tag IS NULL
+                        AND prior_outboxes[0].demoted_receipt_sha IS NULL
+                        AND ((prior_outboxes[0].status='pending'
+                              AND prior_outboxes[0].applied_at IS NULL)
+                             OR (prior_outboxes[0].status='applied'
+                                 AND prior_outboxes[0].applied_at IS NOT NULL)),
+                        false)
+                      ELSE false
+                    END AS intent_prevalid
                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted')
                         AND e.pred_registered_at IS NULL
                         AND coalesce(e.node_state, 'DRAFT') IN $allowed_from
                         AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                        AND ($closes_question = '' OR question_state = $open_state)
+                        AND intent_prevalid
                   SET e.pred_metric=$metric_name, e.pred_direction=$direction,
                       e.pred_baseline=$baseline_value, e.pred_noise_band=$noise_band,
                       e.pred_scale_type=$scale_type,
@@ -656,7 +1495,10 @@ class JudgementService:
                       e.novel_registered = ($novel_metric IS NOT NULL),
                       e.pred_registered_at=$ts,
                       e.node_state=$node_state,
-                      e.baseline_lineage=$baseline_lineage
+                      e.baseline_lineage=$baseline_lineage,
+                      e.pred_question_bound=($closes_question = '' OR q IS NOT NULL)
+                  FOREACH (_ IN CASE WHEN $closes_question = '' THEN [] ELSE [1] END |
+                    SET q.n_visits=coalesce(q.n_visits, 0) + 1)
                   WITH e
                   MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                     ON CREATE SET rec.receipt_kind='prediction', rec.tree=$tree, rec.tag=$tag,
@@ -667,52 +1509,741 @@ class JudgementService:
                       rec.novel_threshold=$novel_threshold, rec.judge_script_sha=$judge_script_sha,
                       rec.closes_question=$closes_question, rec.credence=$credence,
                       rec.baseline_lineage=$baseline_lineage, rec.registered_at=$ts,
-                      rec.prev_receipt_sha=$prev_rsha
+                      rec.prev_receipt_sha=$prev_rsha,
+                      rec.anchor_bundle_sha256=$anchor_bundle_sha256,
+                      rec.anchor_bundle_json=$anchor_bundle_json,
+                      rec.history_payload_sha256=$prediction_payload_sha256
                   MERGE (e)-[:HAS_RECEIPT]->(rec)
                   SET e.current_receipt_sha=$rsha, e.pred_receipt_sha=$rsha
+                  FOREACH (anchor IN $anchor_rows |
+                    MERGE (an:TemporalAnchor {id:anchor.id})
+                    ON CREATE SET an.digest=anchor.digest,
+                                  an.witness_did=anchor.witness_did,
+                                  an.gen_time=anchor.gen_time,
+                                  an.channel=anchor.channel,
+                                  an.signature=anchor.signature,
+                                  an.kind='prediction'
+                    MERGE (e)-[:PRED_ANCHORED_BY]->(an))
+                  FOREACH (_ IN CASE WHEN size($anchor_rows)>0 THEN [1] ELSE [] END |
+                    SET e.pred_anchor_verified=true,
+                        e.pred_anchor_gen_time=$anchor_gen_time,
+                        e.pred_anchor_quorum=$anchor_quorum,
+                        e.pred_anchor_threshold=$anchor_threshold)
+                  REMOVE e._cycle_created_by, e._cycle_claimed_at
+                  MERGE (o:OutboxEntry {id:$history_event_id})
+                    ON CREATE SET o.tree=$tree, o.op='prediction_register',
+                                  o.node_tag=$tag, o.payload=$history_payload_json,
+                                  o.status='pending', o.created_at=$ts,
+                                  o.reason='prediction_register_commit_intent',
+                                  o.receipt_sha=$rsha
+                  WITH e, o
+                  WHERE o.tree=$tree AND o.op='prediction_register'
+                    AND o.node_tag=$tag AND o.payload=$history_payload_json
+                    AND o.reason='prediction_register_commit_intent'
+                    AND o.receipt_sha=$rsha
+                    AND o.created_at IS NOT NULL
+                    AND o.adopted_by IS NULL AND o.adopted_at IS NULL
+                    AND o.causal_group IS NULL AND o.causal_index IS NULL
+                    AND o.request_sha256 IS NULL
+                    AND o.demoted_tag IS NULL
+                    AND o.demoted_receipt_sha IS NULL
+                    AND ((o.status='pending' AND o.applied_at IS NULL)
+                         OR (o.status='applied' AND o.applied_at IS NOT NULL))
                   RETURN e.tag AS tag""",
                        tree=name, tag=tag, ts=ts,
                        node_state=NodeState.PREDICTED.value,
+                       open_state='OPEN',
                        baseline_lineage=baseline_lineage,   # R12: 계보 앵커 마크(비파괴)
                        allowed_from=[NodeState.DRAFT.value, NodeState.ADMINISTRATIVE.value],
                        rsha=rsha, prev_rsha=prev_rsha,
+                       history_event_id=prediction_event_id,
+                       history_payload_json=history_payload_json,
+                       prediction_payload_sha256=prediction_payload_sha256,
+                       anchor_bundle_sha256=anchor_bundle_sha256,
+                       anchor_bundle_json=anchor_bundle_json,
+                       anchor_rows=anchor_rows,
+                       anchor_gen_time=gt,
+                       anchor_quorum=anchor_quorum,
+                       anchor_threshold=threshold,
                        **spec)
-        if not rows:
-            raise HTTPException(409, '노드 없음 또는 이미 채점됨 — 사후 예측등록 금지')
-        # EXTAUDIT S7b: 예측 spec 의 외부 증인 앵커(T1) persist — 사전등록 timestamp 의 외부성.
-        #   검증은 write 이전에 완료(validate-then-write, 위) — 여기서는 persist 만.
-        #   무효/부재/무증인은 조용히 skip(앵커는 선택 — 없으면 L3 못 열 뿐, dead-σ).
-        if anchors and witnesses:
-            adg = temporal_mod.anchor_digest(sdg)
-            for a in anchors:                       # 유효 앵커 전부 persist(감사 가능)
-                try:
-                    temporal_mod.verify_temporal_anchor(
-                        a, expect_receipt_sha=sdg, witness_allowlist=witnesses)
-                except temporal_mod.AnchorInvalid:
-                    continue
-                self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                      MERGE (an:TemporalAnchor {digest:$adg, witness_did:$wd})
-                        ON CREATE SET an.gen_time=$gt, an.channel=$ch, an.signature=$sig,
-                          an.kind='prediction'
-                      MERGE (e)-[:PRED_ANCHORED_BY]->(an)""",
-                        tree=name, tag=tag, adg=adg, wd=a.get('witness_did'),
-                        gt=a.get('gen_time'), ch=a.get('channel'), sig=a.get('signature'))
-            # 정족수 met — node 마크(gt=max T1, quorum_n=distinct 증인 수).
-            _qn = len({str(a.get('witness_did') or '').strip() for a in anchors
-                       if temporal_mod._safe_verify(a, sdg, witnesses)})
-            self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                  SET e.pred_anchor_verified=true, e.pred_anchor_gen_time=$gt,
-                      e.pred_anchor_quorum=$qn, e.pred_anchor_threshold=$th""",
-                    tree=name, tag=tag, gt=gt, qn=_qn, th=threshold)
-        if p.closes_question:
-            self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$cq})
-                  SET q.n_visits=coalesce(q.n_visits, 0) + 1''', tree=name, cq=p.closes_question)
-        self.hist(name, 'prediction_register', tag, p.model_dump())
-        return {'ok': True, 'pred_receipt_sha': rsha,
-                'pred_anchor_verified': bool(anchors and witnesses),
+            if not rows:
+                # A concurrent identical registration can win after our head
+                # read but before this CAS.  Re-read the immutable prediction
+                # receipt and adopt it only when its complete content hashes to
+                # the stored pointer.  This closes the prediction-stage false
+                # 409 without admitting a different prediction or question.
+                latest_rows = _prediction_head()
+                latest = latest_rows[0] if len(latest_rows) == 1 else {}
+                latest_sha = latest.get('pred_receipt_sha')
+                retry_fields = dict(
+                    receipt_kind='prediction',
+                    tree=name,
+                    tag=tag,
+                    baseline_lineage=latest.get('pred_baseline_lineage'),
+                    registered_at=latest.get('pred_registered_at'),
+                    prev_receipt_sha=latest.get('pred_prev_receipt_sha'),
+                    anchor_bundle_sha256=latest.get(
+                        'pred_anchor_bundle_sha256'
+                    ),
+                    history_payload_sha256=latest.get(
+                        'pred_history_payload_sha256'
+                    ),
+                    **spec,
+                )
+                if latest_sha and prediction_content_sha(retry_fields) == latest_sha:
+                    # Re-enter through the ordinary exact-retry branch.  It
+                    # validates the winner's immutable outbox and sealed
+                    # anchor bundle before projecting history.
+                    return self.register_prediction(name, tag, p)
+                else:
+                    raise HTTPException(
+                        409,
+                        '노드 없음/이미 채점됨 또는 closes_question 이 이 트리의 OPEN 질문이 아님 '
+                        '— 사후 예측등록·유령 질문 target 금지',
+                    )
+        # Fresh registrations persist anchors in the receipt/outbox statement
+        # above.  An exact retry may repair a v3 receipt written by an older
+        # process only from its sealed anchor bundle and exact durable request.
+        if (
+            idempotent_retry
+            and anchor_rows
+            and not bool(retry_snapshot and retry_snapshot.get('pred_anchor_verified'))
+        ):
+            repaired = self._ledger_write(
+                """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                   MATCH (e)-[:HAS_RECEIPT]->(rec:VerdictReceipt {
+                     receipt_sha:$rsha})
+                   MATCH (o:OutboxEntry {id:$history_event_id})
+                   WHERE e.pred_receipt_sha=$rsha
+                     AND rec.anchor_bundle_sha256=$anchor_bundle_sha256
+                     AND rec.anchor_bundle_json=$anchor_bundle_json
+                     AND rec.history_payload_sha256=$prediction_payload_sha256
+                     AND o.tree=$tree AND o.op='prediction_register'
+                     AND o.node_tag=$tag AND o.payload=$history_payload_json
+                     AND o.reason='prediction_register_commit_intent'
+                     AND o.receipt_sha=$rsha
+                     AND o.created_at IS NOT NULL
+                     AND ((o.status='pending' AND o.applied_at IS NULL)
+                          OR (o.status='applied' AND o.applied_at IS NOT NULL))
+                   FOREACH (anchor IN $anchor_rows |
+                     MERGE (an:TemporalAnchor {id:anchor.id})
+                     ON CREATE SET an.digest=anchor.digest,
+                                   an.witness_did=anchor.witness_did,
+                                   an.gen_time=anchor.gen_time,
+                                   an.channel=anchor.channel,
+                                   an.signature=anchor.signature,
+                                   an.kind='prediction'
+                     MERGE (e)-[:PRED_ANCHORED_BY]->(an))
+                   SET e.pred_anchor_verified=true,
+                       e.pred_anchor_gen_time=$anchor_gen_time,
+                       e.pred_anchor_quorum=$anchor_quorum,
+                       e.pred_anchor_threshold=$anchor_threshold
+                   RETURN e.tag AS tag""",
+                tree=name,
+                tag=tag,
+                rsha=rsha,
+                history_event_id=prediction_event_id,
+                history_payload_json=history_payload_json,
+                prediction_payload_sha256=prediction_payload_sha256,
+                anchor_bundle_sha256=anchor_bundle_sha256,
+                anchor_bundle_json=anchor_bundle_json,
+                anchor_rows=anchor_rows,
+                anchor_gen_time=gt,
+                anchor_quorum=anchor_quorum,
+                anchor_threshold=threshold,
+            )
+            if not repaired:
+                raise HTTPException(500, 'prediction anchor repair guard rejected')
+            anchor_verified_response = True
+        intent_rows = self.kg(
+            """MATCH (o:OutboxEntry {id:$id})
+               RETURN o.id AS id, o.tree AS tree, o.op AS op,
+                      o.node_tag AS node_tag, o.payload AS payload,
+                      o.status AS status, o.created_at AS created_at,
+                      o.reason AS reason, o.applied_at AS applied_at,
+                      o.receipt_sha AS receipt_sha,
+                      o.adopted_by AS adopted_by,
+                      o.adopted_at AS adopted_at,
+                      o.causal_group AS causal_group,
+                      o.causal_index AS causal_index,
+                      o.request_sha256 AS request_sha256,
+                      o.demoted_tag AS demoted_tag,
+                      o.demoted_receipt_sha AS demoted_receipt_sha""",
+            id=prediction_event_id,
+        )
+        intent_valid = (
+            len(intent_rows) == 1
+            and intent_rows[0].get('id') == prediction_event_id
+            and intent_rows[0].get('tree') == name
+            and intent_rows[0].get('op') == 'prediction_register'
+            and intent_rows[0].get('node_tag') == tag
+            and intent_rows[0].get('payload') == history_payload_json
+            and intent_rows[0].get('reason') == 'prediction_register_commit_intent'
+            and intent_rows[0].get('receipt_sha') == rsha
+            and intent_rows[0].get('created_at') is not None
+            and intent_rows[0].get('adopted_by') is None
+            and intent_rows[0].get('adopted_at') is None
+            and intent_rows[0].get('causal_group') is None
+            and intent_rows[0].get('causal_index') is None
+            and intent_rows[0].get('request_sha256') is None
+            and intent_rows[0].get('demoted_tag') is None
+            and intent_rows[0].get('demoted_receipt_sha') is None
+            and (
+                (intent_rows[0].get('status') == 'pending'
+                 and intent_rows[0].get('applied_at') is None)
+                or (intent_rows[0].get('status') == 'applied'
+                    and intent_rows[0].get('applied_at') is not None)
+            )
+        )
+        if not intent_valid:
+            raise HTTPException(
+                500,
+                'prediction receipt lacks its exact durable history intent',
+            )
+        self.hist(
+            name,
+            'prediction_register',
+            tag,
+            p.model_dump(),
+            event_id=prediction_event_id,
+        )
+        return {'ok': True, 'idempotent': idempotent_retry,
+                'pred_receipt_sha': rsha,
+                'pred_anchor_verified': anchor_verified_response,
+                'question_bound': bool(p.closes_question),
                 'note': '예측 사전등록 완료 — 이제 실험을 실행하고 test_result 를 스크립트로 제출'}
 
-    def submit_test_result(self, name: str, tag: str, r: TestResultIn) -> dict:
+    @_serialized_ledger_command
+    def submit_test_result(
+        self,
+        name: str,
+        tag: str,
+        r: TestResultIn,
+        *,
+        cycle_claim: str | None = None,
+        cycle_request: list | None = None,
+    ) -> dict:
+        if cycle_claim is not None:
+            suffix = cycle_claim.removeprefix('cycle-')
+            if (
+                not cycle_claim.startswith('cycle-')
+                or len(suffix) != 64
+                or any(ch not in '0123456789abcdef' for ch in suffix)
+                or not isinstance(cycle_request, list)
+                or len(cycle_request) != 2
+                or cycle_request[0] != name
+                or not isinstance(cycle_request[1], dict)
+                or hashlib.sha256(json.dumps(
+                    cycle_request,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(',', ':'),
+                    allow_nan=False,
+                ).encode('utf-8')).hexdigest() != suffix
+            ):
+                raise HTTPException(500, 'invalid internal cycle claim identity')
+        elif cycle_request is not None:
+            raise HTTPException(500, 'cycle request supplied without cycle claim')
+        validated_counterexample_response = None
+        validated_counterexample_type = None
+        if r.counterexample_response:
+            try:
+                validated_counterexample_response = Response(
+                    r.counterexample_response
+                )
+            except ValueError:
+                raise HTTPException(
+                    422,
+                    f'알 수 없는 반례 대응: {r.counterexample_response} — '
+                    f'{[e.value for e in Response]} 중 하나',
+                )
+        if r.counterexample_type:
+            try:
+                validated_counterexample_type = CounterexampleType(
+                    r.counterexample_type
+                )
+            except ValueError:
+                raise HTTPException(
+                    422,
+                    f'알 수 없는 반례유형: {r.counterexample_type} — '
+                    f'{[e.value for e in CounterexampleType]} 중 하나',
+                )
+        submit_request_document = {
+            'tree': name,
+            'tag': tag,
+            'request': r.model_dump(),
+            'cycle_claim': cycle_claim,
+            'cycle_request': cycle_request,
+        }
+        try:
+            submit_request_json = validate_history_record(
+                name,
+                'test_result',
+                tag,
+                submit_request_document,
+                'ob-test-result-preflight',
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422, 'test result request contains text PostgreSQL JSONB cannot represent'
+            ) from exc
+        submit_request_sha256 = hashlib.sha256(
+            submit_request_json.encode('utf-8')
+        ).hexdigest()
+        self._require_ledger_ready()
+        self._project_pending_admin_predecessors(name, tag)
+        # Direct-submit lost ACK/history recovery.  A cycle has its own
+        # command-level recovery in ProgrammeService; keep this branch for the
+        # direct REST/MCP verb so it can repair PG projection before the budget
+        # gate and without minting a second verdict.
+        if cycle_claim is None:
+            replay_rows = self.kg(
+                """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                   OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(rec:VerdictReceipt {
+                     receipt_sha:e.current_receipt_sha, tree:$tree, tag:$tag})
+                   OPTIONAL MATCH (test_o:OutboxEntry {
+                     id:'ob-test-result-'+e.current_receipt_sha})
+                   OPTIONAL MATCH (close_o:OutboxEntry {
+                     id:'ob-question-close-'+e.current_receipt_sha})
+                   OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {
+                     name:rec.target_id})
+                   OPTIONAL MATCH (q)-[:HAS_CLOSURE]->(closure:QuestionClosure {
+                     id:e.current_receipt_sha})
+                   CALL {
+                     WITH e
+                     OPTIONAL MATCH (group_o:OutboxEntry {
+                       causal_group:e.current_receipt_sha})
+                     WITH [entry IN collect(group_o {
+                       .id, .tree, .op, .node_tag, .payload, .status,
+                       .created_at, .reason, .applied_at, .receipt_sha,
+                       .causal_group, .causal_index, .request_sha256
+                     }) WHERE entry.id IS NOT NULL] AS group_outboxes
+                     RETURN group_outboxes
+                   }
+                   RETURN e.current_receipt_sha AS receipt_sha,
+                          e.verdict_source AS verdict_source,
+                          e.verdict AS verdict, e.lakatos_status AS lakatos_status,
+                          e.metric_value AS metric_value,
+                          e.measurement_grade AS measurement_grade,
+                          e.replay_status AS replay_status,
+                          e.assurance_tier_resolved AS assurance_tier_resolved,
+                          e.attested_by_did AS attested_by_did,
+                          e.measurement_lock_sha AS measurement_lock_sha,
+                          e.eureka_felt AS eureka_felt,
+                          e.eureka_true AS eureka_true,
+                          e.eureka_hallucinated AS eureka_hallucinated,
+                          e.eureka_reasons AS eureka_reasons,
+                          e.eureka_bf AS eureka_bf,
+                          rec.receipt_sha AS bound_receipt_sha,
+                          rec.receipt_kind AS receipt_kind,
+                          rec.tree AS receipt_tree, rec.tag AS receipt_tag,
+                          rec.target_id AS target_id,
+                          rec.verdict AS receipt_verdict,
+                          rec.verdict_source AS receipt_verdict_source,
+                          rec.metric_name AS receipt_metric_name,
+                          rec.metric_value AS receipt_metric_value,
+                          rec.novel_confirmed AS receipt_novel_confirmed,
+                          rec.lakatos_status AS receipt_lakatos_status,
+                          rec.judged_at AS receipt_judged_at,
+                          rec.judge_script_sha AS receipt_judge_script_sha,
+                          rec.prev_receipt_sha AS receipt_prev_receipt_sha,
+                          rec.measurement_grade AS receipt_measurement_grade,
+                          rec.engine_rule_sha AS engine_rule_sha,
+                          rec.comment_sha AS receipt_comment_sha,
+                          rec.replay_status AS receipt_replay_status,
+                          rec.replay_reason AS receipt_replay_reason,
+                          rec.regenerated_metric AS receipt_regenerated_metric,
+                          rec.judge_script_path AS receipt_judge_script_path,
+                          rec.result_path AS receipt_result_path,
+                          rec.result_sha256 AS receipt_result_sha256,
+                          rec.measurement_lock_sha AS receipt_measurement_lock_sha,
+                          rec.source_script_path AS receipt_source_script_path,
+                          rec.source_result_path AS receipt_source_result_path,
+                          rec.history_payload_sha256 AS receipt_history_payload_sha256,
+                          t.attestor_dids AS attestor_dids,
+                          q.status AS question_state,
+                          q.closed_by AS question_closed_by,
+                          q.closed_events AS question_closed_events,
+                          closure.id AS closure_id,
+                          closure.closed_by AS closure_closed_by,
+                          closure.at AS closure_at,
+                          closure.tree AS closure_tree,
+                          closure.question AS closure_question,
+                          closure.trigger AS closure_trigger,
+                          closure.verdict AS closure_verdict,
+                          closure.receipt_sha AS closure_receipt_sha,
+                          COUNT { MATCH (q)-[:HAS_CLOSURE]->
+                            (:QuestionClosure {id:e.current_receipt_sha})-
+                            [:CAUSED_BY]->(rec) } AS closure_bound_count,
+                          COUNT { MATCH (:QuestionClosure {
+                            id:e.current_receipt_sha}) } AS closure_global_count,
+                          COUNT { MATCH (e)-[:CLOSES_QUESTION]->(q) }
+                            AS closes_rel_count,
+                          head([(e)-[rel:CLOSES_QUESTION]->(q) |
+                            rel.receipt_sha]) AS closes_rel_receipt_sha,
+                          head([(e)-[rel:CLOSES_QUESTION]->(q) |
+                            rel.verdict]) AS closes_rel_verdict,
+                          head([(e)-[rel:CLOSES_QUESTION]->(q) |
+                            rel.at]) AS closes_rel_at,
+                          group_outboxes,
+                          test_o.id AS test_event_id,
+                          test_o.tree AS test_tree, test_o.op AS test_op,
+                          test_o.node_tag AS test_tag,
+                          test_o.payload AS test_payload,
+                          test_o.status AS test_status,
+                          test_o.created_at AS test_created_at,
+                          test_o.reason AS test_reason,
+                          test_o.applied_at AS test_applied_at,
+                          test_o.receipt_sha AS test_receipt_sha,
+                          test_o.causal_group AS test_causal_group,
+                          test_o.causal_index AS test_causal_index,
+                          test_o.request_sha256 AS request_sha256,
+                          close_o.id AS close_event_id,
+                          close_o.tree AS close_tree, close_o.op AS close_op,
+                          close_o.node_tag AS close_tag,
+                          close_o.payload AS close_payload,
+                          close_o.status AS close_status,
+                          close_o.created_at AS close_created_at,
+                          close_o.reason AS close_reason,
+                          close_o.applied_at AS close_applied_at,
+                          close_o.receipt_sha AS close_receipt_sha,
+                          close_o.causal_group AS close_causal_group,
+                          close_o.causal_index AS close_causal_index""",
+                tree=name,
+                tag=tag,
+            )
+            if len(replay_rows or []) > 1:
+                raise HTTPException(500, 'test result replay cardinality conflict')
+            if (
+                replay_rows
+                and replay_rows[0].get('receipt_kind') != 'prediction'
+                and replay_rows[0].get('receipt_history_payload_sha256') is not None
+                and replay_rows[0].get('test_event_id') is None
+            ):
+                raise HTTPException(
+                    500, 'V6 verdict receipt lacks its test-result intent'
+                )
+            if replay_rows and replay_rows[0].get('test_event_id') is not None:
+                replay = replay_rows[0]
+                receipt_sha = replay.get('receipt_sha')
+                group_outboxes = replay.get('group_outboxes')
+                if not isinstance(group_outboxes, list):
+                    raise HTTPException(
+                        500, 'test result causal group snapshot missing'
+                    )
+                test_event_id = f'ob-test-result-{receipt_sha}'
+                receipt_snapshot = {
+                    key: replay.get(
+                        'engine_rule_sha'
+                        if key == 'engine_rule_sha'
+                        else f'receipt_{key}'
+                    )
+                    for key in RECEIPT_FIELDS
+                }
+                receipt_snapshot['receipt_sha'] = replay.get('bound_receipt_sha')
+                current_snapshot = {
+                    'current_receipt_sha': receipt_sha,
+                    'verdict': replay.get('verdict'),
+                    'verdict_source': replay.get('verdict_source'),
+                    'lakatos_status': replay.get('lakatos_status'),
+                    'metric_value': replay.get('metric_value'),
+                }
+                test_snapshot = {
+                    'id': replay.get('test_event_id'),
+                    'tree': replay.get('test_tree'),
+                    'op': replay.get('test_op'),
+                    'node_tag': replay.get('test_tag'),
+                    'payload': replay.get('test_payload'),
+                    'status': replay.get('test_status'),
+                    'created_at': replay.get('test_created_at'),
+                    'reason': replay.get('test_reason'),
+                    'applied_at': replay.get('test_applied_at'),
+                    'receipt_sha': replay.get('test_receipt_sha'),
+                    'causal_group': replay.get('test_causal_group'),
+                    'causal_index': replay.get('test_causal_index'),
+                    'request_sha256': replay.get('request_sha256'),
+                }
+                close_snapshot = None
+                if replay.get('close_event_id') is not None:
+                    close_snapshot = {
+                        'id': replay.get('close_event_id'),
+                        'tree': replay.get('close_tree'),
+                        'op': replay.get('close_op'),
+                        'node_tag': replay.get('close_tag'),
+                        'payload': replay.get('close_payload'),
+                        'status': replay.get('close_status'),
+                        'created_at': replay.get('close_created_at'),
+                        'reason': replay.get('close_reason'),
+                        'applied_at': replay.get('close_applied_at'),
+                        'receipt_sha': replay.get('close_receipt_sha'),
+                        'causal_group': replay.get('close_causal_group'),
+                        'causal_index': replay.get('close_causal_index'),
+                    }
+                closure_snapshot = {
+                    'question_state': replay.get('question_state'),
+                    'question_closed_by': replay.get('question_closed_by'),
+                    'question_closed_events': replay.get('question_closed_events'),
+                    'closure_id': replay.get('closure_id'),
+                    'closure_closed_by': replay.get('closure_closed_by'),
+                    'closure_at': replay.get('closure_at'),
+                    'closure_tree': replay.get('closure_tree'),
+                    'closure_question': replay.get('closure_question'),
+                    'closure_trigger': replay.get('closure_trigger'),
+                    'closure_verdict': replay.get('closure_verdict'),
+                    'closure_receipt_sha': replay.get('closure_receipt_sha'),
+                    'closure_bound': replay.get('closure_bound_count') == 1,
+                    'closure_global_count': replay.get('closure_global_count'),
+                    'closes_rel_count': replay.get('closes_rel_count'),
+                    'closes_rel_receipt_sha': replay.get('closes_rel_receipt_sha'),
+                    'closes_rel_verdict': replay.get('closes_rel_verdict'),
+                    'closes_rel_at': replay.get('closes_rel_at'),
+                }
+                try:
+                    validated_group = validate_verdict_intent_group(
+                        tree=name,
+                        tag=tag,
+                        receipt_sha=receipt_sha,
+                        receipt=receipt_snapshot,
+                        current=current_snapshot,
+                        outboxes=list(group_outboxes or []),
+                        closure=closure_snapshot,
+                        require_cycle=False,
+                    )
+                except VerdictIntentError as exc:
+                    raise HTTPException(
+                        500, f'test result durable intent corrupt: {exc}'
+                    ) from exc
+                try:
+                    datetime.fromisoformat(str(replay.get('test_created_at')))
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(500, 'test result intent timestamp corrupt') from exc
+                binding_ok = (
+                    isinstance(receipt_sha, str)
+                    and len(receipt_sha) == 64
+                    and replay.get('bound_receipt_sha') == receipt_sha
+                    and replay.get('test_event_id') == test_event_id
+                    and replay.get('test_tree') == name
+                    and replay.get('test_op') == 'test_result'
+                    and replay.get('test_tag') == tag
+                    and replay.get('test_reason') == 'test_result_commit_intent'
+                    and replay.get('test_receipt_sha') == receipt_sha
+                    and (
+                        (replay.get('test_status') == 'pending'
+                         and replay.get('test_applied_at') is None)
+                        or (replay.get('test_status') == 'applied'
+                            and replay.get('test_applied_at') is not None)
+                    )
+                )
+                if not binding_ok:
+                    raise HTTPException(500, 'test result durable intent binding conflict')
+                exact_request_replay = (
+                    replay.get('request_sha256') == submit_request_sha256
+                )
+                explicit_freshen = not exact_request_replay
+                if explicit_freshen:
+                    if not (
+                        r.freshen
+                        and r.supersedes_receipt_sha == receipt_sha
+                        and replay.get('verdict_source') == 'scripted'
+                        and replay.get('verdict') == 'partial'
+                        and replay.get('lakatos_status') in {
+                            'novel_not_server_anchored',
+                            'provisional_stale_engine',
+                        }
+                        and replay.get('metric_value') == r.metric_value
+                    ):
+                        raise HTTPException(409, 'different test result already committed')
+                if replay.get('test_event_id') is not None:
+                    prior_payload = dict(validated_group.test_payload)
+                    expected_keys = {
+                        'attested_by', 'baseline', 'delta', 'freshen', 'lakatos',
+                        'measurement_lock_sha', 'metric_verdict', 'novel',
+                        'novel_server_anchored', 'receipt_sha',
+                        'regenerated_metric', 'replay_reason', 'replay_status',
+                        'requires_human', 'result_path', 'result_sha256', 'rule',
+                        'script', 'script_sha', 'script_sha_server_verified',
+                        'source_result_path', 'source_script_path', 'value', 'verdict',
+                        'cycle_claim', 'cycle_request_sha256', 'request_sha256',
+                        'assurance', 'eureka_closed', 'eureka_open',
+                        'qualitative_self_report', 'replay_authoritative',
+                        'verdict_display',
+                    }
+                    finite_fields = ('value', 'baseline', 'delta')
+                    if (
+                        set(prior_payload) != expected_keys
+                        or prior_payload.get('receipt_sha') != receipt_sha
+                        or any(
+                            type(prior_payload.get(key)) not in (int, float)
+                            or not math.isfinite(float(prior_payload[key]))
+                            for key in finite_fields
+                        )
+                        or not isinstance(prior_payload.get('verdict'), str)
+                        or not isinstance(prior_payload.get('lakatos'), str)
+                        or type(prior_payload.get('freshen')) is not bool
+                        or type(prior_payload.get('novel_server_anchored')) is not bool
+                        or type(prior_payload.get('requires_human')) is not bool
+                        or type(prior_payload.get('script_sha_server_verified')) is not bool
+                        or type(prior_payload.get('qualitative_self_report')) is not bool
+                        or prior_payload.get('novel') is not None
+                           and type(prior_payload.get('novel')) is not bool
+                    ):
+                        raise HTTPException(500, 'test result intent payload shape conflict')
+                    test_projected = self.hist(
+                        name,
+                        'test_result',
+                        tag,
+                        prior_payload,
+                        event_id=test_event_id,
+                    )
+                    history_pending = test_projected is False
+                    if test_projected is False:
+                        if explicit_freshen:
+                            raise HTTPException(
+                                503,
+                                'test result history pending; freshen deferred',
+                            )
+                    close_event_id = (
+                        f'ob-question-close-{receipt_sha}'
+                        if validated_group.close_payload is not None else None
+                    )
+                    question_closed = close_event_id is not None
+                    if question_closed and test_projected is not False:
+                        expected_close_id = f'ob-question-close-{receipt_sha}'
+                        try:
+                            datetime.fromisoformat(str(replay.get('close_created_at')))
+                            close_payload = dict(validated_group.close_payload)
+                        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                            raise HTTPException(500, 'question close intent corrupt') from exc
+                        if not (
+                            close_event_id == expected_close_id
+                            and replay.get('close_tree') == name
+                            and replay.get('close_op') == 'question_close'
+                            and replay.get('close_tag') == tag
+                            and replay.get('close_reason') == 'question_close_commit_intent'
+                            and replay.get('close_receipt_sha') == receipt_sha
+                            and set(close_payload) == {
+                                'question', 'receipt_sha', 'trigger', 'verdict'
+                            }
+                            and close_payload.get('receipt_sha') == receipt_sha
+                            and close_payload.get('question') == replay.get('target_id')
+                            and close_payload.get('trigger') == 'ADJUDICATED'
+                            and (
+                                (replay.get('close_status') == 'pending'
+                                 and replay.get('close_applied_at') is None)
+                                or (replay.get('close_status') == 'applied'
+                                    and replay.get('close_applied_at') is not None)
+                            )
+                        ):
+                            raise HTTPException(500, 'question close intent binding conflict')
+                        close_projected = self.hist(
+                            name,
+                            'question_close',
+                            tag,
+                            close_payload,
+                            event_id=expected_close_id,
+                        )
+                        if close_projected is False:
+                            history_pending = True
+                            if explicit_freshen:
+                                raise HTTPException(
+                                    503,
+                                    'question close history pending; freshen deferred',
+                                )
+                    if explicit_freshen:
+                        expected_ids = [
+                            test_event_id,
+                            *([f'ob-question-close-{receipt_sha}']
+                              if question_closed else []),
+                        ]
+                        applied_rows = self.kg(
+                            "MATCH (o:OutboxEntry) WHERE o.id IN $ids "
+                            "RETURN o.id AS id, o.status AS status, "
+                            "o.applied_at AS applied_at",
+                            ids=expected_ids,
+                        )
+                        applied_by_id = {
+                            row.get('id'): row for row in (applied_rows or [])
+                        }
+                        if not (
+                            len(applied_by_id) == len(expected_ids)
+                            and all(
+                                applied_by_id.get(event_id, {}).get('status')
+                                    == 'applied'
+                                and applied_by_id[event_id].get('applied_at')
+                                    is not None
+                                for event_id in expected_ids
+                            )
+                        ):
+                            raise HTTPException(
+                                503,
+                                'prior verdict history is not durably applied; freshen deferred',
+                            )
+                    # Exact command identity is a replay even when the stored
+                    # result is freshen-eligible.  A new adjudication reaches
+                    # this point only through an explicit head-bound command
+                    # whose request hash differs from the stored intent.
+                    if exact_request_replay:
+                        target_id = replay.get('target_id')
+                        question_state = replay.get('question_state')
+                        question_transition = (
+                            'adjudication-close' if question_closed
+                            else 'duplicate-adjudication'
+                            if question_state == QuestionState.CLOSED.value
+                            else 'adjudication-retain-open'
+                        )
+                        return {
+                            'ok': True,
+                            'idempotent': True,
+                            'history_pending': history_pending,
+                            'freshen': prior_payload['freshen'],
+                            'verdict': prior_payload['verdict'],
+                            'verdict_display': prior_payload['verdict_display'],
+                            'assurance': prior_payload['assurance'],
+                            'delta': prior_payload['delta'],
+                            'novel': prior_payload['novel'],
+                            'novel_server_anchored': prior_payload[
+                                'novel_server_anchored'
+                            ],
+                            'lakatos': prior_payload['lakatos'],
+                            'metric_verdict': prior_payload['metric_verdict'],
+                            'requires_human': prior_payload['requires_human'],
+                            'script_sha_server_verified': prior_payload[
+                                'script_sha_server_verified'
+                            ],
+                            'judge_script_sha': prior_payload['script_sha'],
+                            'judge_script_path': prior_payload['script'],
+                            'result_path': prior_payload['result_path'],
+                            'result_sha256': prior_payload['result_sha256'],
+                            'source_script_path': prior_payload['source_script_path'],
+                            'source_result_path': prior_payload['source_result_path'],
+                            'measurement_lock_sha': prior_payload[
+                                'measurement_lock_sha'
+                            ],
+                            'replay_status': prior_payload['replay_status'],
+                            'replay_reason': prior_payload['replay_reason'],
+                            'regenerated_metric': prior_payload['regenerated_metric'],
+                            'question': ({
+                                'target': target_id,
+                                'closed': question_closed,
+                                'state': question_state,
+                                'transition': question_transition,
+                            } if target_id else None),
+                            'attested_by': prior_payload['attested_by'],
+                            'eureka': prior_payload[
+                                'eureka_closed' if question_closed else 'eureka_open'
+                            ],
+                            'rule': prior_payload['rule'],
+                            'replay_authoritative': prior_payload[
+                                'replay_authoritative'
+                            ],
+                            'replay': (
+                                replay_command(
+                                    prior_payload['script'],
+                                    prior_payload['result_path'],
+                                )
+                                if prior_payload['replay_authoritative'] else None
+                            ),
+                        }
         # ⓪ 루프-경계 예산(PROM16 S1/S5) — *진짜 초크포인트*. 채점은 결국 전부 여기로 들어온다
         #    (REST POST /node/{tag}/test_result · MCP submit_result · run_cycle 내부호출). 첫 구현은
         #    run_cycle 만 거부해 3-verb 경로(add_node+register_prediction+submit_result)로 갈아타면
@@ -748,6 +2279,12 @@ class JudgementService:
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
+        if r.freshen and pr.get('vsrc') != 'scripted':
+            raise HTTPException(
+                409,
+                'freshen 대상 없음 — 먼저 존재하는 recoverable partial receipt를 '
+                'supersedes_receipt_sha로 지정해야 한다',
+            )
         # G6(git-흡수): tier 정책은 assurance 디스패치 테이블(SSOT)이 결정 — 핸들러가 하드코딩하지 않는다.
         #   receipted/anchored tier 는 novel-anchor 게이트를 무장(신규 트리 기본=anchored, git default-OFF 반전);
         #   legacy(무tier)/notebook 은 트리의 opt-in 플래그(FF1)로만 발동(거동 불변, 소급 강등 없음).
@@ -780,7 +2317,9 @@ class JudgementService:
             raise HTTPException(409, f"영수증 판정({pr['vsrc']})이 이미 선 노드 — 재채점 금지. "
                                      f"강등/판정을 되돌리려면 새 노드로 분기하라(강등 세탁 차단).")
         if pr['vsrc'] == 'scripted':
-            can_freshen = (pr.get('existing_verdict') == 'partial'
+            can_freshen = (r.freshen
+                           and r.supersedes_receipt_sha == pr.get('prev_receipt_sha')
+                           and pr.get('existing_verdict') == 'partial'
                            and pr.get('existing_lstat') in ('novel_not_server_anchored',
                                                             'provisional_stale_engine')
                            and r.metric_value == pr.get('existing_metric_value'))
@@ -965,19 +2504,9 @@ class JudgementService:
                 data_replay_passed=r.data_replay_passed,
                 human_verdict_required=r.human_verdict_required))
         pnr_appraisal = None
-        if r.counterexample_response:
-            try:
-                resp = Response(r.counterexample_response)
-            except ValueError:
-                raise HTTPException(422, f'알 수 없는 반례 대응: {r.counterexample_response} — '
-                                         f'{[e.value for e in Response]} 중 하나')
-            ce_type = None
-            if r.counterexample_type:
-                try:
-                    ce_type = CounterexampleType(r.counterexample_type)
-                except ValueError:
-                    raise HTTPException(422, f'알 수 없는 반례유형: {r.counterexample_type} — '
-                                             f'{[e.value for e in CounterexampleType]} 중 하나')
+        if validated_counterexample_response is not None:
+            resp = validated_counterexample_response
+            ce_type = validated_counterexample_type
             pgc = None
             if r.ce_proof_concept_name:
                 pgc = ProofGeneratedConcept(
@@ -1006,8 +2535,10 @@ class JudgementService:
             engine_fresh_fire=fresh_fire)   # jp4 ④: stale/무능력 판관 → provisional 강등(마지막)
         verdict, lakatos_status, novel_independent = _dec.verdict, _dec.lakatos_status, _dec.novel_independent
         # #H1/#H10 질적 backing(서버앵커 독립 novel + ce_novel_corroborated) — DE1 순수 추출.
+        qualitative_claim = have_qual or pnr_appraisal is not None
         qual_backed, qual_self_report = qualitative_flags(
-            have_qual=have_qual, verdict=verdict, novel_server_anchored=novel_server_anchored,
+            have_qual=qualitative_claim, verdict=verdict,
+            novel_server_anchored=novel_server_anchored,
             ce_novel_corroborated=bool(r.ce_novel_corroborated))
         # A1: measurement-grade eureka at the judgement seam — felt(novel registered) vs
         # true(confirmed + substantial BF + net problem closure). Built from the just-scored fields
@@ -1018,12 +2549,18 @@ class JudgementService:
         # 노드 인터넷 관측 eigentrust 로 재유도 — forged source_trust 로 true-eureka 를 못 산다(credibility 와
         # 동일 원천). internal 노드=1.0. 영속(e.source_trust)도 이 값으로 → tree-level eureka_over_tree 도 정직.
         est = self._eigentrust_source_trust(name, tag)
-        eu = eureka_classify({
+        eu_input = {
             'novel_registered': bool(pr['nmet']), 'novel_confirmed': novel_independent,
             'verdict': verdict,
             'delta': v.delta, 'noise_band': pr['nb'], 'source_trust': est,
-            'closed': 1 if pr.get('closes') else 0, 'opened': int(pr.get('n_opened') or 0),
-        }, require_promotion=False)
+            'opened': int(pr.get('n_opened') or 0),
+        }
+        # Closure credit is selected only after the managed transaction locks and
+        # reads the actual question state. Merely declaring pred_closes is not a
+        # solved problem: partial/unverified outcomes must not mint true Eureka.
+        eu_open = eureka_classify({**eu_input, 'closed': 0}, require_promotion=False)
+        eu_closed = eureka_classify({**eu_input, 'closed': 1}, require_promotion=False)
+        eu = eu_open
         ts = datetime.now(timezone.utc).isoformat()
         # AG3/R-SOV V1 값소유(측정주권 2026-07-03): submit 시 *들어온* 값을 서버가 재유도 → 전체 verdict.
         #   persisted 노드가 아니라 incoming(r.script/result_path/metric_value)을 replay 하므로 신규노드도
@@ -1082,8 +2619,11 @@ class JudgementService:
         regenerated_metric = _vo.regenerated if _vo is not None else None
         # S7 temporal witness and S8 MeasurementLock are computed before the verdict receipt so
         # the lock SHA can be sealed and minted atomically with the guarded verdict write.
-        temporal_witness = bool(pr.get('pred_anchor_verified')) and temporal_mod.anchor_ordering_ok(
-            str(pr.get('pred_anchor_gen_time') or ''), ts)
+        # A signed prediction anchor is only T1.  ``ts`` is this process's
+        # wall clock and cannot stand in for the independently signed T2
+        # verdict anchor required by has_valid_temporal_witness().  The submit
+        # contract does not yet carry a verdict anchor, so fail closed at L2.
+        temporal_witness = False
         _lock = None
         _lsha = _lkey = _lock_payload_json = _env_sha = None
         if replay_inputs_bound:
@@ -1150,6 +2690,75 @@ class JudgementService:
         #   client_asserted). metric_value 도 값소유 결과(effective_metric)를 봉인한다.
         # EXTAUDIT S4: 판정 시점 해석층 봉인 — comment 의 sha 를 v3 봉인 필드로(사후 개서는 fsck 가 검출).
         csha = comment_seal_sha(pr.get('node_comment'))
+        cycle_request_sha256 = (
+            cycle_claim.removeprefix('cycle-') if cycle_claim is not None else None
+        )
+        sealed_display, sealed_assurance = response_assurance(
+            verdict=verdict,
+            current_receipt_sha='pending-v6-receipt',
+            measurement_grade=measurement_grade,
+            replay_status=replay_status,
+            assurance_tier_resolved=tier,
+            attested_by_did=attested_by_did,
+            engine_rule_sha=ENGINE_RULE_SHA,
+            tree_attestors=attestors,
+            engine_rule_floor=effective_floor(),
+            temporal_witness=temporal_witness,
+            measurement_lock_bound=bool(_lsha),
+        )
+        sealed_assurance = {
+            'val': sealed_assurance['val'],
+            'basis': list(sealed_assurance.get('basis') or ()),
+        }
+        sealed_eureka_open = {
+            'felt': eu_open.felt,
+            'true': eu_open.true,
+            'hallucinated': eu_open.hallucinated,
+            'reasons': list(eu_open.reasons),
+            'bf': round(eu_open.bf, 3),
+        }
+        sealed_eureka_closed = {
+            'felt': eu_closed.felt,
+            'true': eu_closed.true,
+            'hallucinated': eu_closed.hallucinated,
+            'reasons': list(eu_closed.reasons),
+            'bf': round(eu_closed.bf, 3),
+        }
+        test_result_summary = dict(
+            value=effective_metric,
+            baseline=pr['b'],
+            delta=round(v.delta, 4),
+            verdict=verdict,
+            script=sealed_script_path,
+            result_path=sealed_result_path,
+            source_script_path=source_script_path,
+            source_result_path=source_result_path,
+            result_sha256=result_sha,
+            measurement_lock_sha=_lsha,
+            novel=v.novel,
+            script_sha=stored_sha,
+            freshen=freshen_anchor,
+            replay_status=replay_status,
+            replay_reason=replay_reason,
+            regenerated_metric=regenerated_metric,
+            lakatos=lakatos_status,
+            metric_verdict=v.verdict,
+            novel_server_anchored=novel_server_anchored,
+            requires_human=bool(decided.get('requires_human')),
+            script_sha_server_verified=sha_verified,
+            rule=v.reason,
+            attested_by=attested_by_did,
+            cycle_claim=cycle_claim,
+            cycle_request_sha256=cycle_request_sha256,
+            request_sha256=submit_request_sha256,
+            verdict_display=sealed_display,
+            assurance=sealed_assurance,
+            qualitative_self_report=qual_self_report,
+            replay_authoritative=bool(replay_inputs_bound and _lsha is not None),
+            eureka_open=sealed_eureka_open,
+            eureka_closed=sealed_eureka_closed,
+        )
+        history_payload_sha256 = verdict_history_payload_sha(test_result_summary)
         receipt_fields = build_receipt_fields(
             tree=name, tag=tag, target_id=target_id, verdict=verdict, metric_name=pr['m'],
             metric_value=effective_metric, novel_confirmed=novel_independent, lakatos_status=lakatos_status,
@@ -1162,16 +2771,134 @@ class JudgementService:
             judge_script_path=sealed_script_path, result_path=sealed_result_path,
             result_sha256=result_sha, measurement_lock_sha=_lsha,
             source_script_path=source_script_path,
-            source_result_path=source_result_path)
+            source_result_path=source_result_path,
+            history_payload_sha256=history_payload_sha256)
         rsha = receipt_content_sha(receipt_fields)
-        ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        test_result_event_id = f'ob-test-result-{rsha}'
+        test_result_payload = dict(test_result_summary, receipt_sha=rsha)
+        try:
+            test_result_payload_json = validate_history_record(
+                name,
+                'test_result',
+                tag,
+                test_result_payload,
+                test_result_event_id,
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422, 'test result history contains text PostgreSQL JSONB cannot represent'
+            ) from exc
+        question_close_event_id = f'ob-question-close-{rsha}'
+        question_close_payload = {
+            'question': target_id,
+            'trigger': 'ADJUDICATED',
+            'verdict': verdict,
+            'receipt_sha': rsha,
+        }
+        question_close_payload_json = None
+        if target_id:
+            try:
+                question_close_payload_json = validate_history_record(
+                    name,
+                    'question_close',
+                    tag,
+                    question_close_payload,
+                    question_close_event_id,
+                )
+            except HistoryPayloadError as exc:
+                raise HTTPException(
+                    422,
+                    'question close history contains text PostgreSQL JSONB cannot represent',
+                ) from exc
+        close_question_from_verdict = bool(
+            target_id and receipt_backed_conclusive(
+                verdict,
+                rsha,
+                assurance_level=sealed_assurance['val'],
+                qualitative_self_report=qual_self_report,
+            )
+        )
+        cycle_event_id = None
+        cycle_payload = None
+        cycle_payload_json = None
+        cycle_payload_closed = None
+        cycle_payload_closed_json = None
+        if cycle_claim is not None:
+            suffix = cycle_claim.removeprefix('cycle-')
+            cycle_event_id = f'ob-cycle-result-{suffix}'
+            cycle_payload = {
+                'cycle_claim': cycle_claim,
+                'cycle_request': cycle_request,
+                'verdict_receipt_sha': rsha,
+                'dependent_history_event_ids': [test_result_event_id],
+                'result': {
+                    'verdict': verdict,
+                    'novel': v.novel,
+                    'lakatos': lakatos_status,
+                    'delta': round(v.delta, 4),
+                    'novel_server_anchored': novel_server_anchored,
+                },
+            }
+            cycle_payload_closed = {
+                **cycle_payload,
+                'dependent_history_event_ids': [
+                    test_result_event_id,
+                    *(
+                        [question_close_event_id]
+                        if close_question_from_verdict else []
+                    ),
+                ],
+            }
+            try:
+                cycle_payload_json = validate_history_record(
+                    name,
+                    'cycle_result',
+                    tag,
+                    cycle_payload,
+                    cycle_event_id,
+                )
+                cycle_payload_closed_json = validate_history_record(
+                    name,
+                    'cycle_result',
+                    tag,
+                    cycle_payload_closed,
+                    cycle_event_id,
+                )
+            except HistoryPayloadError as exc:
+                raise HTTPException(
+                    422,
+                    'cycle result history contains text PostgreSQL JSONB cannot represent',
+                ) from exc
+        # The adjudication event is the immutable verdict receipt itself.  Keep the persisted
+        # QuestionClosure identity and q.closed_events exactly aligned with the FSM effect binding
+        # (RecordQuestionClosure.event_id = event.receipt_sha); manual CLOSE events retain their
+        # separate operator-supplied/stable identifiers in TreeService.
+        closure_id = rsha if target_id else None
+        ops = [(("""MATCH (t:LakatosTree {name:$tree})
+                   """ + LOCKED_BUDGET_GUARD + """
+                   MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
-                   WITH e
-                   WHERE (e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
+                   WITH t, e
+                   OPTIONAL MATCH (history_prior:OutboxEntry)
+                     WHERE history_prior.id IN $history_event_ids
+                   WITH t, e,
+                        [o IN collect(history_prior) WHERE o IS NOT NULL] AS history_priors
+                   WHERE size(history_priors)=0
+                     AND (e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                       OR ($freshen AND e.verdict = 'partial'
                           AND e.lakatos_status IN ['novel_not_server_anchored', 'provisional_stale_engine']
                           AND e.metric_value = $mv))
                      AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
+                   OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {name:$target_id})
+                   WITH t, e, q
+                   WHERE NOT $has_target OR q IS NOT NULL
+                   FOREACH (_ IN CASE WHEN q IS NULL THEN [] ELSE [1] END |
+                     SET q._cas=coalesce(q._cas, 0) + 0)
+                   WITH t, e, q,
+                     CASE WHEN q IS NULL THEN null
+                          ELSE coalesce(q.status, $open_state) END AS question_before_state
+                   WHERE NOT $has_target
+                      OR question_before_state IN [$open_state, $closed_state]
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.node_state=$node_state,
                        e.judge_script=$script, e.judge_script_sha=$sha,
@@ -1179,9 +2906,7 @@ class JudgementService:
                        e.source_judge_script_path=$source_script,
                        e.source_result_path=$source_rp,
                        e.novel_confirmed=$novel, e.source_trust=$st, e.lakatos_status=$lstat,
-                       e.eureka_felt=$eu_felt, e.eureka_true=$eu_true,
-                       e.eureka_hallucinated=$eu_hall, e.eureka_reasons=$eu_reasons,
-                       e.eureka_bf=$eu_bf, e.qualitative_self_report=$qsr,
+                       e.qualitative_self_report=$qsr,
                        e.novel_server_anchored=$nsa, e.assurance_tier_resolved=$atier,
                        e.attested_by_did=$attested_by_did, e.replay_status=$replay_status,
                        e.replay_reason=$replay_reason, e.regenerated_metric=$regenerated_metric,
@@ -1189,7 +2914,7 @@ class JudgementService:
                        e.engine_freshness=$efresh, e.judged_by_boot_git_sha=$boot_sha,
                        e.measurement_lock_sha=$lsha, e.measurement_lock_key=$lkey,
                        e.temporal_witness_verified=$tw
-                   WITH e
+                   WITH t, e, q, question_before_state
                    MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
                      ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.target_id=$target_id,
                        rec.verdict=$v, rec.verdict_source='scripted', rec.metric_name=$mn,
@@ -1201,7 +2926,8 @@ class JudgementService:
                        rec.judge_script_path=$script, rec.result_path=$rp,
                        rec.result_sha256=$result_sha256, rec.measurement_lock_sha=$lsha,
                        rec.source_script_path=$source_script,
-                       rec.source_result_path=$source_rp
+                       rec.source_result_path=$source_rp,
+                       rec.history_payload_sha256=$history_payload_sha256
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
                    FOREACH (_ IN CASE WHEN $lsha IS NULL THEN [] ELSE [1] END |
@@ -1211,12 +2937,71 @@ class JudgementService:
                          ml.payload_json=$lock_payload_json
                      MERGE (e)-[:HAS_LOCK]->(ml)
                    )
-                   RETURN e.tag AS claimed""",
+                   WITH e, rec, q, question_before_state,
+                     ($close_question AND question_before_state = $open_state) AS question_closed
+                   FOREACH (_ IN CASE WHEN question_closed THEN [1] ELSE [] END |
+                     SET q.status=$closed_state,
+                         q.n_visits=coalesce(q.n_visits, 0) + 1,
+                         q.closed_by=CASE
+                           WHEN q.closed_by IS NULL THEN [$tag]
+                           WHEN $tag IN q.closed_by THEN q.closed_by
+                           ELSE q.closed_by + $tag
+                         END,
+                         q.closed_events=CASE
+                           WHEN q.closed_events IS NULL THEN [$closure_id]
+                           WHEN $closure_id IN q.closed_events THEN q.closed_events
+                           ELSE q.closed_events + $closure_id
+                         END
+                     MERGE (c:QuestionClosure {id:$closure_id})
+                     ON CREATE SET c.closed_by=$tag, c.at=$ts, c.tree=$tree,
+                                   c.question=$target_id, c.trigger='ADJUDICATED',
+                                   c.verdict=$v, c.receipt_sha=$rsha
+                     MERGE (q)-[:HAS_CLOSURE]->(c)
+                     MERGE (e)-[cq:CLOSES_QUESTION]->(q)
+                     SET cq.receipt_sha=$rsha, cq.verdict=$v, cq.at=$ts
+                     MERGE (c)-[:CAUSED_BY]->(rec)
+                   )
+                   SET e.eureka_felt=CASE WHEN question_closed THEN $eu_closed_felt ELSE $eu_open_felt END,
+                       e.eureka_true=CASE WHEN question_closed THEN $eu_closed_true ELSE $eu_open_true END,
+                       e.eureka_hallucinated=CASE WHEN question_closed THEN $eu_closed_hall ELSE $eu_open_hall END,
+                       e.eureka_reasons=CASE WHEN question_closed THEN $eu_closed_reasons ELSE $eu_open_reasons END,
+                       e.eureka_bf=CASE WHEN question_closed THEN $eu_closed_bf ELSE $eu_open_bf END
+                   CREATE (test_history:OutboxEntry {
+                     id:$test_result_event_id, tree:$tree, op:'test_result',
+                     node_tag:$tag, payload:$test_result_payload,
+                     status:'pending', created_at:$ts,
+                     reason:'test_result_commit_intent',
+                     receipt_sha:$rsha, causal_group:$rsha, causal_index:0,
+                     request_sha256:$submit_request_sha256
+                   })
+                   FOREACH (_ IN CASE WHEN question_closed THEN [1] ELSE [] END |
+                     CREATE (:OutboxEntry {
+                       id:$question_close_event_id, tree:$tree, op:'question_close',
+                       node_tag:$tag, payload:$question_close_payload,
+                       status:'pending', created_at:$ts,
+                       reason:'question_close_commit_intent',
+                       receipt_sha:$rsha, causal_group:$rsha, causal_index:1
+                     }))
+                   FOREACH (_ IN CASE WHEN $cycle_event_id IS NULL THEN [] ELSE [1] END |
+                     CREATE (:OutboxEntry {
+                       id:$cycle_event_id, tree:$tree, op:'cycle_result',
+                       node_tag:$tag,
+                       payload:CASE WHEN question_closed
+                                    THEN $cycle_payload_closed
+                                    ELSE $cycle_payload END,
+                       status:'pending', created_at:$ts,
+                       reason:'cycle_result_commit_intent',
+                       receipt_sha:$rsha, causal_group:$rsha, causal_index:2
+                     }))
+                   RETURN e.tag AS claimed, question_before_state, question_closed,
+                          CASE WHEN question_closed THEN $closed_state
+                               ELSE question_before_state END AS question_state"""),
                 dict(tree=name, tag=tag, mn=pr['m'], mv=effective_metric, v=verdict,
                      mg=measurement_grade,   # AG3: 측정 출처등급(server_regenerated/client_asserted) 봉인
                      freshen=freshen_anchor,   # novel-anchor freshen: CAS 탈출은 앵커-데모트 partial 동일값 재제출만
                      script=sealed_script_path, sha=stored_sha, rp=sealed_result_path,
                      source_script=source_script_path, source_rp=source_result_path,
+                     history_payload_sha256=history_payload_sha256,
                      result_sha256=result_sha, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
@@ -1226,15 +3011,36 @@ class JudgementService:
                      replay_status=replay_status,   # P0a: producer replay 상태(not_attempted/verified/mismatch/not_replayable)
                      replay_reason=replay_reason, regenerated_metric=regenerated_metric,
                      rsha=rsha, target_id=target_id, prev_rsha=prev_rsha,   # G1: 내용주소 receipt + 체인 포인터
+                     has_target=bool(target_id),
+                     close_question=close_question_from_verdict,
+                     closure_id=closure_id, open_state='OPEN', closed_state='CLOSED',
                      engine_rule_sha=ENGINE_RULE_SHA,   # jp1: 판관 정체성(v2 봉인 필드) persist — 누락=위양성 mismatch
                      csha=csha,   # S4: 판정 시점 comment 봉인 미러 + receipt v3 필드 persist
+                     cycle_event_id=cycle_event_id,
+                     cycle_payload=cycle_payload_json,
+                     cycle_payload_closed=cycle_payload_closed_json,
+                     test_result_event_id=test_result_event_id,
+                     test_result_payload=test_result_payload_json,
+                     question_close_event_id=question_close_event_id,
+                     question_close_payload=question_close_payload_json,
+                     history_event_ids=[
+                         test_result_event_id,
+                         *([question_close_event_id] if target_id else []),
+                         *([cycle_event_id] if cycle_event_id is not None else []),
+                     ],
+                     submit_request_sha256=submit_request_sha256,
                      lsha=_lsha, lkey=_lkey,
                      lock_cmd=(_lock or {}).get('cmd'), lock_env=_env_sha,
                      lock_payload_json=_lock_payload_json, tw=temporal_witness,
                      efresh=efresh,                     # jp4: 판관 자기진단 관측화(unchecked/fresh/stale_code/incapable/indeterminate)
                      boot_sha=(fresh or {}).get('boot_git_sha'),   # jp4: 노드-레벨 판관 신원 provenance(영수증 봉인은 jp1 engine_rule_sha 가 정본)
-                     eu_felt=eu.felt, eu_true=eu.true, eu_hall=eu.hallucinated,
-                     eu_reasons=list(eu.reasons), eu_bf=round(eu.bf, 6)))]
+                     eu_open_felt=eu_open.felt, eu_open_true=eu_open.true,
+                     eu_open_hall=eu_open.hallucinated,
+                     eu_open_reasons=list(eu_open.reasons), eu_open_bf=round(eu_open.bf, 6),
+                     eu_closed_felt=eu_closed.felt, eu_closed_true=eu_closed.true,
+                     eu_closed_hall=eu_closed.hallucinated,
+                     eu_closed_reasons=list(eu_closed.reasons), eu_closed_bf=round(eu_closed.bf, 6),
+                     forceful=sorted(FORCEFUL_SOURCES)))]
         for tr in prov_triples(name, tag, sealed_script_path, sealed_result_path,
                                verdict, stored_sha, ts):
             if tr.get('kind'):
@@ -1269,8 +3075,13 @@ class JudgementService:
             raise HTTPException(422, f'pre-commit fsck 거부(쓰기 전 — 원장/스탬프 드리프트): '
                                      f'{[(f.check_id, f.severity) for f in _seat]}')
         try:
-            tx_result = self.kg_tx(GuardedKgOps(ops))
+            tx_result = self._ledger_transaction(GuardedKgOps(ops))
+        except WriterFenceLost:
+            raise
         except KgTxGuardFailed:
+            raise_after_locked_budget_rejection(
+                self.kg, name, 'submit_test_result'
+            )
             raise HTTPException(
                 409, '동시/재채점 차단 — receipt tip CAS 불일치(트랜잭션 전체 rollback)')
         # #M5: 원자 CAS claim 결과 판정 — 첫 op(가드된 판결 SET)이 0행이면 동시 submit 이 이미 점유 → 409.
@@ -1279,29 +3090,60 @@ class JudgementService:
         if (isinstance(tx_result, list) and len(tx_result) == len(ops)
                 and isinstance(tx_result[0], list) and not tx_result[0]):
             raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
-        self.hist(name, 'test_result', tag, dict(value=effective_metric, baseline=pr['b'],
-                                                 delta=round(v.delta, 4), verdict=verdict,
-                                                 script=sealed_script_path,
-                                                 result_path=sealed_result_path,
-                                                 source_script_path=source_script_path,
-                                                 source_result_path=source_result_path,
-                                                 result_sha256=result_sha,
-                                                 measurement_lock_sha=_lsha,
-                                                 novel=v.novel, script_sha=stored_sha,
-                                                 freshen=freshen_anchor,
-                                                 replay_status=replay_status,
-                                                 replay_reason=replay_reason,
-                                                 regenerated_metric=regenerated_metric))
+        first_row = (tx_result[0][0]
+                     if isinstance(tx_result, list) and tx_result
+                     and isinstance(tx_result[0], list) and tx_result[0]
+                     and isinstance(tx_result[0][0], dict) else {})
+        question_closed = bool(first_row.get('question_closed'))
+        if cycle_event_id is not None and question_closed:
+            cycle_payload = cycle_payload_closed
+        question_before_state = first_row.get('question_before_state')
+        question_state = first_row.get('question_state')
+        question_transition = None
+        if target_id and question_before_state in {state.value for state in QuestionState}:
+            question_transition = step_question(
+                QuestionState(question_before_state),
+                QuestionEvent.ADJUDICATED,
+                verdict=verdict,
+                receipt_sha=rsha,
+                assurance_level=sealed_assurance['val'],
+                qualitative_self_report=qual_self_report,
+            )
+        eu = eu_closed if question_closed else eu_open
+        test_projected = self.hist(
+            name,
+            'test_result',
+            tag,
+            test_result_payload,
+            event_id=test_result_event_id,
+        )
+        history_pending = test_projected is False
+        if test_projected is False:
+            if cycle_event_id is not None:
+                raise HTTPException(
+                    503, 'test result history pending; causal successors deferred'
+                )
+        if question_closed and test_projected is not False:
+            close_projected = self.hist(
+                name,
+                'question_close',
+                tag,
+                question_close_payload,
+                event_id=question_close_event_id,
+            )
+            if close_projected is False:
+                history_pending = True
+                if cycle_event_id is not None:
+                    raise HTTPException(
+                        503, 'question close history pending; causal successors deferred'
+                    )
         # EXTAUDIT S3b/S7b: VAL 재도출 — L3 은 attestation(allow-list)+engine floor+temporal witness 가 다 설 때.
-        _display, _assur = response_assurance(
-            verdict=verdict, current_receipt_sha=rsha, measurement_grade=measurement_grade,
-            replay_status=replay_status, assurance_tier_resolved=tier, attested_by_did=attested_by_did,
-            engine_rule_sha=ENGINE_RULE_SHA, tree_attestors=attestors,
-            engine_rule_floor=effective_floor(), temporal_witness=temporal_witness,
-            measurement_lock_bound=bool(_lsha))
-        return {'ok': True, 'freshen': freshen_anchor,
-                'verdict': verdict, 'verdict_display': _display, 'assurance': _assur,
+        response = {'ok': True, 'freshen': freshen_anchor,
+                'history_pending': history_pending,
+                'verdict': verdict, 'verdict_display': sealed_display,
+                'assurance': sealed_assurance,
                 'delta': round(v.delta, 4), 'novel': v.novel,
+                'novel_server_anchored': novel_server_anchored,
                 'lakatos': lakatos_status, 'metric_verdict': v.verdict,
                 'requires_human': bool(decided.get('requires_human')),
                 # #H3: sha 영수증이 서버 파일재계산으로 검증됐는지(False=inline/미존재 → 정직 fallback, client 값).
@@ -1313,14 +3155,23 @@ class JudgementService:
                 'measurement_lock_sha': _lsha,
                 'replay_status': replay_status, 'replay_reason': replay_reason,
                 'regenerated_metric': regenerated_metric,
+                'question': ({'target': target_id, 'closed': question_closed,
+                              'state': question_state,
+                              'transition': (question_transition.transition_id
+                                             if question_transition else None)}
+                             if target_id else None),
                 # G10: authorship 은 서명에서 유도(무cert=None) — client 문자열이 아니다.
                 'attested_by': attested_by_did,
-                'eureka': {'felt': eu.felt, 'true': eu.true, 'hallucinated': eu.hallucinated,
-                           'reasons': list(eu.reasons), 'bf': round(eu.bf, 3)},
+                'eureka': (sealed_eureka_closed if question_closed
+                           else sealed_eureka_open),
                 'rule': v.reason,
-                'replay_authoritative': replay_inputs_bound and _lsha is not None,
+                'replay_authoritative': test_result_summary['replay_authoritative'],
                 'replay': (replay_command(sealed_script_path, sealed_result_path)
                            if replay_inputs_bound and _lsha is not None else None)}
+        if cycle_event_id is not None:
+            response['_cycle_event_id'] = cycle_event_id
+            response['_cycle_payload'] = cycle_payload
+        return response
 
     def load_receipt_chain(self, name: str, tag: str) -> dict:
         """노드의 :VerdictReceipt 체인 + 현 포인터 로드(G1). fold/verify 의 read 경로."""
@@ -1346,6 +3197,8 @@ class JudgementService:
                             r.judge_script_sha AS judge_script_sha, r.closes_question AS closes_question,
                             r.credence AS credence, r.baseline_lineage AS baseline_lineage,
                             r.registered_at AS registered_at,
+                            r.anchor_bundle_sha256 AS anchor_bundle_sha256,
+                            r.anchor_bundle_json AS anchor_bundle_json,
                             r.tree AS tree, r.tag AS tag, r.target_id AS target_id,
                             r.metric_value AS metric_value, r.novel_confirmed AS novel_confirmed,
                             r.lakatos_status AS lakatos_status, r.judged_at AS judged_at,
@@ -1357,7 +3210,9 @@ class JudgementService:
                             r.result_path AS result_path, r.result_sha256 AS result_sha256,
                             r.measurement_lock_sha AS measurement_lock_sha,
                             r.source_script_path AS source_script_path,
-                            r.source_result_path AS source_result_path""", tree=name, tag=tag)
+                            r.source_result_path AS source_result_path,
+                            r.history_payload_sha256 AS history_payload_sha256""",
+                     tree=name, tag=tag)
         return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
                 'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
 
@@ -1373,6 +3228,7 @@ class JudgementService:
         return {'ok': ok, 'rederived': folded['verdict'], 'cache': chain['cache_verdict'],
                 'from_receipt': folded['from_receipt']}
 
+    @_serialized_ledger_command
     def demote_stale_canonical(self, name: str, *, dry_run: bool = True) -> dict:
         """jp1 stale-CANONICAL 재심 스윕(opt-in ops verb) — '오늘 판관이면 이걸 여전히 CANONICAL 이라
         부를까?'를 원장 수준에서 집행. head receipt 의 sealed engine_rule_sha 가 유효 floor
@@ -1382,6 +3238,8 @@ class JudgementService:
         인간 잠금(valid_until_rebutted=false)은 강등하지 않고 skipped_locked 로 보고만.
         demoted 카운트가 novel 오라클(stale_canonical_auto_demoted)의 실측값."""
         floor = effective_floor()
+        if not dry_run:
+            self._require_ledger_ready()
         rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {verdict:'CANONICAL'})
                   OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(r:VerdictReceipt {receipt_sha:e.current_receipt_sha})
                   RETURN e.tag AS tag, e.current_receipt_sha AS prev_rsha,
@@ -1397,6 +3255,8 @@ class JudgementService:
                'skipped_locked': locked, 'demoted': []}
         if dry_run:
             return out
+        for candidate in candidates:
+            self._project_pending_admin_predecessors(name, candidate['tag'])
         ts = datetime.now(timezone.utc).isoformat()
         for x in candidates:
             prev = x.get('prev_rsha')
@@ -1405,7 +3265,10 @@ class JudgementService:
                 verdict_source='engine', metric_name=None, metric_value=None,
                 novel_confirmed=None, lakatos_status=None, judged_at=ts,
                 judge_script_sha=None, prev_receipt_sha=prev, engine_rule_sha=ENGINE_RULE_SHA))
-            done = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+            done = self._ledger_write('''MATCH (t:LakatosTree {name:$tree})
+                      SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                      WITH t
+                      MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                       WHERE e.verdict='CANONICAL'
                         AND coalesce(e.current_receipt_sha,'') = coalesce($prev,'')
                       SET e.verdict='former_canonical', e.verdict_source='engine',

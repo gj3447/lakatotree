@@ -22,7 +22,7 @@ from fastapi import HTTPException
 
 import server.contexts.tree.judgement_service as js_mod
 from lakatos.engine_identity import ENGINE_RULE_SHA
-from lakatos.verdicts import receipt_content_sha
+from lakatos.verdicts import receipt_content_sha, verdict_history_payload_sha
 from server.contexts.tree.judgement_service import JudgementService
 from server.contexts.tree.schemas import VerdictIn
 
@@ -45,6 +45,22 @@ class _LedgerKg:
 
     def __call__(self, query, **p):
         tag = p.get('tag')
+        if 'properties(o) AS outbox' in query:
+            node = self.nodes.get(tag)
+            receipt = next(
+                (row for row in self.receipts
+                 if row.get('receipt_sha') == (node or {}).get('current_receipt_sha')),
+                None,
+            )
+            return [{
+                'receipt_sha': (node or {}).get('current_receipt_sha'),
+                'current_verdict': (node or {}).get('verdict'),
+                'current_verdict_source': (node or {}).get('verdict_source'),
+                'receipt': receipt,
+                'outbox': None,
+                'demoted_current': None,
+                'demoted_receipt': None,
+            }] if node else []
         # ── set_verdict CANONICAL: pre 스냅샷 read ──
         if 'HAS_ARGUMENT' in query and 'RETURN cur.verdict AS verdict' in query:
             n = self.nodes.get(tag)
@@ -56,11 +72,12 @@ class _LedgerKg:
             row['assurance_tier'] = None
             if 'AS prev_receipt_sha' in query:            # R4: 포인터 스냅샷
                 row['prev_receipt_sha'] = n.get('current_receipt_sha')
-            if 'AS old_tag' in query:                     # R4: 직전 canonical 스냅샷
-                old = next(((t, o) for t, o in self.nodes.items()
-                            if o.get('verdict') == 'CANONICAL' and t != tag), None)
-                row['old_tag'] = old[0] if old else None
-                row['old_prev'] = old[1].get('current_receipt_sha') if old else None
+            if 'oldrecs' in query:                        # R4: 직전 canonical 전체 스냅샷
+                row['oldrecs'] = [
+                    {'tag': old_tag, 'prev': old.get('current_receipt_sha')}
+                    for old_tag, old in self.nodes.items()
+                    if old.get('verdict') == 'CANONICAL' and old_tag != tag
+                ]
             return [row]
         # ── set_verdict CANONICAL: 원자 CAS write ──
         if "SET cur.verdict='CANONICAL'" in query:
@@ -175,7 +192,7 @@ def test_admin_verdict_mints_receipt_and_tamper_detected(monkeypatch):
 
 
 # ── guard_mechanism (양성): v1 null-스펙 receipt + 강등 동반 + 복구 오라클 ──────────────────
-def test_promotion_and_demotion_mint_v1_receipts(monkeypatch):
+def test_promotion_and_demotion_mint_v6_receipts(monkeypatch):
     _floor_pass(monkeypatch)
     old_head = 'o1' * 32
     kg = _LedgerKg({'n': _scored_node(), 'oldc': {'verdict': 'CANONICAL', 'verdict_source': 'admin',
@@ -203,8 +220,22 @@ def test_promotion_and_demotion_mint_v1_receipts(monkeypatch):
     ts = kg.last_promo_ts   # 구현이 파라미터로 넘긴 judged_at (fake 가 캡처)
     refields = dict(tree='T', tag='n', target_id=None, verdict='CANONICAL', verdict_source='admin',
                     metric_name=None, metric_value=None, novel_confirmed=None, lakatos_status=None,
-                    judged_at=ts, judge_script_sha=None, prev_receipt_sha='r1' * 32,
-                    engine_rule_sha=ENGINE_RULE_SHA)
+        judged_at=ts, judge_script_sha=None, prev_receipt_sha='r1' * 32,
+                    engine_rule_sha=ENGINE_RULE_SHA,
+                    history_payload_sha256=verdict_history_payload_sha({
+                        'request': VerdictIn(verdict='CANONICAL').model_dump(),
+                        'promoted': {
+                            'tag': 'n', 'verdict': 'CANONICAL',
+                            'verdict_source': 'admin',
+                            'prev_receipt_sha': 'r1' * 32,
+                        },
+                        'demoted': {
+                            'tag': 'oldc', 'verdict': 'former_canonical',
+                            'verdict_source': 'engine',
+                            'prev_receipt_sha': old_head,
+                            'receipt_sha': demo['receipt_sha'],
+                        },
+                    }))
     assert receipt_content_sha(refields) == promo['receipt_sha'], \
         'v2 인코딩 재유도 불일치 — 필드셋/정규화가 스펙 밖(인코딩 드리프트)'
     # (4) 두 노드 verify 모두 정방향.

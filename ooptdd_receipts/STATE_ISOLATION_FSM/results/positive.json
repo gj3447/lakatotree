@@ -1,0 +1,11 @@
+{
+  "run": "restored-positive",
+  "command": ".venv/bin/python ooptdd_receipts/run_all.py",
+  "exit_code": 0,
+  "target": "STATE_ISOLATION_FSM",
+  "target_result": "GREEN",
+  "target_done": 3,
+  "target_total": 3,
+  "suite_green": 54,
+  "suite_total": 54
+}

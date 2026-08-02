@@ -7,12 +7,21 @@ felt/true/hallucinated 를 동일 kg_tx op-list 안에서 산출·영속(원자�
 import importlib
 import os
 
+import pytest
+
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
+
 
 def load_app():
     os.environ.setdefault('NEO4J_URI', 'bolt://localhost:7687')
     os.environ.setdefault('NEO4J_USER', 'neo4j')
     os.environ.setdefault('NEO4J_PASSWORD', 'test')
     return importlib.import_module('server.app')
+
+
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
 
 
 def test_eureka_classify_importable_from_package():
@@ -36,7 +45,7 @@ def _pred_eureka_without_noise(q, **kw):
     return []
 
 
-def test_submit_emits_true_eureka_in_same_tx(monkeypatch):
+def test_submit_persists_felt_but_not_true_eureka_without_actual_closure(monkeypatch):
     app = load_app()
     txs = []
     monkeypatch.setattr(app, 'kg', _pred_eureka)
@@ -46,7 +55,9 @@ def test_submit_emits_true_eureka_in_same_tx(monkeypatch):
         metric_value=0.1, script='j.py', novel_measured=0.9))   # 큰 개선(delta=0.4) + novel 적중
     assert out['verdict'] == 'progressive_unverified'
     assert out['eureka']['felt'] is True
-    assert out['eureka']['true'] is True
+    # A declared pred_closes target is not an achieved closure. This unverified
+    # verdict retains the real question, so Eureka may be felt but cannot be true.
+    assert out['eureka']['true'] is False
     assert out['eureka']['hallucinated'] is False
     # 같은 단일 tx 안에서 영속 (판결 SET 과 원자적, 2차 비원자 쓰기 금지)
     assert len(txs) == 1

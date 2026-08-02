@@ -30,7 +30,7 @@ class _CaptureKg:
 
     def __call__(self, cypher, **params):
         self.ops.append((cypher, params))
-        return [{"t": 1}]
+        return [{"t": 1, "before_state": "OPEN"}]
 
 
 class _CaptureKgTx:
@@ -88,13 +88,18 @@ def test_writer_upsert_questions_tree_scoped():
 def test_legacy_global_unique_constraint_no_longer_satisfies():
     """종전 name-전역 UNIQUE 제약만 있는 KG 는 요구 제약 미충족으로 진단된다(마이그레이션 강제)."""
     report = diagnose_required_constraints([
-        {"name": "lkt_open_question_name_unique", "labelsOrTypes": ["OpenQuestion"],
+        {"name": "lkt_open_question_name_unique", "type": "UNIQUENESS", "entityType": "NODE",
+         "labelsOrTypes": ["OpenQuestion"],
          "properties": ["name"]},
-        {"name": "lkt_tree_name_unique", "labelsOrTypes": ["LakatosTree"], "properties": ["name"]},
-        {"name": "lkt_node_name_unique", "labelsOrTypes": ["LakatosNode"], "properties": ["name"]},
-        {"name": "lkt_research_event_id_unique", "labelsOrTypes": ["ResearchEvent"],
+        {"name": "lkt_tree_name_unique", "type": "UNIQUENESS", "entityType": "NODE",
+         "labelsOrTypes": ["LakatosTree"], "properties": ["name"]},
+        {"name": "lkt_node_name_unique", "type": "UNIQUENESS", "entityType": "NODE",
+         "labelsOrTypes": ["LakatosNode"], "properties": ["name"]},
+        {"name": "lkt_research_event_id_unique", "type": "UNIQUENESS", "entityType": "NODE",
+         "labelsOrTypes": ["ResearchEvent"],
          "properties": ["id"]},
-        {"name": "lkt_research_tradition_id_unique", "labelsOrTypes": ["ResearchTradition"],
+        {"name": "lkt_research_tradition_id_unique", "type": "UNIQUENESS", "entityType": "NODE",
+         "labelsOrTypes": ["ResearchTradition"],
          "properties": ["tradition_id"]},
     ])
     assert report["ok"] is False
@@ -105,7 +110,8 @@ def test_legacy_global_unique_constraint_no_longer_satisfies():
 def test_composite_unique_constraint_satisfies():
     """(tree, name) 복합 UNIQUE 가 있으면 OpenQuestion 요구 제약 충족."""
     report = diagnose_required_constraints([
-        {"name": "lkt_open_question_tree_name_key", "labelsOrTypes": ["OpenQuestion"],
+        {"name": "lkt_open_question_tree_name_key", "type": "UNIQUENESS", "entityType": "NODE",
+         "labelsOrTypes": ["OpenQuestion"],
          "properties": ["tree", "name"]},
     ])
     assert "OpenQuestion.(tree+name)" in report["present"]

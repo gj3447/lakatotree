@@ -20,6 +20,13 @@ register_prediction + submit_result)나 set_verdict 로 갈아타면 계속 채�
   영수증은 불멸이라(G1/G9 — 보상 롤백·cascade 삭제 양쪽 하드가드) 이 술어는 단조 증가한다.
   저장소 재파생이므로 재시작·워커 증설에도 같은 답(S5 내구: fresh run == resume).
 
+★권위와 동시성:
+  · ``budget_state`` 선조회는 빠른 429/미리보기용 진단일 뿐 권위가 아니다. 실제 submit/set_verdict
+    첫 mutation statement 가 트리 write lock 을 먼저 얻고, *그 락을 보유한 채* 같은 scored-node
+    술어를 다시 센다. 따라서 서로 다른 프로세스의 판결 verb 도 budget=1 의 마지막 자리를 동시에
+    소비할 수 없다. guard 가 0행이면 트랜잭션 전체가 rollback 되고 strict readback 으로 429/409/500을
+    구분한다. KG 장애나 malformed budget 은 mutation 자체가 성립하지 않아 fail-closed 다.
+
 ★정직한 잔여 비대칭(숨기지 않고 여기 박아둔다):
   · 거부 ⊋ 소모 — 이미 세어진 노드의 freshen 재제출/행정 이동도 소진 트리에선 거부된다(새 소모는
     없는데 막는다). 우회가 아니라 과잉거부(안전한 방향)이며, 회복은 예산 상향 또는 새 트리 분기.
@@ -31,17 +38,13 @@ register_prediction + submit_result)나 set_verdict 로 갈아타면 계속 채�
     'engine'(FORCEFUL)으로 덮고 영수증을 달면 그 노드가 *그때 처음* 집계된다 = 게이트 밖 +1 소모.
     방향은 과대집계(안전)이고, 현행 승격 경로는 판결 영수증을 같이 남겨 이미 집계되므로 신규 노드엔
     안 생긴다 — 잔존 표면은 영수증 이전 시대 노드뿐.
-  · 조회 실패 = 무제한(fail-safe, budget_state 참조) — 정지는 KG 가용성에 *조건부*다.
-  · TOCTOU — 동시 verb 둘이 같은 used 를 읽어 상한을 넘길 수 있다(soft 루프 상한, race-proof 아님).
-  · ★상한 자체가 self-raisable — 서두 원칙("에이전트가 고를 수 있는 정지는 정지가 아니다")의 잔여 구멍.
-    cycle_budget 은 writer.py upsert 에서 plain last-write-wins 다(바로 위 assurance_tier 와 달리 단조
-    ratchet 이 *없다*). 소진된 에이전트가 같은 트리에 create_tree(name, cycle_budget=N) 을 부르면 자기
-    천장을 올린다: create_tree 는 채점 verb 가 아니라 이 게이트 밖이고, tier 게이트(assurance.VERB_GATES)
-    대상도 아니며, MCP/REST 표면엔 운영자↔에이전트 구분이 없어 부를 자격을 가른 것도 없다(거부 detail 과
-    advice 레지스트리가 그 상향을 *다음 수로 권하기까지* 한다 — 협조 전제라 정직한 안내다). 즉 verb 교체
-    우회는 실제로 막혔지만 *상한 선택* 경로는 열려 있다 ⇒ 이 정지는 협조적 에이전트에만 서고, 적대적
-    에이전트엔 서지 않는다. ratchet 은 운영자↔에이전트 authn 구분이 전제인데 현 표면엔 그 구분이 없어
-    사용자 설계 결정으로 남긴다 — 그때까지 이 코드는 무조건적 정지를 갖지 않는다.
+  · 진단 선조회 실패는 미선언처럼 보일 수 있지만, mutation 내부 락-가드는 생략되지 않는다. 즉 UX
+    선조회는 fail-open 이어도 판결 write 는 fail-closed 다. dry_run 은 애초에 write/소모가 없어 예외다.
+  · ★상한 self-raise 마찰(2026-08-01, q-selfdev-budget-ratchet): create_tree 경로에서 *기존 예산
+    상향* 은 confirm_budget_raise=true 필수(미확인 409). attestor_dids 가 있으면 write-cert 도 필수
+    (assurance_tier 쓰기와 대칭). writer LWW 는 유지하되 service 게이트가 무마찰 상향을 막는다.
+    잔여: 확인 플래그 자체를 아는 적대 에이전트는 여전히 상향 가능 — 운영자 authn 구분 전까지
+    완전 정지는 아니다. 다만 우연/자동화 루프의 무음 self-raise 는 닫혔다.
 # KG: span_lakatotree_engine / G3_one_verb_honest_cycle
 """
 
@@ -61,6 +64,26 @@ _SCORED_NODE = (
     "OR size([(e)-[:HAS_RECEIPT]->(r:VerdictReceipt) "
     "WHERE coalesce(r.receipt_kind,'verdict') <> 'prediction' | 1]) > 0")
 
+LOCKED_BUDGET_GUARD = (
+    # Neo4j's documented dummy-property lock: the NODE write lock is held to
+    # transaction end, while REMOVE leaves no synthetic domain state behind.
+    "SET t._cycle_budget_lock = true "
+    "REMOVE t._cycle_budget_lock "
+    "WITH t, COUNT { MATCH (t)-[:HAS_NODE]->(budget_node) WHERE "
+    "budget_node.verdict_source IN $forceful "
+    "OR size([(budget_node)-[:HAS_RECEIPT]->(budget_receipt:VerdictReceipt) "
+    "WHERE coalesce(budget_receipt.receipt_kind,'verdict') <> 'prediction' | 1]) > 0 "
+    "} AS budget_used "
+    "WITH t, budget_used, CASE "
+    "WHEN t.cycle_budget IS NULL THEN 'unlimited' "
+    "WHEN valueType(t.cycle_budget) STARTS WITH 'INTEGER' "
+    "AND t.cycle_budget >= 0 AND budget_used < t.cycle_budget THEN 'proceed' "
+    "WHEN valueType(t.cycle_budget) STARTS WITH 'INTEGER' "
+    "AND t.cycle_budget >= 0 THEN 'exhausted' ELSE 'corrupt' END AS budget_status "
+    "WHERE budget_status IN ['unlimited','proceed'] "
+    "WITH t "
+)
+
 _STATE_CYPHER = (
     "MATCH (t:LakatosTree {name:$tree}) "
     "OPTIONAL MATCH (t)-[:HAS_NODE]->(e) "
@@ -75,12 +98,9 @@ def budget_state(kg, name: str) -> tuple[int | None, int]:
     리셋돼 상한이 허구가 된다. 여기선 이미 판결을 받은 노드를 세어 파생하므로 재시작 후 resume 이
     fresh run 과 같은 답을 낸다.
 
-    ★fail-safe(정직한 한계): 조회 실패 = (None, 0) = *무제한*. fail-CLOSED 가 아니다 — KG 부분장애
-      때 예산이 조용히 우회되는 soft bypass 이고, 그래서 "에이전트 자기판단과 독립"은 KG 가용성에
-      조건부인 주장이다(무조건적 정지가 아니다). 근거: 이 경로는 fake-heavy 라(CLAUDE.md §4)
-      KG-less 테스트/오프라인 소비자가 실 neo4j 없이 돌아야 하고, 예산은 안전 게이트가 아니라 루프
-      상한이라 장애 때 연구를 멈추는 쪽이 더 해롭다고 판단. hard bound 가 필요하면 이 read 를
-      fail-closed 로 뒤집을 것(그 땐 KG 가용성이 전제).
+    이 read 는 빠른 거부와 dry-run 표시를 위한 비권위 진단이다. 조회 실패는 (None, 0)으로 돌려 기존
+    KG-less 소비자를 보존하지만, 실제 판결 write 는 ``LOCKED_BUDGET_GUARD`` 를 같은 mutation 안에서
+    반드시 실행하므로 장애/동시성으로 예산을 우회하지 못한다.
     """
     try:
         rows = kg(_STATE_CYPHER, tree=name, forceful=sorted(FORCEFUL_SOURCES))
@@ -91,8 +111,40 @@ def budget_state(kg, name: str) -> tuple[int | None, int]:
         return None, 0
 
 
+def strict_budget_state(kg, name: str) -> tuple[int | None, int]:
+    """Fail-closed diagnostic used after the lock-held mutation guard rejects."""
+
+    try:
+        rows = kg(_STATE_CYPHER, tree=name, forceful=sorted(FORCEFUL_SOURCES))
+    except Exception as exc:  # noqa: BLE001 - this path classifies a rejected write
+        raise HTTPException(503, "cycle budget readback unavailable") from exc
+    if len(rows or []) != 1:
+        raise HTTPException(500, "cycle budget readback cardinality conflict")
+    if not ({"cycle_budget", "used"} & set(rows[0])):
+        # Narrow compatibility seam for pure unit fakes that do not model the
+        # diagnostic query. Real Neo4j always returns both aliases below.
+        return None, 0
+    budget = rows[0].get("cycle_budget")
+    used = rows[0].get("used")
+    if type(used) is not int or used < 0:
+        raise HTTPException(500, "cycle budget usage is corrupt")
+    if budget is None:
+        return None, used
+    if type(budget) is not int or budget < 0:
+        raise HTTPException(500, "cycle budget declaration is corrupt")
+    return budget, used
+
+
+def raise_after_locked_budget_rejection(kg, name: str, verb: str) -> None:
+    """Map a lock-held guard miss to quota exhaustion or a generic CAS conflict."""
+
+    budget, used = strict_budget_state(kg, name)
+    if budget is not None and used >= budget:
+        raise HTTPException(429, exhausted_detail(name, verb, budget, used))
+
+
 def remaining_budget(budget: int | None, used: int) -> int | None:
-    """잔여 — 미선언(None)이면 None(무제한). 음수는 0 clamp(TOCTOU 초과분을 음수로 흘리지 않는다)."""
+    """잔여 — 미선언(None)이면 None(무제한). 레거시 초과 상태는 0으로 clamp한다."""
     return None if budget is None else max(0, budget - used)
 
 
@@ -105,7 +157,10 @@ def exhausted_detail(name: str, verb: str, budget: int, used: int) -> str:
 
 
 def assert_scoring_budget(kg, name: str, verb: str) -> None:
-    """채점 verb 진입 게이트 — 소진 트리면 *판결 민팅 전* 429. 미선언=무제한(no-op, 거동 불변).
+    """채점 verb의 빠른 진단 게이트. 원자적 권위는 mutation 내부 ``LOCKED_BUDGET_GUARD``다.
+
+    소진 트리면 비싼 판정 작업 전에 429를 돌리고, 미선언이면 no-op이다. 이 선조회가 실패하거나
+    오래돼도 실제 판결 mutation은 락을 잡고 다시 세므로 이를 안전 경계로 해석하면 안 된다.
 
     429(Too Many Requests) 인 이유: 이건 요청의 잘못(4xx-semantic)이 아니라 트리에 걸린 *할당량*이다 —
     같은 요청이 예산 상향 후엔 그대로 성립한다. 409(상태충돌)/403(권한)과 구분해 루프 드라이버가

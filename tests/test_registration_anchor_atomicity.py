@@ -24,17 +24,61 @@ class _Kg:
         self.tree = {"witness_dids": [WDID], "witness_threshold": None}
         self.node = {"tag": "n", "node_state": "DRAFT"}
         self.writes = []
+        self.outboxes = {}
 
     def __call__(self, q, **p):
         if "RETURN t.ontology AS ontology, t.research_layout" in q:
             return [dict(self.tree, ontology=None, research_layout=None,
                          layout_owner_did=None, layout_sig=None)]
         if "RETURN e.current_receipt_sha AS prev_rsha" in q:
-            return [{"prev_rsha": self.node.get("current_receipt_sha")}]
+            return [{
+                "prev_rsha": self.node.get("current_receipt_sha"),
+                "pred_receipt_sha": self.node.get("pred_receipt_sha"),
+                "pred_registered_at": self.node.get("pred_registered_at"),
+                "pred_prev_receipt_sha": self.node.get("pred_prev_receipt_sha"),
+                "pred_baseline_lineage": self.node.get("baseline_lineage"),
+                "pred_anchor_bundle_sha256": self.node.get("anchor_bundle_sha256"),
+                "pred_anchor_bundle_json": self.node.get("anchor_bundle_json"),
+                "pred_history_payload_sha256": self.node.get("history_payload_sha256"),
+                "pred_history_payload": (
+                    self.outboxes.get(
+                        f"ob-prediction-register-{self.node.get('pred_receipt_sha')}", {}
+                    ).get("payload")
+                ),
+                "pred_anchor_verified": self.node.get("pred_anchor_verified"),
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in q:
+            row = self.outboxes.get(p["id"])
+            return [dict(row)] if row is not None else []
         self.writes.append(q)
         if "SET e.pred_metric=$metric_name" in q:
             self.node.update(pred_metric=p["metric_name"], pred_registered_at=p["ts"],
-                             node_state="PREDICTED", current_receipt_sha=p["rsha"])
+                             node_state="PREDICTED", current_receipt_sha=p["rsha"],
+                             pred_receipt_sha=p["rsha"],
+                             pred_prev_receipt_sha=p.get("prev_rsha"),
+                             baseline_lineage=p["baseline_lineage"],
+                             anchor_bundle_sha256=p.get("anchor_bundle_sha256"),
+                             anchor_bundle_json=p.get("anchor_bundle_json"),
+                             history_payload_sha256=p.get("prediction_payload_sha256"))
+            if p.get("anchor_rows"):
+                self.node.update(
+                    pred_anchor_verified=True,
+                    pred_anchor_gen_time=p.get("anchor_gen_time"),
+                    pred_anchor_quorum=p.get("anchor_quorum"),
+                    pred_anchor_threshold=p.get("anchor_threshold"),
+                )
+            self.outboxes[p["history_event_id"]] = {
+                "id": p["history_event_id"],
+                "tree": p["tree"],
+                "op": "prediction_register",
+                "node_tag": p["tag"],
+                "payload": p["history_payload_json"],
+                "status": "pending",
+                "created_at": p["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": p["rsha"],
+            }
             return [{"tag": "n"}]
         if "e.pred_anchor_verified=true" in q:
             self.node.update(pred_anchor_verified=True, pred_anchor_gen_time=p["gt"])
@@ -44,8 +88,8 @@ class _Kg:
         return [[] for _ in ops]
 
 
-def _svc(kg):
-    return JudgementService(kg=kg, kg_tx=kg.tx, hist=lambda *a, **k: None,
+def _svc(kg, hist=None):
+    return JudgementService(kg=kg, kg_tx=kg.tx, hist=hist or (lambda *a, **k: None),
                             foundation=lambda n: None, reproducible_for_node=lambda n, t: None)
 
 
@@ -77,6 +121,57 @@ def test_invalid_anchor_does_not_consume_registration():
     assert out["ok"] is True and out["pred_anchor_verified"] is True
 
 
+def test_anchor_without_declared_witnesses_is_rejected_before_registration():
+    kg = _Kg()
+    kg.tree["witness_dids"] = []
+    base = PredictionIn(
+        metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0
+    )
+    digest = spec_digest({
+        key: value
+        for key, value in base.model_dump().items()
+        if key not in ("write_cert", "temporal_anchor", "temporal_anchors")
+    })
+    anchored = base.model_copy(update={
+        "temporal_anchor": _anchor_over(
+            base, digest, "2026-07-23T06:00:00+00:00"
+        )
+    })
+
+    with pytest.raises(Exception) as error:
+        _svc(kg).register_prediction("T", "n", anchored)
+
+    assert getattr(error.value, "status_code", None) == 422
+    assert kg.node.get("pred_registered_at") is None
+    assert kg.outboxes == {}
+
+
+def test_corrupt_witness_threshold_is_rejected_even_without_anchors():
+    kg = _Kg()
+    kg.tree["witness_threshold"] = -1
+
+    with pytest.raises(Exception) as error:
+        _svc(kg).register_prediction(
+            "T",
+            "n",
+            PredictionIn(metric_name="m", baseline_value=1.0),
+        )
+
+    assert getattr(error.value, "status_code", None) == 500
+    assert kg.node.get("pred_registered_at") is None
+    assert kg.outboxes == {}
+
+
+def test_single_and_list_anchor_surfaces_are_mutually_exclusive():
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        PredictionIn(
+            metric_name="m",
+            baseline_value=1.0,
+            temporal_anchor={"witness_did": "one"},
+            temporal_anchors=[],
+        )
+
+
 def test_valid_anchor_registration_still_works():
     """양성 통제: 유효 앵커 등록은 종전과 동일하게 성공 + persist."""
     kg = _Kg()
@@ -89,3 +184,86 @@ def test_valid_anchor_registration_still_works():
         temporal_anchor=good))
     assert out["pred_anchor_verified"] is True
     assert kg.node.get("pred_registered_at") is not None
+
+
+def test_anchor_receipt_marker_and_history_intent_are_one_registration_write():
+    kg = _Kg()
+    base = PredictionIn(
+        metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0
+    )
+    sd = {
+        k: v for k, v in base.model_dump().items()
+        if k not in ("write_cert", "temporal_anchor", "temporal_anchors")
+    }
+    good = _anchor_over(base, spec_digest(sd), "2026-07-23T06:00:00+00:00")
+
+    _svc(kg).register_prediction(
+        "T", "n", base.model_copy(update={"temporal_anchor": good})
+    )
+
+    registration = [q for q in kg.writes if "SET e.pred_metric=$metric_name" in q]
+    assert len(registration) == 1
+    assert "MERGE (rec:VerdictReceipt" in registration[0]
+    assert "MERGE (an:TemporalAnchor {id:anchor.id})" in registration[0]
+    assert "MERGE (o:OutboxEntry" in registration[0]
+    assert "SET e.pred_anchor_verified=true" in registration[0]
+
+
+def test_post_commit_history_crash_retries_from_sealed_anchor_bundle():
+    kg = _Kg()
+    base = PredictionIn(
+        metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0
+    )
+    sd = {
+        k: v for k, v in base.model_dump().items()
+        if k not in ("write_cert", "temporal_anchor", "temporal_anchors")
+    }
+    prediction = base.model_copy(update={
+        "temporal_anchor": _anchor_over(
+            base, spec_digest(sd), "2026-07-23T06:00:00+00:00"
+        )
+    })
+    calls = []
+
+    def crash_once(*args, **kwargs):
+        calls.append((args, kwargs))
+        if len(calls) == 1:
+            raise RuntimeError("history projection crash")
+
+    svc = _svc(kg, hist=crash_once)
+    with pytest.raises(RuntimeError, match="history projection crash"):
+        svc.register_prediction("T", "n", prediction)
+    assert kg.node.get("pred_anchor_verified") is True
+
+    retried = svc.register_prediction("T", "n", prediction)
+    assert retried["idempotent"] is True
+    assert retried["pred_anchor_verified"] is True
+    assert calls[0][1]["event_id"] == calls[1][1]["event_id"]
+
+
+def test_changed_anchor_is_not_an_exact_prediction_retry():
+    kg = _Kg()
+    base = PredictionIn(
+        metric_name="m", direction="lower", baseline_value=1.0, noise_band=0.0
+    )
+    sd = {
+        k: v for k, v in base.model_dump().items()
+        if k not in ("write_cert", "temporal_anchor", "temporal_anchors")
+    }
+    digest = spec_digest(sd)
+    first = base.model_copy(update={
+        "temporal_anchor": _anchor_over(
+            base, digest, "2026-07-23T06:00:00+00:00"
+        )
+    })
+    changed = base.model_copy(update={
+        "temporal_anchor": _anchor_over(
+            base, digest, "2026-07-23T06:00:01+00:00"
+        )
+    })
+    svc = _svc(kg)
+    svc.register_prediction("T", "n", first)
+
+    with pytest.raises(Exception) as exc:
+        svc.register_prediction("T", "n", changed)
+    assert getattr(exc.value, "status_code", None) == 409

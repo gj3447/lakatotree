@@ -1,0 +1,83 @@
+# Locked before any confirmatory corpus or measurement exists.  The adapter
+# drives the real backtest module and canonical MeasurementLock implementation.
+name: lakatotree-scientific-backtest-infrastructure
+target:
+  mode: in_process
+  callable: scientific_backtest_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: SBT-1
+    description: A confirmatory runner rejects a manifest whose raw bytes do not match the pre-recorded temporal anchor.
+    gate:
+      - {event: temporal_anchor_tamper_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:temporal_anchor_tamper_rejected
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: temporal_anchor_tamper_rejected
+  - id: SBT-2
+    description: The three real adapters receive label-free device input and distinguish improvement from preregistration and novelty.
+    gate:
+      - {event: three_adapter_trace_distinct, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:three_adapter_trace_distinct
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: three_adapter_trace_distinct
+  - id: SBT-3
+    description: Exact McNemar, power, Wilson, and Newcombe paired statistics reproduce locked golden vectors.
+    gate:
+      - {event: paired_statistics_golden_reproduced, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:paired_statistics_golden_reproduced
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: paired_statistics_golden_reproduced
+  - id: SBT-4
+    description: Canonical MeasurementLock verification turns RED after a locked dependency changes.
+    gate:
+      - {event: canonical_measurement_lock_tamper_red, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:canonical_measurement_lock_tamper_red
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: canonical_measurement_lock_tamper_red
+  - id: SBT-5
+    description: Development, invalid, and unreplayed outputs can never receive a scientific verified grade.
+    gate:
+      - {event: scientific_claim_grade_fail_closed, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:scientific_claim_grade_fail_closed
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: scientific_claim_grade_fail_closed
+  - id: SBT-6
+    description: The evaluated device input and parsed prediction chronology are bound to sealed source artifacts.
+    gate:
+      - {event: device_input_and_chronology_bound, op: ">=", count: 1}
+      - {event: chronology_semantic_tamper_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:device_input_and_chronology_bound
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: device_input_and_chronology_bound
+  - id: SBT-7
+    description: Confirmatory pseudoreplication and an underpowered three-gate sample plan are rejected before measurement.
+    gate:
+      - {event: sampling_independence_and_joint_power_rejected, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:sampling_independence_and_joint_power_rejected
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: sampling_independence_and_joint_power_rejected
+  - id: SBT-8
+    description: Crypto verification code and signed role separation are mandatory locked inputs to any confirmatory promotion.
+    gate:
+      - {event: signed_roles_and_crypto_dependency_bound, op: ">=", count: 1}
+    longinus:
+      kg_anchor: ref_site:SCIENTIFIC_BACKTEST:signed_roles_and_crypto_dependency_bound
+      source: scientific_backtest_receipt.py
+      symbol: verify
+      must_emit: signed_roles_and_crypto_dependency_bound

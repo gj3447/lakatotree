@@ -10,12 +10,19 @@ import os
 import pytest
 from fastapi import HTTPException
 
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
+
 
 def load_app():
     os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
     os.environ.setdefault("NEO4J_USER", "neo4j")
     os.environ.setdefault("NEO4J_PASSWORD", "test")
     return importlib.import_module("server.app")
+
+
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
 
 
 def install_fake_ports(monkeypatch, app, existing_nodes=("p1", "p2")):
@@ -57,11 +64,13 @@ def install_fake_ports(monkeypatch, app, existing_nodes=("p1", "p2")):
             return [{
                 "verdict": "proof", "verdict_source": None, "source_trust": None,
                 "novel_confirmed": False,
+                "oldrecs": [],
                 "args": [{"id": "T/human-eval", "attacks": None,
                           "by": "human:reviewer", "kind": "evaluation"}],
             }]
         if "QuestionClosure" in query:
-            return [{"name": params.get("qn")}]
+            return [{"name": params.get("qn"), "before_state": "OPEN",
+                     "after_state": "CLOSED", "transitioned": True}]
         if "RETURN q.name AS name" in query:
             return []
         if "RETURN e.tag AS tag" in query or "RETURN q.name AS name" in query:

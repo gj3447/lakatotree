@@ -178,3 +178,48 @@ def test_rival_observation_endpoint_requires_longinus(monkeypatch):
         )
     assert exc.value.status_code == 422
     assert "Longinus" in exc.value.detail
+
+
+def test_research_event_readback_exposes_exact_embedding_edges():
+    from server.contexts.tree.evidence_claim_service import EvidenceClaimService
+
+    queries = []
+
+    def fake_kg(query, **_params):
+        queries.append(query)
+        return [{
+            "id": "T/n/obs/o1",
+            "name": "T/n/obs/o1",
+            "realm": "internet",
+            "actor": "researcher",
+            "action": "fetch",
+            "evidence_refs": ["https://example.org/paper"],
+            "payload": '{"url":"https://example.org/paper","content_hash":"abc"}',
+            "created_at": "2026-07-28T00:00:00Z",
+            "lakatos_location": "protective_belt",
+            "theoretical_basis": "comparison",
+            "foundation_refs": ["foundation-a"],
+            "rival_links": [{
+                "programme": "rival-a",
+                "relation": "qualifies",
+                "rival_node": "baseline",
+                "comparison_axes": ["retention"],
+                "evidence_refs": ["https://example.org/paper"],
+            }],
+            "longinus_refs": [{
+                "sourceId": "source-a",
+                "sourcePath": "https://example.org/paper",
+                "layer": "external-primary",
+                "note": "baseline",
+            }],
+        }]
+
+    service = object.__new__(EvidenceClaimService)
+    service.kg = fake_kg
+    out = service.research_events("T", "n")
+
+    assert out["events"][0]["rival_links"][0]["comparison_axes"] == ["retention"]
+    assert out["events"][0]["longinus_refs"][0]["sourceId"] == "source-a"
+    assert out["events"][0]["foundation_refs"] == ["foundation-a"]
+    assert "EVIDENCE_FOR_RIVAL" in queries[0]
+    assert "BOUND_BY" in queries[0]

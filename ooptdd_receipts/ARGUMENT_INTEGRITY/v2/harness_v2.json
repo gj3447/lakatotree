@@ -1,0 +1,152 @@
+{
+  "activation_contract": {
+    "evidence_paths": {
+      "preregistration_request": "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/preregistration_request_20260802.json",
+      "receipts_readback": "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/server_receipts_readback_20260802.json",
+      "receipts_verify": "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/server_receipts_verify_20260802.json",
+      "server_response": "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/server_preregistration_response_20260802.json"
+    },
+    "required_path": "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/activation_20260802.json",
+    "required_status": "PREREGISTERED_UNJUDGED"
+  },
+  "artifact_allowlist": [
+    "activation.json",
+    "environment.json",
+    "judge.json",
+    "judge_input.json",
+    "mutation.json",
+    "negative.json",
+    "negative.junit.xml",
+    "positive.json",
+    "positive.junit.xml",
+    "protocol.json",
+    "receipt.json",
+    "restored.json",
+    "restored.junit.xml"
+  ],
+  "base_source": {
+    "commit": "1c4c57d691239950f6479b32e7531898fb7dcefa",
+    "fixture": "tests/integration/conftest.py",
+    "integration_test": "tests/integration/test_argument_integrity_real_neo4j.py",
+    "service": "server/contexts/tree/evidence_claim_service.py"
+  },
+  "claim_boundary": "This prospective replication tests only whether the frozen ARG-5 two-contender schedule is sensitive to replacing the creator-ownership comparison with an unconditional creator acknowledgement while preserving claim-token assignment. It makes no scheduler-completeness, migration, deployment, production-datastore, novelty, or scientific-progress claim.",
+  "classification": "prospective_confirmatory_replication_with_prior_exposure",
+  "experiment_id": "ARG5_UNCONDITIONAL_OWNERSHIP_COMPARISON_20260802",
+  "frozen_v1": {
+    "judge": {
+      "path": "judges/arg5_targeted_negative_oracle.py",
+      "sha256": "eedeacea5d066814708221e682ce0883f1566259812ae1a845d405aedffb9e20"
+    },
+    "preregistration": {
+      "path": "ooptdd_receipts/ARGUMENT_INTEGRITY/prereg_arg5_semantic_negative_20260801.json",
+      "sha256": "d9eb3d7194bf096284f9c33e926416deed2f9c35b7c812c5ec580dd8c5891b12"
+    },
+    "producer": {
+      "path": "ooptdd_receipts/ARGUMENT_INTEGRITY/real_harness.py",
+      "sha256": "7daeecee8e9e14dfa674779e1cffaf9eaca4f5d873f993168e6c3542fb2eca8c"
+    },
+    "protocol": {
+      "path": "ooptdd_receipts/ARGUMENT_INTEGRITY/harness.json",
+      "sha256": "d3a1140693a85a437278579872b8e648dfd2a58f970a3f4e58a67ccdef52372c"
+    }
+  },
+  "intervention": {
+    "assignment_bytes": "ON CREATE SET a:LakatosArgument, a._argument_create_claim=$create_claim,\n",
+    "assignment_count_after": 1,
+    "assignment_count_before": 1,
+    "expected_postimage_sha256": "b689fcdffdac1d5f8c4f5488cbab9791c02fb7bdde5d3cb94902464d46360b2a",
+    "mutation_id": "arg5-force-created-true-preserve-claim-assignment",
+    "new_bytes": "                   true AS created\n",
+    "new_count_after": 1,
+    "new_count_before": 0,
+    "old_bytes": "                   coalesce(actual._argument_create_claim=$create_claim, false) AS created\n",
+    "old_count_after": 0,
+    "old_count_before": 1,
+    "source": "server/contexts/tree/evidence_claim_service.py"
+  },
+  "invalidators": [
+    "Any protocol, activation, producer, validator, source, test, fixture, dependency, raw JUnit, judge-input, judge, receipt, or allowlist hash mismatch.",
+    "The mutation does not replace exactly one comparison or changes the claim assignment marker.",
+    "The targeted negative passes, times out, errors, skips, executes an unexpected test, or lacks the exact new semantic signature.",
+    "The raw negative contains infrastructure markers or the exposed v1 signature assert 0 == 2.",
+    "Positive or restored execution is not an exact one-test GREEN.",
+    "Server preregistration is absent, postdates measurement, differs on exact readback, has an invalid receipt chain, or already contains a result/verdict.",
+    "The canonical checkout changes during capture or any production datastore/configuration is consumed.",
+    "The judge metric is not the exact integer zero or deterministic replay differs."
+  ],
+  "locked_inputs": {
+    "dependency_lock_path": "uv.lock",
+    "dependency_lock_sha256": "a97800f3be810fc7b8edc79c5952ea5d1bf97e4a692195ec0cca5d96031c768a",
+    "fixture_sha256": "436afa332b8a49e0b3eccf2cf89b2927f61c8ecf40ab3996e381c3c406ed1791",
+    "integration_test_sha256": "f125e4f9ac4d10584c3e95d1eeab7bd9e6525841a36022f529a07b10962cbef9",
+    "legacy_helper_path": "ooptdd_receipts/ARGUMENT_INTEGRITY/real_harness.py",
+    "legacy_helper_sha256": "7daeecee8e9e14dfa674779e1cffaf9eaca4f5d873f993168e6c3542fb2eca8c",
+    "producer_path": "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/real_harness_v2.py",
+    "producer_sha256": "6eb0194905de0765a71bb715b283adea8f85a80bb31afbe70128a4c4805f3de2",
+    "requirements_path": "ooptdd_receipts/ARGUMENT_INTEGRITY/requirements.yaml",
+    "requirements_sha256": "f08b67b8e11feea310e7b80ac23b0214fd5d2f06edd6ad39907cf129fa40afb7",
+    "service_sha256": "6c9c579ee66f522a32f2a2e66a7c78ec55a0ce547887ad7412e348a130d9afa1",
+    "validator_path": "judges/argument_integrity_bundle_validator_v2.py",
+    "validator_sha256": "3a207e928f1753200a37226bfd0922ce14ba9e71f4bad9dae53d865fcd1694a0"
+  },
+  "metric": {
+    "baseline": 1,
+    "direction": "lower",
+    "name": "arg5_unconditional_ownership_comparison_gaps",
+    "noise_band": 0,
+    "predicted_result": 0,
+    "scale_type": "ratio",
+    "threshold": 0,
+    "unit": "gap_count"
+  },
+  "question": "Does the frozen ARG-5 schedule fail with the new assert 0 == 1 idempotence signature when creator acknowledgement is made unconditional but claim assignment remains intact?",
+  "run_manifest": {
+    "targeted_negative_control": {
+      "forbidden_failure_markers": [
+        "PoolError",
+        "ConnectionError",
+        "Connection refused",
+        "Connection reset",
+        "DockerException",
+        "ImageNotFound",
+        "OperationalError",
+        "TimeoutExpired",
+        "testcontainers.core",
+        "assert 0 == 2"
+      ],
+      "name": "arg5-unconditional-ownership-comparison",
+      "required_failed_tests": [
+        "test_arg_5_create_claim_has_one_owner_and_does_not_leak"
+      ],
+      "required_failure_markers": {
+        "test_arg_5_create_claim_has_one_owner_and_does_not_leak": [
+          "AssertionError",
+          "assert 0 == 1"
+        ]
+      },
+      "selected_tests": [
+        "test_arg_5_create_claim_has_one_owner_and_does_not_leak"
+      ]
+    },
+    "tests": {
+      "ARG-5-COMPARISON": "test_arg_5_create_claim_has_one_owner_and_does_not_leak"
+    }
+  },
+  "runtime": {
+    "datastore_environment_allowlist": [],
+    "future_timeout_seconds": 60,
+    "images": {
+      "neo4j:5": "neo4j@sha256:362542416de6c09a971484d1893878016cc3b5cdec166e54b1c824a220ecd6b9",
+      "postgres:16-alpine": "postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
+    },
+    "participants": 2,
+    "python": "3.14.x"
+  },
+  "schema_version": "lakatotree-argument-integrity-v2-protocol/v1",
+  "scientific_status": "UNJUDGED",
+  "server_preregistration": {
+    "node_tag": "arg5-semantic-negative-v2-20260802",
+    "tree_name": "ARGUMENT_INTEGRITY"
+  }
+}

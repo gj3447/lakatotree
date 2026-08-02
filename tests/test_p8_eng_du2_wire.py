@@ -7,12 +7,21 @@ TestResultIn → LakatosEvidence 배선으로 활성화.
 import importlib
 import os
 
+import pytest
+
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
+
 
 def load_app():
     os.environ.setdefault('NEO4J_URI', 'bolt://localhost:7687')
     os.environ.setdefault('NEO4J_USER', 'neo4j')
     os.environ.setdefault('NEO4J_PASSWORD', 'test')
     return importlib.import_module('server.app')
+
+
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
 
 
 def _pred_novel(q, **kw):   # novel 적중 → metric_verdict=progressive

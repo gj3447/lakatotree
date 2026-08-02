@@ -51,13 +51,14 @@ class _World:
             return [{"tag": p["tag"]}] if p["tag"] in self.nodes else []
         return []
 
-    def add_node(self, name, node):
+    def add_node(self, name, node, claim):
         self.pipeline.append("node")
-        self.nodes.setdefault(node.tag, {})
+        self.nodes.setdefault(node.tag, {"_cycle_created_by": claim})
         return {"ok": True}
 
     def register_prediction(self, name, tag, p):
         self.pipeline.append("predict")
+        self.nodes[tag]["pred_receipt_sha"] = "prediction-receipt"
         return {"ok": True}
 
     def submit_test_result(self, name, tag, r):
@@ -69,12 +70,27 @@ class _World:
         self.pipeline.append("critique")
         return {"ok": True}
 
+    def release_cycle_claim(self, name, tag, claim):
+        node = self.nodes.get(tag)
+        if node and node.get("_cycle_created_by") == claim:
+            node.pop("_cycle_created_by", None)
+
+    def compensate_cycle_node(self, name, tag, claim):
+        node = self.nodes.get(tag)
+        if node and node.get("_cycle_created_by") == claim:
+            del self.nodes[tag]
+            return "deleted"
+        return "not_owned"
+
 
 def _svc(world: _World) -> ProgrammeService:
     return ProgrammeService(
         kg=world.kg, hist=lambda *a, **k: None, pg=lambda: None,
         tree_data=lambda n: {"nodes": [], "frontier": []}, compute_metrics=lambda td: {},
-        add_node=world.add_node, register_prediction=world.register_prediction,
+        add_node=world.add_node,
+        compensate_cycle_node=world.compensate_cycle_node,
+        release_cycle_claim=world.release_cycle_claim,
+        register_prediction=world.register_prediction,
         submit_test_result=world.submit_test_result, add_critique=world.add_critique,
         standing=lambda n, t: {"stands": True}, insert_artifact=lambda a: None)
 
@@ -95,6 +111,7 @@ class _JudgeWorld:
     def __init__(self, budget=None, scored=0):
         self.budget, self.scored = budget, scored
         self.writes: list = []
+        self.outboxes: dict[str, dict] = {}
 
     def kg(self, q, **p):
         if "cycle_budget" in q:
@@ -102,8 +119,29 @@ class _JudgeWorld:
         if "RETURN t.ontology AS ontology" in q:
             return [{"ontology": None}]
         if "RETURN e.current_receipt_sha AS prev_rsha" in q:
-            return [{"prev_rsha": None}]
+            return [{
+                "prev_rsha": None,
+                "pred_receipt_sha": None,
+                "pred_registered_at": None,
+                "pred_prev_receipt_sha": None,
+                "pred_baseline_lineage": None,
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in q:
+            row = self.outboxes.get(p["id"])
+            return [dict(row)] if row is not None else []
         if "SET e.pred_metric" in q:
+            self.outboxes[p["history_event_id"]] = {
+                "id": p["history_event_id"],
+                "tree": p["tree"],
+                "op": "prediction_register",
+                "node_tag": p["tag"],
+                "payload": p["history_payload_json"],
+                "status": "pending",
+                "created_at": p["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": p["rsha"],
+            }
             return [{"tag": p.get("tag")}]
         if "RETURN e.pred_metric" in q:
             return [dict(m="p95", d="lower", b=0.5, nb=0.05, novel=None, vsrc=None, nmet=None,

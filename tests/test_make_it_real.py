@@ -8,7 +8,10 @@ GAP-T2-04: route-contract + TestClient 스모크 — CLI/MCP↔서버 route/seri
 import importlib
 import os
 
+import pytest
 from fastapi.testclient import TestClient
+
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
 
 
 def load_app():
@@ -18,11 +21,32 @@ def load_app():
     return importlib.import_module('server.app')
 
 
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
+
+
 def _capture_kg(monkeypatch, app, ret=None):
     calls = []
+    outboxes = {}
 
     def fake_kg(q, **kw):
         calls.append((q, kw))
+        if 'MERGE (o:OutboxEntry' in q and kw.get('history_event_id'):
+            outboxes[kw['history_event_id']] = {
+                'id': kw['history_event_id'], 'tree': kw['tree'],
+                'op': 'prediction_register', 'node_tag': kw['tag'],
+                'payload': kw['history_payload_json'], 'status': 'pending',
+                'created_at': kw['ts'],
+                'reason': 'prediction_register_commit_intent',
+                'applied_at': None,
+                'receipt_sha': kw['rsha'],
+            }
+        if 'MATCH (o:OutboxEntry {id:$id})' in q:
+            row = outboxes.get(kw['id'])
+            return [dict(row)] if row is not None else []
+        if 'MERGE (qn:OpenQuestion' in q:
+            return [{'name': kw.get('qn'), 'before_state': 'OPEN'}]
         return ret if ret is not None else [{'tag': 'v'}]
 
     monkeypatch.setattr(app, 'kg', fake_kg)
@@ -145,17 +169,22 @@ def test_calibration_query_restricts_to_novel_registered(monkeypatch):
 
 
 def test_register_prediction_bumps_closed_question_visits(monkeypatch):
-    # WIRE1-UCB 수정: closes_question 예측이 그 질문 n_visits++ → UCB 탐색항 차등
+    # WIRE1-UCB 수정: closes_question 예측이 같은 guarded registration statement 안에서
+    # 질문 존재/OPEN 을 검증하고 n_visits++ → 유령 target·부분 커밋 금지.
     app = load_app()
     calls = _capture_kg(monkeypatch, app)
     app.register_prediction('T', 'v', app.PredictionIn(
         metric_name='p95', baseline_value=0.5, closes_question='q1'))
     assert any('n_visits=coalesce(q.n_visits, 0) + 1' in q for q, _ in calls)
-    assert any(kw.get('cq') == 'q1' for _, kw in calls)
+    assert any(kw.get('closes_question') == 'q1' for _, kw in calls)
+    assert any(
+        "coalesce(q.status, '__MISSING__')" in q
+        and "question_state = $open_state" in q
+        for q, _ in calls
+    )
 
 
 # ── prom16 engine-axis: CounterexampleType end-to-end 배선 (server) ──
-import pytest
 from fastapi import HTTPException
 
 
@@ -232,7 +261,7 @@ def test_run_cycle_carries_pnr_fields(monkeypatch):
     # F2: 전엔 /cycle 이 dialectic 우회 — 이제 PnR/lakatos 필드를 test_result 로 전달
     app = load_app()
     captured = {}
-    monkeypatch.setattr(app, 'add_node', lambda n, x: {'ok': True})
+    monkeypatch.setattr(app, 'add_cycle_node', lambda n, x, claim: {'ok': True})
     monkeypatch.setattr(app, 'register_prediction', lambda n, t, x: {'ok': True})
     monkeypatch.setattr(app, 'submit_test_result',
                         lambda n, t, r: (captured.__setitem__('r', r), {'verdict': 'progressive', 'novel': None, 'delta': -0.2})[1])

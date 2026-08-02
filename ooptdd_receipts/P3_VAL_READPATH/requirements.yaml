@@ -1,8 +1,7 @@
 # hermetic — 네트워크/KG/시크릿 0 (stub kg 주입, 판정 계산 경로만 실코드).
 # 무엇을 구동하나: server/contexts/tree/repository.py (load_tree_data → assurance_with_context)
-# + evidence_claim_service.standing — P3 수술(2026-07-28) 후 영구 읽기 표면의 VAL L3 재도출.
-# 음성 오라클: temporal witness flip → L2 / sealed engine sha off-floor → L2 / lock 부재 → L1.
-# 수술 전(무-kwargs L1 천장)이면 P3VR-1 의 두 양성 이벤트가 assert 에서 죽는다 = 결함 살아있으면 틀린다.
+# + evidence_claim_service.standing — T2 verdict anchor가 없는 legacy T1 표식의 VAL L2 ceiling.
+# 음성 오라클: 구 witness boolean은 무시 / sealed engine sha off-floor → L2 / lock 부재 → L1.
 name: lakatotree-advancement-p3-val-readpath
 target:
   mode: in_process
@@ -12,15 +11,15 @@ target:
 
 requirements:
   - id: P3VR-1
-    description: L3 shape 노드(anchored tier + attestor 일치 + head receipt 봉인 sha ∈ floor + temporal witness 저장 미러)가 영구 읽기 표면 두 곳(repository.load_tree_data 경유 get_tree 상속 경로, standing 표면)에서 val==3 으로 재도출된다 — submit 응답에서만 L3 가 존재하던 결함(finding_d286e6ed37a462c1, 라이브 실측 L1 천장)의 봉합.
+    description: T1 prediction anchor와 server clock에서 파생된 legacy temporal_witness_verified boolean은 receipt-bound T2 verdict anchor가 아니므로 repository와 standing 영구 표면 모두 val==2를 넘지 못한다.
     gate:
-      - {event: l3_rederived_on_repository_read, op: ">=", count: 1}
-      - {event: l3_rederived_on_standing_surface, op: ">=", count: 1}
+      - {event: legacy_t1_capped_on_repository_read, op: ">=", count: 1}
+      - {event: legacy_t1_capped_on_standing_surface, op: ">=", count: 1}
     longinus:
-      kg_anchor: ref_site:P3_VAL_READPATH:l3_rederived_on_repository_read
+      kg_anchor: ref_site:P3_VAL_READPATH:legacy_t1_capped_on_repository_read
       source: p3_val_readpath_receipt.py
       symbol: verify
-      must_emit: l3_rederived_on_repository_read
+      must_emit: legacy_t1_capped_on_repository_read
   - id: P3VR-2
     description: 게이트가 실제로 판별한다(no-fake-green) — 같은 노드에서 연언 하나씩 죽이면 정확히 그 사다리로 떨어진다. witness flip → L2, 봉인 sha 를 floor 밖 값으로 → L2(항진명제 해소의 실체 — 구 판관 노드는 L3 불가), lock sha 제거 → L1(measurement_lock_unbound). 셋 중 하나라도 L3 로 새면 이 영수증이 틀린다.
     gate:

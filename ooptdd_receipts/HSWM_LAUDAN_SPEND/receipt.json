@@ -1,0 +1,86 @@
+{
+  "schema_version": "symposium-ooptdd-receipt/v1",
+  "template_only": false,
+  "receipt_id": "lakatotree-hswm-laudan-adjudicated-spend-20260728",
+  "cycle_id": "lakatotree-hswm-density-20260728",
+  "requirement_group": "HSWM-LAUDAN-SPEND",
+  "spec": {
+    "path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/requirements.yaml",
+    "sha256": "6f748875e704588e51f515026eeeae719f725826b17f3e02edaee8c84315bd60",
+    "locked_before_positive_run": true
+  },
+  "producer": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ooptdd_receipts/run_all.py",
+    "cwd": "/Users/lagyeongjun/CD/lakatotree-pub",
+    "git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "working_tree_state": "clean-committed-and-live-deployed-at-verification",
+    "entrypoint": "hswm_laudan_spend_receipt:verify",
+    "source_path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/hswm_laudan_spend_receipt.py",
+    "source_symbol": "verify",
+    "real_code_path": true,
+    "exit_code": 0
+  },
+  "correlation": {
+    "cid": "hswm-laudan-adjudicated-spend-20260728"
+  },
+  "requirements": [
+    {
+      "id": "HSWM-LAUDAN-SPEND-1",
+      "role": "guard_defect",
+      "event": "structural_depth_retained_without_spend"
+    },
+    {
+      "id": "HSWM-LAUDAN-SPEND-2",
+      "role": "guard_mechanism",
+      "event": "adjudicated_attempts_trigger_zero_hit_budget"
+    }
+  ],
+  "positive": {
+    "observed_verdict": "green",
+    "receipt_path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/results/positive.json",
+    "receipt_sha256": "bd189019e5a68e0e7cef65ddc5d7e0feede19c45633f677b2754f5623e83a621",
+    "evidence_tier": "queryable_causal",
+    "charge_ratio": 1.0,
+    "forbidden_events_passed": true,
+    "loop": {
+      "complete": true,
+      "methodology_ok": true,
+      "done": 2,
+      "total": 2
+    }
+  },
+  "negative_oracle": {
+    "spec_sha256": "6f748875e704588e51f515026eeeae719f725826b17f3e02edaee8c84315bd60",
+    "technique": "fault_injection",
+    "injection": "Temporarily count every graph node as an attempted scientific result.",
+    "observed_verdict": "red",
+    "receipt_path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/results/negative.json",
+    "receipt_sha256": "10c927264896a649466ff1a694b74601045447bf81b39adccbd308718af69077",
+    "restored": true
+  },
+  "oracle": {
+    "separate_source": false,
+    "corroborated": false,
+    "emit_identity": "memory://ooptdd-loop/hswm-laudan-spend",
+    "read_identity": "memory://ooptdd-loop/hswm-laudan-spend"
+  },
+  "source_binding": {
+    "path": "ooptdd_receipts/HSWM_LAUDAN_SPEND/hswm_laudan_spend_receipt.py",
+    "symbol": "verify",
+    "sha256": "984779c89eacb2b8c56d54b65af9eda72ac6e1f59e589964797b29b503173791"
+  },
+  "engine_binding": {
+    "path": "lakatos/quant/metrics.py",
+    "symbol": "_attempted_chain",
+    "sha256": "df08a62172f1af4b32a62d6ad6debf19d8f015a7337627908e716b87a2bf667d"
+  },
+  "live_readback": {
+    "tree": "LakatosTree_HSWM_LargerAI_20260728_v2",
+    "deployed_git_head": "c2d5a4e5dab8e7cb063c0490aeb70adb43723769",
+    "raw_nodes": 19,
+    "raw_edges": 52,
+    "adjudicated_outcomes": 0,
+    "laudan_abandon_candidates": []
+  },
+  "claim_boundary": "The receipt proves that structural density alone cannot spend Laudan budget while actual adjudicated attempts still do; the deployed v2 readback confirms the false-abandon set is empty. The signal is diagnostic-only and makes no HSWM efficacy or progress claim."
+}
