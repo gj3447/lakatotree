@@ -30,8 +30,9 @@ Neither status is production approval. Every accepted case still contains:
 }
 ```
 
-`mode=live` returns `UNSUPPORTED` until independent live adapters are implemented
-and audited.
+Operator-supplied `mode=live` cases remain permanently fail-closed at this milestone.
+The separate live collector described below may observe a deployment, but it cannot
+construct an approval verdict or bypass the pure evaluator's `UNSUPPORTED` boundary.
 
 ## Harness topology
 
@@ -102,6 +103,134 @@ The storage track requires all of the following together:
 These are frozen-case assertions today. A live inspector must derive them from
 database-native actor, owner, ACL, edition, role, privilege, lease, and readiness
 readbacks rather than accept operator-supplied projections.
+
+## Read-only live collection
+
+`lakatotree-readiness-collect` is a separate evidence producer. It binds an exact
+request file to a caller-supplied SHA-256, performs one bounded pass over the named
+read-only sources, and creates a canonical `0600` output file with exclusive-create
+semantics. The output parent must be owned by the collector user and must not be
+group/other writable. The final inode and bytes are reread after durable directory
+publication. It never overwrites evidence and has no `--evaluate`, `--approve`, or
+pretty-print mode.
+
+The five source slots are deliberately explicit:
+
+- runtime uses only four unauthenticated GETs through a credential-free loopback HTTP
+  origin. A minimal socket parser bypasses proxy and redirect machinery, requires
+  exact `Content-Length` framing, bounds headers and body, and applies one absolute
+  end-to-end deadline across all four reads. It emits only allowlisted fields plus
+  body and endpoint digests. It never reads or sends a bearer token; a protected
+  endpoint therefore remains unavailable until a server-authenticated nonce challenge
+  or equivalent transport exists;
+- PostgreSQL reads only `LAKATOTREE_READINESS_PG_DSN`. The value must contain exactly
+  `host`, literal `hostaddr`, `port`, `dbname`, `user`, `password`,
+  `sslmode=verify-full`, and `sslrootcert=system`; `host` is the certificate name and
+  `hostaddr` pins the network endpoint. The collector passes explicit connection
+  parameters, requires channel binding, disables ambient client-certificate fields,
+  and sets read-only startup/session controls. If any process-global `PG*` variable is
+  present it fails closed, and the exact DSN excludes service, `.pgpass`, or client-key
+  authority. One bounded read-only transaction uses
+  static catalog queries and hashed principals. It projects
+  database/schema/relation/sequence/column ACL entries, recursive effective role
+  membership, column-only privileges, object owners, and stable database identity
+  without committing;
+- Neo4j uses READ access and a fixed `CALL`/`SHOW` query allowlist. It records edition,
+  version, role hashes, a hashed actor, stable database identity, and an
+  effective-privilege projection digest. It reads only the fixed
+  `LAKATOTREE_READINESS_NEO4J_URI`, `..._USER`, and `..._PASSWORD` names and requires
+  one credential-free, literal-IP `bolt+s` endpoint with system-root server
+  verification. Plaintext, locally trusted, routing, DNS, and multi-endpoint URIs are
+  rejected. A Community deployment or unavailable privilege readback remains
+  observable but cannot satisfy the production contract;
+- predeploy binds one absolute, regular, non-symlink receipt to its raw-file digest
+  and emits only receipt hashes and structural booleans, never its signature;
+- temporal binds the policy, sidecar, and runtime-binding files separately and emits
+  only their digests, schemas, anchor counts, and receipt bindings, never DIDs or
+  signatures.
+
+Every slot is required for `COLLECTION_COMPLETE`; a `null` slot is reported as
+`NOT_CONFIGURED`, not silently skipped. A detected predeploy/PG/Neo target mismatch
+also forces `COLLECTION_INCOMPLETE`. `COLLECTION_COMPLETE` says only that all five
+sequential observations were obtained and no such mismatch was observed. It does not
+say their values are safe. Every bundle explicitly carries
+`verification_status=UNVERIFIED` and `snapshot_coherence=UNATTESTED`.
+`cross_source_binding` is `UNVERIFIED`, `MATCHED_SEQUENTIAL`, or `MISMATCH`; even a
+match is not a coherent or signed snapshot. `COLLECTION_INCOMPLETE` likewise records
+an evidence gap, not a repair authorization. Neither status can emit
+`production_ready`, `HARNESS_GREEN`, a deployment status, or L3 assurance.
+
+The request schema is exact: unknown fields, operator-selected environment-variable
+names, non-absolute artifact paths, and non-lowercase SHA-256 values are rejected.
+A complete shape is:
+
+```json
+{
+  "schema_version": "lakatotree-production-readiness-collection-request/v1",
+  "target_id": "production-ct301",
+  "timeout_seconds": 10,
+  "adapters": {
+    "runtime": {
+      "base_url": "http://127.0.0.1:55170",
+      "expected_git_sha": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "postgresql": {
+      "database": "lakatos",
+      "owner_role": "lakatos_owner",
+      "migrator_role": "lakatos_migrator",
+      "runtime_role": "lakatos_runtime"
+    },
+    "neo4j": {"database": "neo4j"},
+    "predeploy": {
+      "path": "/absolute/evidence/predeploy.json",
+      "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "temporal": {
+      "authority_policy": {
+        "path": "/absolute/evidence/policy.json",
+        "file_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "sidecar": {
+        "path": "/absolute/evidence/sidecar.json",
+        "file_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "runtime_binding": {
+        "path": "/absolute/evidence/runtime-binding.json",
+        "file_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    }
+  }
+}
+```
+
+Configured database adapters take authority only from these fixed names:
+
+```text
+LAKATOTREE_READINESS_PG_DSN
+LAKATOTREE_READINESS_NEO4J_URI
+LAKATOTREE_READINESS_NEO4J_USER
+LAKATOTREE_READINESS_NEO4J_PASSWORD
+```
+
+Example invocation:
+
+```bash
+request=/absolute/path/to/readiness-collection-request.json
+output=/absolute/new/path/readiness-live-evidence.json
+lakatotree-readiness-collect \
+  --request "$request" \
+  --request-sha256 '<independently pre-recorded request SHA-256>' \
+  --output "$output"
+```
+
+Collector exit codes are `0` for `COLLECTION_COMPLETE`, `1` for a successfully
+written `COLLECTION_INCOMPLETE` bundle, `2` for invalid input or an unsafe output
+target, and `3` when a final path may exist but durable exact publication is in
+doubt. Adapter exceptions are normalized to stable failure codes; driver messages,
+DSNs, URLs, credentials, tokens, signatures, and database principals are not echoed.
+The base wheel can run `--help`, runtime GETs, and pinned-file adapters without third
+party packages. PostgreSQL and Neo4j collection load the pinned `readiness-live`
+extra lazily.
 
 ## Signed temporal-component boundary
 
@@ -176,12 +305,16 @@ or controls make the suite red; it never regenerates evidence implicitly.
 
 ## Next implementation gates
 
-1. Implement database-native PostgreSQL actor/owner/ACL and Neo4j Enterprise
-   role/privilege inspectors, then bind them into predeploy and startup readbacks.
-2. Implement an immutable verdict-receipt T2 sidecar store and reverify it on every
+1. Bind the collector's PostgreSQL and Neo4j observations into separately signed
+   predeploy/startup attestations, using dedicated audit principals and before/after
+   drift checks rather than trusting an unsigned projection.
+2. Add a nonce-bound signed runtime snapshot that distinguishes the historical
+   migration-drain lease from the current runtime-writer lease and binds boot,
+   operation, target, worker inventory, and predeploy receipt identities.
+3. Implement an immutable verdict-receipt T2 sidecar store and reverify it on every
    permanent read surface; replace the current internal boolean seam with a proof
    object.
-3. Add an engine-independent two-ended verifier and a disposable real-datastore,
+4. Add an engine-independent two-ended verifier and a disposable real-datastore,
    independently administered time-authority harness.
-4. Only then implement live mode and allow separately signed deployment evidence to
+5. Only then implement a typed live-review path and allow separately signed deployment evidence to
    produce a production-approval receipt.

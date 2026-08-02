@@ -94,12 +94,18 @@
   "live_adapter": {
     "implemented": false,
     "required_before_production_ready": true,
+    "shadow_collector": {
+      "implemented": true,
+      "source": "server/production_readiness_live.py",
+      "entrypoint": "lakatotree-readiness-collect",
+      "claim": "read-only observations only; never production approval"
+    },
     "missing": [
-      "PostgreSQL actor-owner-ACL readback",
-      "Neo4j Enterprise role-privilege readback",
-      "runtime writer-fence and readyz readback",
+      "signed before-and-after PostgreSQL actor-owner-ACL binding",
+      "signed Neo4j Enterprise role-privilege binding",
+      "nonce-bound runtime writer-fence and readyz readback",
       "receipt-bound signed T2 sidecar runtime wiring",
-      "engine-independent temporal re-verification"
+      "engine-independent temporal re-verification and approval seal"
     ]
   }
 }

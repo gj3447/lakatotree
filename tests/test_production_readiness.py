@@ -638,6 +638,12 @@ def test_manifest_requirements_fixture_and_suite_events_are_exactly_bound():
     assert manifest["tier"] == "L_IDE"
     assert manifest["targets"] == ["L_RT", "L_MC"]
     assert manifest["live_adapter"]["implemented"] is False
+    assert manifest["live_adapter"]["shadow_collector"] == {
+        "implemented": True,
+        "source": "server/production_readiness_live.py",
+        "entrypoint": "lakatotree-readiness-collect",
+        "claim": "read-only observations only; never production approval",
+    }
     assert manifest["system_under_test"]["symbol"] == "evaluate_readiness"
     assert manifest["system_under_test"]["entrypoint"] == "lakatotree-readiness-harness"
     assert manifest["suite"]["symbol"] == "run_harness_suite"

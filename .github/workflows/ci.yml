@@ -48,6 +48,7 @@ jobs:
               )
               assert "lakatotree-storage-predeploy = server.storage_predeploy:main" in entry_points
               assert "lakatotree-readiness-harness = server.production_readiness:main" in entry_points
+              assert "lakatotree-readiness-collect = server.production_readiness_live:main" in entry_points
           PY
       - name: Install and execute the packaged storage surface
         run: |
@@ -61,8 +62,13 @@ jobs:
             "$RUNNER_TEMP/storage-wheel-venv-$suffix/bin/pip" install "${storage_wheel}[storage]"
             "$RUNNER_TEMP/storage-wheel-venv-$suffix/bin/pip" check
           done
+          python -m venv "$RUNNER_TEMP/readiness-live-wheel-venv"
+          "$RUNNER_TEMP/readiness-live-wheel-venv/bin/pip" install \
+            "${storage_wheel}[readiness-live]"
+          "$RUNNER_TEMP/readiness-live-wheel-venv/bin/pip" check
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-harness" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-collect" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - \
             "$GITHUB_WORKSPACE/ooptdd_receipts/PRODUCTION_L3_READINESS/harness.json" \
             "$GITHUB_WORKSPACE/ooptdd_receipts/PRODUCTION_L3_READINESS/fixture.v1.json" \
@@ -84,7 +90,62 @@ jobs:
           PY
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - <<'PY'
           from server.production_readiness import evaluate_readiness
+          from server.production_readiness_live import (
+              NEO4J_PASSWORD_ENV, NEO4J_URI_ENV, NEO4J_USER_ENV,
+              POSTGRESQL_DSN_ENV, collect_live_evidence, collect_neo4j,
+              collect_postgresql,
+          )
           assert callable(evaluate_readiness)
+          assert callable(collect_live_evidence)
+          pg = collect_postgresql(
+              {"database": "lakatos", "owner_role": "owner",
+               "migrator_role": "migrator", "runtime_role": "runtime"},
+              3, {POSTGRESQL_DSN_ENV: "host=127.0.0.1 dbname=lakatos"},
+          )
+          neo = collect_neo4j(
+              {"database": "neo4j"}, 1,
+              {NEO4J_URI_ENV: "bolt+s://127.0.0.1:1", NEO4J_USER_ENV: "u",
+               NEO4J_PASSWORD_ENV: "p"},
+          )
+          assert pg.failure_codes == ("postgresql.dependency_unavailable",)
+          assert neo.failure_codes == ("neo4j.dependency_unavailable",)
+          PY
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - \
+            "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-collect" <<'PY'
+          import hashlib, json, pathlib, subprocess, sys
+          request = {
+              "schema_version": "lakatotree-production-readiness-collection-request/v1",
+              "target_id": "wheel-smoke",
+              "timeout_seconds": 1,
+              "adapters": {
+                  "runtime": None, "postgresql": None, "neo4j": None,
+                  "predeploy": None, "temporal": None,
+              },
+          }
+          raw = json.dumps(
+              request, sort_keys=True, separators=(",", ":")
+          ).encode()
+          request_path = pathlib.Path("readiness-request.json").resolve()
+          output_path = pathlib.Path("readiness-evidence.json").resolve()
+          request_path.write_bytes(raw)
+          completed = subprocess.run(
+              [sys.argv[1], "--request", str(request_path), "--request-sha256",
+               hashlib.sha256(raw).hexdigest(), "--output", str(output_path)],
+              check=False, capture_output=True, text=True,
+          )
+          assert completed.returncode == 1, completed.stderr
+          evidence = json.loads(output_path.read_text())
+          assert evidence["status"] == "COLLECTION_INCOMPLETE"
+          assert evidence["request_bytes_bound"] is True
+          assert evidence["verification_status"] == "UNVERIFIED"
+          assert evidence["snapshot_coherence"] == "UNATTESTED"
+          assert "mutation_attempts" not in evidence
+          assert "production_ready" not in evidence
+          PY
+          "$RUNNER_TEMP/readiness-live-wheel-venv/bin/python" - <<'PY'
+          import cryptography, neo4j, psycopg2, pydantic
+          from server.production_readiness_live import default_ports
+          assert callable(default_ports)
           PY
           "$RUNNER_TEMP/storage-wheel-venv-a/bin/lakatotree-storage-predeploy" --help
           for suffix in a b; do

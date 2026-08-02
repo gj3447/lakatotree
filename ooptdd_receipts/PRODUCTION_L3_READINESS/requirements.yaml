@@ -49,7 +49,7 @@ requirements:
       must_emit: temporal_relation_attacks_rejected
 
   - id: PL3H-5
-    description: Live mode cannot claim readiness before independent adapters exist.
+    description: Live mode cannot claim readiness before a typed, independently audited review and approval path exists.
     gate:
       - {event: live_authority_claim_fail_closed, op: "==", count: 1}
     longinus:

@@ -58,10 +58,18 @@ lakatotree-demo = "lakatos.demos.euler:main"
 lakatotree-backtest = "lakatos.backtest_cli:main"
 lakatotree-storage-predeploy = "server.storage_predeploy:main"
 lakatotree-readiness-harness = "server.production_readiness:main"
+lakatotree-readiness-collect = "server.production_readiness_live:main"
 
 [project.optional-dependencies]
 # --- storage predeploy CLI (`[storage]`; base wheel keeps readiness CLI dependency-free) ---
 storage = [
+  "pydantic==2.13.4",
+  "psycopg2-binary==2.9.12",
+  "neo4j==6.2.0",
+  "cryptography==49.0.0",
+]
+# --- read-only live evidence producer (collector top level remains stdlib-only) ---
+readiness-live = [
   "pydantic==2.13.4",
   "psycopg2-binary==2.9.12",
   "neo4j==6.2.0",
