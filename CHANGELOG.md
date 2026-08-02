@@ -12,6 +12,10 @@ distribution.
 
 ### Changed
 
+- The `storage` optional-dependency group now pins the Pydantic schema runtime imported
+  by the packaged predeploy auditor, while HTTP-only exception construction imports
+  FastAPI lazily. A clean storage wheel install therefore exposes a working CLI without
+  relying on undeclared packages or pulling in the web framework.
 - Storage-backed verdict operations now use one fenced writer scope across the Neo4j
   commit, PostgreSQL history projection, and outbox applied mark. Writer readiness is
   injected into live services, PostgreSQL advisory waits are bounded, and admin

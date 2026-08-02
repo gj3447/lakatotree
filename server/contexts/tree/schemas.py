@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ★server-set-only 경계(적대 재검증 2026-06-21): verdict_source 등 server 전용 필드는 client 가 절대 못 쓴다.
@@ -283,6 +282,8 @@ class ResearchEventIn(BaseModel):
     created_at: str | None = None
 
     def to_engine(self, target: str) -> ResearchEvent:
+        from fastapi import HTTPException
+
         try:
             realm = Realm(self.realm)
         except ValueError as exc:
@@ -432,6 +433,8 @@ class FoundationRequirementIn(BaseModel):
     risk_if_missing: str = ""
 
     def to_engine(self) -> FoundationRequirement:
+        from fastapi import HTTPException
+
         try:
             kind = KnowledgeKind(self.kind)
         except ValueError as exc:
