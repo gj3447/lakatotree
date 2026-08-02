@@ -25,7 +25,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from lakatos.temporal import AnchorInvalid, verify_temporal_anchor
+from lakatos.temporal import (
+    AnchorInvalid,
+    TEMPORAL_AUTHORITY_POLICY_SCHEMA,
+    TWO_ENDED_SIDECAR_SCHEMA,
+    temporal_authority_policy_sha256 as _shared_temporal_policy_sha256,
+    two_ended_temporal_sidecar_sha256 as _shared_temporal_sidecar_sha256,
+    verify_temporal_anchor,
+)
 from lakatos.write_cert import (
     CertError,
     did_key_decode,
@@ -44,8 +51,8 @@ from server.storage_protocol import (
 CASE_SCHEMA = "lakatotree-production-l3-readiness-case/v1"
 CASE_REPORT_SCHEMA = "lakatotree-production-l3-readiness-case-report/v1"
 ERROR_SCHEMA = "lakatotree-production-l3-readiness-error/v1"
-SIDECAR_SCHEMA = "lakatotree-two-ended-temporal-sidecar/v1"
-AUTHORITY_POLICY_SCHEMA = "lakatotree-temporal-authority-policy/v1"
+SIDECAR_SCHEMA = TWO_ENDED_SIDECAR_SCHEMA
+AUTHORITY_POLICY_SCHEMA = TEMPORAL_AUTHORITY_POLICY_SCHEMA
 TEMPORAL_BINDING_SCHEMA = "lakatotree-temporal-runtime-binding/v1"
 PG_ACCESS_SCHEMA = "lakatotree-postgresql-access-projection/v1"
 NEO4J_ACCESS_SCHEMA = "lakatotree-neo4j-access-projection/v1"
@@ -291,11 +298,11 @@ def _domain_sha256(domain: bytes, value: Any) -> str:
 
 
 def temporal_authority_policy_sha256(policy: Mapping[str, Any]) -> str:
-    return _domain_sha256(b"lakatotree-temporal-authority-policy/v1\0", policy)
+    return _shared_temporal_policy_sha256(dict(policy))
 
 
 def temporal_sidecar_sha256(sidecar: Mapping[str, Any]) -> str:
-    return _domain_sha256(b"lakatotree-two-ended-temporal-sidecar/v1\0", sidecar)
+    return _shared_temporal_sidecar_sha256(dict(sidecar))
 
 
 def _binding(

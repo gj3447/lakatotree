@@ -1,0 +1,14 @@
+{
+  "schema_version": "lakatotree-production-approval-ooptdd-harness/v1",
+  "claim_boundary": "Synthetic keys prove only the offline Gate-5 review and receipt-verification mechanism. Missing real externally administered approval remains NOT_READY, and even a verified receipt is APPROVED_NOT_APPLIED; this harness never deploys or changes service health.",
+  "required_controls": [
+    "review.components_exact",
+    "review.component_splice",
+    "approval.missing_receipt",
+    "approval.signature_splice",
+    "approval.review_binding_splice",
+    "approval.role_overlap",
+    "claim.never_applied",
+    "manifest.exact_control_set"
+  ]
+}

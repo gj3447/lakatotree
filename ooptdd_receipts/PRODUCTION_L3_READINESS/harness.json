@@ -100,10 +100,23 @@
       "entrypoint": "lakatotree-readiness-collect",
       "claim": "read-only observations only; never production approval"
     },
+    "signed_storage_access": {
+      "implemented": true,
+      "producer": "server/storage_access_live.py",
+      "verifier": "server/storage_access.py",
+      "entrypoint": "lakatotree-storage-audit",
+      "claim": "audit-read-only signed predeploy/startup access projections only; non-audit least privilege unapproved and deployment always NOT_READY"
+    },
+    "signed_runtime_writer": {
+      "implemented": true,
+      "producer": "external runtime authority",
+      "verifier": "server/runtime_authority.py",
+      "entrypoint": "lakatotree-runtime-authority-verify",
+      "claim": "boot-bound critique-history-ledger admission only; never all-runtime authority or deployment approval"
+    },
     "missing": [
-      "signed before-and-after PostgreSQL actor-owner-ACL binding",
-      "signed Neo4j Enterprise role-privilege binding",
-      "nonce-bound runtime writer-fence and readyz readback",
+      "live production predeploy/startup bundles from dedicated PostgreSQL and Neo4j audit principals",
+      "live independently signed runtime-writer snapshots for the exact production target",
       "receipt-bound signed T2 sidecar runtime wiring",
       "engine-independent temporal re-verification and approval seal"
     ]

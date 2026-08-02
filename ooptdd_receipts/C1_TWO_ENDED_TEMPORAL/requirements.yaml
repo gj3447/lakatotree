@@ -1,0 +1,47 @@
+name: lakatotree-c1-two-ended-temporal
+target:
+  mode: in_process
+  callable: c1_two_ended_temporal_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: CTT-1
+    description: A pinned standalone C1 artifact and separately executed time authority rederive the exact two-ended receipt-prefix proof.
+    gate:
+      - {event: two_process_temporal_verified, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1_TWO_ENDED_TEMPORAL:two_process_temporal_verified
+      source: c1_two_ended_temporal_receipt.py
+      symbol: verify
+      must_emit: two_process_temporal_verified
+
+  - id: CTT-2
+    description: Sidecar splices and verifier artifact pin drift fail closed at the external boundary.
+    gate:
+      - {event: temporal_splice_and_pin_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1_TWO_ENDED_TEMPORAL:temporal_splice_and_pin_rejected
+      source: c1_two_ended_temporal_receipt.py
+      symbol: verify
+      must_emit: temporal_splice_and_pin_rejected
+
+  - id: CTT-3
+    description: Multiple exact proof candidates use one authority call and one C1 call rather than an N-plus-one process loop.
+    gate:
+      - {event: temporal_batch_bounded, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1_TWO_ENDED_TEMPORAL:temporal_batch_bounded
+      source: c1_two_ended_temporal_receipt.py
+      symbol: verify
+      must_emit: temporal_batch_bounded
+
+  - id: CTT-4
+    description: Gate 4 success is scoped to an exact proof and never becomes production readiness or deployment approval.
+    gate:
+      - {event: temporal_claim_bounded, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:C1_TWO_ENDED_TEMPORAL:temporal_claim_bounded
+      source: c1_two_ended_temporal_receipt.py
+      symbol: verify
+      must_emit: temporal_claim_bounded

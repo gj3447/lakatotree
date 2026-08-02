@@ -1,0 +1,47 @@
+name: lakatotree-production-approval-verification
+target:
+  mode: in_process
+  callable: production_approval_verification_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: PAV-1
+    description: Verified Gate 1, Gate 2, and exact per-proof Gate 4 identities compose into one bounded canonical live review.
+    gate:
+      - {event: live_review_components_exactly_bound, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_APPROVAL_VERIFICATION:live_review_components_exactly_bound
+      source: production_approval_verification_receipt.py
+      symbol: verify
+      must_emit: live_review_components_exactly_bound
+
+  - id: PAV-2
+    description: Complete verified component evidence remains NOT_READY when the separately administered approval receipt is absent.
+    gate:
+      - {event: missing_external_approval_fail_closed, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_APPROVAL_VERIFICATION:missing_external_approval_fail_closed
+      source: production_approval_verification_receipt.py
+      symbol: verify
+      must_emit: missing_external_approval_fail_closed
+
+  - id: PAV-3
+    description: Signature, live-review binding, and authority-role overlap attacks fail closed under an out-of-band approver pin.
+    gate:
+      - {event: approval_signature_and_splices_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_APPROVAL_VERIFICATION:approval_signature_and_splices_rejected
+      source: production_approval_verification_receipt.py
+      symbol: verify
+      must_emit: approval_signature_and_splices_rejected
+
+  - id: PAV-4
+    description: Receipt verification is read-only and reports APPROVED_NOT_APPLIED without deploying, restarting, or assigning global L3.
+    gate:
+      - {event: approval_verifier_never_applies_deployment, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:PRODUCTION_APPROVAL_VERIFICATION:approval_verifier_never_applies_deployment
+      source: production_approval_verification_receipt.py
+      symbol: verify
+      must_emit: approval_verifier_never_applies_deployment

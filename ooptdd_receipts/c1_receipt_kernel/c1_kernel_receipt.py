@@ -53,11 +53,21 @@ def _fields_corpus() -> list:
         {**_BASE, "metric_value": 3.0},                     # equals the int case after coercion
         {**_BASE, "metric_value": None},
         {**_BASE, "metric_value": float("nan")},            # non-finite -> None
+        {**_BASE, "metric_value": 10 ** 4000},              # float overflow -> None
         {**_BASE, "judged_at": None},
         {**_BASE, "judged_at": 1720483200},                 # non-str -> str coercion
         {**_BASE, "verdict": "rejected", "novel_confirmed": False},
         {**_BASE, "metric_name": "재현율_δ", "prev_receipt_sha": "a" * 64},
         {**_BASE, "measurement_grade": "client_asserted"},
+        {**_BASE, "engine_rule_sha": "1" * 64, "comment_sha": "2" * 64,
+         "replay_status": "verified", "replay_reason": "exact",
+         "regenerated_metric": 1.0, "judge_script_path": "/sealed/judge.py",
+         "result_path": "/sealed/result.json", "result_sha256": "3" * 64,
+         "measurement_lock_sha": "4" * 64,
+         "source_script_path": "/source/judge.py",
+         "source_result_path": "/source/result.json",
+         "history_payload_sha256": "5" * 64,
+         "prediction_temporal_commitment_sha256": "6" * 64},
     ]
 
 

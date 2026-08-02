@@ -28,10 +28,40 @@ from datetime import datetime, timezone
 from lakatos.write_cert import did_key_decode, did_key_encode, ed25519_verify
 
 _ANCHOR_DOMAIN = b"lakatotree-temporal-anchor/v1\n"   # 도메인 분리 — verdict/prediction blob 과 sha-space 격리
+TWO_ENDED_SIDECAR_SCHEMA = "lakatotree-two-ended-temporal-sidecar/v1"
+TEMPORAL_AUTHORITY_POLICY_SCHEMA = "lakatotree-temporal-authority-policy/v1"
+TEMPORAL_AUTHORITY_POLICY_DOMAIN = b"lakatotree-temporal-authority-policy/v1\0"
+TWO_ENDED_SIDECAR_DOMAIN = b"lakatotree-two-ended-temporal-sidecar/v1\0"
 
 
 class AnchorInvalid(ValueError):
     """temporal anchor 검증 실패 — fail-closed(조용한 통과 없음, c1verify REJECT 규율)."""
+
+
+def _canonical_json_bytes(value: dict) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def temporal_authority_policy_sha256(policy: dict) -> str:
+    """Frozen production-harness identity for one authority-policy snapshot."""
+
+    return hashlib.sha256(
+        TEMPORAL_AUTHORITY_POLICY_DOMAIN + _canonical_json_bytes(policy)
+    ).hexdigest()
+
+
+def two_ended_temporal_sidecar_sha256(sidecar: dict) -> str:
+    """Frozen production-harness identity for one two-ended sidecar."""
+
+    return hashlib.sha256(
+        TWO_ENDED_SIDECAR_DOMAIN + _canonical_json_bytes(sidecar)
+    ).hexdigest()
 
 
 def anchor_digest(receipt_sha_hex: str) -> str:

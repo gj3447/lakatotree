@@ -46,14 +46,14 @@ def _pg_migration() -> str:
     ).read_text(encoding="utf-8")
 
 
-def _neo_migration() -> str:
-    return importlib.resources.files("server.storage_migrations").joinpath(
-        "outbox_identity_v1.cypher"
-    ).read_text(encoding="utf-8")
-
-
 def _neo_migration_statements() -> list[str]:
-    return storage_predeploy._migration_cypher(_neo_migration().encode("utf-8"))
+    statements = []
+    resources = importlib.resources.files("server.storage_migrations")
+    for name in storage_predeploy.NEO_RESOURCES:
+        statements.extend(storage_predeploy._migration_cypher(
+            resources.joinpath(name).read_bytes()
+        ))
+    return statements
 
 
 def _run_neo_migration(kg) -> None:

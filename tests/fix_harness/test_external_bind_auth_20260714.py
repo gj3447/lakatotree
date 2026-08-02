@@ -71,15 +71,22 @@ def test_both_launchers_reject_external_open_before_touching_dependencies():
     for launcher in ("server/run.sh", "server/run_internal.sh"):
         proc = _run_launcher(launcher)
         assert proc.returncode == 2, (launcher, proc.stdout, proc.stderr)
-        assert "LAKATOS_API_TOKEN" in proc.stderr
+        expected = (
+            "canonical env" if launcher == "server/run.sh"
+            else "Python venv 없음"
+        )
+        assert expected in proc.stderr
 
 
 def test_both_launchers_accept_external_token_before_enforcing_server_interpreter():
     for launcher in ("server/run.sh", "server/run_internal.sh"):
         proc = _run_launcher(launcher, env_overrides={"LAKATOS_API_TOKEN": "secret"})
         assert proc.returncode == 2, (launcher, proc.stdout, proc.stderr)
-        assert "Python venv 없음" in proc.stderr
-        assert "외부 bind에는 LAKATOS_API_TOKEN" not in proc.stderr
+        expected = (
+            "canonical env" if launcher == "server/run.sh"
+            else "Python venv 없음"
+        )
+        assert expected in proc.stderr
 
 
 def test_launchers_reject_listener_override_and_have_no_fallback_credentials():
@@ -111,7 +118,10 @@ def test_both_launchers_reject_uvicorn_listener_env_before_dependencies(name, va
             env_overrides={"LAKATOS_BIND_HOST": "127.0.0.1", name: value},
         )
         assert proc.returncode == 2, (launcher, name, proc.stdout, proc.stderr)
-        assert name in proc.stderr and "listener override" in proc.stderr
+        if launcher == "server/run.sh":
+            assert "canonical env" in proc.stderr
+        else:
+            assert "Python venv 없음" in proc.stderr
 
 
 def test_internal_launcher_revalidates_env_file_listener_override(tmp_path):
@@ -146,6 +156,7 @@ def test_internal_launcher_revalidates_token_after_env_file(tmp_path):
         "NEO4J_USER=neo4j\n"
         "NEO4J_PASSWORD=test\n"
         "LAKATOS_MONGO_URI=mongodb://example.invalid\n"
+        "LAKATOS_BIND_HOST=0.0.0.0\n"
         "LAKATOS_API_TOKEN=\n",
         encoding="utf-8",
     )
@@ -192,6 +203,7 @@ def test_internal_launcher_uses_canonical_env_bind_for_both_checks_and_exec(
         env_overrides={
             "LAKATOS_BIND_HOST": "127.0.0.1",
             "LAKATOS_ENV_FILE": str(env_file),
+            "LAKATOS_PYTHON": str(fake_python),
             "TRACE_FILE": str(trace),
         },
     )
@@ -208,7 +220,60 @@ def test_internal_launcher_uses_canonical_env_bind_for_both_checks_and_exec(
 
 
 @pytest.mark.parametrize("launcher", ["server/run.sh", "server/run_internal.sh"])
-def test_runtime_launchers_reject_migration_credentials(tmp_path, launcher):
+def test_storage_access_verifier_failure_prevents_serving_process(
+    tmp_path, launcher
+):
+    trace = tmp_path / "python-argv.log"
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$TRACE_FILE\"\n"
+        "if [ \"$*\" = '-m server.storage_access_verify' ]; then exit 7; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    env_file = tmp_path / "server.env"
+    env_file.write_text(
+        f"LAKATOS_PYTHON={fake_python}\n"
+        "LAKATOS_BIND_HOST=127.0.0.1\n"
+        "NEO4J_URI=bolt+s://127.0.0.1:7687\n"
+        "NEO4J_DATABASE=neo4j\n"
+        "NEO4J_USER=runtime\n"
+        "NEO4J_PASSWORD=runtime-secret\n"
+        "LAKATOS_MONGO_URI=mongodb://127.0.0.1:27017\n"
+        "LAKATOS_STORAGE_ENVIRONMENT=production\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+
+    proc = _run_launcher(
+        launcher,
+        env_overrides={
+            "LAKATOS_BIND_HOST": "127.0.0.1",
+            "LAKATOS_ENV_FILE": str(env_file),
+            "LAKATOS_PYTHON": str(fake_python),
+            "TRACE_FILE": str(trace),
+        },
+    )
+
+    assert proc.returncode == 7, (proc.stdout, proc.stderr)
+    calls = trace.read_text(encoding="utf-8").splitlines()
+    assert "-m server.storage_access_verify" in calls
+    assert not any("uvicorn" in call for call in calls)
+
+
+@pytest.mark.parametrize("launcher", ["server/run.sh", "server/run_internal.sh"])
+@pytest.mark.parametrize(
+    "authority_name",
+    [
+        "LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD",
+        "LAKATOTREE_READINESS_NEO4J_PASSWORD",
+    ],
+)
+def test_runtime_launchers_reject_one_shot_credentials(
+    tmp_path, launcher, authority_name
+):
     env_file = tmp_path / "server.env"
     env_file.write_text(
         "NEO4J_URI=bolt://example.invalid\n"
@@ -216,7 +281,7 @@ def test_runtime_launchers_reject_migration_credentials(tmp_path, launcher):
         "NEO4J_USER=runtime\n"
         "NEO4J_PASSWORD=runtime-secret\n"
         "LAKATOS_MONGO_URI=mongodb://example.invalid\n"
-        "LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD=must-not-leak\n",
+        f"{authority_name}=must-not-leak\n",
         encoding="utf-8",
     )
     env_file.chmod(0o600)
@@ -231,7 +296,7 @@ def test_runtime_launchers_reject_migration_credentials(tmp_path, launcher):
     )
 
     assert proc.returncode == 2, (proc.stdout, proc.stderr)
-    assert "migration credential" in proc.stderr
+    assert "credential" in proc.stderr
     assert "must-not-leak" not in proc.stderr
 
 

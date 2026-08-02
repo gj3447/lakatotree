@@ -59,6 +59,10 @@ lakatotree-backtest = "lakatos.backtest_cli:main"
 lakatotree-storage-predeploy = "server.storage_predeploy:main"
 lakatotree-readiness-harness = "server.production_readiness:main"
 lakatotree-readiness-collect = "server.production_readiness_live:main"
+lakatotree-storage-audit = "server.storage_access_live:main"
+lakatotree-storage-access-verify = "server.storage_access_verify:main"
+lakatotree-runtime-authority-verify = "server.runtime_authority:main"
+lakatotree-production-approval-verify = "server.production_approval:main"
 
 [project.optional-dependencies]
 # --- storage predeploy CLI (`[storage]`; base wheel keeps readiness CLI dependency-free) ---
@@ -127,4 +131,9 @@ include = ["lakatos*", "server*"]
 
 [tool.setuptools.package-data]
 lakatos = ["resources/*.json"]
-server = ["schema.sql", "storage_migrations/*.sql", "storage_migrations/*.cypher"]
+server = [
+  "schema.sql",
+  "storage_migrations/*.sql",
+  "storage_migrations/*.cypher",
+  "storage_provisioning/*.sql",
+]

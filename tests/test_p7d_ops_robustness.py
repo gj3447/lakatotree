@@ -114,5 +114,5 @@ def test_run_sh_never_auto_migrates_or_blocks_core_on_optional_pg():
         os.path.join(os.path.dirname(__file__), '..', 'server', 'contexts', 'tree',
                      'evidence_claim_service.py'), encoding='utf-8'
     ).read()
-    assert 'critique_ready=_require_critique_history_ready' in app_text
+    assert 'critique_ready=_ledger_ready' in app_text
     assert 'ready()' in service_text

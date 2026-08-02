@@ -545,6 +545,8 @@ class ProgrammeService:
                           rec.source_script_path AS receipt_source_script_path,
                           rec.source_result_path AS receipt_source_result_path,
                           rec.history_payload_sha256 AS receipt_history_payload_sha256,
+                          rec.prediction_temporal_commitment_sha256 AS
+                            receipt_prediction_temporal_commitment_sha256,
                           q.status AS question_state,
                           q.closed_by AS question_closed_by,
                           q.closed_events AS question_closed_events,
@@ -710,6 +712,9 @@ class ProgrammeService:
             "source_result_path": row.get("receipt_source_result_path"),
             "history_payload_sha256": row.get(
                 "receipt_history_payload_sha256"
+            ),
+            "prediction_temporal_commitment_sha256": row.get(
+                "receipt_prediction_temporal_commitment_sha256"
             ),
         }
         if receipt_content_sha(receipt_fields) != payload["verdict_receipt_sha"]:

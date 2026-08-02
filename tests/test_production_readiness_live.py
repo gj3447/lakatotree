@@ -8,13 +8,17 @@ import os
 import stat
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from server import production_readiness_live as live
+from server import runtime_authority as runtime_authority
+from server import storage_access as access
 
 
 FIXED_NOW = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
@@ -63,6 +67,123 @@ def _request(**adapter_overrides):
         "timeout_seconds": 3,
         "adapters": adapters,
     }
+
+
+def _request_v2(**adapter_overrides):
+    request = _request(**adapter_overrides)
+    request["schema_version"] = live.REQUEST_SCHEMA_V2
+    request["challenge_nonce"] = "9" * 64
+    if request["adapters"]["postgresql"] is not None:
+        request["adapters"]["postgresql"].update({
+            "audit_role": "lakatos_audit",
+            "host": "127.0.0.1",
+            "port": 5432,
+        })
+    if request["adapters"]["neo4j"] is not None:
+        request["adapters"]["neo4j"].update({
+            "audit_user": "lakatos_audit_user",
+            "audit_role": "lakatos_audit_role",
+            "migrator_user": "lakatos_migrator_user",
+            "migrator_role": "lakatos_migrator_role",
+            "runtime_user": "lakatos_runtime_user",
+            "runtime_role": "lakatos_runtime_role",
+        })
+    return request
+
+
+def _request_v3(*, public_key: str, **adapter_overrides):
+    request = _request_v2(**adapter_overrides)
+    request["schema_version"] = live.REQUEST_SCHEMA_V3
+    request["adapters"]["runtime"] = {
+        "base_url": "http://127.0.0.1:55170",
+        "expected_artifact": {
+            "kind": "git",
+            "source_commit": EXPECTED_GIT_SHA,
+        },
+        "runtime_authority_public_key_hex": public_key,
+    }
+    return request
+
+
+def test_v2_requires_distinct_dedicated_audit_principals_and_full_source_sha():
+    request = _request_v2()
+    assert live.validate_request(request) is request
+
+    changed = json.loads(json.dumps(request))
+    changed["adapters"]["postgresql"]["audit_role"] = "lakatos_runtime"
+    with pytest.raises(live.CollectionInputError, match="pairwise distinct"):
+        live.validate_request(changed)
+
+    changed = json.loads(json.dumps(request))
+    changed["adapters"]["neo4j"]["audit_role"] = "admin"
+    with pytest.raises(live.CollectionInputError, match="custom roles"):
+        live.validate_request(changed)
+
+    changed = json.loads(json.dumps(request))
+    changed["adapters"]["runtime"]["expected_git_sha"] = "5de2727"
+    with pytest.raises(live.CollectionInputError, match="full Git SHA"):
+        live.validate_request(changed)
+
+    changed = json.loads(json.dumps(request))
+    changed["adapters"]["neo4j"]["database"] = "system"
+    with pytest.raises(live.CollectionInputError, match="application database"):
+        live.validate_request(changed)
+
+    for database in ("*", "DEFAULT", "neo4j.", "-neo4j", "systemfoo"):
+        changed = json.loads(json.dumps(request))
+        changed["adapters"]["neo4j"]["database"] = database
+        with pytest.raises(live.CollectionInputError, match="canonical"):
+            live.validate_request(changed)
+
+
+def test_legacy_v1_short_git_pin_matches_new_full_runtime_identity_only_forward():
+    full = "5de2727" + "a" * 33
+    assert live._git_sha_match(full, "5de2727") is True
+    assert live._git_sha_match("5de2727", full) is False
+    assert live._git_sha_match("5de2728" + "a" * 33, "5de2727") is False
+
+
+def test_v3_requires_exact_artifact_union_and_runtime_authority_key():
+    _private, public = _runtime_keypair()
+    request = _request_v3(public_key=public)
+    assert live.validate_request(request) is request
+
+    changed = json.loads(json.dumps(request))
+    changed["adapters"]["runtime"]["expected_artifact"]["source_commit"] = "a" * 7
+    with pytest.raises(live.CollectionInputError, match="expected_artifact"):
+        live.validate_request(changed)
+
+    changed = json.loads(json.dumps(request))
+    changed["adapters"]["runtime"]["runtime_authority_public_key_hex"] = "a" * 63
+    with pytest.raises(live.CollectionInputError, match="SHA-256"):
+        live.validate_request(changed)
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [
+        ("2026.03.0", True),
+        ("2026.06.0", True),
+        ("2026.06.1", True),
+        ("2026.02.9", False),
+        ("2026.07.0", False),
+        ("2027.01.0", False),
+        ("2026.3.0", False),
+        ("2026.003.0", False),
+        (" 2026.06.0", False),
+        ("2026.06.01", False),
+    ],
+)
+def test_neo4j_release_semantics_are_shared_and_explicit(version, supported):
+    assert live._neo_version_supported(version) is supported
+    assert access._neo_version_supported(version) is supported
+
+
+def test_v1_cannot_smuggle_v2_audit_policy_fields():
+    request = _request()
+    request["adapters"]["postgresql"]["audit_role"] = "lakatos_audit"
+    with pytest.raises(live.CollectionInputError, match="non-exact field set"):
+        live.validate_request(request)
 
 
 def _observed(name):
@@ -281,8 +402,8 @@ class _RuntimeHandler(BaseHTTPRequestHandler):
             "/version": (
                 200,
                 {
-                    "boot_git_sha": "7585076",
-                    "disk_head_sha": "7585076",
+                    "boot_git_sha": EXPECTED_GIT_SHA,
+                    "disk_head_sha": EXPECTED_GIT_SHA,
                     "stale": False,
                     "identity_verified": True,
                     "auth_posture": "token_required",
@@ -352,11 +473,173 @@ def test_runtime_adapter_uses_only_credential_free_bounded_gets_and_ignores_prox
     assert all(call[2] is None for call in _RuntimeHandler.calls)
     assert result.facts["healthz"]["http_status"] == 503
     assert result.facts["readyz"]["http_status"] == 404
-    assert result.facts["version"]["boot_matches_expected"] is False
+    assert result.facts["version"]["boot_matches_expected"] is True
     assert result.facts["outbox"]["pending"] == 247
     encoded = json.dumps(result.facts, sort_keys=True)
     assert "must-not-leak" not in encoded
     assert config["base_url"] not in encoded
+
+
+def _runtime_keypair():
+    private = Ed25519PrivateKey.from_private_bytes(bytes.fromhex("19" * 32))
+    public = private.public_key().public_bytes(
+        serialization.Encoding.Raw,
+        serialization.PublicFormat.Raw,
+    ).hex()
+    return private, public
+
+
+def _signed_runtime_snapshot(*, mutate=None) -> tuple[bytes, str, dict]:
+    private, public = _runtime_keypair()
+    boot_id = "e" * 64
+    artifact = {"kind": "git", "source_commit": EXPECTED_GIT_SHA}
+    challenge = runtime_authority.build_runtime_challenge(
+        nonce="d" * 64,
+        environment="production",
+        boot_id=boot_id,
+        artifact=artifact,
+        operation_sha256="1" * 64,
+        target_sha256="2" * 64,
+        storage_access_policy_file_sha256="3" * 64,
+        predeploy_receipt_file_sha256="4" * 64,
+        predeploy_receipt_sha256="5" * 64,
+        startup_bundle_file_sha256="6" * 64,
+        historical_drain_lease_id_sha256="7" * 64,
+        runtime_writer_lease={
+            "lease_id": "critique-history-writer-v1",
+            "owner_token_sha256": "c" * 64,
+            "generation": 9,
+            "postgresql_backend_pid": 4242,
+            "postgresql_advisory_key": [1279349588, 20260802],
+        },
+        workers=[{"worker_id": "8" * 64, "boot_id": boot_id}],
+    )
+    observed = datetime.now(timezone.utc)
+    body = {
+        "schema_version": runtime_authority.RUNTIME_SNAPSHOT_SCHEMA,
+        "challenge_sha256": runtime_authority.challenge_sha256(challenge),
+        **{
+            key: value
+            for key, value in challenge.items()
+            if key != "schema_version"
+        },
+        "active": True,
+        "observed_at": observed.isoformat(),
+        "expires_at": (observed + timedelta(seconds=20)).isoformat(),
+        "evidence_refs": ["9" * 64],
+    }
+    if mutate is not None:
+        mutate(body)
+    raw = runtime_authority.canonical_json({
+        **body,
+        "signature": private.sign(runtime_authority.signing_bytes(body)).hex(),
+    })
+    return raw, public, artifact
+
+
+class _RuntimeV3Handler(BaseHTTPRequestHandler):
+    calls: list[str] = []
+    authority_raw: bytes = b"{}"
+
+    def do_GET(self):  # noqa: N802
+        type(self).calls.append(self.path)
+        if self.path == "/api/ops/runtime-authority-snapshot":
+            status_code = 200
+            raw = type(self).authority_raw
+        else:
+            bodies = {
+                "/healthz": {"status": "degraded", "services": {}},
+                "/readyz": {"status": "degraded", "services": {}},
+                "/version": {
+                    "boot_git_sha": EXPECTED_GIT_SHA,
+                    "disk_head_sha": EXPECTED_GIT_SHA,
+                    "stale": False,
+                    "identity_verified": True,
+                },
+                "/api/ops/outbox-status": {"pending": 0},
+            }
+            status_code = 200
+            raw = _canonical(bodies[self.path])
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def log_message(self, format, *args):  # noqa: A002
+        return
+
+
+def test_runtime_v3_verifies_one_cached_snapshot_and_redacts_authority_material():
+    raw, public, artifact = _signed_runtime_snapshot()
+    _RuntimeV3Handler.calls = []
+    _RuntimeV3Handler.authority_raw = raw
+    server = HTTPServer(("127.0.0.1", 0), _RuntimeV3Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = {
+            "base_url": f"http://127.0.0.1:{server.server_port}",
+            "expected_artifact": artifact,
+            "runtime_authority_public_key_hex": public,
+        }
+        result = live.collect_runtime(config, 3, {})
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    assert result.status == "OBSERVED"
+    assert _RuntimeV3Handler.calls == [
+        "/healthz",
+        "/readyz",
+        "/version",
+        "/api/ops/outbox-status",
+        "/api/ops/runtime-authority-snapshot",
+    ]
+    authority_fact = result.facts["runtime_authority"]
+    assert authority_fact["status"] == "VERIFIED_SIGNED_SNAPSHOT"
+    assert authority_fact["effect_scope"] == "critique-history-ledger/v1"
+    assert result.binding_material["target_sha256"] == "2" * 64
+    encoded = json.dumps(result.facts, sort_keys=True)
+    envelope = json.loads(raw)
+    for forbidden in (
+        envelope["nonce"],
+        envelope["signature"],
+        envelope["runtime_writer_lease"]["owner_token_sha256"],
+        public,
+        config["base_url"],
+    ):
+        assert forbidden not in encoded
+
+
+def test_runtime_v3_rejects_resigned_artifact_splice():
+    raw, public, artifact = _signed_runtime_snapshot(
+        mutate=lambda body: body["artifact"].update(source_commit="a" * 40)
+    )
+    _RuntimeV3Handler.calls = []
+    _RuntimeV3Handler.authority_raw = raw
+    server = HTTPServer(("127.0.0.1", 0), _RuntimeV3Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = live.collect_runtime(
+            {
+                "base_url": f"http://127.0.0.1:{server.server_port}",
+                "expected_artifact": artifact,
+                "runtime_authority_public_key_hex": public,
+            },
+            3,
+            {},
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    assert result.status == "PARTIAL"
+    assert result.failure_codes == ("runtime.authority.invalid",)
+    assert result.facts["runtime_authority"]["status"] == "INVALID"
 
 
 def test_runtime_fetch_enforces_absolute_deadline_against_slow_trickle():
@@ -379,8 +662,8 @@ def test_runtime_fetch_enforces_absolute_deadline_against_slow_trickle():
 
 def test_predeploy_and_temporal_ports_emit_digests_not_signatures_or_dids(tmp_path):
     predeploy_body = {
-        "schema_version": "lakatotree-storage-predeploy-receipt/v4",
-        "contract_id": "lakatotree-storage-contract/v1",
+        "schema_version": "lakatotree-storage-predeploy-receipt/v5",
+        "contract_id": "lakatotree-critique-history-storage/v1",
         "environment": "production",
         "target_sha256": "1" * 64,
         "operation": {"sha256": "2" * 64},
@@ -459,7 +742,20 @@ def test_postgresql_endpoint_is_single_pinned_and_timer_cancel_is_silent(capsys,
     assert parameters["sslmode"] == "verify-full"
     assert parameters["channel_binding"] == "require"
     assert parameters["target_session_attrs"] == "read-only"
-    assert parameters["options"] == "-c default_transaction_read_only=on"
+    assert parameters["options"] == (
+        "-c search_path=pg_catalog -c default_transaction_read_only=on"
+    )
+
+    with pytest.raises(live._PortUnavailable, match="pinned target"):
+        live._validated_pg_endpoint(
+            psycopg2,
+            "host=127.0.0.1 hostaddr=192.0.2.10 port=5432 "
+            "dbname=lakatos user=a password=b sslmode=verify-full "
+            "sslrootcert=system",
+            "lakatos",
+            expected_host="127.0.0.1",
+            expected_port=5432,
+        )
     assert parameters["require_auth"] == "scram-sha-256"
     assert parameters["sslcertmode"] == "disable"
     assert parameters["sslcert"] == parameters["sslkey"] == parameters["sslpassword"] == ""
@@ -557,7 +853,7 @@ def test_cross_source_target_recomputes_storage_predeploy_identity():
             "neo4j": neo,
             "predeploy": {
                 "target_sha256": target_sha,
-                "receipt_identity_valid": True,
+                "structural_receipt_identity_valid": True,
             },
         }
     )
@@ -569,7 +865,7 @@ def test_cross_source_target_recomputes_storage_predeploy_identity():
             "neo4j": neo,
             "predeploy": {
                 "target_sha256": "0" * 64,
-                "receipt_identity_valid": True,
+                "structural_receipt_identity_valid": True,
             },
         }
     )

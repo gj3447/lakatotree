@@ -165,6 +165,20 @@ class PredictionIn(BaseModel):
         return self
 
 
+class PredictionTemporalCommitmentIn(BaseModel):
+    """Receipt-bound T1 statements; policy and receipt identity are server-owned."""
+
+    model_config = _SERVER_SET_ONLY
+    prediction_anchors: list[dict] = Field(min_length=1, max_length=32)
+
+
+class TemporalSidecarFinalizeIn(BaseModel):
+    """Receipt-bound T2 statements; T1 and all graph identity are server-owned."""
+
+    model_config = _SERVER_SET_ONLY
+    verdict_anchors: list[dict] = Field(min_length=1, max_length=32)
+
+
 class CertCommandIn(BaseModel):
     """G10 write-cert 의 서명된 *명령*(push-cert 명령행 아날로그) — 고정 필드셋(서명 범위 전부).
 

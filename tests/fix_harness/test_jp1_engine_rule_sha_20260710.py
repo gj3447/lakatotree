@@ -53,7 +53,7 @@ def test_receipt_fields_bind_engine_identity():
     S4(2026-07-23): 현행 필드셋은 v3(= v2 + comment_sha) — v2 는 RECEIPT_FIELDS_V2 로 동결."""
     from lakatos.verdicts import (RECEIPT_FIELDS_V2, RECEIPT_FIELDS_V3,
                                   RECEIPT_FIELDS_V4, RECEIPT_FIELDS_V5,
-                                  RECEIPT_FIELDS_V6)
+                                  RECEIPT_FIELDS_V6, RECEIPT_FIELDS_V7)
     assert "engine_rule_sha" in RECEIPT_FIELDS
     assert RECEIPT_FIELDS_V2 == RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
     assert RECEIPT_FIELDS_V3 == RECEIPT_FIELDS_V2 + ("comment_sha",)
@@ -65,8 +65,46 @@ def test_receipt_fields_bind_engine_identity():
     assert RECEIPT_FIELDS_V6 == RECEIPT_FIELDS_V5 + (
         "history_payload_sha256",
     )
-    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V6
+    assert RECEIPT_FIELDS_V7 == RECEIPT_FIELDS_V6 + (
+        "prediction_temporal_commitment_sha256",
+    )
+    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V7
     assert len(RECEIPT_FIELDS_V1) == 13 and "engine_rule_sha" not in RECEIPT_FIELDS_V1
+
+
+def test_c1_receipt_kernel_has_exact_v7_presence_dispatch_parity():
+    import c1verify.receipts as c1
+    from lakatos import verdicts as engine
+
+    assert c1.RECEIPT_FIELDS_V7 == engine.RECEIPT_FIELDS_V7
+    fields = {key: None for key in engine.RECEIPT_FIELDS_V7}
+    fields.update(
+        tree="T",
+        tag="n",
+        target_id="n",
+        verdict="progressive",
+        verdict_source="scripted",
+        metric_name="m",
+        metric_value=1.0,
+        novel_confirmed=True,
+        lakatos_status="progressive",
+        judged_at="2026-08-02T00:00:00+00:00",
+        judge_script_sha="a" * 64,
+        prev_receipt_sha="b" * 64,
+        measurement_grade="server_regenerated",
+        engine_rule_sha="c" * 64,
+        comment_sha="d" * 64,
+        replay_status="verified",
+        history_payload_sha256="e" * 64,
+        prediction_temporal_commitment_sha256="f" * 64,
+    )
+
+    assert c1.canonical_receipt_blob(fields) == engine.canonical_receipt_blob(fields)
+    assert c1.receipt_content_sha(fields) == engine.receipt_content_sha(fields)
+
+    historical = dict(fields, prediction_temporal_commitment_sha256=None)
+    assert c1.canonical_receipt_blob(historical) == engine.canonical_receipt_blob(historical)
+    assert c1.canonical_receipt_blob(historical).startswith(b"verdict-receipt\x00v6\n")
 
 
 def test_v1_sha_space_byte_stable_golden():
@@ -179,7 +217,10 @@ def test_production_submit_seals_identity():
                     result_sha256=params["result_sha256"], measurement_lock_sha=params["lsha"],
                     source_script_path=params["source_script"],
                     source_result_path=params["source_rp"],
-                    history_payload_sha256=params["history_payload_sha256"])
+                    history_payload_sha256=params["history_payload_sha256"],
+                    prediction_temporal_commitment_sha256=params[
+                        "prediction_temporal_commitment_sha256"
+                    ])
     assert receipt_content_sha(refields) == params["rsha"]
 
 

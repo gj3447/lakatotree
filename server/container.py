@@ -12,10 +12,12 @@ server.app 은 이 컨테이너에 얇게 위임만 한다(모듈 API 는 하위
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import re
 from collections.abc import Callable, Iterable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from threading import Lock, RLock
 from typing import Any
@@ -56,6 +58,14 @@ from server.contexts.tree.receipt_chain import (
     ReceiptGraphError,
     validate_receipt_graph,
 )
+from server.contexts.tree.temporal_intents import (
+    PREDICTION_TEMPORAL_IDENTITY_CYPHER,
+    TEMPORAL_SIDECAR_IDENTITY_CYPHER,
+    TemporalIntentError,
+    classify_temporal_intent,
+    validate_prediction_temporal_identity_row,
+    validate_temporal_sidecar_identity_row,
+)
 from server.ports import (
     GuardedKgOps,
     HistoryEventConflict,
@@ -89,6 +99,10 @@ class AppContainer:
         pool_min: int = 1,
         pool_max: int = 16,
         on_history_divergence: Callable[[str], None] | None = None,
+        pg_connection_guard: Callable[[Any], None] | None = None,
+        pg_kw_factory: Callable[[], dict] | None = None,
+        writer_commit_guard: Callable[[], None] | None = None,
+        writer_authority_scope: Callable[[], Any] | None = None,
     ):
         self._neo = neo
         self._mongo = mongo
@@ -102,10 +116,27 @@ class AppContainer:
         # therefore drains an already-authorized write before it revokes the
         # token and releases the PostgreSQL election lease.
         self._writer_lease_lock = RLock()
+        self._writer_commit_linearization_lock = RLock()
+        self._writer_scope_depth: ContextVar[int] = ContextVar(
+            f"writer_scope_depth_{id(self)}", default=0
+        )
         self._writer_lease_conn = None
+        self._writer_pg_backend_pid: int | None = None
         self._writer_fence_token: str | None = None
         self._writer_fence_generation: int | None = None
         self._on_history_divergence = on_history_divergence
+        self._pg_connection_guard = pg_connection_guard
+        self._pg_kw_factory = pg_kw_factory
+        self._writer_commit_guard = writer_commit_guard
+        self._writer_authority_scope = writer_authority_scope
+
+    def _pg_connection_parameters(self) -> dict:
+        if self._pg_kw_factory is None:
+            return dict(self._pg_kw)
+        parameters = self._pg_kw_factory()
+        if not isinstance(parameters, dict):
+            raise RuntimeError("PostgreSQL connection profile factory is invalid")
+        return dict(parameters)
 
     def _signal_history_divergence(self, reason: str) -> None:
         """Fail the process-local critique gate without changing mutation semantics."""
@@ -188,6 +219,16 @@ class AppContainer:
                             row=(dict(data[0]) if len(data) == 1 else None),
                         )
                 results.append(data)
+            # This is still inside Neo4j's managed transaction callback.  A
+            # deadline/generation failure therefore rolls back every domain op
+            # instead of discovering stale authority after commit.
+            if writer_fence is not None:
+                if not self._pg_writer_lease_ready_unlocked():
+                    raise WriterFenceLost(
+                        "runtime PostgreSQL election lease was lost before Neo4j commit"
+                    )
+                if self._writer_commit_guard is not None:
+                    self._writer_commit_guard()
             return results
         callback = (
             unit_of_work(timeout=self._WRITER_FENCE_QUERY_TIMEOUT_SECONDS)(_unit)
@@ -214,6 +255,25 @@ class AppContainer:
         """
 
         with self._writer_lease_lock:
+            authority_scope = (
+                self._writer_authority_scope()
+                if self._writer_authority_scope is not None
+                else nullcontext()
+            )
+            with authority_scope:
+                token = self._writer_scope_depth.set(
+                    self._writer_scope_depth.get() + 1
+                )
+                try:
+                    yield
+                finally:
+                    self._writer_scope_depth.reset(token)
+
+    @contextmanager
+    def writer_commit_barrier(self):
+        """Linearize fenced datastore commits against state invalidation."""
+
+        with self._writer_commit_linearization_lock:
             yield
 
     def writer_fenced_kg_tx(self, ops: Iterable[tuple[str, dict]]) -> list:
@@ -240,15 +300,30 @@ class AppContainer:
                 lost = WriterFenceLost("runtime writer election lease is absent")
             else:
                 try:
-                    return self._execute_kg_tx(
-                        ops, writer_fence=(token, generation)
-                    )
+                    with self.writer_commit_barrier():
+                        return self._execute_kg_tx(
+                            ops, writer_fence=(token, generation)
+                        )
                 except WriterFenceLost as exc:
                     self._close_writer_lease_unlocked()
                     lost = exc
         assert lost is not None
         self._signal_history_divergence("runtime.global_writer_fence.lost")
         raise lost
+
+    def _history_kg_tx(self, ops: Iterable[tuple[str, dict]]) -> list:
+        """Use the signed ledger fence only inside its explicitly closed scope.
+
+        Generic tree administration predates the critique-history writer
+        contract and is deliberately not claimed by that authority.  Its
+        outbox bookkeeping must therefore follow the same generic transaction
+        path as its domain mutation instead of accidentally requiring a
+        ContextVar that the generic command never captured.
+        """
+
+        if self._writer_scope_depth.get() > 0:
+            return self.writer_fenced_kg_tx(ops)
+        return self._execute_kg_tx(ops)
 
     # ── PostgreSQL ─────────────────────────────────────────────────────
     def pg_pool(self):
@@ -258,7 +333,8 @@ class AppContainer:
                 pool = self._pg_pool
                 if pool is None:
                     pool = psycopg2.pool.ThreadedConnectionPool(
-                        self._pool_min, self._pool_max, **self._pg_kw
+                        self._pool_min, self._pool_max,
+                        **self._pg_connection_parameters(),
                     )
                     self._pg_pool = pool
         return pool
@@ -271,7 +347,16 @@ class AppContainer:
         primary_error = False
         discard = False
         try:
+            # Revalidate the authority-bearing CA/profile before a lazy pool is
+            # allowed to create another physical connection.
+            self._pg_connection_parameters()
             conn = pool.getconn()
+            if self._pg_connection_guard is not None:
+                try:
+                    self._pg_connection_guard(conn)
+                except Exception:
+                    discard = True
+                    raise
             yield conn
             conn.commit()
         except Exception:
@@ -299,6 +384,63 @@ class AppContainer:
                     if not primary_error:
                         raise
 
+    @contextmanager
+    def _writer_fenced_pg(self):
+        """Commit on the same PG session that owns the advisory writer lease.
+
+        A pooled mutation connection could survive after the dedicated lease
+        session died and commit after a successor acquired authority.  Using
+        the lease-owning backend for the transaction makes that schedule
+        impossible: loss of the session destroys both the advisory lock and
+        its in-flight transaction.
+        """
+
+        try:
+            with self._writer_lease_lock:
+                connection = self._writer_lease_conn
+                if (
+                    connection is None
+                    or not self._pg_writer_lease_ready_unlocked()
+                ):
+                    raise WriterFenceLost(
+                        "runtime PostgreSQL election lease is absent"
+                    )
+                with self.writer_commit_barrier():
+                    primary_error: BaseException | None = None
+                    try:
+                        connection.autocommit = False
+                        yield connection
+                        if not self._pg_writer_lease_ready_unlocked():
+                            raise WriterFenceLost(
+                                "runtime PostgreSQL election lease was lost before commit"
+                            )
+                        if self._writer_commit_guard is not None:
+                            self._writer_commit_guard()
+                        connection.commit()
+                    except BaseException as exc:
+                        primary_error = exc
+                        try:
+                            connection.rollback()
+                        except Exception:
+                            pass
+                        raise
+                    finally:
+                        if (
+                            self._writer_lease_conn is connection
+                            and not bool(getattr(connection, "closed", False))
+                        ):
+                            try:
+                                connection.autocommit = True
+                            except Exception:
+                                if primary_error is None:
+                                    raise
+        except WriterFenceLost:
+            # The transaction has already rolled back. Lease revocation is safe.
+            self._signal_history_divergence(
+                "runtime.storage_commit_authority.lost"
+            )
+            raise
+
     def _close_pg_pool(self) -> None:
         with self._pg_pool_lock:
             pool = self._pg_pool
@@ -315,8 +457,10 @@ class AppContainer:
             self._close_writer_lease_unlocked()
             conn = None
             try:
-                conn = psycopg2.connect(**self._pg_kw)
+                conn = psycopg2.connect(**self._pg_connection_parameters())
                 conn.autocommit = True
+                if self._pg_connection_guard is not None:
+                    self._pg_connection_guard(conn)
                 with conn.cursor() as cur:
                     cur.execute("SET statement_timeout = '5s'")
                     cur.execute("SET lock_timeout = '3s'")
@@ -335,6 +479,11 @@ class AppContainer:
                     return False
                 generation = claimed
                 self._writer_lease_conn = conn
+                backend_pid = conn.get_backend_pid()
+                if type(backend_pid) is not int or backend_pid < 1:
+                    self._close_writer_lease_unlocked()
+                    return False
+                self._writer_pg_backend_pid = backend_pid
                 self._writer_fence_token = token
                 self._writer_fence_generation = generation
                 # The dedicated PG session may have died while the Neo claim
@@ -443,6 +592,34 @@ class AppContainer:
         with self._writer_lease_lock:
             return self._writer_lease_ready_unlocked()
 
+    def writer_lease_public_projection(self) -> dict[str, Any] | None:
+        """Return the current public lease binding without exposing its token."""
+
+        with self._writer_lease_lock:
+            if not self._writer_lease_ready_unlocked():
+                return None
+            token = self._writer_fence_token
+            generation = self._writer_fence_generation
+            backend_pid = self._writer_pg_backend_pid
+            if not (
+                isinstance(token, str)
+                and token
+                and type(generation) is int
+                and generation >= 1
+                and type(backend_pid) is int
+                and backend_pid >= 1
+            ):
+                return None
+            return {
+                "lease_id": self._WRITER_FENCE_NAME,
+                "owner_token_sha256": hashlib.sha256(
+                    token.encode("ascii")
+                ).hexdigest(),
+                "generation": generation,
+                "postgresql_backend_pid": backend_pid,
+                "postgresql_advisory_key": list(self._WRITER_LEASE_KEY),
+            }
+
     @contextmanager
     def writer_authority(self, *, acquire: bool) -> Iterable[bool]:
         """Hold local writer authority across an audit or reconciliation seam.
@@ -478,6 +655,7 @@ class AppContainer:
         token = self._writer_fence_token
         generation = self._writer_fence_generation
         self._writer_lease_conn = None
+        self._writer_pg_backend_pid = None
         self._writer_fence_token = None
         self._writer_fence_generation = None
         if (
@@ -960,7 +1138,7 @@ class AppContainer:
             arg_attacks=argument.get("attacks"),
             ts=ts,
         )
-        tx_rows = self.writer_fenced_kg_tx([
+        tx_rows = self._history_kg_tx([
             (transition_query, transition_params)
         ])
         result = tx_rows[0] if tx_rows else []
@@ -1147,7 +1325,7 @@ class AppContainer:
             reason=reason,
         )
         try:
-            results = self.writer_fenced_kg_tx(GuardedKgOps([
+            results = self._history_kg_tx(GuardedKgOps([
                 (
                     "OPTIONAL MATCH (t:LakatosTree {name:$tree}) "
                     "OPTIONAL MATCH (prior:OutboxEntry {id:$id}) "
@@ -1259,7 +1437,12 @@ class AppContainer:
         except (TypeError, ValueError, UnicodeError) as exc:
             raise HistoryEventConflict("history record is not PostgreSQL-safe") from exc
         try:
-            with self.pg() as c, c.cursor() as cur:
+            pg_scope = (
+                self._writer_fenced_pg
+                if self._writer_scope_depth.get() > 0
+                else self.pg
+            )
+            with pg_scope() as c, c.cursor() as cur:
                 self._set_history_transaction_timeouts(cur)
                 projection = self._insert_history(
                     cur, tree, op, node_tag, pj, effective_event_id
@@ -1456,8 +1639,21 @@ class AppContainer:
         candidate_causal_groups: set[str] = set()
         candidate_admin_ids: set[str] = set()
         candidate_prediction_ids: set[str] = set()
+        candidate_prediction_temporal_ids: set[str] = set()
+        candidate_temporal_sidecar_ids: set[str] = set()
+        temporal_entry_errors: dict[str, str] = {}
         for entry in plan['to_replay']:
             entry_id = entry.get('id')
+            try:
+                temporal_kind = classify_temporal_intent(entry)
+            except TemporalIntentError as exc:
+                if isinstance(entry_id, str):
+                    temporal_entry_errors[entry_id] = str(exc)
+                temporal_kind = None
+            if isinstance(entry_id, str) and temporal_kind == 'commitment':
+                candidate_prediction_temporal_ids.add(entry_id)
+            if isinstance(entry_id, str) and temporal_kind == 'sidecar':
+                candidate_temporal_sidecar_ids.add(entry_id)
             if (
                 isinstance(entry_id, str)
                 and (
@@ -1496,7 +1692,13 @@ class AppContainer:
 
         chain_index = None
         chain_error: str | None = None
-        if candidate_causal_groups or candidate_admin_ids or candidate_prediction_ids:
+        if (
+            candidate_causal_groups
+            or candidate_admin_ids
+            or candidate_prediction_ids
+            or candidate_prediction_temporal_ids
+            or candidate_temporal_sidecar_ids
+        ):
             try:
                 chain_index = validate_receipt_graph(
                     self.kg(RECEIPT_CHAIN_ROWS_CYPHER),
@@ -1583,6 +1785,8 @@ class AppContainer:
                 "rec.source_script_path AS receipt_source_script_path, "
                 "rec.source_result_path AS receipt_source_result_path, "
                 "rec.history_payload_sha256 AS receipt_history_payload_sha256, "
+                "rec.prediction_temporal_commitment_sha256 AS "
+                "receipt_prediction_temporal_commitment_sha256, "
                 "q.status AS question_state, "
                 "q.closed_by AS question_closed_by, "
                 "q.closed_events AS question_closed_events, "
@@ -1909,6 +2113,69 @@ class AppContainer:
                     )
                     continue
                 prediction_rows_by_id[event_id] = outbox
+
+        temporal_rows_by_id: dict[str, dict] = {}
+        if candidate_prediction_temporal_ids:
+            raw_rows = self.kg(PREDICTION_TEMPORAL_IDENTITY_CYPHER)
+            grouped: dict[str, list[dict]] = {}
+            for raw in raw_rows or []:
+                row = dict(raw)
+                outbox = row.get('outbox')
+                event_id = outbox.get('id') if isinstance(outbox, dict) else None
+                if (
+                    isinstance(event_id, str)
+                    and event_id in candidate_prediction_temporal_ids
+                ):
+                    grouped.setdefault(event_id, []).append(row)
+            for event_id in candidate_prediction_temporal_ids:
+                candidates = grouped.get(event_id, [])
+                if len(candidates) != 1 or chain_index is None:
+                    temporal_entry_errors[event_id] = (
+                        chain_error
+                        or 'prediction temporal intent lacks one exact authority snapshot'
+                    )
+                    continue
+                try:
+                    validated = validate_prediction_temporal_identity_row(
+                        candidates[0],
+                        chain_index=chain_index,
+                        require_current_effect=True,
+                    )
+                except TemporalIntentError as exc:
+                    temporal_entry_errors[event_id] = str(exc)
+                    continue
+                temporal_rows_by_id[event_id] = validated.outbox
+
+        if candidate_temporal_sidecar_ids:
+            raw_rows = self.kg(TEMPORAL_SIDECAR_IDENTITY_CYPHER)
+            grouped = {}
+            for raw in raw_rows or []:
+                row = dict(raw)
+                outbox = row.get('outbox')
+                event_id = outbox.get('id') if isinstance(outbox, dict) else None
+                if (
+                    isinstance(event_id, str)
+                    and event_id in candidate_temporal_sidecar_ids
+                ):
+                    grouped.setdefault(event_id, []).append(row)
+            for event_id in candidate_temporal_sidecar_ids:
+                candidates = grouped.get(event_id, [])
+                if len(candidates) != 1 or chain_index is None:
+                    temporal_entry_errors[event_id] = (
+                        chain_error
+                        or 'temporal sidecar intent lacks one exact authority snapshot'
+                    )
+                    continue
+                try:
+                    validated = validate_temporal_sidecar_identity_row(
+                        candidates[0],
+                        chain_index=chain_index,
+                        require_current_effect=True,
+                    )
+                except TemporalIntentError as exc:
+                    temporal_entry_errors[event_id] = str(exc)
+                    continue
+                temporal_rows_by_id[event_id] = validated.outbox
         legacy_groups: dict[str, set[str]] = {}
         legacy_trees: set[str] = set()
         for entry in plan['to_replay']:
@@ -1992,6 +2259,12 @@ class AppContainer:
                     'error': prediction_entry_errors[event_key],
                 })
                 continue
+            if isinstance(event_key, str) and event_key in temporal_entry_errors:
+                conflicts.append({
+                    'id': event_key,
+                    'error': temporal_entry_errors[event_key],
+                })
+                continue
             if isinstance(event_key, str) and event_key in causal_entry_errors:
                 conflicts.append({
                     'id': event_key,
@@ -2046,7 +2319,10 @@ class AppContainer:
                     if causal_binding is not None
                     else admin_rows_by_id.get(
                         event_key,
-                        prediction_rows_by_id.get(event_key, e),
+                        prediction_rows_by_id.get(
+                            event_key,
+                            temporal_rows_by_id.get(event_key, e),
+                        ),
                     )
                 )
                 event_id, tree, op, node_tag, payload = (
@@ -2055,7 +2331,15 @@ class AppContainer:
                 self._require_stable_argument_binding(
                     event_id, tree, op, node_tag, payload
                 )
-                with self.pg() as c, c.cursor() as cur:
+                pg_scope = (
+                    self._writer_fenced_pg
+                    if (
+                        self._writer_lease_conn is not None
+                        or self._writer_commit_guard is not None
+                    )
+                    else self.pg
+                )
+                with pg_scope() as c, c.cursor() as cur:
                     projection = self._insert_history(
                         cur,
                         tree,

@@ -236,19 +236,38 @@ def test_prediction_intent_v3_rejects_every_semantic_divergence(corruption):
 
 
 def _neo_constraints():
+    specs = (
+        ("lkt_outbox_id_unique", "OutboxEntry", ("id",)),
+        ("lkt_argument_id_unique", "LakatosArgument", ("id",)),
+        ("lkt_runtime_writer_lease_name_unique", "RuntimeWriterLease", ("name",)),
+        (
+            "lkt_prediction_temporal_commitment_sha_unique",
+            "PredictionTemporalCommitment", ("commitment_sha256",),
+        ),
+        (
+            "lkt_prediction_temporal_commitment_target_unique",
+            "PredictionTemporalCommitment",
+            ("tree_incarnation_id", "tree", "tag", "prediction_receipt_sha256"),
+        ),
+        (
+            "lkt_temporal_proof_sidecar_sha_unique",
+            "TemporalProofSidecar", ("sidecar_sha256",),
+        ),
+        (
+            "lkt_temporal_proof_sidecar_target_unique",
+            "TemporalProofSidecar",
+            ("tree_incarnation_id", "tree", "tag", "verdict_receipt_sha256"),
+        ),
+    )
     return [
         {
             "name": name,
             "type": "UNIQUENESS",
             "entityType": "NODE",
             "labelsOrTypes": [label],
-            "properties": [prop],
+            "properties": list(properties),
         }
-        for name, label, prop in (
-            ("lkt_outbox_id_unique", "OutboxEntry", "id"),
-            ("lkt_argument_id_unique", "LakatosArgument", "id"),
-            ("lkt_runtime_writer_lease_name_unique", "RuntimeWriterLease", "name"),
-        )
+        for name, label, properties in specs
     ]
 
 

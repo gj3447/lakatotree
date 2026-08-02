@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 LAKATOS_IT = os.getenv('LAKATOS_IT')
+LAKATOS_PG_IMAGE = os.getenv('LAKATOS_PG_IMAGE', 'postgres:16-alpine')
 _ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -60,7 +61,7 @@ def pg_kw():
         pytest.skip('LAKATOS_IT 미설정 — 통합티어 skip (hermetic 단위 suite 보존)')
     from testcontainers import postgres as pg_mod
     import psycopg2
-    with pg_mod.PostgresContainer('postgres:16-alpine') as pg:
+    with pg_mod.PostgresContainer(LAKATOS_PG_IMAGE) as pg:
         kw = dict(host=pg.get_container_host_ip(), port=int(pg.get_exposed_port(5432)),
                   user=pg.username, password=pg.password, dbname=pg.dbname)
         conn = psycopg2.connect(**kw)

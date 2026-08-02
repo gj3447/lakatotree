@@ -225,6 +225,8 @@ class JudgementService:
         ledger_ready: Callable[[], None] | None = None,
         ledger_kg_tx: KgTx | None = None,
         ledger_scope=None,
+        prediction_temporal_commitment_provider=None,
+        temporal_proof_provider=None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
@@ -248,6 +250,51 @@ class JudgementService:
         self.ledger_ready = ledger_ready or (lambda: None)
         self.ledger_kg_tx = ledger_kg_tx
         self.ledger_scope = ledger_scope or (lambda: nullcontext())
+        self.prediction_temporal_commitment_provider = (
+            prediction_temporal_commitment_provider or (lambda _name, _tag: None)
+        )
+        self.temporal_proof_provider = temporal_proof_provider
+
+    def _prediction_temporal_binding(
+        self,
+        name: str,
+        tag: str,
+        prediction_row: dict,
+    ) -> tuple[str | None, str | None]:
+        """Resolve an attached T1 commitment without imposing Gate 3 on legacy nodes."""
+
+        raw_count = prediction_row.get("prediction_temporal_commitment_count", 0)
+        if type(raw_count) is not int or raw_count not in {0, 1}:
+            raise HTTPException(
+                409,
+                "prediction temporal commitment cardinality is invalid",
+            )
+        if raw_count == 0:
+            return None, None
+
+        temporal_commitment = self.prediction_temporal_commitment_provider(
+            name, tag
+        )
+        if temporal_commitment is None:
+            raise HTTPException(
+                409,
+                "prediction temporal commitment is unavailable",
+            )
+        commitment_sha = getattr(temporal_commitment, "commitment_sha256", None)
+        policy_sha = getattr(
+            temporal_commitment, "authority_policy_sha256", None
+        )
+        if not (
+            getattr(temporal_commitment, "prediction_receipt_sha256", None)
+            == prediction_row.get("pred_receipt_sha")
+            and isinstance(commitment_sha, str)
+            and isinstance(policy_sha, str)
+        ):
+            raise HTTPException(
+                409,
+                "prediction temporal commitment does not bind the current prediction",
+            )
+        return commitment_sha, policy_sha
 
     def _require_ledger_ready(self) -> None:
         self.ledger_ready()
@@ -1860,6 +1907,8 @@ class JudgementService:
                           rec.source_script_path AS receipt_source_script_path,
                           rec.source_result_path AS receipt_source_result_path,
                           rec.history_payload_sha256 AS receipt_history_payload_sha256,
+                          rec.prediction_temporal_commitment_sha256 AS
+                            receipt_prediction_temporal_commitment_sha256,
                           t.attestor_dids AS attestor_dids,
                           q.status AS question_state,
                           q.closed_by AS question_closed_by,
@@ -2264,6 +2313,7 @@ class JudgementService:
                             coalesce(e.source_result_path, e.result_path) AS existing_result_path,
                             e.verdict AS existing_verdict, e.lakatos_status AS existing_lstat,
                             e.current_receipt_sha AS prev_receipt_sha,
+                            e.pred_receipt_sha AS pred_receipt_sha,
                             e.comment AS node_comment,
                             e.pred_closes AS closes,
                             size([(e)-[:RAISES_QUESTION]->(q) | q.name]) AS n_opened,
@@ -2274,11 +2324,17 @@ class JudgementService:
                             t.research_layout AS research_layout,
                             t.layout_owner_did AS layout_owner_did,
                             t.layout_sig AS layout_sig, t.witness_dids AS witness_dids,
+                            size([(e)-[:HAS_PREDICTION_TEMPORAL_COMMITMENT]->() | 1])
+                              AS prediction_temporal_commitment_count,
                             e.pred_anchor_verified AS pred_anchor_verified,
                             e.pred_anchor_gen_time AS pred_anchor_gen_time""", tree=name, tag=tag)
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag}')
         pr = rows[0]
+        (
+            prediction_temporal_commitment_sha256,
+            prediction_temporal_policy_sha256,
+        ) = self._prediction_temporal_binding(name, tag, pr)
         if r.freshen and pr.get('vsrc') != 'scripted':
             raise HTTPException(
                 409,
@@ -2772,7 +2828,10 @@ class JudgementService:
             result_sha256=result_sha, measurement_lock_sha=_lsha,
             source_script_path=source_script_path,
             source_result_path=source_result_path,
-            history_payload_sha256=history_payload_sha256)
+            history_payload_sha256=history_payload_sha256,
+            prediction_temporal_commitment_sha256=(
+                prediction_temporal_commitment_sha256
+            ))
         rsha = receipt_content_sha(receipt_fields)
         test_result_event_id = f'ob-test-result-{rsha}'
         test_result_payload = dict(test_result_summary, receipt_sha=rsha)
@@ -2878,6 +2937,21 @@ class JudgementService:
                    """ + LOCKED_BUDGET_GUARD + """
                    MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
+                   OPTIONAL MATCH (e)-[:HAS_PREDICTION_TEMPORAL_COMMITMENT]->
+                     (temporal_commitment:PredictionTemporalCommitment)
+                   WITH t, e,
+                     [item IN collect(temporal_commitment) WHERE item IS NOT NULL]
+                       AS temporal_commitments
+                   WHERE ($prediction_temporal_commitment_sha256 IS NULL
+                          AND size(temporal_commitments)=0)
+                      OR ($prediction_temporal_commitment_sha256 IS NOT NULL
+                          AND size(temporal_commitments)=1
+                          AND temporal_commitments[0].commitment_sha256=
+                            $prediction_temporal_commitment_sha256
+                          AND temporal_commitments[0].prediction_receipt_sha256=
+                            e.pred_receipt_sha
+                          AND temporal_commitments[0].authority_policy_sha256=
+                            $prediction_temporal_policy_sha256)
                    WITH t, e
                    OPTIONAL MATCH (history_prior:OutboxEntry)
                      WHERE history_prior.id IN $history_event_ids
@@ -2927,7 +3001,9 @@ class JudgementService:
                        rec.result_sha256=$result_sha256, rec.measurement_lock_sha=$lsha,
                        rec.source_script_path=$source_script,
                        rec.source_result_path=$source_rp,
-                       rec.history_payload_sha256=$history_payload_sha256
+                       rec.history_payload_sha256=$history_payload_sha256,
+                       rec.prediction_temporal_commitment_sha256=
+                         $prediction_temporal_commitment_sha256
                    MERGE (e)-[:HAS_RECEIPT]->(rec)
                    SET e.current_receipt_sha=$rsha
                    FOREACH (_ IN CASE WHEN $lsha IS NULL THEN [] ELSE [1] END |
@@ -3002,6 +3078,12 @@ class JudgementService:
                      script=sealed_script_path, sha=stored_sha, rp=sealed_result_path,
                      source_script=source_script_path, source_rp=source_result_path,
                      history_payload_sha256=history_payload_sha256,
+                     prediction_temporal_commitment_sha256=(
+                         prediction_temporal_commitment_sha256
+                     ),
+                     prediction_temporal_policy_sha256=(
+                         prediction_temporal_policy_sha256
+                     ),
                      result_sha256=result_sha, ts=ts, novel=novel_independent,
                      node_state=next_state.value,
                      st=est, lstat=lakatos_status, qsr=qual_self_report,
@@ -3153,6 +3235,10 @@ class JudgementService:
                 'source_script_path': source_script_path,
                 'source_result_path': source_result_path,
                 'measurement_lock_sha': _lsha,
+                'verdict_receipt_sha256': rsha,
+                'prediction_temporal_commitment_sha256': (
+                    prediction_temporal_commitment_sha256
+                ),
                 'replay_status': replay_status, 'replay_reason': replay_reason,
                 'regenerated_metric': regenerated_metric,
                 'question': ({'target': target_id, 'closed': question_closed,
@@ -3211,10 +3297,21 @@ class JudgementService:
                             r.measurement_lock_sha AS measurement_lock_sha,
                             r.source_script_path AS source_script_path,
                             r.source_result_path AS source_result_path,
-                            r.history_payload_sha256 AS history_payload_sha256""",
+                            r.history_payload_sha256 AS history_payload_sha256,
+                            r.prediction_temporal_commitment_sha256 AS
+                              prediction_temporal_commitment_sha256""",
                      tree=name, tag=tag)
-        return {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
-                'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
+        result = {'head': h.get('head'), 'cache_verdict': h.get('cache_verdict'),
+                  'cache_source': h.get('cache_source'), 'receipts': list(recs or [])}
+        temporal_provider = getattr(self, 'temporal_proof_provider', None)
+        if temporal_provider is not None:
+            temporal_proof = temporal_provider(
+                name,
+                {tag: h.get('head')},
+            ).get(tag)
+            if temporal_proof is not None:
+                result['temporal_proof'] = temporal_proof.public_dict()
+        return result
 
     def verify_verdict_chain(self, name: str, tag: str) -> dict:
         """G1 rebuild_verify(verdict 판): 체인 fold 로 현재 verdict 를 *재유도*해 e.verdict 캐시와 대조.
@@ -3225,8 +3322,11 @@ class JudgementService:
         folded = fold_receipt_chain(chain['receipts'], chain['head'],
                                     cache_verdict=chain['cache_verdict'], cache_source=chain['cache_source'])
         ok = folded['verdict'] == chain['cache_verdict']
-        return {'ok': ok, 'rederived': folded['verdict'], 'cache': chain['cache_verdict'],
-                'from_receipt': folded['from_receipt']}
+        result = {'ok': ok, 'rederived': folded['verdict'], 'cache': chain['cache_verdict'],
+                  'from_receipt': folded['from_receipt']}
+        if 'temporal_proof' in chain:
+            result['temporal_proof'] = chain['temporal_proof']
+        return result
 
     @_serialized_ledger_command
     def demote_stale_canonical(self, name: str, *, dry_run: bool = True) -> dict:

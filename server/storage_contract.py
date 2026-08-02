@@ -32,6 +32,14 @@ from server.contexts.tree.receipt_chain import (
     ReceiptGraphError,
     validate_receipt_graph,
 )
+from server.contexts.tree.temporal_intents import (
+    PREDICTION_TEMPORAL_IDENTITY_CYPHER,
+    TEMPORAL_SIDECAR_IDENTITY_CYPHER,
+    TemporalIntentError,
+    classify_temporal_intent,
+    validate_prediction_temporal_identity_row,
+    validate_temporal_sidecar_identity_row,
+)
 from server.storage_protocol import STORAGE_CONTRACT_ID
 
 
@@ -395,10 +403,16 @@ _NEO_OUTBOX_CONSTRAINT_SQL = """
 SHOW CONSTRAINTS
 YIELD name, type, entityType, labelsOrTypes, properties
 WHERE name IN ['lkt_outbox_id_unique', 'lkt_argument_id_unique',
-               'lkt_runtime_writer_lease_name_unique']
+               'lkt_runtime_writer_lease_name_unique',
+               'lkt_prediction_temporal_commitment_sha_unique',
+               'lkt_prediction_temporal_commitment_target_unique',
+               'lkt_temporal_proof_sidecar_sha_unique',
+               'lkt_temporal_proof_sidecar_target_unique']
    OR any(label IN labelsOrTypes
           WHERE label IN ['OutboxEntry', 'Argument', 'LakatosArgument',
-                          'RuntimeWriterLease'])
+                          'RuntimeWriterLease',
+                          'PredictionTemporalCommitment',
+                          'TemporalProofSidecar'])
 RETURN name, type, entityType, labelsOrTypes, properties
 ORDER BY name
 """
@@ -1270,6 +1284,8 @@ def _diagnose_neo_outbox_projection(
     causal_receipt_rows: Iterable[dict[str, Any]] | None = None,
     admin_authority_rows: Iterable[dict[str, Any]] | None = None,
     prediction_authority_rows: Iterable[dict[str, Any]] | None = None,
+    prediction_temporal_rows: Iterable[dict[str, Any]] | None = None,
+    temporal_sidecar_rows: Iterable[dict[str, Any]] | None = None,
     receipt_chain_node_rows: Iterable[dict[str, Any]] | None = None,
     receipt_identity_rows: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -1295,16 +1311,36 @@ def _diagnose_neo_outbox_projection(
         "UNIQUENESS", "NODE_UNIQUENESS", "NODE_PROPERTY_UNIQUENESS",
     }
     expected_constraints = {
-        "lkt_outbox_id_unique": ("OutboxEntry", "id"),
-        "lkt_argument_id_unique": ("LakatosArgument", "id"),
+        "lkt_outbox_id_unique": ("OutboxEntry", ("id",)),
+        "lkt_argument_id_unique": ("LakatosArgument", ("id",)),
         "lkt_runtime_writer_lease_name_unique": (
-            "RuntimeWriterLease", "name"
+            "RuntimeWriterLease", ("name",)
+        ),
+        "lkt_prediction_temporal_commitment_sha_unique": (
+            "PredictionTemporalCommitment", ("commitment_sha256",)
+        ),
+        "lkt_prediction_temporal_commitment_target_unique": (
+            "PredictionTemporalCommitment",
+            (
+                "tree_incarnation_id", "tree", "tag",
+                "prediction_receipt_sha256",
+            ),
+        ),
+        "lkt_temporal_proof_sidecar_sha_unique": (
+            "TemporalProofSidecar", ("sidecar_sha256",)
+        ),
+        "lkt_temporal_proof_sidecar_target_unique": (
+            "TemporalProofSidecar",
+            (
+                "tree_incarnation_id", "tree", "tag",
+                "verdict_receipt_sha256",
+            ),
         ),
     }
     by_name: dict[str, list[dict[str, Any]]] = {}
     for row in constraints:
         by_name.setdefault(str(row.get("name")), []).append(row)
-    for name, (label, prop) in expected_constraints.items():
+    for name, (label, properties) in expected_constraints.items():
         candidates = by_name.get(name, [])
         if not candidates:
             failures.append(f"neo4j.constraint.{name}.missing")
@@ -1314,7 +1350,7 @@ def _diagnose_neo_outbox_projection(
             and candidates[0].get("type") in uniqueness_types
             and candidates[0].get("entityType") == "NODE"
             and tuple(candidates[0].get("labelsOrTypes") or ()) == (label,)
-            and tuple(candidates[0].get("properties") or ()) == (prop,)
+            and tuple(candidates[0].get("properties") or ()) == properties
         )
         if not exact:
             failures.append(f"neo4j.constraint.{name}.shape")
@@ -1384,6 +1420,8 @@ def _diagnose_neo_outbox_projection(
     causal_groups: dict[str, list[dict[str, Any]]] = {}
     admin_candidates: dict[str, dict[str, Any]] = {}
     prediction_candidates: dict[str, dict[str, Any]] = {}
+    temporal_candidates: dict[str, tuple[str, dict[str, Any]]] = {}
+    temporal_namespace_errors = 0
     pending_entries = 0
     for row in entries:
         event_id = row.get("id")
@@ -1537,6 +1575,16 @@ def _diagnose_neo_outbox_projection(
             )
         ):
             prediction_candidates[event_id] = row
+        try:
+            temporal_kind = classify_temporal_intent(row)
+        except TemporalIntentError:
+            temporal_namespace_errors += 1
+            temporal_kind = None
+        if temporal_kind is not None:
+            if not isinstance(event_id, str) or event_id in temporal_candidates:
+                temporal_namespace_errors += 1
+            else:
+                temporal_candidates[event_id] = (temporal_kind, row)
         if row.get("op") == "critique" and row.get("argument_copies") != 1:
             bad_argument_bindings += 1
         canonical_by_id[event_id] = {**row, "canonical_payload": canonical_payload}
@@ -1782,6 +1830,86 @@ def _diagnose_neo_outbox_projection(
             bad_prediction_intents += 1
     if bad_prediction_intents:
         failures.append("neo4j.outbox.prediction_intent_v3")
+
+    temporal_fields = (
+        "id", "tree", "op", "node_tag", "payload", "status",
+        "created_at", "reason", "applied_at", "adopted_by", "adopted_at",
+        "receipt_sha", "causal_group", "causal_index", "request_sha256",
+        "demoted_tag", "demoted_receipt_sha",
+    )
+    commitment_rows = (
+        [] if prediction_temporal_rows is None
+        else [dict(row) for row in prediction_temporal_rows]
+    )
+    sidecar_rows = (
+        [] if temporal_sidecar_rows is None
+        else [dict(row) for row in temporal_sidecar_rows]
+    )
+    valid_commitments: dict[str, dict[str, Any]] = {}
+    valid_sidecars: dict[str, dict[str, Any]] = {}
+    bad_prediction_temporal = 0
+    bad_temporal_sidecars = 0
+    for row in commitment_rows:
+        outbox = row.get("outbox")
+        try:
+            if chain_index is None or not isinstance(outbox, dict):
+                raise TemporalIntentError("receipt graph or outbox is unavailable")
+            validated = validate_prediction_temporal_identity_row(
+                row,
+                chain_index=chain_index,
+                require_current_effect=outbox.get("status") == "pending",
+            )
+            event_id = validated.outbox.get("id")
+            candidate = temporal_candidates.get(event_id)
+            if not (
+                isinstance(event_id, str)
+                and candidate is not None
+                and candidate[0] == "commitment"
+                and event_id not in valid_commitments
+                and not any(
+                    validated.outbox.get(field) != candidate[1].get(field)
+                    for field in temporal_fields
+                )
+            ):
+                raise TemporalIntentError("commitment authority snapshot diverges")
+            valid_commitments[event_id] = row
+        except (TemporalIntentError, TypeError, ValueError, KeyError):
+            bad_prediction_temporal += 1
+    for row in sidecar_rows:
+        outbox = row.get("outbox")
+        try:
+            if chain_index is None or not isinstance(outbox, dict):
+                raise TemporalIntentError("receipt graph or outbox is unavailable")
+            validated = validate_temporal_sidecar_identity_row(
+                row,
+                chain_index=chain_index,
+                require_current_effect=outbox.get("status") == "pending",
+            )
+            event_id = validated.outbox.get("id")
+            candidate = temporal_candidates.get(event_id)
+            if not (
+                isinstance(event_id, str)
+                and candidate is not None
+                and candidate[0] == "sidecar"
+                and event_id not in valid_sidecars
+                and not any(
+                    validated.outbox.get(field) != candidate[1].get(field)
+                    for field in temporal_fields
+                )
+            ):
+                raise TemporalIntentError("sidecar authority snapshot diverges")
+            valid_sidecars[event_id] = row
+        except (TemporalIntentError, TypeError, ValueError, KeyError):
+            bad_temporal_sidecars += 1
+    for event_id, (kind, _entry) in temporal_candidates.items():
+        if kind == "commitment" and event_id not in valid_commitments:
+            bad_prediction_temporal += 1
+        if kind == "sidecar" and event_id not in valid_sidecars:
+            bad_temporal_sidecars += 1
+    if temporal_namespace_errors or bad_prediction_temporal:
+        failures.append("neo4j.prediction_temporal_commitment.identity")
+    if temporal_namespace_errors or bad_temporal_sidecars:
+        failures.append("neo4j.temporal_proof_sidecar.identity")
     if pending_entries:
         failures.append("neo4j.outbox.pending")
 
@@ -1910,6 +2038,14 @@ def _diagnose_neo_outbox_projection(
             "bad_admin_intents": bad_admin_intents,
             "prediction_intents_checked": len(prediction_candidates),
             "bad_prediction_intents": bad_prediction_intents,
+            "prediction_temporal_nodes_checked": len(commitment_rows),
+            "bad_prediction_temporal_nodes": (
+                bad_prediction_temporal + temporal_namespace_errors
+            ),
+            "temporal_sidecar_nodes_checked": len(sidecar_rows),
+            "bad_temporal_sidecar_nodes": (
+                bad_temporal_sidecars + temporal_namespace_errors
+            ),
             "receipt_chain_checked": receipt_chain_checked,
             "bad_receipt_chains": bad_receipt_chains,
             "pending_outbox_rows": pending_entries,
@@ -2017,6 +2153,8 @@ def inspect_neo_outbox_contract(
         causal_receipt_rows=causal_receipt_rows,
         admin_authority_rows=kg(_NEO_ADMIN_AUTHORITY_CYPHER),
         prediction_authority_rows=kg(_NEO_PREDICTION_AUTHORITY_CYPHER),
+        prediction_temporal_rows=kg(PREDICTION_TEMPORAL_IDENTITY_CYPHER),
+        temporal_sidecar_rows=kg(TEMPORAL_SIDECAR_IDENTITY_CYPHER),
         receipt_chain_node_rows=kg(_NEO_RECEIPT_CHAIN_ROWS_CYPHER),
         receipt_identity_rows=kg(_NEO_RECEIPT_IDENTITIES_CYPHER),
     )

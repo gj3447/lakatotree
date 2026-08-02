@@ -32,16 +32,52 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# The selected canonical file is a full authority snapshot. Clear inherited
+# launch/runtime values so an omitted line cannot silently inherit a decoy.
+# Migration/readiness secrets remain visible for the rejection loop below.
+CANONICAL_ENV_NAMES=(
+  LAKATOS_BIND_HOST LAKATOS_PYTHON LAKATOS_API_TOKEN LAKATO_PORT
+  UVICORN_WORKERS WEB_CONCURRENCY
+  NEO4J_URI NEO4J_DATABASE NEO4J_USER NEO4J_PASSWORD
+  LAKATOS_MONGO_URI
+  LAKATOS_PG_HOST LAKATOS_PG_PORT LAKATOS_PG_USER
+  LAKATOS_PG_PASSWORD LAKATOS_PG_DB
+  LAKATOS_STORAGE_ENVIRONMENT
+  LAKATOS_STORAGE_FENCE_VERIFIER_SHA256
+  LAKATOS_STORAGE_FENCE_PUBLIC_KEY_HEX
+  LAKATOS_STORAGE_PREDEPLOY_RECEIPT
+  LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256
+  LAKATOS_STORAGE_ACCESS_POLICY
+  LAKATOS_STORAGE_ACCESS_POLICY_SHA256
+  LAKATOS_STORAGE_ACCESS_PREDEPLOY_BUNDLE
+  LAKATOS_STORAGE_ACCESS_PREDEPLOY_BUNDLE_SHA256
+  LAKATOS_STORAGE_ACCESS_STARTUP_BUNDLE
+  LAKATOS_STORAGE_ACCESS_STARTUP_BUNDLE_SHA256
+  LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER
+  LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER_SHA256
+  LAKATOS_STORAGE_RUNTIME_WRITER_PUBLIC_KEY_HEX
+  LAKATOS_STORAGE_PG_RUNTIME_DSN
+  LAKATOS_STORAGE_PG_RUNTIME_CA_SHA256
+)
+for CANONICAL_ENV_NAME in "${CANONICAL_ENV_NAMES[@]}"; do
+  unset "$CANONICAL_ENV_NAME"
+done
 set -a; . "$ENV_FILE"; set +a
 
 : "${NEO4J_DATABASE:?NEO4J_DATABASE 설정 필요($ENV_FILE)}"
 for MIGRATION_SECRET in \
   LAKATOS_STORAGE_PG_MIGRATION_USER \
   LAKATOS_STORAGE_PG_MIGRATION_PASSWORD \
+  LAKATOS_STORAGE_PG_MIGRATION_DSN \
+  LAKATOS_STORAGE_NEO4J_MIGRATION_URI \
   LAKATOS_STORAGE_NEO4J_MIGRATION_USER \
-  LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD; do
+  LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD \
+  LAKATOTREE_READINESS_PG_DSN \
+  LAKATOTREE_READINESS_NEO4J_URI \
+  LAKATOTREE_READINESS_NEO4J_USER \
+  LAKATOTREE_READINESS_NEO4J_PASSWORD; do
   if printenv "$MIGRATION_SECRET" >/dev/null 2>&1; then
-    echo "[restart] 거부: migration credential은 runtime 환경에 둘 수 없음($MIGRATION_SECRET)" >&2
+    echo "[restart] 거부: migration credential 또는 audit credential은 runtime 환경에 둘 수 없음($MIGRATION_SECRET)" >&2
     exit 2
   fi
 done
@@ -54,16 +90,11 @@ case "$BIND_HOST" in
 esac
 HEALTH_BASE="http://$PROBE_HOST:55170"
 PYTHON_BIN="${LAKATOS_PYTHON:-$ROOT/.venv/bin/python}"
-if [ -x "$PYTHON_BIN" ]; then
-  PREFLIGHT_PYTHON="$PYTHON_BIN"
-elif command -v python3 >/dev/null 2>&1; then
-  PREFLIGHT_PYTHON="$(command -v python3)"
-elif command -v python >/dev/null 2>&1; then
-  PREFLIGHT_PYTHON="$(command -v python)"
-else
-  echo "[restart] 거부: auth posture를 검증할 Python이 없다." >&2
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "[restart] 거부: server Python 실행파일 없음($PYTHON_BIN)." >&2
   exit 2
 fi
+PREFLIGHT_PYTHON="$PYTHON_BIN"
 
 # The critique-history storage audit is cached in-process.  Until that state is
 # backed by a shared coordinator, every supported launcher must remain a single
@@ -77,6 +108,33 @@ export WEB_CONCURRENCY=1
 # Canonical env can widen the bind or inject UVICORN_FD/UDS.  Validate the
 # final sourced values before touching the currently healthy listener.
 "$PREFLIGHT_PYTHON" -m server.auth_posture "$BIND_HOST" || exit $?
+# This stays before listener_pid/TERM. A fully absent profile is core-only;
+# declaring any one storage field activates the strict all-or-nothing verifier.
+STORAGE_ACCESS_REQUESTED=0
+for STORAGE_ACCESS_ENV in \
+  LAKATOS_STORAGE_ENVIRONMENT \
+  LAKATOS_STORAGE_FENCE_VERIFIER_SHA256 \
+  LAKATOS_STORAGE_FENCE_PUBLIC_KEY_HEX \
+  LAKATOS_STORAGE_ACCESS_POLICY \
+  LAKATOS_STORAGE_ACCESS_POLICY_SHA256 \
+  LAKATOS_STORAGE_PREDEPLOY_RECEIPT \
+  LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256 \
+  LAKATOS_STORAGE_ACCESS_PREDEPLOY_BUNDLE \
+  LAKATOS_STORAGE_ACCESS_PREDEPLOY_BUNDLE_SHA256 \
+  LAKATOS_STORAGE_ACCESS_STARTUP_BUNDLE \
+  LAKATOS_STORAGE_ACCESS_STARTUP_BUNDLE_SHA256 \
+  LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER \
+  LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER_SHA256 \
+  LAKATOS_STORAGE_RUNTIME_WRITER_PUBLIC_KEY_HEX \
+  LAKATOS_STORAGE_PG_RUNTIME_DSN \
+  LAKATOS_STORAGE_PG_RUNTIME_CA_SHA256; do
+  if printenv "$STORAGE_ACCESS_ENV" >/dev/null 2>&1; then
+    STORAGE_ACCESS_REQUESTED=1
+  fi
+done
+if [ "$STORAGE_ACCESS_REQUESTED" = "1" ]; then
+  "$PYTHON_BIN" -m server.storage_access_verify
+fi
 
 listener_pid() {
   ss -ltnp 2>/dev/null \
@@ -121,7 +179,7 @@ if [ -n "${PID:-}" ]; then
   BACKUP_TMP="$(mktemp "$BACKUP_FILE.XXXXXX")"
   if tr '\0' '\n' < "$PROC_ROOT/$PID/environ" 2>/dev/null \
       | grep -E "^NEO4J|^LAKATOS|^MONGO" \
-      | grep -Ev '^LAKATOS_STORAGE_(PG|NEO4J)_MIGRATION_(USER|PASSWORD)=' \
+      | grep -Ev '^LAKATOS_STORAGE_(PG|NEO4J)_MIGRATION_(USER|PASSWORD|DSN|URI)=' \
       > "$BACKUP_TMP"; then
     chmod 600 "$BACKUP_TMP"
     mv -f "$BACKUP_TMP" "$BACKUP_FILE"

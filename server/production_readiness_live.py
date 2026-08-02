@@ -30,9 +30,20 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
+from server.storage_protocol import NEO4J_SUPPORTED_RELEASES, STORAGE_CONTRACT_ID
+from server.runtime_authority import (
+    RUNTIME_EFFECT_SCOPE,
+    RuntimeAuthorityError,
+    artifact_identity_sha256,
+    verify_published_runtime_snapshot,
+)
+
 
 REQUEST_SCHEMA = "lakatotree-production-readiness-collection-request/v1"
+REQUEST_SCHEMA_V2 = "lakatotree-production-readiness-collection-request/v2"
+REQUEST_SCHEMA_V3 = "lakatotree-production-readiness-collection-request/v3"
 EVIDENCE_SCHEMA = "lakatotree-production-readiness-live-evidence/v1"
+EVIDENCE_SCHEMA_V2 = "lakatotree-production-readiness-live-evidence/v2"
 WRITE_RECEIPT_SCHEMA = "lakatotree-production-readiness-live-write-receipt/v1"
 ERROR_SCHEMA = "lakatotree-production-readiness-live-error/v1"
 MAX_REQUEST_BYTES = 64 * 1024
@@ -41,6 +52,7 @@ MAX_RESPONSE_BYTES = 64 * 1024
 MAX_HTTP_HEADER_BYTES = 16 * 1024
 MAX_JSON_NESTING = 64
 MAX_FACT_ITEMS = 256
+MAX_RBAC_FACT_ITEMS = 8192
 ADAPTER_NAMES = ("runtime", "postgresql", "neo4j", "predeploy", "temporal")
 ADAPTER_STATUSES = frozenset({"OBSERVED", "PARTIAL", "NOT_CONFIGURED", "UNAVAILABLE"})
 CLAIM_BOUNDARY = (
@@ -54,6 +66,9 @@ CLAIM_BOUNDARY = (
 
 _TARGET_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _ROLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,62}\Z")
+_NEO_DATABASE_NAME = re.compile(
+    r"(?=.{3,63}\Z)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\Z"
+)
 _FAILURE_CODE = re.compile(r"[a-z][a-z0-9_.-]{0,127}\Z")
 _HEX = frozenset("0123456789abcdef")
 _SECRET_MARKERS = ("password", "secret", "credential", "token", "private_key", "dsn", "uri", "url")
@@ -69,12 +84,19 @@ _ADAPTER_ENV_KEYS = {
     "temporal": (),
 }
 _RUNTIME_STATES = frozenset({"ok", "healthy", "degraded", "unhealthy", "ready", "not_ready"})
-_SERVICE_STATES = frozenset({"ok", "down", "degraded", "unknown"})
-_SERVICE_NAMES = frozenset({"pg", "neo4j", "mongo"})
-_AUTH_POSTURES = frozenset({"token_required", "loopback_only", "disabled"})
-_FRESHNESS_STATES = frozenset({"on", "off"})
-_PREDEPLOY_SCHEMA = "lakatotree-storage-predeploy-receipt/v4"
-_STORAGE_CONTRACT = "lakatotree-storage-contract/v1"
+_SERVICE_STATES = frozenset({
+    "ok", "down", "degraded", "unknown", "lost", "disabled", "unverified",
+})
+_SERVICE_NAMES = frozenset({
+    "pg", "neo4j", "mongo", "writer_lease", "critique_history",
+    "runtime_authority",
+})
+_AUTH_POSTURES = frozenset({
+    "token_required", "loopback_only", "disabled", "open",
+    "irreversible_attested",
+})
+_FRESHNESS_STATES = frozenset({"on", "off", "opt_out"})
+_PREDEPLOY_SCHEMA = "lakatotree-storage-predeploy-receipt/v5"
 _TEMPORAL_SCHEMAS = {
     "authority_policy": "lakatotree-temporal-authority-policy/v1",
     "sidecar": "lakatotree-two-ended-temporal-sidecar/v1",
@@ -92,6 +114,73 @@ _PG_SEQUENCES = (
     "public.metric_snapshots_id_seq",
     "public.lineage_id_seq",
 )
+_PG16_17_LARGE_OBJECT_ROUTINES = (
+    "pg_catalog.lo_close(pg_catalog.int4)",
+    "pg_catalog.lo_creat(pg_catalog.int4)",
+    "pg_catalog.lo_create(pg_catalog.oid)",
+    "pg_catalog.lo_export(pg_catalog.oid,pg_catalog.text)",
+    "pg_catalog.lo_from_bytea(pg_catalog.oid,pg_catalog.bytea)",
+    "pg_catalog.lo_get(pg_catalog.oid)",
+    "pg_catalog.lo_get(pg_catalog.oid,pg_catalog.int8,pg_catalog.int4)",
+    "pg_catalog.lo_import(pg_catalog.text)",
+    "pg_catalog.lo_import(pg_catalog.text,pg_catalog.oid)",
+    "pg_catalog.lo_lseek(pg_catalog.int4,pg_catalog.int4,pg_catalog.int4)",
+    "pg_catalog.lo_lseek64(pg_catalog.int4,pg_catalog.int8,pg_catalog.int4)",
+    "pg_catalog.lo_open(pg_catalog.oid,pg_catalog.int4)",
+    "pg_catalog.lo_put(pg_catalog.oid,pg_catalog.int8,pg_catalog.bytea)",
+    "pg_catalog.lo_tell(pg_catalog.int4)",
+    "pg_catalog.lo_tell64(pg_catalog.int4)",
+    "pg_catalog.lo_truncate(pg_catalog.int4,pg_catalog.int4)",
+    "pg_catalog.lo_truncate64(pg_catalog.int4,pg_catalog.int8)",
+    "pg_catalog.lo_unlink(pg_catalog.oid)",
+    "pg_catalog.loread(pg_catalog.int4,pg_catalog.int4)",
+    "pg_catalog.lowrite(pg_catalog.int4,pg_catalog.bytea)",
+)
+# PostgreSQL 16/17 initdb grant PUBLIC SELECT on this exact information_schema
+# inventory but does not record those grants in pg_init_privs.  The identity
+# allowlist prevents a newly granted low-OID system object from masquerading as
+# that baseline.  Object OID, bootstrap owner, relkind and exact ACL are checked
+# again in the collector query.
+_PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT = frozenset({
+    "administrable_role_authorizations", "applicable_roles", "attributes",
+    "character_sets", "check_constraint_routine_usage", "check_constraints",
+    "collation_character_set_applicability", "collations",
+    "column_column_usage", "column_domain_usage", "column_options",
+    "column_privileges", "column_udt_usage", "columns",
+    "constraint_column_usage", "constraint_table_usage",
+    "data_type_privileges", "domain_constraints", "domain_udt_usage",
+    "domains", "element_types", "enabled_roles",
+    "foreign_data_wrapper_options", "foreign_data_wrappers",
+    "foreign_server_options", "foreign_servers", "foreign_table_options",
+    "foreign_tables", "information_schema_catalog_name", "key_column_usage",
+    "parameters", "referential_constraints", "role_column_grants",
+    "role_routine_grants", "role_table_grants", "role_udt_grants",
+    "role_usage_grants", "routine_column_usage", "routine_privileges",
+    "routine_routine_usage", "routine_sequence_usage", "routine_table_usage",
+    "routines", "schemata", "sequences", "sql_features",
+    "sql_implementation_info", "sql_sizing", "table_constraints",
+    "table_privileges", "tables", "triggered_update_columns", "triggers",
+    "udt_privileges", "usage_privileges", "user_defined_types",
+    "user_mapping_options", "user_mappings", "view_column_usage",
+    "view_routine_usage", "view_table_usage", "views",
+})
+_PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_RELATIONS = frozenset({
+    "sql_features", "sql_implementation_info", "sql_sizing",
+})
+_PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_VIEWS = tuple(sorted(
+    _PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT
+    - _PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_RELATIONS
+))
+_PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_RELATIONS = tuple(sorted(
+    _PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_RELATIONS
+))
+_NEO_AUTH_SETTING_NAMES = (
+    "dbms.security.auth_enabled",
+    "dbms.security.authentication_providers",
+    "dbms.security.authorization_providers",
+    "dbms.security.abac.authorization_providers",
+)
+_NEO_BASE_AUTH_SETTING_NAMES = _NEO_AUTH_SETTING_NAMES[:3]
 
 
 class CollectionInputError(ValueError):
@@ -276,13 +365,23 @@ def _open_verified_directory(path: Path, expected: os.stat_result, *, error: str
 
 
 def validate_request(value: Any) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise CollectionInputError("request must be an object")
+    schema = value.get("schema_version")
+    if schema not in {REQUEST_SCHEMA, REQUEST_SCHEMA_V2, REQUEST_SCHEMA_V3}:
+        raise CollectionInputError("request.schema_version is unsupported")
+    request_v2 = schema in {REQUEST_SCHEMA_V2, REQUEST_SCHEMA_V3}
+    request_v3 = schema == REQUEST_SCHEMA_V3
     request = _exact_mapping(
         value,
         path="request",
-        keys={"schema_version", "target_id", "timeout_seconds", "adapters"},
+        keys={
+            "schema_version", "target_id", "timeout_seconds", "adapters",
+            *({"challenge_nonce"} if request_v2 else set()),
+        },
     )
-    if request["schema_version"] != REQUEST_SCHEMA:
-        raise CollectionInputError("request.schema_version is unsupported")
+    if request_v2:
+        _sha(request["challenge_nonce"], path="request.challenge_nonce")
     target_id = _text(request["target_id"], path="request.target_id", maximum=128)
     if not _TARGET_ID.fullmatch(target_id):
         raise CollectionInputError("request.target_id has an invalid format")
@@ -298,38 +397,136 @@ def validate_request(value: Any) -> Mapping[str, Any]:
         runtime = _exact_mapping(
             runtime,
             path="request.adapters.runtime",
-            keys={"base_url", "expected_git_sha"},
+            keys=(
+                {
+                    "base_url",
+                    "expected_artifact",
+                    "runtime_authority_public_key_hex",
+                }
+                if request_v3
+                else {"base_url", "expected_git_sha"}
+            ),
         )
         _validate_runtime_url(runtime["base_url"])
-        git_sha = _text(
-            runtime["expected_git_sha"],
-            path="request.adapters.runtime.expected_git_sha",
-            maximum=64,
-        )
-        if not (7 <= len(git_sha) <= 64 and all(char in _HEX for char in git_sha)):
-            raise CollectionInputError(
-                "request.adapters.runtime.expected_git_sha must be lowercase hexadecimal"
+        if request_v3:
+            _sha(
+                runtime["runtime_authority_public_key_hex"],
+                path="request.adapters.runtime.runtime_authority_public_key_hex",
             )
+            try:
+                artifact_identity_sha256(runtime["expected_artifact"])
+            except RuntimeAuthorityError as exc:
+                raise CollectionInputError(
+                    "request.adapters.runtime.expected_artifact is invalid"
+                ) from exc
+        else:
+            git_sha = _text(
+                runtime["expected_git_sha"],
+                path="request.adapters.runtime.expected_git_sha",
+                maximum=64,
+            )
+            if not (7 <= len(git_sha) <= 64 and all(char in _HEX for char in git_sha)):
+                raise CollectionInputError(
+                    "request.adapters.runtime.expected_git_sha must be lowercase hexadecimal"
+                )
+            if request_v2 and len(git_sha) != 40:
+                raise CollectionInputError(
+                    "request v2 runtime expected_git_sha must be a full Git SHA"
+                )
 
     postgresql = adapters["postgresql"]
     if postgresql is not None:
         postgresql = _exact_mapping(
             postgresql,
             path="request.adapters.postgresql",
-            keys={"database", "owner_role", "migrator_role", "runtime_role"},
+            keys={
+                "database", "owner_role", "migrator_role", "runtime_role",
+                *({"audit_role", "host", "port"} if request_v2 else set()),
+            },
         )
         _text(postgresql["database"], path="request.adapters.postgresql.database", maximum=63)
-        for field in ("owner_role", "migrator_role", "runtime_role"):
+        if request_v2:
+            host = _text(
+                postgresql["host"],
+                path="request.adapters.postgresql.host",
+                maximum=64,
+            )
+            try:
+                address = ipaddress.ip_address(host)
+            except ValueError as exc:
+                raise CollectionInputError(
+                    "request.adapters.postgresql.host must be a literal loopback IP"
+                ) from exc
+            if not address.is_loopback:
+                raise CollectionInputError(
+                    "request.adapters.postgresql.host must be a literal loopback IP"
+                )
+            if (
+                type(postgresql["port"]) is not int
+                or not 1 <= postgresql["port"] <= 65535
+            ):
+                raise CollectionInputError(
+                    "request.adapters.postgresql.port must be a TCP port"
+                )
+        role_fields = ["owner_role", "migrator_role", "runtime_role"]
+        if request_v2:
+            role_fields.append("audit_role")
+        for field in role_fields:
             _role_name(postgresql[field], path=f"request.adapters.postgresql.{field}")
+        if len({postgresql[field] for field in role_fields}) != len(role_fields):
+            raise CollectionInputError(
+                "request.adapters.postgresql roles must be pairwise distinct"
+            )
 
     neo4j = adapters["neo4j"]
     if neo4j is not None:
         neo4j = _exact_mapping(
             neo4j,
             path="request.adapters.neo4j",
-            keys={"database"},
+            keys={
+                "database",
+                *(
+                    {"audit_user", "audit_role", "migrator_role", "runtime_role"}
+                    | {"migrator_user", "runtime_user"}
+                    if request_v2 else set()
+                ),
+            },
         )
-        _text(neo4j["database"], path="request.adapters.neo4j.database", maximum=63)
+        neo4j_database = _text(
+            neo4j["database"],
+            path="request.adapters.neo4j.database",
+            maximum=63,
+        )
+        if (
+            _NEO_DATABASE_NAME.fullmatch(neo4j_database) is None
+            or neo4j_database.startswith("system")
+        ):
+            raise CollectionInputError(
+                "request.adapters.neo4j.database must be one concrete canonical application database"
+            )
+        if request_v2:
+            for field in (
+                "audit_user", "audit_role", "migrator_user", "migrator_role",
+                "runtime_user", "runtime_role",
+            ):
+                _role_name(neo4j[field], path=f"request.adapters.neo4j.{field}")
+            if len({neo4j[field] for field in (
+                "audit_user", "migrator_user", "runtime_user"
+            )}) != 3:
+                raise CollectionInputError(
+                    "request.adapters.neo4j users must be pairwise distinct"
+                )
+            if len({neo4j[field] for field in ("audit_role", "migrator_role", "runtime_role")}) != 3:
+                raise CollectionInputError(
+                    "request.adapters.neo4j custom roles must be pairwise distinct"
+                )
+            if any(
+                str(neo4j[field]).lower() in {"admin", "architect", "editor", "publisher", "reader", "public"}
+                for field in ("audit_role", "migrator_role", "runtime_role")
+            ):
+                raise CollectionInputError(
+                    "request.adapters.neo4j roles must be custom roles"
+                )
 
     if adapters["predeploy"] is not None:
         _validate_file_config(adapters["predeploy"], path="request.adapters.predeploy")
@@ -563,11 +760,21 @@ def _services(value: Any) -> dict[str, str] | None:
 
 
 def _git_sha_match(observed: Any, expected: str) -> bool:
-    return (
+    """Match a full identity, while preserving the legacy v1 short-SHA wire."""
+
+    if not (
         isinstance(observed, str)
-        and 7 <= len(observed) <= 64
+        and isinstance(expected, str)
+        and 7 <= len(observed) <= 40
+        and 7 <= len(expected) <= 40
         and all(char in _HEX for char in observed)
-        and (observed == expected or (len(observed) < len(expected) and expected.startswith(observed)))
+        and all(char in _HEX for char in expected)
+    ):
+        return False
+    return observed == expected or (
+        len(expected) < 40
+        and len(observed) == 40
+        and observed.startswith(expected)
     )
 
 
@@ -584,7 +791,10 @@ def _optional_git_sha(value: Any) -> str | None:
 def collect_runtime(config: Mapping[str, Any], timeout: float, environ: Mapping[str, str]) -> AdapterResult:
     del environ
     base_url = _validate_runtime_url(config["base_url"])
-    expected_git_sha = str(config["expected_git_sha"])
+    runtime_v3 = "expected_artifact" in config
+    expected_git_sha = (
+        None if runtime_v3 else str(config["expected_git_sha"])
+    )
     observations: dict[str, tuple[int, bytes, Mapping[str, Any]]] = {}
     failures: list[str] = []
     deadline = time.monotonic() + timeout
@@ -593,6 +803,11 @@ def collect_runtime(config: Mapping[str, Any], timeout: float, environ: Mapping[
         ("readyz", "/readyz"),
         ("version", "/version"),
         ("outbox", "/api/ops/outbox-status"),
+        *(
+            (("runtime_authority", "/api/ops/runtime-authority-snapshot"),)
+            if runtime_v3
+            else ()
+        ),
     ):
         try:
             remaining = deadline - time.monotonic()
@@ -629,8 +844,16 @@ def collect_runtime(config: Mapping[str, Any], timeout: float, environ: Mapping[
             "body_sha256": _sha256(raw),
             "boot_git_sha": boot_git_sha,
             "disk_head_sha": disk_head_sha,
-            "boot_matches_expected": _git_sha_match(boot_git_sha, expected_git_sha),
-            "disk_matches_expected": _git_sha_match(disk_head_sha, expected_git_sha),
+            "boot_matches_expected": (
+                None
+                if expected_git_sha is None
+                else _git_sha_match(boot_git_sha, expected_git_sha)
+            ),
+            "disk_matches_expected": (
+                None
+                if expected_git_sha is None
+                else _git_sha_match(disk_head_sha, expected_git_sha)
+            ),
             "stale": _optional_bool(body.get("stale")),
             "identity_verified": _optional_bool(body.get("identity_verified")),
             "auth_posture": _optional_enum(body.get("auth_posture"), _AUTH_POSTURES),
@@ -647,10 +870,73 @@ def collect_runtime(config: Mapping[str, Any], timeout: float, environ: Mapping[
             "body_sha256": _sha256(raw),
             "pending": pending if type(pending) is int and pending >= 0 else None,
         }
+    binding_material = None
+    if runtime_v3:
+        observed_authority = observations.get("runtime_authority")
+        if observed_authority is None:
+            facts["runtime_authority"] = None
+        else:
+            status_code, raw, _body = observed_authority
+            try:
+                if status_code != 200:
+                    raise RuntimeAuthorityError(
+                        "runtime authority endpoint did not return a proof"
+                    )
+                proof = verify_published_runtime_snapshot(
+                    raw,
+                    public_key_hex=str(config["runtime_authority_public_key_hex"]),
+                    expected_artifact=config["expected_artifact"],
+                    evaluated_at=datetime.now(timezone.utc),
+                )
+                report = proof.public_report()
+                facts["runtime_authority"] = {
+                    "http_status": status_code,
+                    "status": "VERIFIED_SIGNED_SNAPSHOT",
+                    "body_sha256": report["body_sha256"],
+                    "challenge_sha256": report["challenge_sha256"],
+                    "artifact_kind": report["artifact_kind"],
+                    "artifact_identity_sha256": report[
+                        "artifact_identity_sha256"
+                    ],
+                    "operation_sha256": report["operation_sha256"],
+                    "target_sha256": report["target_sha256"],
+                    "predeploy_receipt_file_sha256": report[
+                        "predeploy_receipt_file_sha256"
+                    ],
+                    "startup_bundle_file_sha256": report[
+                        "startup_bundle_file_sha256"
+                    ],
+                    "runtime_lease_id_sha256": report[
+                        "runtime_lease_id_sha256"
+                    ],
+                    "runtime_lease_generation": report[
+                        "runtime_lease_generation"
+                    ],
+                    "worker_count": report["worker_count"],
+                    "boot_id_sha256": report["boot_id_sha256"],
+                    "observed_at": report["observed_at"],
+                    "expires_at": report["expires_at"],
+                    "effect_scope": RUNTIME_EFFECT_SCOPE,
+                }
+                binding_material = {
+                    "artifact_identity_sha256": proof.artifact_identity_sha256,
+                    "operation_sha256": proof.operation_sha256,
+                    "target_sha256": proof.target_sha256,
+                    "predeploy_receipt_file_sha256": (
+                        proof.predeploy_receipt_file_sha256
+                    ),
+                }
+            except RuntimeAuthorityError:
+                failures.append("runtime.authority.invalid")
+                facts["runtime_authority"] = {
+                    "http_status": status_code,
+                    "status": "INVALID",
+                }
     return AdapterResult(
         "OBSERVED" if not failures else "PARTIAL",
         facts,
         tuple(sorted(failures)),
+        binding_material,
     )
 
 
@@ -683,7 +969,12 @@ def _bounded_cursor_rows(cursor: Any, *, maximum: int = 512) -> list[Sequence[An
 
 
 def _validated_pg_endpoint(
-    psycopg2: Any, dsn: str, database: str
+    psycopg2: Any,
+    dsn: str,
+    database: str,
+    *,
+    expected_host: str | None = None,
+    expected_port: int | None = None,
 ) -> tuple[str, int, dict[str, str]]:
     """Return explicit TLS conninfo with no libpq ambient-authority fallback."""
 
@@ -711,7 +1002,7 @@ def _validated_pg_endpoint(
     if not isinstance(hostaddr, str) or not hostaddr or "," in hostaddr:
         raise _PortUnavailable("PostgreSQL requires one pinned hostaddr")
     try:
-        ipaddress.ip_address(hostaddr)
+        hostaddr_ip = ipaddress.ip_address(hostaddr)
     except ValueError as exc:
         raise _PortUnavailable("PostgreSQL hostaddr must be a literal IP") from exc
     if not isinstance(port_text, str) or not port_text or "," in port_text:
@@ -722,6 +1013,24 @@ def _validated_pg_endpoint(
         raise _PortUnavailable("PostgreSQL port is invalid") from exc
     if not (1 <= port <= 65535):
         raise _PortUnavailable("PostgreSQL port is invalid")
+    if expected_host is not None:
+        try:
+            expected_ip = ipaddress.ip_address(expected_host)
+            certificate_host_ip = ipaddress.ip_address(host)
+        except ValueError as exc:
+            raise _PortUnavailable(
+                "PostgreSQL v2 target must use one literal IP"
+            ) from exc
+        if not (
+            expected_ip.is_loopback
+            and certificate_host_ip == expected_ip
+            and hostaddr_ip == expected_ip
+            and type(expected_port) is int
+            and port == expected_port
+        ):
+            raise _PortUnavailable(
+                "PostgreSQL DSN endpoint differs from the v2 pinned target"
+            )
     if parsed.get("dbname") != database:
         raise _PortUnavailable("PostgreSQL DSN database is not request-pinned")
     if not parsed.get("user") or not parsed.get("password"):
@@ -732,7 +1041,10 @@ def _validated_pg_endpoint(
     parameters.update(
         {
             "application_name": "lakatotree-readiness-collect",
-            "options": "-c default_transaction_read_only=on",
+            "options": (
+                "-c search_path=pg_catalog "
+                "-c default_transaction_read_only=on"
+            ),
             "channel_binding": "require",
             "target_session_attrs": "read-only",
             "gssencmode": "disable",
@@ -783,7 +1095,11 @@ def _collect_postgresql_impl(
         except ModuleNotFoundError:
             return AdapterResult("UNAVAILABLE", {}, ("postgresql.dependency_unavailable",))
         configured_host, configured_port, connection_parameters = _validated_pg_endpoint(
-            psycopg2, dsn, str(config["database"])
+            psycopg2,
+            dsn,
+            str(config["database"]),
+            expected_host=(str(config["host"]) if "host" in config else None),
+            expected_port=(config.get("port") if "host" in config else None),
         )
     else:
         if (
@@ -798,9 +1114,16 @@ def _collect_postgresql_impl(
         "migrator": str(config["migrator_role"]),
         "runtime": str(config["runtime_role"]),
     }
+    if "audit_role" in config:
+        roles["audit"] = str(config["audit_role"])
     cancel_timer = None
     failures: list[str] = []
+    authority_boundary_deviations: list[list[str | int]] = []
     system_identifier = None
+    challenge_nonce = config.get("challenge_nonce")
+    challenge_bound = challenge_nonce is not None
+    if challenge_bound and not _exact_sha256(challenge_nonce):
+        raise _PortUnavailable("PostgreSQL audit challenge nonce is invalid")
     deadline = time.monotonic() + timeout
     try:
         if owns_connection:
@@ -814,23 +1137,83 @@ def _collect_postgresql_impl(
         cancel_timer = threading.Timer(remaining, _cancel_noexcept, (connection,))
         cancel_timer.daemon = True
         cancel_timer.start()
-        connection.set_session(readonly=True, autocommit=False)
+        connection.set_session(
+            readonly=True,
+            autocommit=False,
+            isolation_level="REPEATABLE READ",
+        )
         with connection.cursor() as cursor:
-            cursor.execute("SELECT set_config('statement_timeout', %s, true)", (f"{max(1, int(remaining * 1000))}ms",))
-            cursor.execute("SELECT current_database(), current_user, session_user, current_setting('transaction_read_only')")
-            database, current_user, session_user, transaction_read_only = cursor.fetchone()
+            if challenge_bound:
+                cursor.execute("SELECT %s::text AS readiness_challenge", (challenge_nonce,))
+                challenge_row = cursor.fetchone()
+                if challenge_row != (challenge_nonce,):
+                    raise _PortUnavailable("PostgreSQL audit challenge was not echoed")
             cursor.execute(
-                "SELECT inet_server_addr()::text, inet_server_port(), "
-                "current_setting('server_version_num')"
+                "SELECT pg_catalog.set_config('statement_timeout', %s, true)",
+                (f"{max(1, int(remaining * 1000))}ms",),
+            )
+            cursor.execute(
+                "SELECT pg_catalog.current_database(), current_user, session_user, "
+                "pg_catalog.current_setting('transaction_read_only'), "
+                "pg_catalog.current_setting('search_path'), "
+                "pg_catalog.current_setting('transaction_isolation')"
+            )
+            (
+                database, current_user, session_user, transaction_read_only,
+                observed_search_path, observed_isolation,
+            ) = cursor.fetchone()
+            if observed_search_path != "pg_catalog":
+                raise _PortUnavailable(
+                    "PostgreSQL audit search_path differs from pg_catalog"
+                )
+            if str(observed_isolation).lower() != "repeatable read":
+                raise _PortUnavailable(
+                    "PostgreSQL audit transaction is not REPEATABLE READ"
+                )
+            cursor.execute(
+                "SELECT pg_catalog.host(pg_catalog.inet_server_addr()), "
+                "pg_catalog.inet_server_port(), "
+                "pg_catalog.current_setting('server_version_num')"
             )
             server_address, server_port, server_version_num = cursor.fetchone()
+            try:
+                server_version_int = int(server_version_num)
+            except (TypeError, ValueError) as exc:
+                raise _PortUnavailable(
+                    "PostgreSQL server_version_num is invalid"
+                ) from exc
+            table_mutation_privileges = [
+                "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER",
+            ]
+            if server_version_int >= 170000:
+                table_mutation_privileges.append("MAINTAIN")
+            if "host" in config:
+                try:
+                    observed_server_ip = ipaddress.ip_address(str(server_address))
+                    expected_server_ip = ipaddress.ip_address(str(config["host"]))
+                except ValueError as exc:
+                    raise _PortUnavailable(
+                        "PostgreSQL live server address is not a pinned IP"
+                    ) from exc
+                if not (
+                    observed_server_ip == expected_server_ip
+                    and type(server_port) is int
+                    and server_port == config["port"]
+                ):
+                    raise _PortUnavailable(
+                        "PostgreSQL live server endpoint differs from the pinned target"
+                    )
             cursor.execute(
-                "SELECT oid::text FROM pg_catalog.pg_database WHERE datname=current_database()"
+                "SELECT oid::text FROM pg_catalog.pg_database "
+                "WHERE datname=pg_catalog.current_database()"
             )
             database_oid = cursor.fetchone()[0]
             cursor.execute("SAVEPOINT readiness_cluster_identity")
             try:
-                cursor.execute("SELECT system_identifier::text FROM pg_control_system()")
+                cursor.execute(
+                    "SELECT system_identifier::text "
+                    "FROM pg_catalog.pg_control_system()"
+                )
                 system_identifier = cursor.fetchone()[0]
             except Exception:
                 cursor.execute("ROLLBACK TO SAVEPOINT readiness_cluster_identity")
@@ -845,32 +1228,79 @@ def _collect_postgresql_impl(
             )
             role_rows = {row[0]: row for row in cursor.fetchall()}
             cursor.execute(
-                "SELECT n.nspname || '.' || c.relname, c.relkind, pg_get_userbyid(c.relowner) "
+                "SELECT n.nspname || '.' || c.relname, c.oid, c.relkind, "
+                "pg_catalog.pg_get_userbyid(c.relowner) "
                 "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
                 "WHERE n.nspname='public' AND c.relname = ANY(%s) ORDER BY 1",
                 ([name.split(".", 1)[1] for name in (*_PG_TABLES, *_PG_SEQUENCES)],),
             )
             object_rows = {row[0]: row for row in cursor.fetchall()}
             cursor.execute(
-                "SELECT nspname, pg_get_userbyid(nspowner) FROM pg_catalog.pg_namespace WHERE nspname='public'"
+                "SELECT nspname, pg_catalog.pg_get_userbyid(nspowner) "
+                "FROM pg_catalog.pg_namespace WHERE nspname='public'"
             )
             schema_row = cursor.fetchone()
-            cursor.execute(
-                "WITH RECURSIVE membership(roleid, path) AS ("
-                " SELECT oid, ARRAY[oid] FROM pg_catalog.pg_roles WHERE rolname=%s"
-                " UNION ALL"
-                " SELECT m.roleid, membership.path || m.roleid"
-                " FROM pg_catalog.pg_auth_members m"
-                " JOIN membership ON membership.roleid=m.member"
-                " WHERE NOT m.roleid=ANY(membership.path)"
-                ") SELECT DISTINCT r.rolname FROM membership"
-                " JOIN pg_catalog.pg_roles r ON r.oid=membership.roleid ORDER BY r.rolname",
-                (roles["runtime"],),
-            )
-            membership_digests = [
-                _sha256(str(row[0]).encode("utf-8"))
-                for row in _bounded_cursor_rows(cursor, maximum=64)
-            ]
+            membership_digests_by_label: dict[str, list[str]] = {}
+            inbound_membership_digests_by_label: dict[str, list[str]] = {}
+            membership_labels = tuple(roles) if "audit" in roles else ("runtime",)
+            for membership_label in membership_labels:
+                cursor.execute(
+                    "WITH RECURSIVE membership(roleid, path) AS ("
+                    " SELECT oid, ARRAY[oid] FROM pg_catalog.pg_roles WHERE rolname=%s"
+                    " UNION ALL"
+                    " SELECT m.roleid, membership.path || m.roleid"
+                    " FROM pg_catalog.pg_auth_members m"
+                    " JOIN membership ON membership.roleid=m.member"
+                    " WHERE NOT m.roleid=ANY(membership.path)"
+                    ") SELECT DISTINCT r.rolname FROM membership"
+                    " JOIN pg_catalog.pg_roles r ON r.oid=membership.roleid ORDER BY r.rolname",
+                    (roles[membership_label],),
+                )
+                membership_digests_by_label[membership_label] = [
+                    _sha256(str(row[0]).encode("utf-8"))
+                    for row in _bounded_cursor_rows(cursor, maximum=64)
+                ]
+            if "audit" in roles:
+                for protected_label, protected_role in roles.items():
+                    cursor.execute(
+                        "WITH RECURSIVE protected AS ("
+                        " SELECT oid FROM pg_catalog.pg_roles WHERE rolname=%s"
+                        "), assignees(member_oid, path) AS ("
+                        " SELECT m.member, ARRAY[m.roleid, m.member]"
+                        " FROM pg_catalog.pg_auth_members m"
+                        " WHERE m.roleid=(SELECT oid FROM protected)"
+                        " UNION ALL"
+                        " SELECT m.member, a.path || m.member"
+                        " FROM pg_catalog.pg_auth_members m"
+                        " JOIN assignees a ON m.roleid=a.member_oid"
+                        " WHERE NOT m.member=ANY(a.path)"
+                        ") SELECT DISTINCT r.rolname FROM assignees a"
+                        " JOIN pg_catalog.pg_roles r ON r.oid=a.member_oid"
+                        " ORDER BY r.rolname",
+                        (protected_role,),
+                    )
+                    inbound_membership_digests_by_label[protected_label] = [
+                        _sha256(str(row[0]).encode("utf-8"))
+                        for row in _bounded_cursor_rows(cursor, maximum=64)
+                    ]
+            migrator_owner_membership = None
+            if "audit" in roles:
+                cursor.execute(
+                    "SELECT m.admin_option, m.inherit_option, m.set_option "
+                    "FROM pg_catalog.pg_auth_members m "
+                    "JOIN pg_catalog.pg_roles parent ON parent.oid=m.roleid "
+                    "JOIN pg_catalog.pg_roles member ON member.oid=m.member "
+                    "WHERE parent.rolname=%s AND member.rolname=%s",
+                    (roles["owner"], roles["migrator"]),
+                )
+                membership_rows = _bounded_cursor_rows(cursor, maximum=2)
+                if len(membership_rows) == 1:
+                    membership_row = membership_rows[0]
+                    migrator_owner_membership = {
+                        "admin_option": bool(membership_row[0]),
+                        "inherit_option": bool(membership_row[1]),
+                        "set_option": bool(membership_row[2]),
+                    }
             relation_names = [
                 name.split(".", 1)[1] for name in (*_PG_TABLES, *_PG_SEQUENCES)
             ]
@@ -881,7 +1311,7 @@ def _collect_postgresql_impl(
                 " FROM pg_catalog.pg_database d"
                 " CROSS JOIN LATERAL pg_catalog.aclexplode("
                 "   COALESCE(d.datacl, pg_catalog.acldefault('d'::\"char\", d.datdba))"
-                " ) x WHERE d.datname=current_database()"
+                " ) x WHERE d.datname=pg_catalog.current_database()"
                 " UNION ALL"
                 " SELECT 'schema', n.nspname, x.grantor, x.grantee,"
                 " x.privilege_type, x.is_grantable"
@@ -897,7 +1327,7 @@ def _collect_postgresql_impl(
                 " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
                 " CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE("
                 "   c.relacl, pg_catalog.acldefault("
-                "     CASE WHEN c.relkind='S' THEN 'S'::\"char\" ELSE 'r'::\"char\" END,"
+                "     CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,"
                 "     c.relowner))) x"
                 " WHERE n.nspname='public' AND c.relname=ANY(%s)"
                 " UNION ALL"
@@ -928,6 +1358,13 @@ def _collect_postgresql_impl(
                 }
                 for row in acl_rows
             ]
+            grantable_acl_counts = {
+                label: sum(
+                    1 for entry in acl_projection
+                    if entry["grantee"] == label and entry["grantable"] is True
+                )
+                for label in roles
+            }
             public_acl_entry_counts = {
                 scope: sum(
                     1
@@ -936,36 +1373,80 @@ def _collect_postgresql_impl(
                 )
                 for scope in ("database", "schema", "relation", "sequence", "column")
             }
-            if roles["runtime"] in role_rows:
-                cursor.execute(
-                    "SELECT has_database_privilege(%s, current_database(), 'CREATE'), "
-                    "has_schema_privilege(%s, 'public', 'CREATE'), "
-                    "has_schema_privilege(%s, 'public', 'USAGE')",
-                    (roles["runtime"], roles["runtime"], roles["runtime"]),
-                )
-                database_create, schema_create, schema_usage = cursor.fetchone()
-            else:
-                database_create = schema_create = schema_usage = False
+            role_scope_privileges: dict[
+                str, tuple[bool, bool, bool, int, str]
+            ] = {}
+            for privilege_label in (
+                "runtime", *( ("audit",) if "audit" in roles else () )
+            ):
+                if roles[privilege_label] in role_rows:
+                    cursor.execute(
+                        "SELECT pg_catalog.has_database_privilege("
+                        "%s, pg_catalog.current_database(), 'CREATE'), "
+                        "pg_catalog.has_database_privilege("
+                        "%s, pg_catalog.current_database(), 'TEMPORARY'), "
+                        "pg_catalog.has_schema_privilege(%s, 'public', 'USAGE')",
+                        (
+                            roles[privilege_label],
+                            roles[privilege_label],
+                            roles[privilege_label],
+                        ),
+                    )
+                    database_create_value, database_temp_value, public_usage_value = (
+                        bool(value) for value in cursor.fetchone()
+                    )
+                    cursor.execute(
+                        "SELECT nspname FROM pg_catalog.pg_namespace "
+                        "WHERE nspname !~ '^pg_' AND nspname<>'information_schema' "
+                        "AND pg_catalog.has_schema_privilege("
+                        "%s, oid, 'CREATE') ORDER BY nspname",
+                        (roles[privilege_label],),
+                    )
+                    create_schema_hashes = [
+                        _sha256(str(row[0]).encode("utf-8"))
+                        for row in _bounded_cursor_rows(cursor, maximum=128)
+                    ]
+                    role_scope_privileges[privilege_label] = (
+                        database_create_value,
+                        database_temp_value,
+                        public_usage_value,
+                        len(create_schema_hashes),
+                        _sha256(_canonical(create_schema_hashes)),
+                    )
+                else:
+                    role_scope_privileges[privilege_label] = (
+                        False, False, False, 0, _sha256(_canonical([]))
+                    )
+            (
+                database_create,
+                database_temp,
+                schema_usage,
+                runtime_schema_create_count,
+                runtime_schema_create_sha256,
+            ) = role_scope_privileges["runtime"]
+            schema_create = runtime_schema_create_count > 0
 
             objects: dict[str, Any] = {}
+            audit_write_privileges: list[list[str]] = []
+            audit_column_write_privileges: list[list[str]] = []
             for object_name in _PG_TABLES:
                 row = object_rows.get(object_name)
                 privileges: list[str] = []
                 column_pairs: list[list[str]] = []
                 if row is not None and roles["runtime"] in role_rows:
-                    for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+                    for privilege in ("SELECT", *table_mutation_privileges):
                         cursor.execute(
-                            "SELECT has_table_privilege(%s, %s, %s)",
-                            (roles["runtime"], object_name, privilege),
+                            "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
+                            (roles["runtime"], row[1], privilege),
                         )
                         if cursor.fetchone()[0] is True:
                             privileges.append(privilege)
                     cursor.execute(
                         "SELECT a.attname,"
-                        " has_column_privilege(%s, c.oid, a.attnum, 'SELECT'),"
-                        " has_column_privilege(%s, c.oid, a.attnum, 'INSERT'),"
-                        " has_column_privilege(%s, c.oid, a.attnum, 'UPDATE'),"
-                        " has_column_privilege(%s, c.oid, a.attnum, 'REFERENCES')"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'SELECT'),"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'INSERT'),"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'UPDATE'),"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'REFERENCES')"
                         " FROM pg_catalog.pg_attribute a"
                         " JOIN pg_catalog.pg_class c ON c.oid=a.attrelid"
                         " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
@@ -999,28 +1480,584 @@ def _collect_postgresql_impl(
                 )
                 objects[object_name] = {
                     "exists": row is not None,
-                    "owner_class": _principal_class(row[2], roles) if row is not None else None,
+                    "owner_class": _principal_class(row[3], roles) if row is not None else None,
                     "runtime_privileges": privileges,
                     "runtime_column_privilege_count": len(column_pairs),
                     "runtime_column_privilege_sha256": _sha256(_canonical(column_pairs)),
                     "runtime_column_only_privileges": column_only,
                 }
+                if "audit" in roles and roles["audit"] in role_rows and row is not None:
+                    for privilege in table_mutation_privileges:
+                        cursor.execute(
+                            "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
+                            (roles["audit"], row[1], privilege),
+                        )
+                        if cursor.fetchone()[0] is True:
+                            audit_write_privileges.append([object_name, privilege])
+                    cursor.execute(
+                        "SELECT a.attname,"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'INSERT'),"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'UPDATE'),"
+                        " pg_catalog.has_column_privilege(%s, c.oid, a.attnum, 'REFERENCES')"
+                        " FROM pg_catalog.pg_attribute a"
+                        " JOIN pg_catalog.pg_class c ON c.oid=a.attrelid"
+                        " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+                        " WHERE n.nspname=%s AND c.relname=%s"
+                        " AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum",
+                        (
+                            roles["audit"], roles["audit"], roles["audit"],
+                            object_name.split(".", 1)[0], object_name.split(".", 1)[1],
+                        ),
+                    )
+                    for column_row in _bounded_cursor_rows(cursor, maximum=128):
+                        for privilege, granted in zip(
+                            ("INSERT", "UPDATE", "REFERENCES"),
+                            column_row[1:],
+                            strict=True,
+                        ):
+                            if granted is True:
+                                audit_column_write_privileges.append([
+                                    object_name,
+                                    _sha256(str(column_row[0]).encode("utf-8")),
+                                    privilege,
+                                ])
             for object_name in _PG_SEQUENCES:
                 row = object_rows.get(object_name)
                 privileges = []
                 if row is not None and roles["runtime"] in role_rows:
                     for privilege in ("SELECT", "USAGE", "UPDATE"):
                         cursor.execute(
-                            "SELECT has_sequence_privilege(%s, %s, %s)",
-                            (roles["runtime"], object_name, privilege),
+                            "SELECT pg_catalog.has_sequence_privilege(%s, %s, %s)",
+                            (roles["runtime"], row[1], privilege),
                         )
                         if cursor.fetchone()[0] is True:
                             privileges.append(privilege)
                 objects[object_name] = {
                     "exists": row is not None,
-                    "owner_class": _principal_class(row[2], roles) if row is not None else None,
+                    "owner_class": _principal_class(row[3], roles) if row is not None else None,
                     "runtime_privileges": privileges,
                 }
+                if "audit" in roles and roles["audit"] in role_rows and row is not None:
+                    cursor.execute(
+                        "SELECT pg_catalog.has_sequence_privilege("
+                        "%s, %s, 'UPDATE')",
+                        (roles["audit"], row[1]),
+                    )
+                    if cursor.fetchone()[0] is True:
+                        audit_write_privileges.append([object_name, "UPDATE"])
+            effective_mutations: dict[str, list[list[str | None]]] = {}
+            effective_reads: dict[str, list[list[str]]] = {}
+            for label in ("runtime", *( ("audit",) if "audit" in roles else () )):
+                cursor.execute(
+                    "WITH user_relations AS ("
+                    " SELECT c.oid, n.nspname, c.relname, c.relkind"
+                    " FROM pg_catalog.pg_class c"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+                    " WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema'"
+                    " AND c.relkind IN ('r','p','v','m','f','S')"
+                    "), table_grants AS ("
+                    " SELECT 'relation'::text AS scope, nspname||'.'||relname AS object_name,"
+                    " NULL::text AS column_name, privilege"
+                    " FROM user_relations"
+                    " CROSS JOIN pg_catalog.unnest(%s::text[]) AS p(privilege)"
+                    " WHERE CASE WHEN relkind<>'S' THEN"
+                    " pg_catalog.has_table_privilege(%s, oid, privilege)"
+                    " ELSE false END"
+                    "), sequence_grants AS ("
+                    " SELECT 'sequence', nspname||'.'||relname, NULL::text, 'UPDATE'::text"
+                    " FROM user_relations WHERE CASE WHEN relkind='S' THEN"
+                    " pg_catalog.has_sequence_privilege(%s, oid, 'UPDATE')"
+                    " ELSE false END"
+                    "), column_grants AS ("
+                    " SELECT 'column', r.nspname||'.'||r.relname, a.attname, privilege"
+                    " FROM user_relations r"
+                    " JOIN pg_catalog.pg_attribute a ON a.attrelid=r.oid"
+                    " CROSS JOIN (VALUES ('INSERT'),('UPDATE'),('REFERENCES')) AS p(privilege)"
+                    " WHERE a.attnum>0 AND NOT a.attisdropped"
+                    " AND CASE WHEN r.relkind<>'S' THEN"
+                    " pg_catalog.has_column_privilege("
+                    "%s, r.oid, a.attnum, privilege)"
+                    " AND NOT pg_catalog.has_table_privilege("
+                    "%s, r.oid, privilege) ELSE false END"
+                    ") SELECT scope, object_name, column_name, privilege FROM ("
+                    " SELECT * FROM table_grants UNION ALL SELECT * FROM sequence_grants"
+                    " UNION ALL SELECT * FROM column_grants"
+                    ") effective ORDER BY scope, object_name, column_name, privilege",
+                    (
+                        table_mutation_privileges,
+                        roles[label], roles[label], roles[label], roles[label],
+                    ),
+                )
+                effective_mutations[label] = [
+                    [
+                        str(row[0]),
+                        _sha256(str(row[1]).encode("utf-8")),
+                        (
+                            _sha256(str(row[2]).encode("utf-8"))
+                            if row[2] is not None else None
+                        ),
+                        str(row[3]),
+                    ]
+                    for row in _bounded_cursor_rows(cursor, maximum=2048)
+                ]
+                cursor.execute(
+                    "WITH user_relations AS ("
+                    " SELECT c.oid, n.nspname, c.relname, c.relkind"
+                    " FROM pg_catalog.pg_class c"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+                    " WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema'"
+                    " AND c.relkind IN ('r','p','v','m','f','S')"
+                    "), relation_reads AS ("
+                    " SELECT 'relation'::text AS scope, nspname||'.'||relname AS object_name,"
+                    " 'SELECT'::text AS privilege FROM user_relations"
+                    " WHERE CASE WHEN relkind<>'S' THEN"
+                    " pg_catalog.has_table_privilege(%s, oid, 'SELECT')"
+                    " ELSE false END"
+                    "), sequence_reads AS ("
+                    " SELECT 'sequence', nspname||'.'||relname, privilege"
+                    " FROM user_relations"
+                    " CROSS JOIN (VALUES ('SELECT'),('USAGE')) AS p(privilege)"
+                    " WHERE CASE WHEN relkind='S' THEN"
+                    " pg_catalog.has_sequence_privilege(%s, oid, privilege)"
+                    " ELSE false END"
+                    "), column_reads AS ("
+                    " SELECT 'column', r.nspname||'.'||r.relname||'.'||a.attname,"
+                    " 'SELECT'::text FROM user_relations r"
+                    " JOIN pg_catalog.pg_attribute a ON a.attrelid=r.oid"
+                    " WHERE a.attnum>0 AND NOT a.attisdropped"
+                    " AND CASE WHEN r.relkind<>'S' THEN"
+                    " pg_catalog.has_column_privilege("
+                    "%s, r.oid, a.attnum, 'SELECT')"
+                    " AND NOT pg_catalog.has_table_privilege("
+                    "%s, r.oid, 'SELECT') ELSE false END"
+                    "), schema_reads AS ("
+                    " SELECT 'schema', nspname, 'USAGE'::text"
+                    " FROM pg_catalog.pg_namespace"
+                    " WHERE nspname !~ '^pg_' AND nspname<>'information_schema'"
+                    " AND pg_catalog.has_schema_privilege(%s, oid, 'USAGE')"
+                    ") SELECT scope, object_name, privilege FROM ("
+                    " SELECT * FROM relation_reads UNION ALL SELECT * FROM sequence_reads"
+                    " UNION ALL SELECT * FROM column_reads UNION ALL SELECT * FROM schema_reads"
+                    ") effective ORDER BY scope, object_name, privilege",
+                    (
+                        roles[label], roles[label], roles[label], roles[label],
+                        roles[label],
+                    ),
+                )
+                effective_reads[label] = [
+                    [
+                        str(row[0]),
+                        _sha256(str(row[1]).encode("utf-8")),
+                        str(row[2]),
+                    ]
+                    for row in _bounded_cursor_rows(cursor, maximum=2048)
+                ]
+            runtime_allowed_mutations = {
+                (
+                    "relation",
+                    _sha256(name.encode("utf-8")),
+                    None,
+                    "INSERT",
+                )
+                for name in _PG_TABLES
+            }
+            runtime_out_of_contract_write_privileges = [
+                row
+                for row in effective_mutations["runtime"]
+                if tuple(row) not in runtime_allowed_mutations
+            ]
+            runtime_allowed_reads = {
+                ("relation", _sha256(name.encode("utf-8")), "SELECT")
+                for name in _PG_TABLES
+            } | {
+                ("sequence", _sha256(name.encode("utf-8")), privilege)
+                for name in _PG_SEQUENCES
+                for privilege in ("SELECT", "USAGE")
+            } | {("schema", _sha256(b"public"), "USAGE")}
+            runtime_out_of_contract_read_privileges = [
+                row
+                for row in effective_reads["runtime"]
+                if tuple(row) not in runtime_allowed_reads
+            ]
+            if "audit" in roles:
+                audit_write_privileges = list(effective_mutations["audit"])
+                audit_column_write_privileges = [
+                    row for row in audit_write_privileges if row[0] == "column"
+                ]
+                audit_data_read_privileges = list(effective_reads["audit"])
+            else:
+                runtime_out_of_contract_write_privileges = []
+                runtime_out_of_contract_read_privileges = []
+                audit_data_read_privileges = []
+            role_owned_user_object_count: dict[str, int] = {}
+            role_user_function_execute_count: dict[str, int] = {}
+            if "audit" in roles:
+                for label, role_name in roles.items():
+                    cursor.execute(
+                        "WITH target_role AS (SELECT oid FROM pg_catalog.pg_roles WHERE rolname=%s) "
+                        "SELECT "
+                        " (SELECT count(*) FROM pg_catalog.pg_database d WHERE d.datdba=(SELECT oid FROM target_role) AND d.datname=pg_catalog.current_database()) +"
+                        " (SELECT count(*) FROM pg_catalog.pg_namespace n WHERE n.nspowner=(SELECT oid FROM target_role) AND n.nspname !~ '^pg_' AND n.nspname<>'information_schema') +"
+                        " (SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.relowner=(SELECT oid FROM target_role) AND n.nspname !~ '^pg_' AND n.nspname<>'information_schema') +"
+                        " (SELECT count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE p.proowner=(SELECT oid FROM target_role) AND n.nspname !~ '^pg_' AND n.nspname<>'information_schema') +"
+                        " (SELECT count(*) FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace WHERE t.typowner=(SELECT oid FROM target_role) AND n.nspname !~ '^pg_' AND n.nspname<>'information_schema')",
+                        (role_name,),
+                    )
+                    role_owned_user_object_count[label] = int(cursor.fetchone()[0])
+                    cursor.execute(
+                        "SELECT count(*) FROM pg_catalog.pg_proc p "
+                        "JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace "
+                        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+                        "AND pg_catalog.has_function_privilege("
+                        "%s, p.oid, 'EXECUTE')",
+                        (role_name,),
+                    )
+                    role_user_function_execute_count[label] = int(cursor.fetchone()[0])
+
+                # `pg_shdepend` is the cluster catalogue's complete role-to-object
+                # dependency spine.  The three non-owner application roles may
+                # depend only on the current database and the runtime role's exact
+                # application schema/relations.  Privilege kind is checked again
+                # by the ACL/effective-privilege projections below.
+                cursor.execute(
+                    "WITH db AS ("
+                    " SELECT oid FROM pg_catalog.pg_database"
+                    " WHERE datname=pg_catalog.current_database()"
+                    "), protected(label, role_oid) AS ("
+                    " SELECT v.label, r.oid FROM (VALUES"
+                    " ('migrator', %s::name), ('runtime', %s::name),"
+                    " ('audit', %s::name)) v(label, rolname)"
+                    " JOIN pg_catalog.pg_roles r ON r.rolname=v.rolname"
+                    "), application_relations AS ("
+                    " SELECT c.oid FROM pg_catalog.pg_class c"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+                    " WHERE n.nspname='public' AND c.relname=ANY(%s)"
+                    "), application_schema AS ("
+                    " SELECT oid FROM pg_catalog.pg_namespace WHERE nspname='public'"
+                    ")"
+                    " SELECT p.label, d.classid::regclass::text, d.objid::text,"
+                    " d.objsubid, d.deptype"
+                    " FROM protected p JOIN pg_catalog.pg_shdepend d"
+                    " ON d.refclassid='pg_catalog.pg_authid'::regclass"
+                    " AND d.refobjid=p.role_oid"
+                    " WHERE d.dbid IN (0, (SELECT oid FROM db))"
+                    " AND d.deptype IN ('o','a','r','i')"
+                    " AND NOT (d.deptype='a' AND ("
+                    "   (d.classid='pg_catalog.pg_database'::regclass"
+                    "    AND d.objid=(SELECT oid FROM db) AND d.objsubid=0)"
+                    "   OR (p.label='runtime'"
+                    "    AND d.classid='pg_catalog.pg_namespace'::regclass"
+                    "    AND d.objid=(SELECT oid FROM application_schema)"
+                    "    AND d.objsubid=0)"
+                    "   OR (p.label='runtime'"
+                    "    AND d.classid='pg_catalog.pg_class'::regclass"
+                    "    AND d.objid IN (SELECT oid FROM application_relations)"
+                    "    AND d.objsubid=0)"
+                    " )) ORDER BY 1,2,3,4,5",
+                    (
+                        roles["migrator"], roles["runtime"], roles["audit"],
+                        relation_names,
+                    ),
+                )
+                for row in _bounded_cursor_rows(cursor, maximum=512):
+                    authority_boundary_deviations.append([
+                        "role_dependency",
+                        str(row[0]),
+                        _sha256(f"{row[1]}:{row[2]}:{row[3]}".encode("utf-8")),
+                        str(row[4]),
+                    ])
+
+                # Positive ACL deltas on system objects are authority additions;
+                # revocations are intentionally ignored.  pg_init_privs preserves
+                # initdb/extension ACLs and acldefault supplies the true baseline
+                # when no explicit initial ACL exists.
+                cursor.execute(
+                    "WITH protected(label, oid) AS ("
+                    " SELECT v.label, r.oid FROM (VALUES"
+                    " ('owner', %s::name), ('migrator', %s::name),"
+                    " ('runtime', %s::name), ('audit', %s::name))"
+                    " v(label, rolname)"
+                    " JOIN pg_catalog.pg_roles r ON r.rolname=v.rolname"
+                    "), objs(scope,classoid,objoid,objsubid,cur_acl,init_acl) AS ("
+                    " SELECT 'schema','pg_catalog.pg_namespace'::regclass,"
+                    " n.oid,0,"
+                    " COALESCE(n.nspacl,pg_catalog.acldefault("
+                    "   'n'::\"char\",n.nspowner)),"
+                    " COALESCE(i.initprivs,CASE WHEN"
+                    "   n.nspname='information_schema' AND n.oid<16384"
+                    "   AND n.nspowner=10 THEN pg_catalog.array_append("
+                    "     pg_catalog.acldefault('n'::\"char\",n.nspowner),"
+                    "     pg_catalog.makeaclitem(0,n.nspowner,'USAGE',false))"
+                    "   ELSE pg_catalog.acldefault("
+                    "     'n'::\"char\",n.nspowner) END)"
+                    " FROM pg_catalog.pg_namespace n"
+                    " LEFT JOIN pg_catalog.pg_init_privs i"
+                    " ON i.classoid='pg_catalog.pg_namespace'::regclass"
+                    " AND i.objoid=n.oid AND i.objsubid=0"
+                    " WHERE n.nspname IN ('pg_catalog','information_schema')"
+                    " UNION ALL"
+                    " SELECT 'relation','pg_catalog.pg_class'::regclass,c.oid,0,"
+                    " COALESCE(c.relacl,pg_catalog.acldefault("
+                    "   CASE WHEN c.relkind='S' THEN 's'::\"char\""
+                    "   ELSE 'r'::\"char\" END,c.relowner)),"
+                    " COALESCE(i.initprivs,CASE WHEN"
+                    "   n.nspname='information_schema' AND c.oid<16384"
+                    "   AND c.relowner=10 AND ("
+                    "     (c.relkind='v' AND c.relname=ANY(%s)) OR"
+                    "     (c.relkind='r' AND c.relname=ANY(%s))"
+                    "   ) THEN pg_catalog.array_append("
+                    "     pg_catalog.acldefault('r'::\"char\",c.relowner),"
+                    "     pg_catalog.makeaclitem(0,c.relowner,'SELECT',false))"
+                    "   ELSE pg_catalog.acldefault("
+                    "     CASE WHEN c.relkind='S' THEN 's'::\"char\""
+                    "     ELSE 'r'::\"char\" END,c.relowner) END)"
+                    " FROM pg_catalog.pg_class c"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+                    " LEFT JOIN pg_catalog.pg_init_privs i"
+                    " ON i.classoid='pg_catalog.pg_class'::regclass"
+                    " AND i.objoid=c.oid AND i.objsubid=0"
+                    " WHERE n.nspname IN ('pg_catalog','information_schema')"
+                    " AND c.relkind IN ('r','p','v','m','f','S')"
+                    " UNION ALL"
+                    " SELECT 'column','pg_catalog.pg_class'::regclass,c.oid,a.attnum,"
+                    " a.attacl,i.initprivs"
+                    " FROM pg_catalog.pg_attribute a"
+                    " JOIN pg_catalog.pg_class c ON c.oid=a.attrelid"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+                    " LEFT JOIN pg_catalog.pg_init_privs i"
+                    " ON i.classoid='pg_catalog.pg_class'::regclass"
+                    " AND i.objoid=c.oid AND i.objsubid=a.attnum"
+                    " WHERE n.nspname IN ('pg_catalog','information_schema')"
+                    " AND a.attnum>0 AND NOT a.attisdropped"
+                    " UNION ALL"
+                    " SELECT 'routine','pg_catalog.pg_proc'::regclass,p.oid,0,"
+                    " COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner)),"
+                    " COALESCE(i.initprivs,pg_catalog.acldefault('f',p.proowner))"
+                    " FROM pg_catalog.pg_proc p"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace"
+                    " LEFT JOIN pg_catalog.pg_init_privs i"
+                    " ON i.classoid='pg_catalog.pg_proc'::regclass"
+                    " AND i.objoid=p.oid AND i.objsubid=0"
+                    " WHERE n.nspname IN ('pg_catalog','information_schema')"
+                    "), cur AS ("
+                    " SELECT o.scope,o.classoid,o.objoid,o.objsubid,x.grantee,"
+                    " x.privilege_type,x.is_grantable FROM objs o"
+                    " CROSS JOIN LATERAL pg_catalog.aclexplode(o.cur_acl) x"
+                    " WHERE x.grantee=0 OR x.grantee IN (SELECT oid FROM protected)"
+                    "), base AS ("
+                    " SELECT o.scope,o.classoid,o.objoid,o.objsubid,x.grantee,"
+                    " x.privilege_type,x.is_grantable FROM objs o"
+                    " CROSS JOIN LATERAL pg_catalog.aclexplode(o.init_acl) x"
+                    " WHERE x.grantee=0 OR x.grantee IN (SELECT oid FROM protected)"
+                    "), delta AS (SELECT * FROM cur EXCEPT SELECT * FROM base)"
+                    " SELECT COALESCE(p.label,'public'),d.scope,"
+                    " d.classoid::regclass::text,d.objoid::text,d.objsubid,"
+                    " d.privilege_type,d.is_grantable"
+                    " FROM delta d LEFT JOIN protected p ON p.oid=d.grantee"
+                    " ORDER BY 1,2,3,4,5,6,7",
+                    (
+                        *tuple(
+                            roles[label]
+                            for label in ("owner", "migrator", "runtime", "audit")
+                        ),
+                        list(_PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_VIEWS)
+                        if 160000 <= server_version_int < 180000 else [],
+                        list(_PG16_17_INFORMATION_SCHEMA_PUBLIC_SELECT_RELATIONS)
+                        if 160000 <= server_version_int < 180000 else [],
+                    ),
+                )
+                for row in _bounded_cursor_rows(cursor, maximum=4096):
+                    authority_boundary_deviations.append([
+                        "system_acl_delta",
+                        str(row[0]),
+                        str(row[1]),
+                        _sha256(f"{row[2]}:{row[3]}:{row[4]}".encode("utf-8")),
+                        str(row[5]),
+                        int(bool(row[6])),
+                    ])
+
+                # Supported initdbs have no post-bootstrap routines in the two
+                # system namespaces and no built-in SECURITY DEFINER/proconfig
+                # routines there.  A default-PUBLIC function in pg_catalog can
+                # otherwise turn an apparently read-only audit login directly
+                # into its superuser owner.
+                cursor.execute(
+                    "SELECT n.nspname,p.oid::text,p.prosecdef,"
+                    " p.proconfig IS NOT NULL"
+                    " FROM pg_catalog.pg_proc p"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace"
+                    " WHERE n.nspname IN ('pg_catalog','information_schema')"
+                    " AND (p.oid>=16384 OR p.prosecdef"
+                    "      OR p.proconfig IS NOT NULL)"
+                    " ORDER BY 1,2"
+                )
+                for row in _bounded_cursor_rows(cursor, maximum=512):
+                    authority_boundary_deviations.append([
+                        "system_routine_authority", str(row[0]),
+                        _sha256(str(row[1]).encode("utf-8")),
+                        int(bool(row[2])), int(bool(row[3])),
+                    ])
+
+                # Default ACLs are future authority.  Any default owned by a
+                # protected principal, or any default grant to PUBLIC/a
+                # protected principal, can silently widen the next object
+                # created after this audit.  The exact supported posture is no
+                # matching pg_default_acl row at all.
+                cursor.execute(
+                    "WITH protected(label,oid) AS ("
+                    " SELECT v.label,r.oid FROM (VALUES"
+                    " ('owner',%s::name),('migrator',%s::name),"
+                    " ('runtime',%s::name),('audit',%s::name))"
+                    " v(label,rolname) JOIN pg_catalog.pg_roles r"
+                    " ON r.rolname=v.rolname"
+                    ") SELECT COALESCE(o.label,'other'),"
+                    " COALESCE(g.label,CASE WHEN x.grantee=0"
+                    " THEN 'public' ELSE 'other' END),"
+                    " d.defaclnamespace::text,d.defaclobjtype::text,"
+                    " x.privilege_type,x.is_grantable"
+                    " FROM pg_catalog.pg_default_acl d"
+                    " CROSS JOIN LATERAL"
+                    " pg_catalog.aclexplode(d.defaclacl) x"
+                    " LEFT JOIN protected o ON o.oid=d.defaclrole"
+                    " LEFT JOIN protected g ON g.oid=x.grantee"
+                    " WHERE o.oid IS NOT NULL OR x.grantee=0"
+                    " OR g.oid IS NOT NULL"
+                    " ORDER BY 1,2,3,4,5,6",
+                    tuple(
+                        roles[label]
+                        for label in ("owner", "migrator", "runtime", "audit")
+                    ),
+                )
+                for row in _bounded_cursor_rows(cursor, maximum=512):
+                    authority_boundary_deviations.append([
+                        "default_acl", str(row[0]), str(row[1]),
+                        _sha256(
+                            f"{row[2]}:{row[3]}".encode("utf-8")
+                        ),
+                        str(row[4]), int(bool(row[5])),
+                    ])
+
+                # ALTER ROLE / ALTER DATABASE defaults can silently alter every
+                # future connection.  The runtime supplies its posture explicitly,
+                # so the only exact and auditable database/role default is none.
+                cursor.execute(
+                    "WITH protected(oid) AS ("
+                    " SELECT oid FROM pg_catalog.pg_roles WHERE rolname=ANY(%s)"
+                    "), db AS ("
+                    " SELECT oid FROM pg_catalog.pg_database"
+                    " WHERE datname=pg_catalog.current_database()"
+                    ") SELECT s.setdatabase::text,s.setrole::text,c.setting"
+                    " FROM pg_catalog.pg_db_role_setting s"
+                    " CROSS JOIN LATERAL pg_catalog.unnest(s.setconfig) c(setting)"
+                    " WHERE s.setdatabase IN (0,(SELECT oid FROM db))"
+                    " AND (s.setrole=0 OR s.setrole IN (SELECT oid FROM protected))"
+                    " ORDER BY 1,2,3",
+                    (list(roles.values()),),
+                )
+                for row in _bounded_cursor_rows(cursor, maximum=256):
+                    authority_boundary_deviations.append([
+                        "connection_default",
+                        _sha256(f"{row[0]}:{row[1]}".encode("utf-8")),
+                        _sha256(str(row[2]).encode("utf-8")),
+                    ])
+
+                if not 160000 <= server_version_int < 180000:
+                    authority_boundary_deviations.append([
+                        "unsupported_server_version", "server_version",
+                        _sha256(str(server_version_num).encode("utf-8")),
+                    ])
+                if server_version_int < 150000:
+                    authority_boundary_deviations.append([
+                        "parameter_acl_unavailable", "server_version",
+                        _sha256(str(server_version_num).encode("utf-8")),
+                    ])
+                else:
+                    for label, role_name in roles.items():
+                        cursor.execute(
+                            "SELECT p.parname,v.privilege"
+                            " FROM pg_catalog.pg_parameter_acl p"
+                            " CROSS JOIN (VALUES ('SET'),('ALTER SYSTEM'))"
+                            " v(privilege)"
+                            " WHERE pg_catalog.has_parameter_privilege("
+                            "%s,p.parname,v.privilege) ORDER BY 1,2",
+                            (role_name,),
+                        )
+                        for row in _bounded_cursor_rows(cursor, maximum=256):
+                            authority_boundary_deviations.append([
+                                "parameter_acl", label,
+                                _sha256(str(row[0]).encode("utf-8")), str(row[1]),
+                            ])
+
+                cursor.execute(
+                    "SELECT oid::text FROM pg_catalog.pg_largeobject_metadata"
+                    " ORDER BY oid"
+                )
+                for row in _bounded_cursor_rows(cursor, maximum=512):
+                    authority_boundary_deviations.append([
+                        "large_object", "database",
+                        _sha256(str(row[0]).encode("utf-8")),
+                    ])
+                cursor.execute(
+                    "SELECT pg_catalog.current_setting('lo_compat_privileges')"
+                )
+                lo_compat_privileges = str(cursor.fetchone()[0]).lower()
+                if lo_compat_privileges != "off":
+                    authority_boundary_deviations.append([
+                        "large_object_compatibility", "database",
+                        _sha256(lo_compat_privileges.encode("utf-8")),
+                    ])
+                cursor.execute(
+                    "WITH expected AS ("
+                    " SELECT pg_catalog.to_regprocedure(signature)::oid AS oid"
+                    " FROM pg_catalog.unnest(%s::text[]) signature"
+                    "), observed AS ("
+                    " SELECT p.oid,p.proowner,p.prokind,p.prosecdef,p.proconfig"
+                    " FROM pg_catalog.pg_proc p"
+                    " JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace"
+                    " WHERE n.nspname='pg_catalog'"
+                    " AND (pg_catalog.left(p.proname,3)='lo_'"
+                    "      OR p.proname IN ('loread','lowrite'))"
+                    ") SELECT"
+                    " (SELECT pg_catalog.array_agg(oid ORDER BY oid) FROM expected),"
+                    " (SELECT pg_catalog.array_agg(oid ORDER BY oid) FROM observed),"
+                    " (SELECT count(*) FROM observed WHERE oid>=16384"
+                    "   OR proowner<>10 OR prokind<>'f' OR prosecdef"
+                    "   OR proconfig IS NOT NULL)",
+                    (list(_PG16_17_LARGE_OBJECT_ROUTINES),),
+                )
+                inventory_row = cursor.fetchone()
+                if not (
+                    isinstance(inventory_row, tuple)
+                    and len(inventory_row) == 3
+                    and inventory_row[0] == inventory_row[1]
+                    and len(inventory_row[0] or [])
+                    == len(_PG16_17_LARGE_OBJECT_ROUTINES)
+                    and inventory_row[2] == 0
+                ):
+                    authority_boundary_deviations.append([
+                        "large_object_inventory", "database",
+                        _sha256(_canonical(inventory_row)),
+                    ])
+                for label, role_name in roles.items():
+                    cursor.execute(
+                        "SELECT p.oid::text,p.proname"
+                        " FROM pg_catalog.pg_proc p"
+                        " JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace"
+                        " WHERE n.nspname='pg_catalog'"
+                        " AND (pg_catalog.left(p.proname,3)='lo_'"
+                        "      OR p.proname IN ('loread','lowrite'))"
+                        " AND pg_catalog.has_function_privilege(%s,p.oid,'EXECUTE')"
+                        " ORDER BY p.oid",
+                        (role_name,),
+                    )
+                    for row in _bounded_cursor_rows(cursor, maximum=256):
+                        authority_boundary_deviations.append([
+                            "large_object_execute", label,
+                            _sha256(str(row[0]).encode("utf-8")), str(row[1]),
+                        ])
+                authority_boundary_deviations.sort(
+                    key=lambda row: _canonical(row)
+                )
         connection.rollback()
     except Exception as exc:
         if connection is not None:
@@ -1043,6 +2080,42 @@ def _collect_postgresql_impl(
             "present": row is not None,
             "attributes": _role_attributes(row) if row is not None else None,
         }
+    audit_attributes = role_facts.get("audit", {}).get("attributes")
+    (
+        audit_database_create,
+        audit_database_temp,
+        _audit_schema_usage,
+        audit_schema_create_count,
+        audit_schema_create_sha256,
+    ) = role_scope_privileges.get(
+        "audit", (False, False, False, 0, _sha256(_canonical([])))
+    )
+    audit_schema_create = audit_schema_create_count > 0
+    audit_memberships = membership_digests_by_label.get("audit", [])
+    audit_read_only = None
+    if "audit" in roles:
+        audit_read_only = bool(
+            current_user == roles["audit"]
+            and session_user == roles["audit"]
+            and isinstance(audit_attributes, Mapping)
+            and audit_attributes.get("login") is True
+            and all(
+                audit_attributes.get(field) is False
+                for field in (
+                    "superuser", "createdb", "createrole", "inherit",
+                    "bypassrls", "replication",
+                )
+            )
+            and not audit_database_create
+            and not audit_database_temp
+            and not audit_schema_create
+            and not audit_data_read_privileges
+            and not audit_write_privileges
+            and not audit_column_write_privileges
+            and not authority_boundary_deviations
+            and len(audit_memberships) == 1
+            and audit_memberships[0] == _sha256(roles["audit"].encode("utf-8"))
+        )
     facts = {
         "database": str(config["database"]),
         "database_matches": database == config["database"],
@@ -1053,10 +2126,13 @@ def _collect_postgresql_impl(
             else None
         ),
         "transaction_read_only": str(transaction_read_only).lower() == "on",
+        "challenge_nonce_sha256": (
+            _sha256(str(challenge_nonce).encode("ascii")) if challenge_bound else None
+        ),
         "current_actor_class": _principal_class(current_user, roles),
         "current_actor_sha256": _sha256(str(current_user).encode("utf-8")),
         "session_actor_sha256": _sha256(str(session_user).encode("utf-8")),
-        "roles_distinct": len(set(roles.values())) == 3,
+        "roles_distinct": len(set(roles.values())) == len(roles),
         "roles": role_facts,
         "objects": objects,
         "public_schema_owner_class": (
@@ -1065,11 +2141,86 @@ def _collect_postgresql_impl(
         "acl_projection_scope": "contract-objects-v1",
         "acl_projection_count": len(acl_projection),
         "acl_projection_sha256": _sha256(_canonical(acl_projection)),
+        "acl_projection": acl_projection,
+        "grantable_acl_counts": grantable_acl_counts,
         "public_acl_entry_counts": public_acl_entry_counts,
-        "runtime_effective_role_sha256": membership_digests,
+        "runtime_effective_role_sha256": membership_digests_by_label["runtime"],
+        "role_effective_membership_sha256": (
+            membership_digests_by_label if "audit" in roles else None
+        ),
+        "role_inbound_membership_sha256": (
+            inbound_membership_digests_by_label if "audit" in roles else None
+        ),
+        "migrator_owner_membership": (
+            migrator_owner_membership if "audit" in roles else None
+        ),
+        "role_owned_user_object_count": (
+            role_owned_user_object_count if "audit" in roles else None
+        ),
+        "role_user_function_execute_count": (
+            role_user_function_execute_count if "audit" in roles else None
+        ),
         "runtime_database_create": bool(database_create),
+        "runtime_database_temp": bool(database_temp),
         "runtime_schema_create": bool(schema_create),
+        "runtime_schema_create_count": runtime_schema_create_count,
+        "runtime_schema_create_sha256": runtime_schema_create_sha256,
         "runtime_schema_usage": bool(schema_usage),
+        "runtime_out_of_contract_write_privilege_count": (
+            len(runtime_out_of_contract_write_privileges)
+            if "audit" in roles else None
+        ),
+        "runtime_out_of_contract_write_privilege_sha256": (
+            _sha256(_canonical(sorted(runtime_out_of_contract_write_privileges)))
+            if "audit" in roles else None
+        ),
+        "runtime_out_of_contract_read_privilege_count": (
+            len(runtime_out_of_contract_read_privileges)
+            if "audit" in roles else None
+        ),
+        "runtime_out_of_contract_read_privilege_sha256": (
+            _sha256(_canonical(sorted(runtime_out_of_contract_read_privileges)))
+            if "audit" in roles else None
+        ),
+        "authority_boundary_deviation_count": (
+            len(authority_boundary_deviations) if "audit" in roles else None
+        ),
+        "authority_boundary_deviation_sha256": (
+            _sha256(_canonical(authority_boundary_deviations))
+            if "audit" in roles else None
+        ),
+        "audit_principal_read_only": audit_read_only,
+        "audit_effective_role_sha256": audit_memberships if "audit" in roles else None,
+        "audit_database_create": audit_database_create if "audit" in roles else None,
+        "audit_database_temp": audit_database_temp if "audit" in roles else None,
+        "audit_schema_create": audit_schema_create if "audit" in roles else None,
+        "audit_schema_create_count": (
+            audit_schema_create_count if "audit" in roles else None
+        ),
+        "audit_schema_create_sha256": (
+            audit_schema_create_sha256 if "audit" in roles else None
+        ),
+        "audit_data_read_privilege_count": (
+            len(audit_data_read_privileges) if "audit" in roles else None
+        ),
+        "audit_data_read_privilege_sha256": (
+            _sha256(_canonical(sorted(audit_data_read_privileges)))
+            if "audit" in roles else None
+        ),
+        "audit_write_privilege_count": (
+            len(audit_write_privileges) if "audit" in roles else None
+        ),
+        "audit_write_privilege_sha256": (
+            _sha256(_canonical(sorted(audit_write_privileges)))
+            if "audit" in roles else None
+        ),
+        "audit_column_write_privilege_count": (
+            len(audit_column_write_privileges) if "audit" in roles else None
+        ),
+        "audit_column_write_privilege_sha256": (
+            _sha256(_canonical(sorted(audit_column_write_privileges)))
+            if "audit" in roles else None
+        ),
     }
     return AdapterResult(
         "OBSERVED" if not failures else "PARTIAL",
@@ -1104,15 +2255,272 @@ def _principal_class(value: Any, roles: Mapping[str, str]) -> str:
     return "other"
 
 
-def _neo_rows(session: Any, query: str, timeout: float) -> list[dict[str, Any]]:
+def _neo_audit_privilege_row_is_safe(row: Mapping[str, Any], database: str) -> bool:
+    """Conservatively classify one effective audit privilege row."""
+
+    access = row.get("access")
+    if access == "DENIED":
+        return True
+    if access != "GRANTED":
+        return False
+    if row.get("immutable") is not False:
+        return False
+    action = row.get("action")
+    if action == "access":
+        return (
+            row.get("graph") in {database, "system"}
+            and row.get("resource") == "database"
+            and row.get("segment") == "database"
+        )
+    if action in {"show_alias", "show_database", "show_user", "show_privilege"}:
+        return (
+            row.get("graph") == "*"
+            and row.get("resource") == "database"
+            and row.get("segment") == "database"
+        )
+    if action == "show_setting":
+        return (
+            row.get("graph") == "*"
+            and row.get("resource") == "database"
+            and row.get("segment")
+            in {f"SETTING({name})" for name in _NEO_AUTH_SETTING_NAMES}
+        )
+    return (
+        action == "execute"
+        and row.get("graph") == "*"
+        and row.get("resource") == "database"
+        and row.get("segment")
+        in {"PROCEDURE(db.info)", "PROCEDURE(dbms.components)"}
+    )
+
+
+def _neo_named_role_privileges_are_exact(
+    rows: Sequence[Mapping[str, Any]], *, database: str, migrator: bool
+) -> bool:
+    allowed = {"access", "match", "write"}
+    if migrator:
+        allowed.update({"constraint", "token"})
+    identities: set[tuple[Any, ...]] = set()
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        if row.get("access") != "GRANTED" or row.get("immutable") is not False:
+            return False
+        action = row.get("action")
+        if action not in allowed or str(row.get("graph", "")) != database:
+            return False
+        identity = tuple(row.get(field) for field in (
+            "access", "action", "resource", "graph", "segment", "immutable"
+        ))
+        if identity in identities:
+            return False
+        identities.add(identity)
+        grouped.setdefault(action, []).append(row)
+    return set(grouped) == allowed and all(
+        _neo_action_scope_exact(action, action_rows, database)
+        for action, action_rows in grouped.items()
+    )
+
+
+def _neo_action_scope_exact(
+    action: str, rows: Sequence[Mapping[str, Any]], database: str
+) -> bool:
+    if not rows or any(
+        row.get("access") != "GRANTED"
+        or row.get("action") != action
+        or row.get("graph") != database
+        for row in rows
+    ):
+        return False
+    resources = {row.get("resource") for row in rows}
+    segments = {row.get("segment") for row in rows}
+    if action == "access":
+        return len(rows) == 1 and resources == {"database"} and segments == {"database"}
+    if action == "match":
+        return resources == {"all_properties"} and (
+            (len(rows) == 1 and segments == {"ELEMENT(*)"})
+            or (len(rows) == 2 and segments == {"NODE(*)", "RELATIONSHIP(*)"})
+        )
+    if action == "write":
+        return resources == {"graph"} and (
+            (len(rows) == 1 and segments == {"ELEMENT(*)"})
+            or (len(rows) == 2 and segments == {"NODE(*)", "RELATIONSHIP(*)"})
+        )
+    if action in {"constraint", "token"}:
+        return len(rows) == 1 and resources == {"database"} and segments == {"database"}
+    return False
+
+
+def _neo_audit_privileges_are_exact(
+    rows: Sequence[Mapping[str, Any]], *, database: str, version: str
+) -> bool:
+    setting_names = (
+        _NEO_AUTH_SETTING_NAMES
+        if _neo_abac_setting_supported(version)
+        else _NEO_BASE_AUTH_SETTING_NAMES
+    )
+    if len(rows) != 8 + len(setting_names):
+        return False
+    identities = {
+        tuple(row.get(field) for field in (
+            "access", "action", "resource", "graph", "segment", "immutable"
+        ))
+        for row in rows
+    }
+    return identities == {
+        ("GRANTED", "access", "database", database, "database", False),
+        ("GRANTED", "access", "database", "system", "database", False),
+        ("GRANTED", "execute", "database", "*", "PROCEDURE(db.info)", False),
+        ("GRANTED", "execute", "database", "*", "PROCEDURE(dbms.components)", False),
+        ("GRANTED", "show_privilege", "database", "*", "database", False),
+        ("GRANTED", "show_user", "database", "*", "database", False),
+        ("GRANTED", "show_alias", "database", "*", "database", False),
+        ("GRANTED", "show_database", "database", "*", "database", False),
+        *{
+            (
+                "GRANTED", "show_setting", "database", "*",
+                f"SETTING({name})", False,
+            )
+            for name in setting_names
+        },
+    }
+
+
+def _neo_setting_list(value: Any) -> list[str] | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].strip()
+    if not text:
+        return []
+    items = [item.strip().strip("\"'") for item in text.split(",")]
+    if any(not item or not re.fullmatch(r"[A-Za-z0-9_.-]+", item) for item in items):
+        return None
+    return items if len(items) == len(set(items)) else None
+
+
+def _neo_abac_setting_supported(version: Any) -> bool:
+    if not isinstance(version, str):
+        return False
+    match = re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)?", version.strip())
+    if match is None:
+        return False
+    major, minor = (int(item) for item in match.groups())
+    return major > 2026 or (major == 2026 and minor >= 3)
+
+
+def _neo_version_supported(version: Any) -> bool:
+    if not isinstance(version, str):
+        return False
+    match = re.fullmatch(
+        r"2026\.(\d{2})(?:\.(?:0|[1-9]\d*))?", version
+    )
+    return bool(
+        match is not None
+        and (2026, int(match.group(1))) in NEO4J_SUPPORTED_RELEASES
+    )
+
+
+def _neo_native_auth_settings_exact(value: Any, *, version: str) -> bool:
+    setting_names = (
+        _NEO_AUTH_SETTING_NAMES
+        if _neo_abac_setting_supported(version)
+        else _NEO_BASE_AUTH_SETTING_NAMES
+    )
+    if not isinstance(value, list) or len(value) != len(setting_names):
+        return False
+    rows: dict[str, Mapping[str, Any]] = {}
+    for row in value:
+        if not isinstance(row, Mapping) or set(row) != {"name", "value", "startup_value"}:
+            return False
+        name = row.get("name")
+        if not isinstance(name, str) or name in rows:
+            return False
+        if not isinstance(row.get("value"), str) or not isinstance(row.get("startup_value"), str):
+            return False
+        if row["value"] != row["startup_value"]:
+            return False
+        rows[name] = row
+    if set(rows) != set(setting_names):
+        return False
+    base_ok = (
+        rows["dbms.security.auth_enabled"]["value"].strip().lower() == "true"
+        and _neo_setting_list(rows["dbms.security.authentication_providers"]["value"]) == ["native"]
+        and _neo_setting_list(rows["dbms.security.authorization_providers"]["value"]) == ["native"]
+    )
+    return base_ok and (
+        not _neo_abac_setting_supported(version)
+        or _neo_setting_list(rows["dbms.security.abac.authorization_providers"]["value"]) == []
+    )
+
+
+def _neo_privilege_projection(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "access": row.get("access"),
+            "action": row.get("action"),
+            "resource": row.get("resource"),
+            "graph": row.get("graph"),
+            "segment": row.get("segment"),
+            "immutable": row.get("immutable"),
+        }
+        for row in rows
+    ]
+
+
+def _neo_rows(
+    session: Any, query: str, timeout: float, *, maximum: int = 64,
+    **params: Any,
+) -> list[dict[str, Any]]:
     from neo4j import Query
 
     rows: list[dict[str, Any]] = []
-    for record in session.run(Query(query, timeout=timeout)):
-        if len(rows) >= 64:
+    for record in session.run(Query(query, timeout=timeout), **params):
+        if len(rows) >= maximum:
             raise _PortUnavailable("Neo4j readback exceeds bounded row count")
         rows.append(dict(record))
     return rows
+
+
+def _neo_system_authority_marker(
+    session: Any, timeout: float
+) -> dict[str, Any] | None:
+    rows = _neo_rows(
+        session,
+        "SHOW DATABASE system "
+        "YIELD name, type, databaseID, currentStatus, writer, "
+        "lastCommittedTxn, replicationLag "
+        "WHERE writer = true "
+        "RETURN name, type, databaseID AS database_id, "
+        "currentStatus AS current_status, writer, "
+        "lastCommittedTxn AS last_committed_tx, "
+        "replicationLag AS replication_lag",
+        timeout,
+        maximum=2,
+    )
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    database_id = row.get("database_id")
+    last_committed_tx = row.get("last_committed_tx")
+    replication_lag = row.get("replication_lag")
+    if not (
+        row.get("name") == "system"
+        and row.get("type") == "system"
+        and row.get("current_status") == "online"
+        and row.get("writer") is True
+        and isinstance(database_id, str)
+        and bool(database_id)
+        and type(last_committed_tx) is int
+        and last_committed_tx >= 0
+        and type(replication_lag) is int
+        and replication_lag == 0
+    ):
+        return None
+    return {
+        "database_id": database_id,
+        "last_committed_tx": last_committed_tx,
+    }
 
 
 def _validated_neo_uri(value: str) -> str:
@@ -1172,6 +2580,10 @@ def _collect_neo4j_impl(
 
     failures: list[str] = []
     deadline = time.monotonic() + timeout
+    challenge_nonce = config.get("challenge_nonce")
+    challenge_bound = challenge_nonce is not None
+    if challenge_bound and not _exact_sha256(challenge_nonce):
+        raise _PortUnavailable("Neo4j audit challenge nonce is invalid")
 
     def remaining() -> float:
         value = deadline - time.monotonic()
@@ -1191,6 +2603,15 @@ def _collect_neo4j_impl(
         with driver.session(
             database=str(config["database"]), default_access_mode=READ_ACCESS
         ) as session:
+            if challenge_bound:
+                challenge_rows = _neo_rows(
+                    session,
+                    "RETURN $challenge_nonce AS challenge_nonce",
+                    remaining(),
+                    challenge_nonce=challenge_nonce,
+                )
+                if challenge_rows != [{"challenge_nonce": challenge_nonce}]:
+                    raise _PortUnavailable("Neo4j audit challenge was not echoed")
             components = _neo_rows(
                 session,
                 "CALL dbms.components() YIELD versions, edition "
@@ -1219,8 +2640,19 @@ def _collect_neo4j_impl(
         current_user = None
         roles: list[str] | None = None
         privilege_rows: list[dict[str, Any]] | None = None
+        named_privilege_rows: list[dict[str, Any]] | None = None
+        all_privilege_rows: list[dict[str, Any]] | None = None
+        named_user_rows: list[dict[str, Any]] | None = None
+        auth_setting_rows: list[dict[str, Any]] | None = None
+        alias_rows: list[dict[str, Any]] | None = None
+        database_catalog_rows: list[dict[str, Any]] | None = None
+        system_marker_before: dict[str, Any] | None = None
+        system_marker_after: dict[str, Any] | None = None
         try:
             with driver.session(database="system", default_access_mode=READ_ACCESS) as session:
+                system_marker_before = _neo_system_authority_marker(
+                    session, remaining()
+                )
                 user_rows = _neo_rows(
                     session,
                     "SHOW CURRENT USER YIELD user, roles RETURN user, roles",
@@ -1238,12 +2670,77 @@ def _collect_neo4j_impl(
                 try:
                     privilege_rows = _neo_rows(
                         session,
-                        "SHOW USER PRIVILEGES YIELD access, action, resource, graph, segment "
-                        "RETURN access, action, resource, graph, segment ORDER BY access, action, resource, graph, segment",
+                        "SHOW USER PRIVILEGES YIELD access, action, resource, graph, segment, immutable "
+                        "RETURN access, action, resource, graph, segment, immutable "
+                        "ORDER BY access, action, resource, graph, segment, immutable",
                         remaining(),
                     )
                 except Exception:
                     failures.append("neo4j.effective_privileges.unavailable")
+                if all(
+                    field in config
+                    for field in (
+                        "audit_user", "audit_role", "migrator_user", "migrator_role",
+                        "runtime_user", "runtime_role",
+                    )
+                ):
+                    try:
+                        alias_rows = _neo_rows(
+                            session,
+                            "SHOW ALIASES FOR DATABASE "
+                            "YIELD name, database, location "
+                            "WHERE name = $database "
+                            "RETURN name, database, location ORDER BY name",
+                            remaining(),
+                            database=str(config["database"]),
+                        )
+                        database_catalog_rows = _neo_rows(
+                            session,
+                            "SHOW DATABASES YIELD name, type, currentStatus "
+                            "WHERE name = $database "
+                            "RETURN name, type, currentStatus AS current_status "
+                            "ORDER BY name",
+                            remaining(),
+                            database=str(config["database"]),
+                        )
+                        auth_setting_rows = _neo_rows(
+                            session,
+                            "SHOW SETTINGS $setting_names "
+                            "YIELD name, value, startupValue "
+                            "RETURN name, value, startupValue AS startup_value ORDER BY name",
+                            remaining(),
+                            setting_names=list(_NEO_AUTH_SETTING_NAMES),
+                        )
+                        named_user_rows = _neo_rows(
+                            session,
+                            "SHOW USERS YIELD user, roles, suspended "
+                            "RETURN user, roles, suspended ORDER BY user",
+                            remaining(),
+                        )
+                        all_privilege_rows = _neo_rows(
+                            session,
+                            "SHOW PRIVILEGES "
+                            "YIELD role, access, action, resource, graph, segment, immutable "
+                            "RETURN role, access, action, resource, graph, segment, immutable "
+                            "ORDER BY role, access, action, resource, graph, segment, immutable",
+                            remaining(),
+                            maximum=4096,
+                        )
+                        declared_roles = {
+                            str(config["audit_role"]).lower(),
+                            str(config["migrator_role"]).lower(),
+                            str(config["runtime_role"]).lower(),
+                            "public",
+                        }
+                        named_privilege_rows = [
+                            row for row in all_privilege_rows
+                            if str(row.get("role", "")).lower() in declared_roles
+                        ]
+                    except Exception:
+                        failures.append("neo4j.named_role_privileges.unavailable")
+                system_marker_after = _neo_system_authority_marker(
+                    session, remaining()
+                )
         except Exception:
             failures.append("neo4j.current_user.unavailable")
     except _PortUnavailable:
@@ -1269,9 +2766,261 @@ def _collect_neo4j_impl(
     role_hashes = None if roles is None else sorted(
         _sha256(role.encode("utf-8")) for role in roles
     )
+    named_roles = None
+    named_role_privilege_sha256 = None
+    named_role_privileges = None
+    public_role_binding_sha256 = None
+    custom_role_binding_ok = None
+    named_user_role_sha256 = None
+    named_role_assignee_sha256 = None
+    named_user_role_binding_ok = None
+    runtime_role_least_privilege = None
+    migrator_role_least_privilege = None
+    public_role_safe = None
+    auth_settings = None
+    auth_settings_sha256 = None
+    native_only_auth = None
+    database_direct_local = None
+    database_alias_projection = None
+    database_catalog_projection = None
+    global_unsafe_privileges = None
+    effective_privilege_projection = None
+    audit_unsafe_rows: list[dict[str, Any]] = []
+    audit_read_only = None
+    authorization_snapshot_stable = bool(
+        system_marker_before is not None
+        and system_marker_before == system_marker_after
+    )
+    if not authorization_snapshot_stable:
+        failures.append("neo4j.authorization_snapshot.unstable")
+    if all(
+        field in config
+        for field in (
+            "audit_user", "audit_role", "migrator_user", "migrator_role",
+            "runtime_user", "runtime_role",
+        )
+    ):
+        named_roles = {
+            label: _sha256(str(config[f"{label}_role"]).encode("utf-8"))
+            for label in ("audit", "migrator", "runtime")
+        }
+        custom_role_binding_ok = bool(
+            roles is not None
+            and {role for role in roles if role.upper() != "PUBLIC"}
+            == {str(config["audit_role"])}
+        )
+        if alias_rows is not None and database_catalog_rows is not None:
+            database_alias_projection = [
+                {
+                    "name_sha256": _sha256(str(row.get("name")).encode("utf-8")),
+                    "database_sha256": _sha256(
+                        str(row.get("database")).encode("utf-8")
+                    ),
+                    "location": row.get("location"),
+                }
+                for row in alias_rows
+            ]
+            database_catalog_projection = [
+                {
+                    "name_sha256": _sha256(str(row.get("name")).encode("utf-8")),
+                    "type": row.get("type"),
+                    "current_status": row.get("current_status"),
+                }
+                for row in database_catalog_rows
+            ]
+            database_direct_local = bool(
+                database_alias_projection == []
+                and database_catalog_projection == [{
+                    "name_sha256": _sha256(
+                        str(config["database"]).encode("utf-8")
+                    ),
+                    "type": "standard",
+                    "current_status": "online",
+                }]
+            )
+        if named_privilege_rows is not None:
+            grouped: dict[str, list[dict[str, Any]]] = {
+                "audit": [], "migrator": [], "runtime": [], "public": [],
+            }
+            reverse_roles = {
+                str(config["audit_role"]).lower(): "audit",
+                str(config["migrator_role"]).lower(): "migrator",
+                str(config["runtime_role"]).lower(): "runtime",
+                "public": "public",
+            }
+            for row in named_privilege_rows:
+                label = reverse_roles.get(str(row.get("role")).lower())
+                if label is not None:
+                    grouped[label].append(row)
+            named_role_privileges = {
+                label: _neo_privilege_projection(rows_for_role)
+                for label, rows_for_role in grouped.items()
+            }
+            named_role_privilege_sha256 = {
+                label: _sha256(_canonical(named_role_privileges[label]))
+                for label, rows_for_role in grouped.items()
+                if label != "public"
+            }
+            public_role_binding_sha256 = _sha256(
+                _canonical(named_role_privileges["public"])
+            )
+            runtime_role_least_privilege = _neo_named_role_privileges_are_exact(
+                named_role_privileges["runtime"],
+                database=str(config["database"]),
+                migrator=False,
+            )
+            migrator_role_least_privilege = _neo_named_role_privileges_are_exact(
+                named_role_privileges["migrator"],
+                database=str(config["database"]),
+                migrator=True,
+            )
+            public_role_safe = named_role_privileges["public"] == []
+        if auth_setting_rows is not None:
+            auth_settings = [
+                {
+                    "name": row.get("name"),
+                    "value": row.get("value"),
+                    "startup_value": row.get("startup_value"),
+                }
+                for row in auth_setting_rows
+            ]
+            auth_settings_sha256 = _sha256(_canonical(auth_settings))
+            native_only_auth = _neo_native_auth_settings_exact(
+                auth_settings, version=str(version)
+            )
+        if named_user_rows is not None:
+            users_by_name = {
+                str(row.get("user")): {
+                    "roles": row.get("roles"),
+                    "suspended": row.get("suspended"),
+                }
+                for row in named_user_rows
+                if isinstance(row.get("user"), str)
+            }
+            named_user_role_sha256 = {}
+            named_role_assignee_sha256 = {
+                label: sorted(
+                    _sha256(user_name.encode("utf-8"))
+                    for user_name, user_state in users_by_name.items()
+                    for raw_user_roles in (user_state.get("roles"),)
+                    if user_state.get("suspended") is False
+                    if isinstance(raw_user_roles, list)
+                    and all(isinstance(role, str) for role in raw_user_roles)
+                    and str(config[f"{label}_role"]) in raw_user_roles
+                )
+                for label in ("audit", "migrator", "runtime")
+            }
+            binding_checks = []
+            for label in ("audit", "migrator", "runtime"):
+                user_state = users_by_name.get(str(config[f"{label}_user"]))
+                raw_user_roles = (
+                    user_state.get("roles")
+                    if isinstance(user_state, Mapping)
+                    and user_state.get("suspended") is False
+                    else None
+                )
+                user_roles = (
+                    sorted(set(raw_user_roles))
+                    if isinstance(raw_user_roles, list)
+                    and all(isinstance(role, str) for role in raw_user_roles)
+                    else None
+                )
+                named_user_role_sha256[label] = (
+                    None
+                    if user_roles is None
+                    else [_sha256(role.encode("utf-8")) for role in user_roles]
+                )
+                binding_checks.append(
+                    user_roles is not None
+                    and {role for role in user_roles if role.upper() != "PUBLIC"}
+                    == {str(config[f"{label}_role"])}
+                )
+            named_user_role_binding_ok = all(binding_checks)
+            if all_privilege_rows is not None:
+                active_roles = {
+                    role.lower()
+                    for user_state in users_by_name.values()
+                    if user_state.get("suspended") is False
+                    and isinstance(user_state.get("roles"), list)
+                    for role in user_state["roles"]
+                    if isinstance(role, str)
+                }
+                declared_roles = {
+                    str(config[f"{label}_role"]).lower()
+                    for label in ("audit", "migrator", "runtime")
+                } | {"public"}
+                global_unsafe_privileges = []
+                for row in all_privilege_rows:
+                    role = row.get("role")
+                    role_key = role.lower() if isinstance(role, str) else None
+                    if role_key not in active_roles or role_key in declared_roles:
+                        continue
+                    access = row.get("access")
+                    if access == "DENIED":
+                        continue
+                    global_unsafe_privileges.append({
+                        "role_sha256": (
+                            _sha256(role.encode("utf-8"))
+                            if isinstance(role, str) else None
+                        ),
+                        "access": access,
+                        "action": row.get("action"),
+                        "resource": row.get("resource"),
+                        "graph": row.get("graph"),
+                        "segment": row.get("segment"),
+                        "immutable": row.get("immutable"),
+                    })
+        if privilege_rows is not None:
+            effective_privilege_projection = _neo_privilege_projection(privilege_rows)
+            for row in privilege_rows:
+                if not _neo_audit_privilege_row_is_safe(row, str(config["database"])):
+                    audit_unsafe_rows.append(row)
+        audit_read_only = bool(
+            isinstance(edition, str)
+            and edition.lower() == "enterprise"
+            and _neo_version_supported(version)
+            and current_user == config["audit_user"]
+            and custom_role_binding_ok is True
+            and privilege_rows is not None
+            and named_privilege_rows is not None
+            and named_user_role_binding_ok is True
+            and named_role_assignee_sha256 == {
+                label: [
+                    _sha256(str(config[f"{label}_user"]).encode("utf-8"))
+                ]
+                for label in ("audit", "migrator", "runtime")
+            }
+            and public_role_safe is True
+            and native_only_auth is True
+            and database_direct_local is True
+            and global_unsafe_privileges == []
+            and authorization_snapshot_stable
+            and _neo_audit_privileges_are_exact(
+                named_role_privileges["audit"], database=str(config["database"]),
+                version=str(version),
+            )
+            and effective_privilege_projection == named_role_privileges["audit"]
+            and not audit_unsafe_rows
+        )
     facts = {
         "database": str(config["database"]),
+        "challenge_nonce_sha256": (
+            _sha256(str(challenge_nonce).encode("ascii")) if challenge_bound else None
+        ),
         "database_name_matches": database_identity.get("name") == config["database"],
+        "database_direct_local": database_direct_local,
+        "database_alias_count": (
+            len(database_alias_projection)
+            if database_alias_projection is not None else None
+        ),
+        "database_alias_sha256": (
+            _sha256(_canonical(database_alias_projection))
+            if database_alias_projection is not None else None
+        ),
+        "database_catalog_sha256": (
+            _sha256(_canonical(database_catalog_projection))
+            if database_catalog_projection is not None else None
+        ),
         "database_id_sha256": (
             _sha256(str(database_identity["id"]).encode("utf-8"))
             if database_identity.get("id") is not None
@@ -1285,8 +3034,48 @@ def _collect_neo4j_impl(
         "role_count": None if roles is None else len(roles),
         "effective_privilege_sha256": privilege_sha256,
         "effective_privilege_count": privilege_count,
-        "audit_principal_read_only": "UNVERIFIED",
-        "read_query_count": 4,
+        "effective_privileges": effective_privilege_projection,
+        "audit_principal_read_only": audit_read_only,
+        "audit_unsafe_granted_action_count": (
+            len(audit_unsafe_rows) if named_roles is not None else None
+        ),
+        "audit_unsafe_granted_action_sha256": (
+            _sha256(_canonical(audit_unsafe_rows)) if named_roles is not None else None
+        ),
+        "named_role_sha256": named_roles,
+        "named_role_privilege_sha256": named_role_privilege_sha256,
+        "named_role_privileges": named_role_privileges,
+        "public_role_binding_sha256": public_role_binding_sha256,
+        "custom_role_binding_ok": custom_role_binding_ok,
+        "named_user_role_sha256": named_user_role_sha256,
+        "named_role_assignee_sha256": named_role_assignee_sha256,
+        "named_user_role_binding_ok": named_user_role_binding_ok,
+        "runtime_role_least_privilege": runtime_role_least_privilege,
+        "migrator_role_least_privilege": migrator_role_least_privilege,
+        "public_role_safe": public_role_safe,
+        "auth_settings": auth_settings,
+        "auth_settings_sha256": auth_settings_sha256,
+        "native_only_auth": native_only_auth,
+        "global_unsafe_privilege_count": (
+            len(global_unsafe_privileges)
+            if global_unsafe_privileges is not None else None
+        ),
+        "global_unsafe_privilege_sha256": (
+            _sha256(_canonical(global_unsafe_privileges))
+            if global_unsafe_privileges is not None else None
+        ),
+        "system_database_id_sha256": (
+            _sha256(system_marker_before["database_id"].encode("utf-8"))
+            if system_marker_before is not None else None
+        ),
+        "system_last_committed_tx": (
+            system_marker_before["last_committed_tx"]
+            if system_marker_before is not None else None
+        ),
+        "authorization_snapshot_stable": authorization_snapshot_stable,
+        "read_query_count": (
+            (11 if named_roles is not None else 6) + int(challenge_bound)
+        ),
     }
     return AdapterResult(
         "OBSERVED" if not failures else "PARTIAL",
@@ -1318,6 +3107,11 @@ def collect_predeploy(config: Mapping[str, Any], timeout: float, environ: Mappin
     self_digest = body.pop("receipt_sha256", None)
     operation = body.get("operation")
     operation_sha256 = operation.get("sha256") if isinstance(operation, Mapping) else None
+    artifact = body.get("artifact")
+    try:
+        artifact_sha256 = artifact_identity_sha256(artifact)
+    except RuntimeAuthorityError:
+        artifact_sha256 = None
     drain = body.get("writer_drain")
     live_fence = drain.get("live_fence") if isinstance(drain, Mapping) else None
     environment = body.get("environment")
@@ -1325,7 +3119,7 @@ def collect_predeploy(config: Mapping[str, Any], timeout: float, environ: Mappin
         "file_sha256": _sha256(raw),
         "file_read_only": not bool(info.st_mode & 0o222),
         "schema_matches_expected": body.get("schema_version") == _PREDEPLOY_SCHEMA,
-        "contract_matches_expected": body.get("contract_id") == _STORAGE_CONTRACT,
+        "contract_matches_expected": body.get("contract_id") == STORAGE_CONTRACT_ID,
         "environment_sha256": (
             _sha256(environment.encode("utf-8")) if isinstance(environment, str) else None
         ),
@@ -1350,10 +3144,15 @@ def collect_predeploy(config: Mapping[str, Any], timeout: float, environ: Mappin
         (),
         {
             "target_sha256": facts["target_sha256"],
-            "receipt_identity_valid": bool(
+            "operation_sha256": facts["operation_sha256"],
+            "artifact_identity_sha256": artifact_sha256,
+            "predeploy_receipt_file_sha256": facts["file_sha256"],
+            "structural_receipt_identity_valid": bool(
                 facts["schema_matches_expected"]
                 and facts["contract_matches_expected"]
                 and facts["self_digest_valid"]
+                and artifact_sha256 is not None
+                and facts["operation_sha256"] is not None
             ),
         },
     )
@@ -1419,11 +3218,13 @@ def _safe_facts(
     sensitive_values: frozenset[str],
     depth: int = 0,
     count: list[int] | None = None,
+    max_items: int = MAX_FACT_ITEMS,
+    max_list_items: int = 64,
 ) -> Any:
     if count is None:
         count = [0]
     count[0] += 1
-    if count[0] > MAX_FACT_ITEMS or depth > 16:
+    if count[0] > max_items or depth > 16:
         raise CollectionInputError("adapter facts exceed bounded structure")
     if value is None or type(value) in {bool, int, str}:
         if isinstance(value, str):
@@ -1450,10 +3251,12 @@ def _safe_facts(
                 sensitive_values=sensitive_values,
                 depth=depth + 1,
                 count=count,
+                max_items=max_items,
+                max_list_items=max_list_items,
             )
         return result
     if isinstance(value, (list, tuple)):
-        if len(value) > 64:
+        if len(value) > max_list_items:
             raise CollectionInputError("adapter fact list exceeds bounded cardinality")
         return [
             _safe_facts(
@@ -1461,6 +3264,8 @@ def _safe_facts(
                 sensitive_values=sensitive_values,
                 depth=depth + 1,
                 count=count,
+                max_items=max_items,
+                max_list_items=max_list_items,
             )
             for item in value
         ]
@@ -1472,6 +3277,8 @@ def _normalize_result(
     result: Any,
     *,
     sensitive_values: frozenset[str] = frozenset(),
+    max_fact_items: int = MAX_FACT_ITEMS,
+    max_list_items: int = 64,
 ) -> dict[str, Any]:
     if type(result) is not AdapterResult or result.status not in ADAPTER_STATUSES:
         raise CollectionInputError("adapter returned an invalid result contract")
@@ -1482,7 +3289,12 @@ def _normalize_result(
         codes.append(code)
     if len(codes) != len(set(codes)):
         raise CollectionInputError("adapter returned duplicate failure codes")
-    facts = _safe_facts(result.facts, sensitive_values=sensitive_values)
+    facts = _safe_facts(
+        result.facts,
+        sensitive_values=sensitive_values,
+        max_items=max_fact_items,
+        max_list_items=max_list_items,
+    )
     if not isinstance(facts, Mapping):
         raise CollectionInputError("adapter facts root must be an object")
     if result.status == "OBSERVED" and codes:
@@ -1505,7 +3317,7 @@ def _cross_source_target(
         or not isinstance(neo.get("database_id"), str)
         or not neo.get("database_id")
         or not isinstance(neo.get("database_name"), str)
-        or predeploy.get("receipt_identity_valid") is not True
+        or predeploy.get("structural_receipt_identity_valid") is not True
         or not _exact_sha256(predeploy.get("target_sha256"))
     ):
         return "UNVERIFIED", None
@@ -1514,9 +3326,24 @@ def _cross_source_target(
         "neo4j": dict(neo),
     }
     observed = _sha256(_canonical(body))
+    runtime = binding_materials.get("runtime")
+    runtime_matches = (
+        not isinstance(runtime, Mapping)
+        or (
+            runtime.get("target_sha256") == predeploy.get("target_sha256")
+            and runtime.get("operation_sha256") == predeploy.get("operation_sha256")
+            and runtime.get("artifact_identity_sha256")
+            == predeploy.get("artifact_identity_sha256")
+            and runtime.get("predeploy_receipt_file_sha256")
+            == predeploy.get("predeploy_receipt_file_sha256")
+        )
+    )
     return (
         "MATCHED_SEQUENTIAL"
-        if hmac.compare_digest(observed, str(predeploy["target_sha256"]))
+        if (
+            hmac.compare_digest(observed, str(predeploy["target_sha256"]))
+            and runtime_matches
+        )
         else "MISMATCH",
         observed,
     )
@@ -1558,6 +3385,11 @@ def _collect_live_evidence(
             normalized = _normalize_result(name, result)
         else:
             port = getattr(ports, name)
+            if (
+                request["schema_version"] in {REQUEST_SCHEMA_V2, REQUEST_SCHEMA_V3}
+                and name in {"postgresql", "neo4j"}
+            ):
+                config = {**dict(config), "challenge_nonce": request["challenge_nonce"]}
             adapter_environ = {
                 key: environ[key]
                 for key in _ADAPTER_ENV_KEYS[name]
@@ -1588,7 +3420,21 @@ def _collect_live_evidence(
                 ):
                     binding_materials[name] = result.binding_material
                 normalized = _normalize_result(
-                    name, result, sensitive_values=sensitive_values
+                    name,
+                    result,
+                    sensitive_values=sensitive_values,
+                    max_fact_items=(
+                        MAX_RBAC_FACT_ITEMS
+                        if request["schema_version"] in {REQUEST_SCHEMA_V2, REQUEST_SCHEMA_V3}
+                        and name in {"postgresql", "neo4j"}
+                        else MAX_FACT_ITEMS
+                    ),
+                    max_list_items=(
+                        512
+                        if request["schema_version"] in {REQUEST_SCHEMA_V2, REQUEST_SCHEMA_V3}
+                        and name in {"postgresql", "neo4j"}
+                        else 64
+                    ),
                 )
             except Exception:
                 normalized = {
@@ -1606,14 +3452,24 @@ def _collect_live_evidence(
         and cross_source_binding != "MISMATCH"
     )
     body = {
-        "schema_version": EVIDENCE_SCHEMA,
+        "schema_version": (
+            EVIDENCE_SCHEMA_V2
+            if request["schema_version"] == REQUEST_SCHEMA_V3
+            else EVIDENCE_SCHEMA
+        ),
         "status": "COLLECTION_COMPLETE" if complete else "COLLECTION_INCOMPLETE",
         "claim_boundary": CLAIM_BOUNDARY,
         "target_id": request["target_id"],
         "request_file_sha256": request_file_sha256,
         "request_bytes_bound": request_bytes_bound is True,
         "collector_profile": (
-            "builtin-read-only-v1" if builtin_ports else "in-process-unattested"
+            (
+                "builtin-read-only-v2"
+                if request["schema_version"] == REQUEST_SCHEMA_V3
+                else "builtin-read-only-v1"
+            )
+            if builtin_ports
+            else "in-process-unattested"
         ),
         "verification_status": "UNVERIFIED",
         "snapshot_coherence": "UNATTESTED",

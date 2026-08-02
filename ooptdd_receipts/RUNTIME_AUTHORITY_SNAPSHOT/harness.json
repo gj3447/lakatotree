@@ -1,0 +1,27 @@
+{
+  "schema_version": "lakatotree-runtime-authority-ooptdd-harness/v1",
+  "claim_boundary": "The signed snapshot authorizes only the critique-history ledger on one boot, lease generation, singleton worker, and short validity interval. It is neither an all-runtime-write claim nor deployment approval. Live production remains NOT_READY without independently operated evidence and later gates.",
+  "required_controls": [
+    "snapshot.git_positive",
+    "snapshot.wheel_positive",
+    "snapshot.signature_tamper",
+    "snapshot.binding_splice",
+    "snapshot.unknown_field",
+    "snapshot.wrong_key",
+    "snapshot.expiry",
+    "snapshot.artifact_pin",
+    "snapshot.drain_lease_separation",
+    "snapshot.boot_replay",
+    "snapshot.generation_replay",
+    "snapshot.backend_pid_replay",
+    "snapshot.advisory_key_replay",
+    "snapshot.commit_margin",
+    "postgresql.same_lease_session",
+    "postgresql.final_guard_rollback",
+    "postgresql.lease_loss_rollback",
+    "identity.full_git_sha",
+    "projection.redacted",
+    "projection.not_approval",
+    "manifest.exact_control_set"
+  ]
+}

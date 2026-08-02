@@ -18,9 +18,13 @@ class LazyNeo4jDriver:
     def __init__(
         self,
         settings_factory: Callable[[], ServerSettings] = ServerSettings.from_env,
+        credential_profile: str = "runtime",
         **driver_config,
     ):
+        if credential_profile not in {"runtime", "migration"}:
+            raise ValueError("Neo4j credential profile must be runtime or migration")
         self._settings_factory = settings_factory
+        self._credential_profile = credential_profile
         self._driver_config = dict(driver_config)
         self._driver = None
         self._database = None
@@ -28,7 +32,10 @@ class LazyNeo4jDriver:
     def _get_driver(self):
         if self._driver is None:
             settings = self._settings_factory()
-            uri, user, password = settings.require_neo4j()
+            if self._credential_profile == "migration":
+                uri, user, password = settings.require_neo4j_migration()
+            else:
+                uri, user, password = settings.require_neo4j()
             self._database = settings.require_neo4j_database()
             self._driver = GraphDatabase.driver(
                 uri, auth=(user, password), **self._driver_config

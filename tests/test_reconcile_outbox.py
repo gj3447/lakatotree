@@ -23,7 +23,20 @@ from lakatos.verdicts import (
     verdict_history_payload_sha,
 )
 from server.container import AppContainer
+from server.contexts.tree.receipt_chain import (
+    RECEIPT_CHAIN_ROWS_CYPHER,
+    RECEIPT_IDENTITIES_CYPHER,
+)
+from server.contexts.tree.temporal_intents import (
+    PREDICTION_TEMPORAL_IDENTITY_CYPHER,
+)
 from server.ports import HistoryEventConflict
+from tests.test_temporal_intents import (
+    _World,
+    _attach_t1,
+    _commitment_args,
+    _graph_rows,
+)
 
 
 TS = "2026-08-02T00:00:00+00:00"
@@ -202,6 +215,102 @@ def test_reconcile_outbox_replays_pending_with_idempotent_upsert():
     assert any("status='applied'" in cy for cy, _ in neolog)               # outbox applied 표기
 
 
+def _temporal_authority_row(world):
+    args = _commitment_args(world, pending=True)
+    counts = args["identity_counts"]
+    return {
+        **{key: value for key, value in counts.items()
+           if key != "expected_label"},
+        "event_id": args["outbox"]["id"],
+        "outbox": args["outbox"],
+        "tree_record": args["tree_record"],
+        "node_record": args["node_record"],
+        "adjunct_record": args["commitment_record"],
+    }
+
+
+def test_reconcile_temporal_commitment_uses_cryptographic_authority_snapshot():
+    world = _World()
+    _attach_t1(world)
+    authority = _temporal_authority_row(world)
+    pending = authority["outbox"]
+    nodes, identities = _graph_rows(world)
+    neolog, pglog = [], []
+
+    def handler(cypher, params):
+        if "RETURN count(o) AS n" in cypher:
+            return [{"n": 0}]
+        if "OutboxEntry {status:'pending'}" in cypher:
+            return [pending]
+        if cypher == PREDICTION_TEMPORAL_IDENTITY_CYPHER:
+            return [authority]
+        if cypher == RECEIPT_CHAIN_ROWS_CYPHER:
+            return nodes
+        if cypher == RECEIPT_IDENTITIES_CYPHER:
+            return identities
+        marked = _successful_mark_result(
+            cypher, params,
+            tree="T", op=pending["op"], tag="n", payload=pending["payload"],
+        )
+        return marked or []
+
+    container = _authorized_container(
+        neo=_Neo(handler, neolog), mongo=object(), pg_kw={}
+    )
+
+    @contextlib.contextmanager
+    def _ok():
+        yield _Conn(pglog)
+
+    container.pg = _ok
+    result = container.reconcile_outbox()
+
+    assert result["replayed"] == [pending["id"]]
+    assert result["conflicts"] == []
+
+
+def test_malformed_temporal_namespace_never_falls_through_generic_replay():
+    bad = _outbox_row(
+        "ob-prediction-temporal-not-a-sha",
+        "T",
+        "node_add",
+        "n",
+        '{"x":1}',
+    )
+    generic = _outbox_row("ob-generic", "T", "node_add", "n", '{"x":2}')
+    nodes, identities = [], []
+    neolog, pglog = [], []
+
+    def handler(cypher, params):
+        if "RETURN count(o) AS n" in cypher:
+            return [{"n": 1}]
+        if "OutboxEntry {status:'pending'}" in cypher:
+            return [bad, generic]
+        if cypher == PREDICTION_TEMPORAL_IDENTITY_CYPHER:
+            return []
+        if cypher in {RECEIPT_CHAIN_ROWS_CYPHER, RECEIPT_IDENTITIES_CYPHER}:
+            return nodes if cypher == RECEIPT_CHAIN_ROWS_CYPHER else identities
+        marked = _successful_mark_result(
+            cypher, params,
+            tree="T", op="node_add", tag="n", payload=generic["payload"],
+        )
+        return marked or []
+
+    container = _authorized_container(
+        neo=_Neo(handler, neolog), mongo=object(), pg_kw={}
+    )
+
+    @contextlib.contextmanager
+    def _ok():
+        yield _Conn(pglog)
+
+    container.pg = _ok
+    result = container.reconcile_outbox()
+
+    assert result["replayed"] == [generic["id"]]
+    assert [item["id"] for item in result["conflicts"]] == [bad["id"]]
+
+
 def _causal_verdict_fixture(*, include_close=True):
     cycle_request = ["T", {
         "baseline": 0.0,
@@ -260,6 +369,7 @@ def _causal_verdict_fixture(*, include_close=True):
         "result_sha256": "4" * 64, "measurement_lock_sha": "5" * 64,
         "source_script_path": "/src/judge.py", "source_result_path": "/src/result.json",
         "history_payload_sha256": verdict_history_payload_sha(test_summary),
+        "prediction_temporal_commitment_sha256": None,
     }
     receipt = receipt_content_sha(receipt_fields)
     test_id = f"ob-test-result-{receipt}"

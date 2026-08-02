@@ -75,7 +75,7 @@ def _validate_admin_receipt(
         "comment_sha", "replay_status", "replay_reason",
         "regenerated_metric", "judge_script_path", "result_path",
         "result_sha256", "measurement_lock_sha", "source_script_path",
-        "source_result_path",
+        "source_result_path", "prediction_temporal_commitment_sha256",
     }
     if not (
         set(effect) == {

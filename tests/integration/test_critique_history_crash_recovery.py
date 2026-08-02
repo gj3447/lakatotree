@@ -17,8 +17,9 @@ from lakatos.io.reconcile import history_event_id
 from server.container import AppContainer
 from server.contexts.tree.evidence_claim_service import EvidenceClaimService
 from server.contexts.tree.schemas import CritiqueIn
-from server.ports import HistoryEventConflict
+from server.ports import HistoryEventConflict, WriterFenceLost
 from server.storage_contract import inspect_neo_outbox_contract, pg_projection_rows
+from server import storage_predeploy
 
 
 pytestmark = pytest.mark.integration
@@ -29,14 +30,12 @@ def _exact_outbox_identity_constraint(neo4j_driver):
     """No test may rely on another test having happened to create this constraint."""
 
     with neo4j_driver.session() as session:
-        session.run(
-            "CREATE CONSTRAINT lkt_outbox_id_unique IF NOT EXISTS "
-            "FOR (n:OutboxEntry) REQUIRE n.id IS UNIQUE"
-        ).consume()
-        session.run(
-            "CREATE CONSTRAINT lkt_runtime_writer_lease_name_unique "
-            "IF NOT EXISTS FOR (n:RuntimeWriterLease) REQUIRE n.name IS UNIQUE"
-        ).consume()
+        resources = importlib.resources.files("server.storage_migrations")
+        for name in storage_predeploy.NEO_RESOURCES:
+            for statement in storage_predeploy._migration_cypher(
+                resources.joinpath(name).read_bytes()
+            ):
+                session.run(statement).consume()
         rows = session.run(
             "SHOW CONSTRAINTS YIELD name, type, entityType, labelsOrTypes, properties "
             "WHERE name='lkt_outbox_id_unique' "
@@ -93,6 +92,77 @@ def test_two_containers_elect_one_writer_then_fail_over(neo4j_driver, pg_kw):
     finally:
         for container in containers:
             container.close()
+
+
+def test_lease_backend_death_rolls_back_and_successor_takes_over(
+    neo4j_driver, pg_kw
+):
+    """The lease-owning PG backend is also the mutation transaction boundary."""
+
+    event_id = f"ph-runtime-lease-{uuid4().hex}"
+    successor_event_id = f"ph-runtime-successor-{uuid4().hex}"
+    winner = AppContainer(
+        neo=_BorrowedDriver(neo4j_driver), mongo=_DummyMongo(), pg_kw=pg_kw
+    )
+    successor = AppContainer(
+        neo=_BorrowedDriver(neo4j_driver), mongo=_DummyMongo(), pg_kw=pg_kw
+    )
+    killer = None
+    try:
+        _require_writer(winner)
+        assert successor.acquire_writer_lease() is False
+        lease = winner.writer_lease_public_projection()
+        assert lease is not None
+        backend_pid = lease["postgresql_backend_pid"]
+
+        killer = psycopg2.connect(**pg_kw)
+        killer.autocommit = True
+        with pytest.raises(WriterFenceLost):
+            with winner._writer_fenced_pg() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO public.history(tree,op,payload,event_id) "
+                        "VALUES ('runtime-lease-test','lease-killed','{}'::jsonb,%s)",
+                        (event_id,),
+                    )
+                with killer.cursor() as cursor:
+                    cursor.execute("SELECT pg_terminate_backend(%s)", (backend_pid,))
+                    assert cursor.fetchone() == (True,)
+
+        check = psycopg2.connect(**pg_kw)
+        try:
+            with check.cursor() as cursor:
+                cursor.execute(
+                    "SELECT count(*) FROM public.history WHERE event_id=%s",
+                    (event_id,),
+                )
+                assert cursor.fetchone() == (0,)
+        finally:
+            check.close()
+
+        assert successor.acquire_writer_lease() is True
+        with successor._writer_fenced_pg() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO public.history(tree,op,payload,event_id) "
+                    "VALUES ('runtime-lease-test','successor','{}'::jsonb,%s)",
+                    (successor_event_id,),
+                )
+        assert _history_rows(pg_kw, "runtime-lease-test")[-1][4] == successor_event_id
+    finally:
+        if killer is not None:
+            killer.close()
+        cleanup = psycopg2.connect(**pg_kw)
+        try:
+            with cleanup, cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM public.history WHERE event_id IN (%s,%s)",
+                    (event_id, successor_event_id),
+                )
+        finally:
+            cleanup.close()
+        winner.close()
+        successor.close()
 
 
 def _service(container: AppContainer, hist) -> EvidenceClaimService:

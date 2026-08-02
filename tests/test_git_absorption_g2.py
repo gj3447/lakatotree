@@ -43,12 +43,14 @@ def test_version_reports_stale_when_boot_sha_differs_from_disk(monkeypatch):
     """stale 자기보고: 부팅 스냅샷 sha 가 현 디스크 HEAD 와 다르면 stale=True — 6커밋 stale 서빙을 배포프로브가 탐지."""
     import server.version as ver
 
-    monkeypatch.setattr(ver, 'BOOT_GIT_SHA', 'aaaaaaa')          # 부팅은 옛 커밋
-    monkeypatch.setattr(ver, 'disk_head_sha', lambda: 'bbbbbbb')  # 디스크는 전진
+    old_sha = 'a' * 40
+    new_sha = 'b' * 40
+    monkeypatch.setattr(ver, 'BOOT_GIT_SHA', old_sha)          # 부팅은 옛 커밋
+    monkeypatch.setattr(ver, 'disk_head_sha', lambda: new_sha)  # 디스크는 전진
     v = ver.served_version()
     assert v['stale'] is True, v
     # 같은 sha 면 stale=False(과잉경보 아님)
-    monkeypatch.setattr(ver, 'disk_head_sha', lambda: 'aaaaaaa')
+    monkeypatch.setattr(ver, 'disk_head_sha', lambda: old_sha)
     assert ver.served_version()['stale'] is False
 
 
@@ -71,7 +73,7 @@ def _init_repo(root, *, lakatotree_markers: bool) -> str:
         (root / 'README.md').write_text('# unrelated repository\n')
     _git(root, 'add', '-A')
     _git(root, 'commit', '-q', '-m', 'fixture')
-    return _git(root, 'rev-parse', '--short', 'HEAD')
+    return _git(root, 'rev-parse', '--verify', 'HEAD^{commit}')
 
 
 def test_version_rejects_parent_repository_sha_for_nested_snapshot(tmp_path):
@@ -101,6 +103,17 @@ def test_version_accepts_only_exact_marked_lakatotree_repository(tmp_path):
     unrelated = tmp_path / 'unrelated'
     _init_repo(unrelated, lakatotree_markers=False)
     assert ver._git_head_sha(str(unrelated)) == 'unknown'
+
+
+def test_manual_version_fallback_resolves_an_exact_packed_ref(tmp_path):
+    """git-less fallback must preserve the complete object identity."""
+    import server.version as ver
+
+    repo = tmp_path / 'lakatotree-packed'
+    expected = _init_repo(repo, lakatotree_markers=True)
+    _git(repo, 'pack-refs', '--all', '--prune')
+
+    assert ver._manual_git_head_sha(str(repo)) == expected
 
 
 def test_version_reports_unknown_identity_as_indeterminate_not_fresh(monkeypatch):

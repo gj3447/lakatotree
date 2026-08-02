@@ -21,7 +21,7 @@ predeploy receipt도 필요하다. MCP가 별도 네트워크 경로로 DB에 �
 
 ## 기동 절차 (predeploy 먼저, 서버 시작은 마지막)
 
-원장 기반 writer를 열 배포에서는 실행 중인 서버에 나중에 `export`해도 아무 효과가 없다. 다섯 개의
+원장 기반 writer를 열 배포에서는 실행 중인 서버에 나중에 `export`해도 아무 효과가 없다. 모든
 storage pin을 정식 env 파일에 먼저 영속화하고, predeploy 영수증까지 추가한 뒤 서버를 시작하거나
 재시작한다. 아래의 live-fence verifier는 저장소가 제공하는 echo 예제가 아니라, 실제 writer lease를
 소유하고 exact readback하는 별도 운영 authority여야 한다.
@@ -37,6 +37,24 @@ chmod 600 ~/.config/lakatotree/server.env
 # LAKATOS_MONGO_URI
 # LAKATOS_PG_HOST / PORT / USER / PASSWORD / DB
 # LAKATOS_API_TOKEN=<operator-secret>   # 수동 reconcile은 open posture에서 거부됨
+
+# migration authority는 이 runtime env 파일에 영속화하지 않는다. predeploy one-shot
+# process에만 아래 여섯 값을 주입하며, 모든 runtime launcher는 발견 즉시 거부한다.
+# LAKATOS_STORAGE_PG_MIGRATION_DSN=<single host + hostaddr + verify-full + SCRAM>
+# LAKATOS_STORAGE_PG_MIGRATION_USER=<dedicated migrator, runtime과 달라야 함>
+# LAKATOS_STORAGE_PG_MIGRATION_PASSWORD=<one-shot secret>
+# LAKATOS_STORAGE_NEO4J_MIGRATION_URI=<bolt+s 또는 neo4j+s>
+# LAKATOS_STORAGE_NEO4J_MIGRATION_USER=<dedicated migrator, runtime과 달라야 함>
+# LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD=<one-shot secret>
+
+# PostgreSQL bootstrap-owned large-object ACL은 앱 migration으로 바꿀 수 없다.
+# exact target DB에 direct bootstrap-superuser 새 세션으로 먼저 실행한다.
+# 비밀은 argv/runtime env/repository에 넣지 않고 보호된 operator auth를 사용한다.
+psql -X --set=ON_ERROR_STOP=1 \
+  --dbname lakatos \
+  --file /absolute/path/postgresql_large_object_acl_v1.sql
+# PG 16/17 전용이며 DB마다 적용한다. restore/initdb/major upgrade 뒤 재검증한다.
+# managed PG가 이 direct authority를 제공하지 않으면 NOT_READY이며 owner로 우회하지 않는다.
 
 # verifier는 /usr/bin/env shebang을 쓸 수 없다. 직접 절대 interpreter 또는 독립 실행파일만 허용한다.
 lakatotree-storage-predeploy --inspect-verifier \
@@ -65,6 +83,19 @@ lakatotree-storage-predeploy --apply \
 # LAKATOS_STORAGE_PREDEPLOY_RECEIPT=</absolute/path/to/new-write-once-receipt.json>
 # LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256=<receipt_file_sha256>
 
+# 별도 audit principal과 서로 다른 PG/Neo attestor key로 predeploy phase bundle을
+# 만든다. 서버 시작 직전 같은 정책으로 startup phase bundle을 만들고, startup 요청은
+# predeploy bundle의 raw-file SHA를 previous_phase_bundle로 묶어야 한다.
+# lakatotree-storage-audit --request ... --request-sha256 ... \
+#   --postgresql-signing-key ... --neo4j-signing-key ... --output ...
+# 두 bundle의 pure verifier 결과가 ACCESS_PAIR_VERIFIED가 아니면 시작하지 않는다.
+
+# runtime writer authority는 historical drain/fence authority와 다른 키와
+# 다른 exact executable이어야 한다. signer private key는 server.env나 앱에 넣지 않는다.
+# LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER=</absolute/path/to/runtime-authority>
+# LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER_SHA256=<execution-identity-sha256>
+# LAKATOS_STORAGE_RUNTIME_WRITER_PUBLIC_KEY_HEX=<distinct-raw-Ed25519-public-key>
+
 # 터미널 A 또는 service manager에서 새 프로세스가 다섯 pin을 모두 읽도록 시작/재시작한다.
 # 이 명령은 foreground uvicorn으로 exec되므로 이 터미널은 서버에 계속 점유된다.
 LAKATOS_ENV_FILE=~/.config/lakatotree/server.env bash server/run_internal.sh
@@ -87,6 +118,7 @@ curl -fsS -X POST \
   -H "Authorization: Bearer $LAKATOS_API_TOKEN" \
   http://127.0.0.1:55170/api/ops/critique-history-contract
 curl -fsS http://127.0.0.1:55170/readyz
+curl -fsS http://127.0.0.1:55170/api/ops/runtime-authority-snapshot
 ```
 
 이 경로는 fresh database 생성과 legacy upgrade를 같은 migration/readback으로 처리한다. drain
@@ -101,7 +133,7 @@ v1 fence 및 v3 predeploy receipt fallback은 없고, key rotation은 기존 rec
 다시 실행한다. private key는 verifier/server env/repository가 아니라 외부 authority/HSM에만 둔다. 적용 결과 파일은
 read-only로 봉인되며 서버는 별도 배포 설정에 핀한 raw-file SHA, 현재 artifact, migration,
 PostgreSQL cluster/database, Neo4j database identity를 모두 다시 맞춘 뒤에만 critique를 연다.
-v4 receipt의 `neo4j.payload_normalization`은 outbox의
+v5 receipt의 `neo4j.payload_normalization`은 outbox의
 `id/tree/op/node_tag/payload` 투영을 변경 전후 재스캔해 domain-separated SHA-256과 행 수,
 CAS 갱신 수로 봉인한다. 무변경 실행도 두 번 스캔한다. 이 값은 해당 receipt에 묶인 상태 증명이지
 독립 감사 원장은 아니다. Neo4j 변경 뒤 receipt 발행 전에 프로세스가 죽으면 재실행은 최종 정본의
@@ -109,12 +141,45 @@ CAS 갱신 수로 봉인한다. 무변경 실행도 두 번 스캔한다. 이 �
 verifier는 실행 때 private one-use copy로 옮겨지므로 원래 경로 옆의 상대 파일에 의존하면 안 된다.
 script라면 직접 shebang interpreter도 execution identity에 포함되고, PATH/PYTHONPATH 등은 정리된다.
 실제 production drain/canary authority가 준비되지 않았으면 이 절차를 production-ready로 간주하지 않는다.
-또한 현재 coordinator는 migration과 runtime DB principal을 아직 분리하지 않는다. 따라서 production에서는
-다음 access-contract가 구현·검증되기 전까지 apply/기동을 승인하면 안 된다: PostgreSQL NOLOGIN owner +
-별도 migrator/runtime, runtime table `SELECT/INSERT`와 sequence `SELECT/USAGE`만 허용, Neo4j Enterprise
-custom role로 runtime graph write와 migrator constraint-create를 분리, 양 저장소의 실제 actor/owner/ACL을
-receipt와 startup readback에 결합. Community Neo4j의 RBAC 부재를 성공으로 간주해서도 안 된다.
-런타임 launcher는 migration credential 환경변수 유입을 거부하며, `NEO4J_DATABASE`를 명시적으로 요구한다.
+coordinator는 이제 runtime과 다른 strict migration profile만 받아들이고 runtime launcher는 모든
+migration authority 변수를 거부한다. 별도 signed storage-audit surface는 선언된 NOLOGIN owner/SET-only
+migrator 정책, runtime/audit 분리, Neo4j custom-role projection을 서명된 관찰에 묶고 audit actor의
+read-only 상태를 검증한다. 이 단계만으로 non-audit 역할의 least-privilege 적합성을 승인하지 않으며,
+계정·TLS 인증서·Enterprise 라이선스도 만들지 않는다. 실제 production PG 역할과 CA, Neo4j Enterprise
+custom role, 서로 다른 audit principal/attestor가 배치되어 predeploy/startup bundle을 발행하기 전에는
+apply/기동을 승인하면 안 된다.
+Community Neo4j의 RBAC 부재를 성공으로 간주해서도 안 된다.
+Neo4j strict audit은 concrete application DB와 감사된 2026.03~2026.06 Enterprise 의미만
+허용한다. PUBLIC 기본 권한을 먼저 revoke하고 runtime/migrator는 app DB ACCESS만, audit은
+app DB와 system DB ACCESS 및 exact mutable SHOW/procedure 권한만 가진다. undeclared active
+admin/break-glass role도 실패다. system authorization scan은 writer `lastCommittedTxn` 앞뒤가
+같아야 하지만, 이것을 PG+Neo 전체의 원자적 snapshot으로 해석하면 안 된다. 현재 Enterprise
+실환경 vocabulary 영수증이 없으므로 이 단계는 계속 NOT_READY다.
+서명은 두 datastore key 아래 네 개의 domain-separated signature이며, verifier는 stateless다.
+predeploy/startup nonce 재사용은 거부하지만 동일한 유효 pair의 만료 전 재검증은 막지 않는다.
+그 다음 앱은 별도 runtime authority에 fresh nonce challenge를 보내 current boot, full Git 또는
+wheel RECORD artifact, operation/target, access evidence, singleton worker, PG backend와 Neo4j
+lease token digest/generation을 함께 서명받는다. 이 proof의 scope는 critique-history ledger뿐이며
+generic mutation이나 배포 승인을 뜻하지 않는다. PostgreSQL ledger transaction은 advisory lock을
+가진 동일 세션에서 실행된다. snapshot 만료·lease/boot drift·명시적 invalidation 시 원장 write와
+readback endpoint가 즉시 fail-closed한다. read-only collector나 GET endpoint는 proof를 갱신하지 않는다.
+런타임 snapshot은 최대 5분의 짧은 운영 창만 허용한다. 자동 갱신 루프는 없으며 만료 후에는 인증된
+`POST /api/ops/critique-history-contract`를 다시 실행해 외부 authority의 새 snapshot을 받아야 한다.
+런타임 launcher는 migration 및 readiness-audit credential 환경변수 유입을 거부하며,
+`NEO4J_DATABASE`를 명시적으로 요구한다.
+
+per-receipt Gate 4를 쓰는 배포는 C1 source closure와 Python, 외부 time-observation
+authority executable 및 DID의 7개 pin을 시작 전에 전부 설정한다. C1은 private copy를
+`-I -S -B`로 실행하고 자체 UTC 시각으로 만료를 판정한다. authority는 앱과 같은 키·프로세스가
+아니라 별도 운영 주체/HSM 또는 보호된 서비스가 소유해야 한다. repository 테스트의 deterministic
+script/key는 이 운영 독립성을 증명하지 않으며 production env에 복사하면 안 된다. 설정이 없거나
+부분적이면 permanent read는 Gate 3 L2에 머무른다; receipt chain L0로 오판하지 않는다.
+
+모든 live evidence가 모인 뒤에도 자동 승인하지 않는다. 별도 운영자는 canonical live review와
+approval policy를 독립 채널에 pin하고, 앱이 보유하지 않는 approver key로 정확한 review receipt를
+발행한다. `lakatotree-production-approval-verify`는 그 세 파일과 raw SHA를 오프라인 검증할 뿐이며
+`APPROVED_NOT_APPLIED`를 배포·재시작·`/readyz`로 전달하지 않는다. 실제 receipt가 없으면 결과는
+계속 `NOT_READY`다.
 런처와 `/readyz`는 schema를 쓰거나 append-only ledger 전체를 매 probe마다 스캔하지 않는다.
 `/healthz`는 core liveness, `/readyz`는 PG와 캐시된 exact storage authority까지 요구하는 traffic readiness다.
 캐시는 프로세스 로컬이므로 `run.sh`/`run_internal.sh`는 현재 `UVICORN_WORKERS=1`만

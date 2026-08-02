@@ -29,7 +29,7 @@ from lakatos.frontier_state import (
 
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.mutations import TreeMutationService, TreeSpec
-from server.contexts.tree.repository import TreeKgRepository
+from server.contexts.tree.repository import TemporalProofBatchProvider, TreeKgRepository
 from server.contexts.tree.validation import LakatosSemanticValidator
 from server.contexts.tree.writer import TreeKgWriter
 from server.read_models import compute_tree_metrics
@@ -42,12 +42,16 @@ class TreeService:
     kg_tx: KgTx
     hist: HistoryAppend
     pg: PgFactory
+    temporal_proof_provider: TemporalProofBatchProvider | None = None
     repo: TreeKgRepository | None = None
     validator: LakatosSemanticValidator | None = None
     mutations: TreeMutationService | None = None
 
     def _repo(self) -> TreeKgRepository:
-        return self.repo or TreeKgRepository(self.kg)
+        return self.repo or TreeKgRepository(
+            self.kg,
+            temporal_proof_provider=self.temporal_proof_provider,
+        )
 
     def _validator(self) -> LakatosSemanticValidator:
         return self.validator or LakatosSemanticValidator()
