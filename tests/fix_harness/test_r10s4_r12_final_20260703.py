@@ -32,11 +32,34 @@ class _Repo:
 
 
 class _Mut:
-    def __init__(self):
+    def __init__(self, *, error=None, deleted_nodes=0):
         self.deleted = False
+        self.error = error
+        self.deleted_nodes = deleted_nodes
+        self.calls = []
 
-    def delete_tree(self, name):
+    def delete_tree(
+        self,
+        name,
+        *,
+        cascade,
+        idempotency_key,
+        require_empty=False,
+        require_incarnation_match=False,
+        expected_incarnation_id=None,
+    ):
+        self.calls.append((
+            name,
+            cascade,
+            idempotency_key,
+            require_empty,
+            require_incarnation_match,
+            expected_incarnation_id,
+        ))
+        if self.error is not None:
+            raise self.error
         self.deleted = True
+        return {'deleted_nodes': self.deleted_nodes}
 
 
 def _svc(kg, nodes, mut=None):
@@ -45,21 +68,30 @@ def _svc(kg, nodes, mut=None):
 
 
 def test_delete_tree_with_receipts_is_blocked():
-    def receipted(q, **p):
-        return [{'n': 3}] if ('current_receipt_sha' in q or 'verdict_source IN' in q) else []
-    # (1) 영수증 보유 + cascade → 409 하드가드(현행: 통과=RED).
+    # Receipt/history inspection now belongs to the lock-held mutation writer;
+    # TreeService must propagate that authoritative decision without a stale
+    # pre-read or a second delete.
+    protected = _Mut(error=HTTPException(409, '영수증 보유 트리 삭제 차단'))
     with pytest.raises(HTTPException) as e:
-        _svc(receipted, [{'tag': 'a', 'verdict': 'CANONICAL', 'verdict_source': 'admin'}]).delete_tree('T', cascade=True)
+        _svc(lambda *_a, **_k: [], [], protected).delete_tree(
+            'T', cascade=True, idempotency_key='protected')
     assert e.value.status_code == 409 and '영수증' in str(e.value.detail), e.value.detail
-    # (2) 조회 실패 = fail-safe 409(불확실하면 안 지움).
-    def _boom(q, **p):
-        raise RuntimeError('kg down')
-    with pytest.raises(HTTPException) as e2:
-        _svc(_boom, [{'tag': 'a'}]).delete_tree('T', cascade=True)
-    assert e2.value.status_code == 409
-    # (3) 영수증 없는 트리 → 종전대로 삭제 성공.
-    mut = _Mut()
-    out = _svc(lambda q, **p: [{'n': 0}], [{'tag': 'draft', 'verdict': 'proof'}], mut).delete_tree('T', cascade=True)
+    assert protected.calls == [
+        ('T', True, 'protected', False, False, None)
+    ] and protected.deleted is False
+
+    # Infrastructure failure remains fail-closed and visible; it is not
+    # mislabeled as a semantic 409.
+    failed = _Mut(error=RuntimeError('kg down'))
+    with pytest.raises(RuntimeError, match='kg down'):
+        _svc(lambda *_a, **_k: [], [], failed).delete_tree(
+            'T', cascade=True, idempotency_key='failed')
+    assert failed.deleted is False
+
+    # An authoritative successful decision is surfaced unchanged.
+    mut = _Mut(deleted_nodes=1)
+    out = _svc(lambda *_a, **_k: [], [], mut).delete_tree(
+        'T', cascade=True, idempotency_key='success')
     assert out['ok'] is True and mut.deleted is True
 
 
@@ -70,16 +102,38 @@ class _PredKg:
     def __init__(self, parent_measured):
         self.parent_measured = parent_measured
         self.node = {}
+        self.outboxes = {}
 
     def __call__(self, q, **p):
         if 'ontology' in q:
             return [{'ontology': None}]
         if 'RETURN e.current_receipt_sha AS prev_rsha' in q:
-            return [{'prev_rsha': None}]
+            return [{
+                'prev_rsha': None,
+                'pred_receipt_sha': None,
+                'pred_registered_at': None,
+                'pred_prev_receipt_sha': None,
+                'pred_baseline_lineage': None,
+            }]
+        if 'MATCH (o:OutboxEntry {id:$id})' in q:
+            row = self.outboxes.get(p['id'])
+            return [dict(row)] if row is not None else []
         if 'parent' in q.lower() and 'metric_value' in q:   # R12 부모 measured 조회
             return [{'parent_measured': self.parent_measured}] if self.parent_measured is not None else []
         if 'SET e.pred_metric' in q:
             self.node.update({k: p.get(k) for k in p})
+            self.outboxes[p['history_event_id']] = {
+                'id': p['history_event_id'],
+                'tree': p['tree'],
+                'op': 'prediction_register',
+                'node_tag': p['tag'],
+                'payload': p['history_payload_json'],
+                'status': 'pending',
+                'created_at': p['ts'],
+                'reason': 'prediction_register_commit_intent',
+                'applied_at': None,
+                'receipt_sha': p['rsha'],
+            }
             return [{'tag': p.get('tag')}]
         return []
 

@@ -4,13 +4,21 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 
+import pytest
+
 from judges import arg5_unconditional_ownership_oracle as oracle
 from tests._argument_integrity_v2_fixture import (
     build_bundle,
+    activate_frozen_toolchain,
     rebind_judge_input,
     sha,
     write_json,
 )
+
+
+@pytest.fixture(autouse=True)
+def _frozen_arg5_toolchain(tmp_path, monkeypatch):
+    activate_frozen_toolchain(tmp_path, monkeypatch)
 
 
 def _judge(root, protocol_path, activation_path):

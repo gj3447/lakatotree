@@ -71,7 +71,8 @@ def test_file_sha_streams_matches_full_read(tmp_path):
 def test_run_cycle_orchestrates_in_order_no_bash(monkeypatch):
     app = load_app()
     calls = []
-    monkeypatch.setattr(app, 'add_node', lambda n, x: (calls.append('node'), {'ok': True})[1])
+    monkeypatch.setattr(app, '_require_critique_history_ready', lambda: None)
+    monkeypatch.setattr(app, 'add_cycle_node', lambda n, x, claim: (calls.append('node'), {'ok': True})[1])
     monkeypatch.setattr(app, 'register_prediction', lambda n, t, x: (calls.append('predict'), {'ok': True})[1])
     monkeypatch.setattr(app, 'submit_test_result',
                         lambda n, t, x: (calls.append('result'), {'verdict': 'progressive', 'novel': None, 'delta': -0.2})[1])

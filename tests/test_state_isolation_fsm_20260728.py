@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from lakatos.programme.agm import Belief
 from server.contexts.tree.schemas import QuestionIn
 from server.contexts.tree.service import TreeService
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
 
 
 def load_app():
@@ -25,6 +26,11 @@ def load_app():
     os.environ.setdefault("NEO4J_USER", "neo4j")
     os.environ.setdefault("NEO4J_PASSWORD", "test")
     return importlib.import_module("server.app")
+
+
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
 
 
 def test_belief_writes_and_abandon_are_tree_scoped(monkeypatch):
@@ -64,6 +70,37 @@ def test_belief_load_prefers_scoped_row_over_legacy_duplicate(monkeypatch):
     assert beliefs[0].statement == "scoped"
 
 
+def test_belief_reader_ignores_v2_inactive_legacy_pointer(monkeypatch):
+    app = load_app()
+    seen = []
+
+    def fake(query, **_params):
+        seen.append(query)
+        return []
+
+    monkeypatch.setattr(app, "kg", fake)
+    assert app._load_belief_base("TreeA") == []
+    assert "coalesce(hb.active, true)=true" in seen[0]
+
+
+def test_belief_writer_reactivates_only_the_scoped_pointer(monkeypatch):
+    app = load_app()
+    ops_seen = []
+    monkeypatch.setattr(app, "kg_tx", lambda ops: ops_seen.extend(ops) or [[] for _ in ops])
+    monkeypatch.setattr(app, "kg", lambda *_a, **_k: [])
+    monkeypatch.setattr(app, "hist", lambda *_a, **_k: None)
+    result = SimpleNamespace(
+        base=(Belief("b", "live", "protective_belt", 0.5, 0, 0, ()),),
+        removed=(),
+        added=("b",),
+        programme_shift_candidate=False,
+    )
+    app._persist_revision("TreeA", "revision", result, None)
+    query = ops_seen[0][0]
+    assert "MERGE (t)-[hb:HAS_BELIEF]->(bel)" in query
+    assert "SET hb.active=true" in query
+
+
 def test_frontier_reducer_conforms_to_machine_spec():
     from lakatos.frontier_state import QuestionEvent, QuestionState, step
 
@@ -87,9 +124,11 @@ def test_frontier_reducer_conforms_to_machine_spec():
             assert [effect.value for effect in actual.effects] == expected["effects"]
 
     closing = step(QuestionState.OPEN, QuestionEvent.ADJUDICATED,
-                   verdict="progressive", receipt_sha="a" * 64)
+                   verdict="progressive", receipt_sha="a" * 64,
+                   assurance_level=2)
     retained = step(QuestionState.OPEN, QuestionEvent.ADJUDICATED,
-                    verdict="partial", receipt_sha="b" * 64)
+                    verdict="partial", receipt_sha="b" * 64,
+                    assurance_level=2)
     duplicate = step(QuestionState.CLOSED, QuestionEvent.ADJUDICATED,
                      verdict="rejected", receipt_sha="c" * 64)
     assert closing.transition_id == "adjudication-close"
@@ -108,9 +147,11 @@ def test_frontier_reducer_conforms_to_machine_spec():
     # Sprint A P0-2: REATTRIBUTE never reopens; receipt-backed append only on CLOSED.
     from lakatos.frontier_state import QuestionEffect
     appended = step(QuestionState.CLOSED, QuestionEvent.REATTRIBUTE,
-                    verdict="progressive", receipt_sha="d" * 64)
+                    verdict="progressive", receipt_sha="d" * 64,
+                    assurance_level=2)
     retained = step(QuestionState.CLOSED, QuestionEvent.REATTRIBUTE,
-                    verdict="partial", receipt_sha="e" * 64)
+                    verdict="partial", receipt_sha="e" * 64,
+                    assurance_level=2)
     assert appended.transition_id == "reattribute-append"
     assert QuestionEffect.APPEND_CLOSER in appended.effects
     assert appended.state is QuestionState.CLOSED
@@ -210,6 +251,10 @@ def test_reattribute_appends_receipted_closer_without_reopen():
         current_receipt_sha="a" * 64,
         measurement_grade="server_regenerated",
         replay_status="verified",
+        measurement_lock_sha="1" * 64,
+        receipt_bindings=1,
+        lock_bindings=1,
+        qualitative_self_report=False,
         node_state="CANONICAL_CANDIDATE",
         prev_closed_by=["admin-old"],
     )
@@ -226,6 +271,10 @@ def test_reattribute_appends_receipted_closer_without_reopen():
     write_cypher = port.calls[-1][0]
     assert "OPEN" not in write_cypher or "open_state" in write_cypher
     assert "SET q.status=$open" not in write_cypher
+    assert "valueType(q.closed_by) STARTS WITH 'LIST'" in write_cypher
+    assert "ELSE current_closed_by + [$by]" in write_cypher
+    assert "n.current_receipt_sha" in write_cypher
+    assert port.calls[-1][1]["exp_receipt_sha"] == "a" * 64
 
 
 def test_reattribute_rejects_force_of_row_non_counts_closer():
@@ -255,6 +304,10 @@ def test_reattribute_rejects_open_question():
         current_receipt_sha="b" * 64,
         measurement_grade="server_regenerated",
         replay_status="verified",
+        measurement_lock_sha="2" * 64,
+        receipt_bindings=1,
+        lock_bindings=1,
+        qualitative_self_report=False,
         node_state="CANONICAL_CANDIDATE",
     )
     port = _ReattrKg(q_status="OPEN", closer_row=closer)

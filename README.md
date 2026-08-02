@@ -13,8 +13,10 @@ The project is useful when an AI agent, research workflow, or evaluation harness
 > **Honest scope.** An artifact-bound managed submit does more than retain a client path: the server
 > hashes the allowed source files, copies the scorer and result into private content-addressed
 > immutable snapshots, executes from those snapshots, and mints a `MeasurementLock` over the exact
-> command, dependency hashes, environment fingerprint, output, grade, and replay status. A v5 verdict
-> receipt seals both snapshot and source identities plus the lock SHA. Replay provenance is
+> command, dependency hashes, environment fingerprint, output, grade, and replay status. The v5
+> artifact identity is retained by the current v6 verdict receipt, which additionally seals the
+> exact append-only history payload; prediction receipt v3 applies the same history binding to
+> preregistration. Replay provenance is
 > authoritative only while the unique current receipt and lock rehash, their semantics and node
 > caches agree, the environment matches, and both snapshots still rehash to their sealed digests.
 > Legacy/unbound submits remain explicitly non-authoritative and cannot earn replay-owned assurance.
@@ -126,7 +128,7 @@ The input format is a small, **tool-agnostic** JSON contract you can adopt on it
 
 The CLI is available as a module, for example `python -m lakatos.cli --help`. Commands that read or mutate a named tree require a configured LakatoTree server and its backing stores; the repository's current server launch scripts contain deployment-specific assumptions and are not a portable public quickstart. The pure library and Euler demo do not require that service.
 
-Optional dependency groups are declared in `pyproject.toml`: `server`, `db`, `prov`, `receipts`, `dev`, `integration`, and `all`. From a checkout, install one with `python -m pip install -e ".[dev]"` or the relevant extra.
+Optional dependency groups are declared in `pyproject.toml`: `storage`, `server`, `db`, `prov`, `receipts`, `dev`, `integration`, and `all`. From a checkout, install one with `python -m pip install -e ".[dev]"` or the relevant extra.
 
 ## Proof signals and limits
 

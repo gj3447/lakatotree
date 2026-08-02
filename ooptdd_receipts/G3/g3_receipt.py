@@ -40,6 +40,8 @@ class _World:
 
     def kg(self, query, **p):
         tag = p.get("tag")
+        if "MATCH (o:OutboxEntry {id:$event_id})" in query:
+            return []
         if "DETACH DELETE" in query:
             node = self.nodes.get(tag)
             guarded = ("verdict_source IS NULL" in query) and ("HAS_RECEIPT" in query)
@@ -50,16 +52,17 @@ class _World:
             return [{"tag": tag}] if tag in self.nodes else []
         return []
 
-    def add_node(self, name, node):
+    def add_node(self, name, node, claim):
         self.pipeline.append("node")
-        self.nodes.setdefault(node.tag, {})
-        return {"ok": True}
+        self.nodes.setdefault(node.tag, {"_cycle_created_by": claim})
+        return {"ok": True, "_cycle_created": True}
 
     def register_prediction(self, name, tag, p):
         self.pipeline.append("predict")
         if self.fail_at == "predict":
             raise HTTPException(409, "노드 없음 또는 이미 채점됨 — 사후 예측등록 금지")
         self.nodes[tag]["pred_registered_at"] = "ts"
+        self.nodes[tag]["pred_receipt_sha"] = "prediction-receipt"
         return {"ok": True}
 
     def submit_test_result(self, name, tag, r):
@@ -75,12 +78,30 @@ class _World:
             raise HTTPException(422, "알 수 없는 반례 대응")
         return {"ok": True}
 
+    def release_cycle_claim(self, name, tag, claim):
+        node = self.nodes.get(tag)
+        if node and node.get("_cycle_created_by") == claim:
+            node.pop("_cycle_created_by", None)
+
+    def compensate_cycle_node(self, name, tag, claim):
+        node = self.nodes.get(tag)
+        if not node or node.get("_cycle_created_by") != claim:
+            return "not_owned"
+        if node.get("pred_receipt_sha") or node.get("verdict_source"):
+            node.pop("_cycle_created_by", None)
+            return "preserved"
+        del self.nodes[tag]
+        return "deleted"
+
 
 def _svc(world: _World) -> ProgrammeService:
     return ProgrammeService(
         kg=world.kg, hist=lambda *a, **k: None, pg=lambda: None,
         tree_data=lambda n: {"nodes": [], "frontier": []}, compute_metrics=lambda td: {},
-        add_node=world.add_node, register_prediction=world.register_prediction,
+        add_node=world.add_node,
+        compensate_cycle_node=world.compensate_cycle_node,
+        release_cycle_claim=world.release_cycle_claim,
+        register_prediction=world.register_prediction,
         submit_test_result=world.submit_test_result, add_critique=world.add_critique,
         standing=lambda n, t: {"stands": True}, insert_artifact=lambda a: None)
 
@@ -106,17 +127,27 @@ def verify(backend, cid):
     backend.ship([_ev(cid, "cycle_call_economics_inverted",
                       honest_calls=honest_calls, note_calls=note_calls)])
 
-    # ③ 롤백 원자성 — pre-receipt 실패(predict/submit) 각각 신규노드 0.
-    for stage in ("predict", "submit"):
-        w = _World()
-        w.fail_at = stage
-        try:
-            _svc(w).run_cycle("T", _cycle())
-            raise AssertionError(f"{stage} 실패가 4xx 를 안 냄")
-        except HTTPException:
-            pass
-        assert w.nodes == {}, f"{stage} 실패 후 debris: {w.nodes}"
-        backend.ship([_ev(cid, "cycle_rollback_zero_nodes", stage=stage)])
+    # ③ prediction receipt 전 실패만 보상 삭제; receipt 뒤 submit 실패는 증거를 보존한다.
+    w = _World()
+    w.fail_at = "predict"
+    try:
+        _svc(w).run_cycle("T", _cycle())
+        raise AssertionError("predict 실패가 4xx 를 안 냄")
+    except HTTPException:
+        pass
+    assert w.nodes == {}, f"predict 실패 후 debris: {w.nodes}"
+    backend.ship([_ev(cid, "cycle_rollback_zero_nodes", stage="predict")])
+
+    w = _World()
+    w.fail_at = "submit"
+    try:
+        _svc(w).run_cycle("T", _cycle())
+        raise AssertionError("submit 실패가 4xx 를 안 냄")
+    except HTTPException:
+        pass
+    assert w.nodes.get("n", {}).get("pred_receipt_sha") == "prediction-receipt"
+    backend.ship([_ev(cid, "cycle_prediction_receipt_durable_after_submit_failure",
+                      stage="submit")])
 
     # ④ 영수증 내구점 — 착륙 후(critique) 실패는 롤백하지 않는다(G1/G9 존중).
     w = _World()
@@ -137,9 +168,9 @@ def verify(backend, cid):
 
     # ⑥ (음성 오라클 / no-fake-green) 롤백을 무력화하면 debris 가 *검출되는가* — 오라클 이빨 증명.
     w = _World()
-    w.fail_at = "submit"
+    w.fail_at = "predict"
     svc = _svc(w)
-    svc._rollback_cycle_node = lambda name, tag: None   # 결함 주입: 롤백 제거(봉인 이전 상태)
+    svc.compensate_cycle_node = lambda name, tag, claim: "disabled"
     try:
         svc.run_cycle("T", _cycle())
     except HTTPException:

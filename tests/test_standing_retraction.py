@@ -18,13 +18,15 @@ def _service(node_verdict: str, vur: bool):
         if 'MERGE (a:Argument' in query:                      # 비판(공격) 등재 — 노드 존재(RETURN e.tag) 모델(#13 fail-loud)
             return [{'tag': params.get('tag'), 'target_valid': True,
                      'created': True, 'idempotent': False, 'existing_count': 1,
-                     'attacks': params.get('attacks')}]
-        if 'coalesce(e.valid_until_rebutted' in query:        # standing 재계산용 노드+args 조회
+                     'attacks': params.get('normalized_attacks'),
+                     'intent_count': 1, 'intent_valid': True}]
+        if "SET e.verdict='former_canonical'" in query:       # 강등+receipt+outbox 원자 발화
+            return [{'tag': params.get('tag'), 'outbox_valid': True}]
+        if 'RETURN e.verdict AS verdict' in query:             # standing 재계산용 노드+args 조회
             # 새 비판 q-doubt 가 노드(tag)를 직접 공격 → verdict 가 막아낼 방어자 없음 → stands=False
             return [{'verdict': node_verdict, 'vur': vur,
-                     'args': [{'id': f"{params['tree']}/q-doubt", 'attacks': params['tag']}]}]
-        if "SET e.verdict='former_canonical'" in query:       # 강등 발화
-            return []
+                     'args': [{'id': f"{params['tree']}/q-doubt",
+                               'attacks': params['tag'], 'by': 'critic'}]}]
         return []
 
     svc = EvidenceClaimService(

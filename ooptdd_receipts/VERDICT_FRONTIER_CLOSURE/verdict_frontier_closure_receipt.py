@@ -17,6 +17,7 @@ import importlib.util
 import os
 from pathlib import Path
 import sys
+import tempfile
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -55,21 +56,11 @@ def verify(backend, cid):
         if os.getenv("LKT_VFC_INJECT") == "suppress-conclusive":
             frontier.QUESTION_ANSWER_VERDICTS = frozenset()
 
-        service, kg = harness._svc()
-        service.register_prediction("T", "seam", harness._pred())
-        close = service.submit_test_result(
-            "T",
-            "seam",
-            harness.Result(
-                metric_value=1.0,
-                script="inline",
-                novel_measured=1.0,
-                lakatos_anomaly=True,
-                lakatos_consequence=True,
-                lakatos_excess=True,
-                lakatos_hardcore=True,
-            ),
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result, producer = harness._verified_progressive_result(Path(tmp))
+            service, kg = harness._svc(producer=producer)
+            service.register_prediction("T", "seam", harness._pred())
+            close = service.submit_test_result("T", "seam", result)
         assert close["verdict"] == "progressive", close
         assert close["question"] == {
             "target": "q-x",

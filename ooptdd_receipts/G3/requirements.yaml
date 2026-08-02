@@ -24,9 +24,10 @@ requirements:
     gate:
       - {event: cycle_call_economics_inverted, op: ">=", count: 1}
   - id: G3-3
-    description: 봉인 트랜잭션 롤백 — pre-receipt 실패(predict/submit) 각각 신규노드 0 (stage 2종 = 이벤트 2)
+    description: prediction receipt 전 실패만 신규노드 0으로 보상하고, receipt 뒤 submit 실패는 예측증거를 보존
     gate:
-      - {event: cycle_rollback_zero_nodes, op: ">=", count: 2}
+      - {event: cycle_rollback_zero_nodes, op: ">=", count: 1}
+      - {event: cycle_prediction_receipt_durable_after_submit_failure, op: ">=", count: 1}
   - id: G3-4
     description: 영수증 내구점 — 판결 영수증 착륙 후 실패는 롤백 금지(G1 불변영수증·G9 증거불멸 존중)
     gate:

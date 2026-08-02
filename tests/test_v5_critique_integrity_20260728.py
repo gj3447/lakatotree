@@ -39,17 +39,17 @@ class _Kg:
                 "prev_receipt_sha": None,
                 "args": list(self.existing.values()),
             }]
-        if "SET t._argument_cas" in query:
+        if "a._argument_create_claim=$create_claim" in query:
             full_id = params["arg_full"]
             target_valid = (
-                params["attacks"] == params["tag"]
-                or f'{params["tree"]}/{params["attacks"]}' in self.existing
-                or params["attacks"] in self.existing
+                params["attack_targets_node"]
+                or (
+                    params["attack_reference_valid"]
+                    and f'{params["tree"]}/{params["normalized_attacks"]}'
+                    in self.existing
+                )
             )
-            normalized_attacks = (
-                params["tag"] if params["attacks"] == params["tag"]
-                else params["attacks"].rsplit("/", 1)[-1]
-            ) if target_valid else None
+            normalized_attacks = params["normalized_attacks"] if target_valid else None
             old = self.existing.get(full_id)
             idempotent = bool(old) and all(
                 old.get(key) == value
@@ -78,6 +78,8 @@ class _Kg:
                 "idempotent": idempotent,
                 "existing_count": int(full_id in self.existing),
                 "attacks": normalized_attacks,
+                "intent_count": int(created or idempotent),
+                "intent_valid": created or idempotent,
             }]
         if "MERGE (a:Argument" in query:  # legacy query shape: useful failure signal
             self.written.append(params)
@@ -89,7 +91,7 @@ class _IncompleteResultKg(_Kg):
     """Simulate a stale/malformed port that omits the integrity verdict."""
 
     def __call__(self, query, **params):
-        if "SET t._argument_cas" in query:
+        if "a._argument_create_claim=$create_claim" in query:
             self.queries.append(query)
             return [{"tag": params.get("tag")}]
         return super().__call__(query, **params)
@@ -110,7 +112,7 @@ def test_attack_on_node_tag_is_accepted():
     kg = _Kg()
     out = _service(kg).add_critique("T", "n", _critique(attacks="n"))
     assert out["ok"] and kg.written
-    atomic_query = next(q for q in kg.queries if "SET t._argument_cas" in q)
+    atomic_query = next(q for q in kg.queries if "a._argument_create_claim=$create_claim" in q)
     assert "FOREACH" in atomic_query and "preexisting_count=0" in atomic_query
 
 
@@ -156,7 +158,7 @@ def test_existing_argument_is_immutable_across_actors():
     assert "immutable" in str(exc.value.detail).lower()
 
 
-def test_identical_reregistration_is_idempotent_without_history():
+def test_identical_reregistration_is_idempotent_history_repair_attempt():
     same = {
         "id": "T/d1",
         "attacks": "n",
@@ -173,7 +175,9 @@ def test_identical_reregistration_is_idempotent_without_history():
 
     assert out["ok"] and out.get("idempotent") is True
     assert not kg.written
-    assert history == []
+    assert len(history) == 1
+    assert history[0][0][1] == "critique"
+    assert history[0][1]["event_id"].startswith("he-")
 
 
 def test_incomplete_integrity_result_fails_closed_without_history():

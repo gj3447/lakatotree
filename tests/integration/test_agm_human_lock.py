@@ -5,14 +5,28 @@ contraction 시 엔진이 former_canonical 로 강등하지만, 인간이 '반�
 =False=human_locked) 노드는 belief 가 사라져도 CANONICAL 을 유지한다(인간경계 존중). prom C A4 의 blanket
 SET 이 이 lock 을 무시하던 버그를 닫음.
 """
+from uuid import uuid4
+
 import pytest
 
 from server.container import AppContainer
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
 
 pytestmark = pytest.mark.integration
 
 
 class _DummyMongo:
+    def close(self):
+        pass
+
+
+class _BorrowedDriver:
+    def __init__(self, driver):
+        self._driver = driver
+
+    def session(self, *args, **kwargs):
+        return self._driver.session(*args, **kwargs)
+
     def close(self):
         pass
 
@@ -40,17 +54,42 @@ def _verdict(c, name, tag):
 
 def test_belief_contraction_demotes_open_but_preserves_human_locked(monkeypatch, neo4j_driver):
     import server.app as app
-    c = AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw={})
-    name = "a4_humanlock"
-    _seed(c, name)
-    monkeypatch.setattr(app, "kg", c.kg)
-    monkeypatch.setattr(app, "kg_tx", c.kg_tx)
-    monkeypatch.setattr(app, "hist", lambda *a, **k: None)
+    c = AppContainer(
+        neo=_BorrowedDriver(neo4j_driver), mongo=_DummyMongo(), pg_kw={}
+    )
+    name = f"a4_humanlock_{uuid4().hex}"
+    try:
+        _seed(c, name)
+        monkeypatch.setattr(app, "kg", c.kg)
+        monkeypatch.setattr(app, "kg_tx", c.kg_tx)
+        monkeypatch.setattr(app, "hist", lambda *a, **k: None)
+        install_live_ledger_test_seam(monkeypatch, app)
 
-    # open belief 제거 → 자동무효 허용 노드 'open' 은 엔진 강등
-    app.agm_revise(app.AgmReviseIn(op="contraction", tree=name, target_id="open"))
-    assert _verdict(c, name, "open") == "former_canonical"
+        # open belief 제거 → 자동무효 허용 노드 'open' 은 엔진 강등
+        app.agm_revise(app.AgmReviseIn(op="contraction", tree=name, target_id="open"))
+        assert _verdict(c, name, "open") == "former_canonical"
 
-    # locked belief 제거 → 인간 lock 노드 'locked' 는 CANONICAL 유지(자동강등 제외)
-    app.agm_revise(app.AgmReviseIn(op="contraction", tree=name, target_id="locked"))
-    assert _verdict(c, name, "locked") == "CANONICAL"
+        # locked belief 제거 → 인간 lock 노드 'locked' 는 CANONICAL 유지(자동강등 제외)
+        app.agm_revise(app.AgmReviseIn(op="contraction", tree=name, target_id="locked"))
+        assert _verdict(c, name, "locked") == "CANONICAL"
+    finally:
+        try:
+            c.kg(
+                "MATCH (r:VerdictReceipt {tree:$name}) DETACH DELETE r",
+                name=name,
+            )
+            c.kg(
+                "MATCH (o:OutboxEntry {tree:$name}) DETACH DELETE o",
+                name=name,
+            )
+            c.kg(
+                "MATCH (t:LakatosTree {name:$name})-[:HAS_NODE|HAS_BELIEF]->(n) "
+                "DETACH DELETE n",
+                name=name,
+            )
+            c.kg(
+                "MATCH (t:LakatosTree {name:$name}) DETACH DELETE t",
+                name=name,
+            )
+        finally:
+            c.close()

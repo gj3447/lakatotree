@@ -43,18 +43,18 @@ class _Port:
 
     def __call__(self, query, **params):
         self.queries.append(query)
-        if "SET t._argument_cas" in query:
+        if "MERGE (a:Argument" in query:
             if os.getenv("LKT_ARGUMENT_INTEGRITY_INJECT") == "legacy-row":
                 return [{"tag": params["tag"]}]
             target_valid = (
-                params["attacks"] == params["tag"]
-                or f'{params["tree"]}/{params["attacks"]}' in self.existing
-                or params["attacks"] in self.existing
+                params["attack_targets_node"]
+                or (
+                    params["attack_reference_valid"]
+                    and f'{params["tree"]}/{params["normalized_attacks"]}'
+                    in self.existing
+                )
             )
-            normalized = (
-                params["tag"] if params["attacks"] == params["tag"]
-                else params["attacks"].rsplit("/", 1)[-1]
-            ) if target_valid else None
+            normalized = params["normalized_attacks"] if target_valid else None
             old = self.existing.get(params["arg_full"])
             same = bool(old) and all(
                 old.get(key) == value
@@ -81,6 +81,8 @@ class _Port:
                 "idempotent": same,
                 "existing_count": int(params["arg_full"] in self.existing),
                 "attacks": normalized,
+                "intent_count": int(created or same),
+                "intent_valid": created or same,
             }]
         if "RETURN e.verdict AS verdict" in query:
             return [{
@@ -91,12 +93,27 @@ class _Port:
             }]
         return []
 
+    def tx(self, ops):
+        rows = []
+        for query, params in ops:
+            if "RETURN t.name AS tree" in query:
+                self.queries.append(query)
+                rows.append([{"tree": params["tree"]}])
+            else:
+                rows.append(self(query, **params))
+        return rows
+
 
 def _service(port):
     history = []
-    service = object.__new__(EvidenceClaimService)
-    service.kg = port
-    service.hist = lambda *args, **kwargs: history.append((args, kwargs))
+    service = EvidenceClaimService(
+        kg=port,
+        kg_tx=port.tx,
+        hist=lambda *args, **kwargs: history.append((args, kwargs)),
+        foundation=lambda *_args, **_kwargs: None,
+        load_lineage=lambda *_args, **_kwargs: (),
+        reproducible_for_node=lambda *_args, **_kwargs: None,
+    )
     return service, history
 
 
@@ -137,8 +154,15 @@ def verify(backend, cid):
     status, result = _status(lambda: retry.add_critique(
         "T", "n", CritiqueIn(arg_id="d1", attacks="n", by="alice", kind="doubt", body="q")
     ))
-    assert status == "ok" and result.get("idempotent") is True and history == []
-    backend.ship([_event(cid, "identical_retry_idempotent", history_events=0)])
+    assert status == "ok" and result.get("idempotent") is True
+    assert len(history) == 1 and history[0][1]["event_id"].startswith("he-")
+    backend.ship([_event(
+        cid,
+        "identical_retry_idempotent",
+        projection_attempts=1,
+        stable_event_id=True,
+        stored_duplicate_count="NOT_MEASURED_IN_MEMORY_RECEIPT",
+    )])
 
     create_port = _Port()
     create, _ = _service(create_port)
@@ -146,10 +170,13 @@ def verify(backend, cid):
         "T", "n", CritiqueIn(arg_id="d2", attacks="n", by="alice", body="new")
     ))
     assert status == "ok"
-    query = next(q for q in create_port.queries if "SET t._argument_cas" in q)
+    query = next(q for q in create_port.queries if "MERGE (a:Argument" in q)
+    assert "SET t._tree_write_cas" in query
     assert "preexisting_count=0" in query and "FOREACH" in query and "ON CREATE SET" in query
-    backend.ship([_event(cid, "tree_locked_first_write", lock="t._argument_cas")])
+    backend.ship([_event(cid, "tree_locked_first_write", lock="t._tree_write_cas")])
     assert "a._argument_create_claim=$create_claim" in query
     assert "actual._argument_create_claim=$create_claim" in query
     assert "REMOVE actual._argument_create_claim" in query
+    assert "MERGE (o:OutboxEntry {id:$history_event_id, tree:$tree" in query
+    assert "o.status='pending'" in query
     backend.ship([_event(cid, "create_claim_verified", token="transaction_owned")])

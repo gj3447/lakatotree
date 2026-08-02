@@ -9,7 +9,8 @@ from __future__ import annotations
 import pytest
 
 from server.contexts.tree.schemas import NodeIn
-from server.contexts.tree.writer import TreeKgWriter, TreeNotFound
+from server.contexts.tree.writer import CycleClaimLost, TreeKgWriter, TreeNotFound
+from server.ports import KgTxGuardFailed
 
 
 def test_writer_add_node_missing_tree_raises():
@@ -31,3 +32,40 @@ def test_writer_add_node_existing_tree_returns_summary():
 
     s = TreeKgWriter(kg_tx).add_node("T", NodeIn(tag="x", algorithm="problem"), [])
     assert s.op_count == 1 and s.tx_count == 1
+
+
+@pytest.mark.parametrize("cycle_claim", ["claim-b", None])
+def test_active_same_tag_cycle_claim_rejects_cycle_and_generic_overwrite(cycle_claim):
+    seen = []
+
+    def kg_tx(ops):
+        seen.append(ops)
+        assert ops.guard_field == "guard_status"
+        assert ops[0][1]["cycle_claim"] == cycle_claim
+        raise KgTxGuardFailed(
+            "guarded first statement rejected: 'claim_conflict'"
+        )
+
+    writer = TreeKgWriter(kg_tx)
+    with pytest.raises(CycleClaimLost):
+        if cycle_claim is None:
+            writer.add_node("T", NodeIn(tag="x", algorithm="problem"), [])
+        else:
+            writer.add_cycle_node(
+                "T", NodeIn(tag="x", algorithm="problem"), [], cycle_claim
+            )
+    assert len(seen) == 1
+
+
+def test_existing_unclaimed_node_is_not_owned_by_cycle_compensation():
+    def kg_tx(ops):
+        return [[{
+            "t": 1,
+            "cycle_created": False,
+            "guard_status": "ok",
+        }] for _ in ops]
+
+    _summary, created = TreeKgWriter(kg_tx).add_cycle_node(
+        "T", NodeIn(tag="x", algorithm="problem"), [], "claim-a"
+    )
+    assert created is False

@@ -27,6 +27,7 @@ def test_receipted_conclusive_adjudication_closes_open_question(verdict):
         QuestionEvent.ADJUDICATED,
         verdict=verdict,
         receipt_sha="a" * 64,
+        assurance_level=2,
     )
 
     assert transition.state is QuestionState.CLOSED
@@ -47,6 +48,7 @@ def test_nonconclusive_adjudication_retains_open_question(verdict):
         QuestionEvent.ADJUDICATED,
         verdict=verdict,
         receipt_sha="b" * 64,
+        assurance_level=2,
     )
 
     assert transition.state is QuestionState.OPEN
@@ -61,6 +63,7 @@ def test_adjudication_without_receipt_is_rejected_not_treated_as_close():
             QuestionEvent.ADJUDICATED,
             verdict="progressive",
             receipt_sha="",
+            assurance_level=2,
         )
 
 
@@ -72,6 +75,7 @@ def test_adjudication_requires_canonical_sha256_receipt_identity(receipt_sha):
             QuestionEvent.ADJUDICATED,
             verdict="progressive",
             receipt_sha=receipt_sha,
+            assurance_level=2,
         )
 
 
@@ -81,11 +85,40 @@ def test_duplicate_adjudication_is_idempotent():
         QuestionEvent.ADJUDICATED,
         verdict="progressive",
         receipt_sha="c" * 64,
+        assurance_level=2,
     )
 
     assert transition.state is QuestionState.CLOSED
     assert transition.transition_id == "duplicate-adjudication"
     assert transition.effects == ()
+
+
+@pytest.mark.parametrize("assurance_level", [None, 0, 1])
+@pytest.mark.parametrize("verdict", ["progressive", "rejected"])
+def test_unverified_receipt_cannot_close_frontier(verdict, assurance_level):
+    transition = step(
+        QuestionState.OPEN,
+        QuestionEvent.ADJUDICATED,
+        verdict=verdict,
+        receipt_sha="d" * 64,
+        assurance_level=assurance_level,
+    )
+
+    assert transition.state is QuestionState.OPEN
+    assert transition.transition_id == "adjudication-retain-open"
+
+
+def test_qualitative_self_report_cannot_close_even_at_l2():
+    transition = step(
+        QuestionState.OPEN,
+        QuestionEvent.ADJUDICATED,
+        verdict="progressive",
+        receipt_sha="e" * 64,
+        assurance_level=2,
+        qualitative_self_report=True,
+    )
+
+    assert transition.state is QuestionState.OPEN
 
 
 def test_frontier_machine_source_declares_adjudication_routes():

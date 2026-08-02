@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, QuestionIn
 from server.contexts.tree.service import TreeService
@@ -31,14 +31,38 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
         return service_factory().tree_data(name)
 
     @router.post("/api/tree/{name}")
-    def create_tree(name: str, spec: CreateTreeIn, create_only: bool = False):
-        """나무 생성/메타 upsert. create_only=true 면 동명 나무를 덮지 않고 409."""
-        return service_factory().create_tree(name, spec, create_only=create_only)
+    def create_tree(
+        name: str,
+        spec: CreateTreeIn,
+        create_only: bool = False,
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ):
+        """나무 생성/메타 upsert. create_only=true 면 동명 나무를 덮지 않고 409.
+
+        ``Idempotency-Key``를 주면 동일 키+동일 본문 재시도는 처음 커밋을
+        재사용하며, 동일 키+다른 본문은 충돌로 거부한다. 키가 없으면 기존
+        last-write-wins 호출 의미를 유지한다.
+        """
+        return service_factory().create_tree(
+            name,
+            spec,
+            create_only=create_only,
+            idempotency_key=idempotency_key,
+        )
 
     @router.delete("/api/tree/{name}")
-    def delete_tree(name: str, cascade: bool = False):
-        """나무 삭제(파괴적). 미존재=404 · 노드 있으면 cascade=true 필요(아니면 409). create_tree 의 짝."""
-        return service_factory().delete_tree(name, cascade=cascade)
+    def delete_tree(
+        name: str,
+        cascade: bool = False,
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ):
+        """나무 삭제(파괴적). 멱등키를 의무화해 응답 유실 후 재시도가
+        동명 재생성 트리를 지우는 ABA 오류를 막는다."""
+        return service_factory().delete_tree(
+            name,
+            cascade=cascade,
+            idempotency_key=idempotency_key,
+        )
 
     @router.get("/api/tree/{name}/metrics")
     def metrics(name: str, snapshot: bool = False):

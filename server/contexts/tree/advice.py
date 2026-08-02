@@ -35,9 +35,8 @@ _REGISTRY: tuple[tuple[str, str], ...] = (
                        "하향이 필요하면 새 트리로 분기."),
     # PROM16 S1/S5: 채점 예산 소진(429)의 다음 수. verb 를 갈아타라고 권하지 않는다 — 판결 verb 는
     #   전부 같은 게이트라 우회가 아니라 거짓말이 된다(advice 는 verb-교체 off-switch 를 주지 않는다).
-    #   ★단 여기 권하는 상향(create_tree cycle_budget)은 *운영자 조치*를 상정한 안내인데, 상한엔 단조
-    #   ratchet 이 없고 표면엔 운영자↔에이전트 구분도 없어 에이전트 자신이 그대로 쓸 수 있다 — 즉 상한
-    #   자체는 self-raisable 이다(cycle_budget.py 모듈 docstring 의 잔여 비대칭 참조).
+    #   ★단 여기 권하는 상향(create_tree cycle_budget)은 *운영자 조치*를 상정한 안내다. 명시 확인과
+    #   attestor 트리의 write-cert 마찰은 있으나 운영자 authn 구분은 아직 없다.
     ("사이클 예산 소진", "이 트리의 채점 상한이 찼다 — create_tree(cycle_budget=<더 큰 값>, "
                        "confirm_budget_raise=true) 로 상향(attestor 트리면 write-cert 도 필요). "
                        "또는 새 트리로 분기. 무마찰 self-raise 는 409 로 막힌다(q-selfdev-budget-ratchet). "

@@ -81,7 +81,7 @@ class _World:
         return []
 
     # ── 하위 verb (ProgrammeService 주입 seam — 실제 서비스와 같은 서명) ──
-    def add_node(self, name, node: NodeIn):
+    def add_node(self, name, node: NodeIn, claim: str):
         self.pipeline.append('node')
         self.nodes.setdefault(node.tag, {})
         return {'ok': True, 'tag': node.tag}
@@ -89,7 +89,7 @@ class _World:
     def register_prediction(self, name, tag, p: PredictionIn):
         self.pipeline.append('predict')
         self.nodes[tag]['pred'] = p
-        return {'ok': True}
+        return {'ok': True, '_cycle_created': True}
 
     def submit_test_result(self, name, tag, r: Result):
         self.pipeline.append('submit')
@@ -114,7 +114,10 @@ def _svc(world: _World) -> ProgrammeService:
     return ProgrammeService(
         kg=world.kg, hist=lambda *a, **k: None, pg=lambda: None,
         tree_data=lambda n: {'nodes': [], 'frontier': []}, compute_metrics=lambda td: {},
-        add_node=world.add_node, register_prediction=world.register_prediction,
+        add_node=world.add_node,
+        compensate_cycle_node=lambda *_a: 'deleted',
+        release_cycle_claim=lambda *_a: None,
+        register_prediction=world.register_prediction,
         submit_test_result=world.submit_test_result, add_critique=world.add_critique,
         standing=lambda n, t: {'stands': True}, insert_artifact=lambda a: None)
 

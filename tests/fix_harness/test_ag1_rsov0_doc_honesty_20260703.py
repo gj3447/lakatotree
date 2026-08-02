@@ -78,7 +78,7 @@ def test_adr_code_anchors_hold():
         "measurement_grade", "engine_rule_sha", "comment_sha",
         "replay_status", "replay_reason", "regenerated_metric",
         "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
-        "source_script_path", "source_result_path"}
+        "source_script_path", "source_result_path", "history_payload_sha256"}
     # 값소유 치환 코드 실재(verified∧regenerated → SSOT 치환).
     policy = (ROOT / "server" / "contexts" / "tree" / "judgement_policy.py").read_text(encoding="utf-8")
     assert "def resolve_measurement" in policy and "server_regenerated" in policy

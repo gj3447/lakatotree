@@ -365,6 +365,20 @@ def test_rebuild_run_cli_surfaces_step_failed_on_nonzero_exit(monkeypatch, capsy
 def _schema_valid_field_mutation(model_cls, payload, field):
     """Return a different, schema-valid payload whose selected field changed."""
     value = payload[field]
+    if field == 'freshen':
+        raw = dict(
+            payload,
+            freshen=not value,
+            supersedes_receipt_sha=('a' * 64 if not value else None),
+        )
+        changed = model_cls(**raw).model_dump(exclude={'write_cert'})
+        if changed.get(field) != value:
+            return changed
+    if field == 'supersedes_receipt_sha' and value is None:
+        raw = dict(payload, freshen=True, supersedes_receipt_sha='a' * 64)
+        changed = model_cls(**raw).model_dump(exclude={'write_cert'})
+        if changed.get(field) != value:
+            return changed
     if isinstance(value, bool):
         candidates = [not value]
     elif isinstance(value, (int, float)):

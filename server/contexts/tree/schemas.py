@@ -110,8 +110,9 @@ class CreateTreeIn(BaseModel):
     #   세는 것 = scored_nodes(판결받은 노드 수) — 인메모리 카운터가 아니라 저장소 count 로 파생(재시작 내구).
     #   막는 것 = 판결을 민팅하는 verb 전부(run_cycle / submit_test_result / set_verdict) → verb 교체 우회 없음.
     #   ★막지 않는 것(정직): add_node/register_prediction 은 세지도 막지도 않는다 — 소진 트리도 노드·예측은
-    #     계속 쌓인다(판결만 안 난다). 즉 0 은 '트리 동결'이 아니라 *판결 정지*다. 또 예산 조회 실패 시엔
-    #     fail-safe 로 무제한(soft bypass). 전체 술어·비대칭: server/contexts/tree/cycle_budget.py.
+    #     계속 쌓인다(판결만 안 난다). 즉 0 은 '트리 동결'이 아니라 *판결 정지*다. 빠른 선조회와 별개로
+    #     실제 판결 mutation은 트리 락 아래 예산을 재계산하며 장애·경쟁 시 fail-closed 한다.
+    #     전체 술어·비대칭: server/contexts/tree/cycle_budget.py.
     #   None=미선언(불변·비클로버, 기존 트리 전부) = 무제한.
     cycle_budget: int | None = Field(None, ge=0)
     # PROM16 residual / q-selfdev-budget-ratchet (2026-08-01): 기존 트리 cycle_budget *상향* 시
@@ -156,6 +157,14 @@ class PredictionIn(BaseModel):
     #   [temporal_anchor] 로 흡수(하위호환). tree.witness_threshold 만큼 distinct 증인 필요.
     temporal_anchors: list[dict] | None = None
 
+    @model_validator(mode="after")
+    def _one_temporal_anchor_surface(self) -> "PredictionIn":
+        if self.temporal_anchor is not None and self.temporal_anchors is not None:
+            raise ValueError(
+                "temporal_anchor and temporal_anchors are mutually exclusive"
+            )
+        return self
+
 
 class CertCommandIn(BaseModel):
     """G10 write-cert 의 서명된 *명령*(push-cert 명령행 아날로그) — 고정 필드셋(서명 범위 전부).
@@ -199,6 +208,15 @@ class TestResultIn(BaseModel):
     metric_value: float
     script: str = Field(min_length=1)
     script_sha: str | None = None
+    # A retry of the original command is always a replay.  Re-adjudicating one
+    # of the two deliberately recoverable partial states therefore needs a
+    # separate, head-bound command identity; a bare byte-identical resubmit can
+    # never be guessed to mean "freshen" after an ACK/history failure.
+    freshen: bool = False
+    supersedes_receipt_sha: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     # G10: attestor 선언 트리(anchored tier)의 판결 쓰기는 서명 cert 필수 — 명령은 cert 에서만 파싱.
     write_cert: WriteCertIn | None = None
     novel_measured: float | None = None
@@ -229,6 +247,15 @@ class TestResultIn(BaseModel):
     ce_proof_concept_name: str | None = None
     ce_proof_born_from: str | None = None
     ce_proof_incorporated_lemma: str | None = None
+
+    @model_validator(mode="after")
+    def _freshen_is_explicit_and_head_bound(self):
+        if self.freshen != (self.supersedes_receipt_sha is not None):
+            raise ValueError(
+                "freshen=true requires supersedes_receipt_sha, and the receipt "
+                "binding is forbidden on an ordinary submission"
+            )
+        return self
 
 
 class CritiqueIn(BaseModel):

@@ -33,8 +33,10 @@ def _post(path, body):
     return r.json()
 
 
-def _delete(path):
-    r = httpx.delete(BASE + path, headers=_headers(), timeout=30)
+def _delete(path, *, idempotency_key):
+    headers = _headers()
+    headers['Idempotency-Key'] = idempotency_key
+    r = httpx.delete(BASE + path, headers=headers, timeout=30)
     if r.status_code >= 400:
         return {'error': r.status_code, 'detail': r.text[:200]}
     return r.json()
@@ -348,10 +350,12 @@ def create_tree(name: str, title: str = '', hard_core: str = '', frontier_rule: 
 
 
 @mcp.tool()
-def delete_tree(name: str, cascade: bool = False) -> str:
+def delete_tree(name: str, idempotency_key: str, cascade: bool = False) -> str:
     """나무 삭제(★파괴적·복구불가) — create_tree 의 짝. 미존재=404. 노드가 있으면 cascade=True 일 때만
     전체 삭제(아니면 409, typo 로 진짜 연구트리 날리기 방지). 빈 나무는 cascade 없이 삭제 가능."""
-    return json.dumps(_delete(f'/api/tree/{name}?cascade={"true" if cascade else "false"}'),
+    return json.dumps(_delete(
+                          f'/api/tree/{name}?cascade={"true" if cascade else "false"}',
+                          idempotency_key=idempotency_key),
                       ensure_ascii=False)
 
 
@@ -458,7 +462,9 @@ def submit_result(name: str, tag: str, value: float, script: str,
                   ce_excess_content: bool = False, ce_novel_corroborated: bool = False,
                   ce_in_heuristic_spirit: bool | None = None,
                   ce_proof_concept_name: str = '', ce_proof_born_from: str = '',
-                  ce_proof_incorporated_lemma: str = '') -> str:
+                  ce_proof_incorporated_lemma: str = '',
+                  freshen: bool = False,
+                  supersedes_receipt_sha: str = '') -> str:
     """채점 스크립트 결과 제출 → 자동 판결(LLM 점수 금지). metric progressive라도 Lakatos/PnR
     질적 영수증이 없으면 progressive_unverified(프로그램 진전·승격으로 계산하지 않음).
     그 외 metric 판결은 progressive/partial/equivalent/rejected.
@@ -470,8 +476,18 @@ def submit_result(name: str, tag: str, value: float, script: str,
     result_path = 산출물(영수증) 경로 — 서버가 노드에 비파괴 병합(coalesce). reproducible 게이트
     (F-CON-1) 앵커: record_derivation 계보의 최종 output 과 일치, root 는 raw_root 안 실존 source.
     루프 상한(PROM16): 트리가 cycle_budget 을 선언했고 소진됐으면 여기서도 429 {error:429} —
-    이 verb 가 채점의 실 초크포인트라 run_cycle 우회로 쓸 수 없다(create_tree cycle_budget 참조)."""
+    이 verb 가 채점의 실 초크포인트라 run_cycle 우회로 쓸 수 없다(create_tree cycle_budget 참조).
+    부분판정을 의도적으로 재판정할 때만 freshen=true 와 현재 head 영수증의 64자리
+    supersedes_receipt_sha 를 함께 보낸다. 평범한 동일 제출은 언제나 멱등 replay 다."""
+    if freshen != bool(supersedes_receipt_sha):
+        return json.dumps({
+            'error': 'invalid_freshen_binding',
+            'detail': (
+                'freshen=true and supersedes_receipt_sha must be supplied together'
+            ),
+        }, ensure_ascii=False)
     body = dict(metric_value=value, script=script,
+                freshen=freshen,
                 data_branch=data_branch, data_replay_passed=data_replay_passed,
                 human_verdict_required=human_verdict_required,
                 lakatos_anomaly=lakatos_anomaly,
@@ -488,6 +504,8 @@ def submit_result(name: str, tag: str, value: float, script: str,
                 ce_proof_concept_name=ce_proof_concept_name,
                 ce_proof_born_from=ce_proof_born_from,
                 ce_proof_incorporated_lemma=ce_proof_incorporated_lemma)
+    if supersedes_receipt_sha:
+        body['supersedes_receipt_sha'] = supersedes_receipt_sha
     if script_sha:
         body['script_sha'] = script_sha
     if novel_measured is not None:

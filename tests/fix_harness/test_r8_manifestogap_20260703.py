@@ -31,12 +31,18 @@ class _FakeKg:
         out = []
         for query, params in ops:
             if 'MERGE (e:LakatosNode' in query and 'e.verdict' in query:
-                guarded = 'CASE WHEN coalesce(e.verdict_source' in query
+                guarded = 'AS preserve_node_authority' in query
                 forceful = params.get('forceful') or []
                 for row in (params.get('rows') or [params]):
                     tag = row.get('tag', params.get('tag'))
                     node = self.store.setdefault(f"{params.get('tree')}/{tag}", {})
-                    if not (guarded and node.get('verdict_source') in forceful):
+                    authoritative = (
+                        node.get('verdict_source') in forceful
+                        or node.get('verdict') not in (None, '', 'proof')
+                        or node.get('node_state', 'DRAFT') != 'DRAFT'
+                        or node.get('current_receipt_sha') is not None
+                    )
+                    if not (guarded and authoritative):
                         node['verdict'] = row.get('verdict')
             out.append([{'t': params.get('tree')}])
         return out

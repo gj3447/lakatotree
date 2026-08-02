@@ -53,7 +53,9 @@
         "tree",
         "question",
         "verdict",
-        "receipt_sha"
+        "receipt_sha",
+        "assurance_level",
+        "qualitative_self_report"
       ],
       "properties": {
         "tree": {
@@ -68,6 +70,14 @@
         "receipt_sha": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "assurance_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "qualitative_self_report": {
+          "type": "boolean"
         }
       }
     },
@@ -78,6 +88,8 @@
         "question",
         "verdict",
         "receipt_sha",
+        "assurance_level",
+        "qualitative_self_report",
         "closed_by"
       ],
       "properties": {
@@ -94,6 +106,14 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
+        "assurance_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "qualitative_self_report": {
+          "type": "boolean"
+        },
         "closed_by": {
           "type": "string"
         }
@@ -105,7 +125,9 @@
       "reads": [],
       "event_reads": [
         "verdict",
-        "receipt_sha"
+        "receipt_sha",
+        "assurance_level",
+        "qualitative_self_report"
       ],
       "pure": true,
       "synchronous": true
@@ -328,12 +350,12 @@
     },
     {
       "id": "self-report-cannot-close",
-      "statement": "An adjudication without a valid content-addressed receipt identity cannot close a question; the application transaction persists that receipt and closure together.",
+      "statement": "An adjudication closes a question only with a valid content-addressed receipt, replay-verified assurance at L2 or above, and no qualitative self-report; the application transaction persists that receipt and closure together.",
       "verification": "Guard-false trace, reducer conformance test, service transaction test, and OOPTDD injected-fault oracle."
     },
     {
       "id": "reattribute-does-not-reopen",
-      "statement": "REATTRIBUTE on CLOSED never returns OPEN; only appends a receipt-backed closer when conclusive.",
+      "statement": "REATTRIBUTE on CLOSED never returns OPEN; it appends a closer only for a conclusive L2-or-higher adjudication without qualitative self-report.",
       "verification": "Reducer conformance test + service contract: status stays CLOSED; closed_by grows append-only."
     },
     {
@@ -345,7 +367,7 @@
   "liveness_properties": [
     {
       "id": "eventual-close",
-      "statement": "An OPEN question reaches CLOSED when a CLOSE command or receipt-backed conclusive ADJUDICATED event is delivered.",
+      "statement": "An OPEN question reaches CLOSED when a CLOSE command or a conclusive, receipt-bound, replay-verified ADJUDICATED event without qualitative self-report is delivered.",
       "assumptions": [
         "A valid event is eventually delivered and persistence is available."
       ],

@@ -32,7 +32,7 @@ class _RetryPort:
 
     def __call__(self, query, **params):
         self.queries.append(query)
-        if "SET t._argument_cas" in query:
+        if "a._argument_create_claim=$create_claim" in query:
             if self.integrity_row is not None:
                 return [{"tag": params.get("tag"), **self.integrity_row}]
             return [{
@@ -42,6 +42,8 @@ class _RetryPort:
                 "idempotent": True,
                 "existing_count": 1,
                 "attacks": "n",
+                "intent_count": 1,
+                "intent_valid": True,
             }]
         if "RETURN e.verdict AS verdict" in query:
             return [{
@@ -52,7 +54,7 @@ class _RetryPort:
             }]
         if "standing_retracted_at" in query:
             self.demoted = True
-            return [{"tag": params.get("tag")}]
+            return [{"tag": params.get("tag"), "outbox_valid": True}]
         return []
 
 
@@ -80,7 +82,8 @@ def test_identical_retry_repairs_interrupted_standing_side_effect():
     assert out["standing"]["stands"] is False
     assert out["standing"]["demoted"] is True
     assert port.demoted is True
-    assert [args[1] for args, _ in history] == ["standing_retraction"]
+    assert [args[1] for args, _ in history] == ["critique", "standing_retraction"]
+    assert history[0][1]["event_id"].startswith("he-")
 
 
 def test_argument_id_is_one_unambiguous_segment():
@@ -94,11 +97,12 @@ def test_atomic_query_uses_domain_label_and_current_tree_target_namespace():
 
     service.add_critique("T", "n", _critique())
 
-    query = next(q for q in port.queries if "SET t._argument_cas" in q)
+    query = next(q for q in port.queries if "a._argument_create_claim=$create_claim" in q)
     assert "ON CREATE SET a:LakatosArgument" in query
     assert "a._argument_create_claim=$create_claim" in query
     assert "a.tree_name=$tree" in query and "a.local_id=$arg" in query
-    assert "WHEN $attacks STARTS WITH $tree+'/'" in query
+    assert "target.id=$tree+'/'+$normalized_attacks" in query
+    assert "STARTS WITH $tree" not in query
 
 
 def test_new_tree_name_is_one_unambiguous_path_segment():
@@ -119,9 +123,11 @@ def test_new_tree_name_is_one_unambiguous_path_segment():
     "row",
     [
         {"target_valid": "false", "created": False, "idempotent": False,
-         "existing_count": 0, "attacks": None},
+         "existing_count": 0, "attacks": None,
+         "intent_count": 0, "intent_valid": False},
         {"target_valid": True, "created": True, "idempotent": False,
-         "existing_count": 0, "attacks": "n"},
+         "existing_count": 0, "attacks": "n",
+         "intent_count": 1, "intent_valid": True},
     ],
 )
 def test_inconsistent_integrity_result_fails_closed(row):

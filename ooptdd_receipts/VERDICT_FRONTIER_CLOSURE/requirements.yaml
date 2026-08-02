@@ -9,7 +9,7 @@ target:
 
 requirements:
   - id: VFC-1
-    description: A receipt-backed progressive adjudication closes its declared OPEN question through the frontier FSM.
+    description: A replay-verified L2-or-higher progressive adjudication without qualitative self-report closes its declared OPEN question through the frontier FSM.
     gate:
       - {event: adjudication_closed_question, op: ">=", count: 1}
     longinus:

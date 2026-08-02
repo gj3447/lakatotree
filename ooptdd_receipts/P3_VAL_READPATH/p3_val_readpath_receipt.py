@@ -1,4 +1,4 @@
-"""P3 VAL 읽기경로 영수증 — L3 가 영구 읽기 표면에서 재도출됨을 실코드로 증언.
+"""P3 VAL 읽기경로 영수증 — legacy T1 표식이 L3를 재도출하지 못함을 증언.
 
 규율(ooptdd): 이벤트 리터럴은 엔진이 아니라 이 adapter 에만(엔진 repository/evidence_claim_service
 불변). 재구현 금지 — tests/test_p3_val_readpath_20260728.py 의 픽스처/호출을 그대로 차용한다.
@@ -59,14 +59,14 @@ def _tree_kg(node):
 
 
 def verify(backend, cid):
-    """읽기 표면 L3 재도출 구동 — repository/standing 양성 + 연언별 판별 음성."""
-    # (1) repository 경유 — get_tree/metrics/leaderboard 가 상속하는 유일 정본 경로.
+    """T2 verdict anchor 부재 시 repository/standing의 영구 L3를 닫는다."""
+    # (1) repository 경유 — T1 prediction anchor의 구 boolean은 L2 천장이다.
     data = TreeKgRepository(_tree_kg(_l3_row())).load_tree_data('T')
     a = data['nodes'][0]['assurance']
     disp = data['nodes'][0]['verdict_display']
-    assert a['val'] == 3, f"repository 읽기서 L3 미달(수술 전 결함 잔존): {a}"
-    assert disp.startswith('partial@L3(attested_witnessed'), disp
-    backend.ship([_ev(cid, "l3_rederived_on_repository_read", val=a['val'],
+    assert a['val'] == 2, f"legacy T1 marker escaped the L2 ceiling: {a}"
+    assert disp.startswith('partial@L2(replay_verified'), disp
+    backend.ship([_ev(cid, "legacy_t1_capped_on_repository_read", val=a['val'],
                       verdict_display=disp)])
 
     # (2) standing 표면 — 별도 좁은 쿼리 경로.
@@ -76,8 +76,8 @@ def verify(backend, cid):
     svc.kg = lambda q, **p: ([dict(node, args=[], attestor_dids=[WDID])]
                              if 'HAS_ARGUMENT' in q else [])
     st = svc.standing('T', 'n')
-    assert st['assurance']['val'] == 3, f"standing 표면서 L3 미달: {st['assurance']}"
-    backend.ship([_ev(cid, "l3_rederived_on_standing_surface", val=st['assurance']['val'],
+    assert st['assurance']['val'] == 2, f"standing let a T1 marker reach L3: {st['assurance']}"
+    backend.ship([_ev(cid, "legacy_t1_capped_on_standing_surface", val=st['assurance']['val'],
                       verdict=st['verdict'])])
 
     # (3) 판별 음성 오라클 — 연언 하나씩 죽이면 정확히 그 사다리로 떨어져야 한다.

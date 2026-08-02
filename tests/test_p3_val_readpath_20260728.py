@@ -52,13 +52,12 @@ def _kwargs():
 
 # ── guard_mechanism: 읽기 재도출로 L3 ─────────────────────────────────────────────────
 
-def test_normalize_node_row_rederives_l3_from_stored_fields():
+def test_legacy_t1_only_marker_cannot_rederive_l3():
     out = normalize_node_row(_l3_row(), **_kwargs())
-    assert out['assurance']['val'] == 3, out['assurance']
-    assert out['verdict_display'].startswith('partial@L3(attested_witnessed')
+    assert out['assurance']['val'] == 2, out['assurance']
 
 
-def test_load_tree_data_threads_tree_context_to_node_assurance():
+def test_load_tree_data_caps_legacy_t1_only_marker_at_l2():
     """repository 경유(get_tree/metrics/leaderboard 상속 지점) — 트리 attestor·floor 가
     노드 assurance 까지 관통해야. stub kg 는 쿼리 텍스트로 분기(test_delete_tree_surface 관례)."""
     node = _l3_row()
@@ -77,7 +76,7 @@ def test_load_tree_data_threads_tree_context_to_node_assurance():
                      require_certified_evidence=None, assurance_tier='anchored')]
 
     data = TreeKgRepository(kg).load_tree_data('T')
-    assert data['nodes'][0]['assurance']['val'] == 3, data['nodes'][0]['assurance']
+    assert data['nodes'][0]['assurance']['val'] == 2, data['nodes'][0]['assurance']
 
 
 # ── guard_defect: 음성 오라클 — 각 연언을 죽이면 정확히 그 사다리로 떨어진다 ────────────
@@ -111,12 +110,12 @@ def test_handinjected_lock_bound_is_preserved():
     (test_extaudit_val_surfaces 손주입 fixture 호환)."""
     out = normalize_node_row(_l3_row(measurement_lock_sha=None, measurement_lock_bound=True),
                              **_kwargs())
-    assert out['assurance']['val'] == 3
+    assert out['assurance']['val'] == 2
 
 
 # ── standing 표면 ─────────────────────────────────────────────────────────────────────
 
-def test_standing_surface_rederives_l3():
+def test_standing_surface_caps_legacy_t1_only_marker_at_l2():
     from server.contexts.tree.evidence_claim_service import EvidenceClaimService
     node = _l3_row()
 
@@ -128,8 +127,7 @@ def test_standing_surface_rederives_l3():
     svc = object.__new__(EvidenceClaimService)
     svc.kg = kg
     out = svc.standing('T', 'n')
-    assert out['assurance']['val'] == 3, out
-    assert out['verdict'].startswith('partial@L3')
+    assert out['assurance']['val'] == 2, out
 
 
 def test_standing_negative_oracle_witness_flip():

@@ -42,7 +42,8 @@ class _StatefulKg:
             return [{"verdict": "progressive", "verdict_source": self.snapshot_source,
                      "node_state": "CANONICAL_CANDIDATE",
                      "source_trust": None, "novel_confirmed": True,
-                     "qualitative_self_report": False, "args": []}]
+                     "qualitative_self_report": False, "args": [],
+                     "oldrecs": []}]
         if _CANON_WRITE in query:                                   # :225 원자 CAS write
             self.writes.append((query, p))
             current_source = "engine" if self.race else self.snapshot_source

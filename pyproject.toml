@@ -56,8 +56,15 @@ Changelog = "https://github.com/gj3447/lakatotree/blob/master/CHANGELOG.md"
 lakatos = "lakatos.cli:main"
 lakatotree-demo = "lakatos.demos.euler:main"
 lakatotree-backtest = "lakatos.backtest_cli:main"
+lakatotree-storage-predeploy = "server.storage_predeploy:main"
 
 [project.optional-dependencies]
+# --- storage predeploy CLI (plain base install keeps a working --help surface) ---
+storage = [
+  "psycopg2-binary==2.9.12",
+  "neo4j==6.2.0",
+  "cryptography==49.0.0",
+]
 # --- web/MCP 표면 (서버 배포용; server.app 가 DB 드라이버를 즉시 import 하므로 자기완결) ---
 server = [
   "fastapi==0.137.2",
@@ -69,6 +76,7 @@ server = [
   "psycopg2-binary==2.9.12",
   "pymongo==4.17.0",
   "neo4j==6.2.0",
+  "cryptography==49.0.0",
 ]
 # --- datastores (공유 KG/원장) ---
 db = [
@@ -91,12 +99,13 @@ dev = [
   "PyYAML==6.0.3",
 ]
 # --- D 통합티어 (실 Neo4j+PG testcontainers) ---
-integration = ["testcontainers[neo4j,postgres]>=4.0"]
+integration = ["testcontainers[neo4j,postgres]==4.14.2"]
 # --- 전체 (현 requirements.txt 재현 = server+db+prov+dev) ---
 all = [
   "fastapi==0.137.2", "starlette==1.3.1", "uvicorn==0.49.0", "httpx==0.28.1",
   "pydantic==2.13.4", "mcp==1.28.0",
   "psycopg2-binary==2.9.12", "pymongo==4.17.0", "neo4j==6.2.0",
+  "cryptography==49.0.0",
   "prov==2.1.1", "lxml==6.1.1", "rdflib==7.6.0",
   "pytest==9.1.0", "import-linter==2.11", "PyYAML==6.0.3",
 ]
@@ -108,3 +117,4 @@ include = ["lakatos*", "server*"]
 
 [tool.setuptools.package-data]
 lakatos = ["resources/*.json"]
+server = ["schema.sql", "storage_migrations/*.sql", "storage_migrations/*.cypher"]

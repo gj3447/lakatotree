@@ -7,15 +7,20 @@
   MongoDB         = 산출물 보관 (결과 json/지표 원본; db=lakatos, col=artifacts)
 
 env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB, LAKATOS_MONGO_URI,
-     (선택) LAKATOS_API_TOKEN (run.sh 가 .env 에서 주입)  # OPS-HON-4: LAKATOS_PG_DSN 은 미존재였음
+     LAKATOS_STORAGE_ENVIRONMENT/LAKATOS_STORAGE_FENCE_VERIFIER_SHA256,
+     LAKATOS_STORAGE_FENCE_PUBLIC_KEY_HEX,
+     LAKATOS_STORAGE_PREDEPLOY_RECEIPT/LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256,
+     (선택) LAKATOS_API_TOKEN (run.sh 가 .env 에서 주입)  # OPS-HON-4: PG DSN shorthand는 지원하지 않음
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
 import logging
 import os
 import secrets
 import sys
+from threading import Lock, RLock
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lakatos.quant.metrics import branch_inputs
@@ -76,6 +81,7 @@ from server.contexts.tree.judgement_service import (
 from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
+from server.contexts.tree.writer import TreeKgWriter
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
 from server.file_hashing import file_sha as _file_sha, path_sha as _path_sha   # noqa: F401 — _file_sha re-export(테스트/외부)
@@ -84,6 +90,15 @@ from lakatos.io.replay import (ReplayExecutionResult as _ReplayExecutionResult,
 from lakatos.io.prov import replay_command as _replay_command       # judge_script(경로)+result_path → 재현명령
 from server.container import AppContainer
 from server.settings import ServerSettings
+from server.storage_contract import (
+    CONTRACT_ID,
+    StorageContractError,
+    inspect_neo_outbox_contract,
+    inspect_pg_history_contract,
+    pg_projection_rows,
+)
+from server.storage_predeploy import verify_predeploy_receipt
+from server.ports import WriterFenceLost
 
 NEO = LazyNeo4jDriver()
 PG_KW = ServerSettings.from_env().pg_kw
@@ -93,7 +108,40 @@ logger = logging.getLogger('lakatotree.server')   # OPS-OBSERVABILITY-1: print �
 
 # 합성 루트: 외부 자원(Neo4j/Mongo/PG) 생성·운용·종료를 한 객체가 소유(server.container).
 # 아래 모듈 API(kg/kg_tx/pg/hist/_close_resources)는 컨테이너로 위임만 — 하위호환 유지.
-_container = AppContainer(neo=NEO, mongo=MONGO, pg_kw=PG_KW, logger=logger)
+_storage_contract_state = {
+    "checked": False,
+    "ok": False,
+    "failures": ["not_checked"],
+    "checked_at": None,
+    "generation": 0,
+}
+_storage_contract_state_lock = Lock()
+_storage_contract_refresh_lock = RLock()
+
+
+def _invalidate_storage_contract_state(reason: str) -> None:
+    """Immediately close critique traffic after a runtime ledger divergence."""
+
+    with _storage_contract_state_lock:
+        _storage_contract_state.update(
+            checked=True,
+            ok=False,
+            failures=[reason],
+            checked_at=datetime.now(timezone.utc).isoformat(),
+            generation=int(_storage_contract_state.get("generation", 0)) + 1,
+        )
+    container = globals().get("_container")
+    if container is not None:
+        container.release_writer_lease()
+
+
+_container = AppContainer(
+    neo=NEO,
+    mongo=MONGO,
+    pg_kw=PG_KW,
+    logger=logger,
+    on_history_divergence=_invalidate_storage_contract_state,
+)
 
 
 def _close_resources() -> list:
@@ -101,29 +149,368 @@ def _close_resources() -> list:
     return _container.close()
 
 
-def _startup_reconcile():
-    """startup best-effort outbox 복구(#③ outbox 경화) — PG-down 중 쌓인 OutboxEntry 를 *자동* 재적용해
-    KG↔PG 발산을 부팅 시 좁힌다(진짜 2PC 아님 — outbox 정답패턴의 자동복구 절반). 실패해도 startup 안 막음
-    (멱등이라 재호출 안전; 수동 트리거 POST /api/ops/reconcile-outbox 도 남아있음)."""
+def _storage_contract_readback() -> dict:
+    """Use the same facades as requests so tests and alternate composition stay honest."""
+
+    settings = ServerSettings.from_env()
+    with pg() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SET LOCAL statement_timeout = '10s'")
+            cursor.execute("SET LOCAL lock_timeout = '3s'")
+        pg_report = inspect_pg_history_contract(conn)
+        projections = pg_projection_rows(conn) if pg_report.get("ok") is True else []
+        neo_report = inspect_neo_outbox_contract(
+            lambda query, **params: kg(
+                query, _query_timeout_seconds=10, **params
+            ),
+            projection_rows=projections if pg_report.get("ok") is True else None,
+        )
+        receipt_report = {
+            "contract_id": CONTRACT_ID,
+            "ok": False,
+            "failures": [],
+        }
+        if not settings.storage_predeploy_receipt:
+            receipt_report["failures"].append("predeploy.receipt.path_missing")
+        if not settings.storage_predeploy_receipt_sha256:
+            receipt_report["failures"].append("predeploy.receipt.sha256_missing")
+        recoverable_neo = set(neo_report.get("failures") or []) <= {
+            "neo4j.outbox.pending"
+        }
+        if not receipt_report["failures"] and (
+            pg_report.get("ok") is True and recoverable_neo
+        ):
+            try:
+                receipt_report = verify_predeploy_receipt(
+                    Path(settings.storage_predeploy_receipt or ""),
+                    settings.storage_predeploy_receipt_sha256 or "",
+                    settings,
+                    conn,
+                    _container.neo_driver,
+                )
+                receipt_report["failures"] = []
+            except Exception:  # noqa: BLE001 - public report must not expose paths/details
+                receipt_report["failures"] = ["predeploy.receipt.invalid"]
+    return {
+        "contract_id": CONTRACT_ID,
+        "ok": (
+            pg_report["ok"] is True
+            and neo_report["ok"] is True
+            and receipt_report["ok"] is True
+        ),
+        "postgresql": pg_report,
+        "neo4j": neo_report,
+        "predeploy_receipt": receipt_report,
+    }
+
+
+def _require_storage_contract() -> dict:
+    report = _storage_contract_readback()
+    if report["ok"] is not True:
+        failures = [
+            *report["postgresql"].get("failures", []),
+            *report["neo4j"].get("failures", []),
+            *report["predeploy_receipt"].get("failures", []),
+        ]
+        raise StorageContractError(
+            "critique history storage is not ready: " + ", ".join(failures)
+        )
+    return report
+
+
+def _refresh_storage_contract_state() -> dict:
+    """Run the exhaustive audit once on startup or by explicit operator request."""
+
+    # One process-local refresh may own/release the process-global lease at a
+    # time.  The container guard additionally blocks local critique commits and
+    # remote replicas (via PG election) throughout acquire -> audit -> publish.
+    with _storage_contract_refresh_lock:
+        with _storage_contract_state_lock:
+            starting_generation = int(
+                _storage_contract_state.get("generation", 0)
+            )
+        with _container.writer_authority(acquire=True) as acquired:
+            writer_lease_ok = bool(acquired)
+            if not writer_lease_ok:
+                candidate_ok = False
+                failures = ["runtime.global_writer_lease.unavailable"]
+                semantic = {
+                    "ok": False,
+                    "failures": ["runtime.global_writer_lease.unavailable"],
+                }
+            else:
+                try:
+                    report = _storage_contract_readback()
+                    semantic = _semantic_contract_readback()
+                    failures = [
+                        *report.get("postgresql", {}).get("failures", []),
+                        *report.get("neo4j", {}).get("failures", []),
+                        *report.get("predeploy_receipt", {}).get("failures", []),
+                        *semantic.get("failures", []),
+                    ]
+                    writer_lease_ok = _container.writer_lease_ready()
+                    if not writer_lease_ok:
+                        failures.append("runtime.global_writer_lease.lost")
+                    candidate_ok = (
+                        report.get("ok") is True
+                        and semantic.get("ok") is True
+                        and writer_lease_ok
+                    )
+                except Exception as exc:  # noqa: BLE001 - core server remains available
+                    candidate_ok = False
+                    failures = [type(exc).__name__]
+                    semantic = {
+                        "ok": False,
+                        "failures": [type(exc).__name__],
+                    }
+                    writer_lease_ok = False
+
+            with _storage_contract_state_lock:
+                current_generation = int(
+                    _storage_contract_state.get("generation", 0)
+                )
+                if current_generation != starting_generation:
+                    # Runtime invalidation won while the audit was in flight.
+                    # Refreshes themselves are serialized, so releasing here
+                    # cannot tear down a newer refresh's retained authority.
+                    result = dict(_storage_contract_state)
+                    stale = True
+                else:
+                    next_generation = current_generation + (
+                        0 if candidate_ok else 1
+                    )
+                    _storage_contract_state.update(
+                        checked=True,
+                        ok=candidate_ok,
+                        failures=failures,
+                        checked_at=datetime.now(timezone.utc).isoformat(),
+                        generation=next_generation,
+                        semantic=semantic,
+                        writer_lease={"ok": writer_lease_ok},
+                    )
+                    result = dict(_storage_contract_state)
+                    stale = False
+            if stale or not candidate_ok:
+                _container.release_writer_lease()
+            return result
+
+
+def _require_critique_history_ready() -> None:
+    """Use the startup/operator audit snapshot as the O(1) ledger gate.
+
+    The exhaustive cross-store audit is intentionally confined to startup and
+    the authenticated operator refresh surface.  Re-running it for every
+    critique turns append-only growth into quadratic request cost and exposes
+    that scan before domain validation.
+    """
+
+    with _storage_contract_state_lock:
+        state = dict(_storage_contract_state)
+    if state.get("ok") is not True or not _container.writer_lease_ready():
+        if state.get("ok") is True:
+            _invalidate_storage_contract_state(
+                "runtime.global_writer_lease.lost"
+            )
+        raise HTTPException(
+            503,
+            "durable history storage contract is not verified; run explicit predeploy/readback",
+        )
+
+
+def _reconciliation_authorized(report: dict) -> bool:
+    if not isinstance(report, dict) or report.get("contract_id") != CONTRACT_ID:
+        return False
+    pg_report = report.get("postgresql")
+    neo_report = report.get("neo4j")
+    receipt = report.get("predeploy_receipt")
+    if not all(isinstance(item, dict) for item in (pg_report, neo_report, receipt)):
+        return False
+    pg_exact = (
+        pg_report.get("contract_id") == CONTRACT_ID
+        and pg_report.get("ok") is True
+        and pg_report.get("failures") == []
+    )
+    receipt_exact = (
+        receipt.get("contract_id") == CONTRACT_ID
+        and receipt.get("ok") is True
+        and receipt.get("failures") == []
+    )
+    neo_exact = (
+        neo_report.get("contract_id") == CONTRACT_ID
+        and (
+            (neo_report.get("ok") is True and neo_report.get("failures") == [])
+            or (
+                neo_report.get("ok") is False
+                and neo_report.get("failures") == ["neo4j.outbox.pending"]
+            )
+        )
+    )
+    return pg_exact and neo_exact and receipt_exact
+
+
+def _require_reconciliation_authority() -> dict:
+    if not _container.writer_lease_ready():
+        _invalidate_storage_contract_state(
+            "runtime.reconciliation.writer_authority_unavailable"
+        )
+        raise HTTPException(503, "reconciliation writer authority is unavailable")
     try:
-        r = _container.reconcile_outbox()
+        report = _storage_contract_readback()
+    except Exception as exc:  # noqa: BLE001 - fail before any reconciliation write
+        _invalidate_storage_contract_state(
+            "runtime.reconciliation.storage_readback_failed"
+        )
+        raise HTTPException(503, "reconciliation storage authority is unavailable") from exc
+    if not _reconciliation_authorized(report):
+        _invalidate_storage_contract_state(
+            "runtime.reconciliation.storage_authority_invalid"
+        )
+        raise HTTPException(503, "reconciliation lacks an exact pinned predeploy receipt")
+    if not _container.writer_lease_ready():
+        _invalidate_storage_contract_state(
+            "runtime.reconciliation.writer_authority_lost"
+        )
+        raise HTTPException(503, "reconciliation writer authority was lost during audit")
+    return report
+
+
+def _semantic_contract_readback() -> dict:
+    return _evidence_claim_service().audit_critique_standing()
+
+
+def _reconcile_critique_semantics() -> dict:
+    return _evidence_claim_service().reconcile_critique_standing()
+
+
+def _reconcile_durable_critique_state() -> dict:
+    """Project causes, repair semantic effects, then project those effects."""
+
+    with _storage_contract_refresh_lock:
+        with _container.writer_authority(acquire=False) as authority:
+            if not authority:
+                raise StorageContractError(
+                    "runtime global writer authority is required for reconciliation"
+                )
+            return _reconcile_durable_critique_state_held()
+
+
+def _reconcile_durable_critique_state_held() -> dict:
+    """Reconciliation body; caller holds the serialized writer authority."""
+
+    first = _container.reconcile_outbox()
+    if first.get("ok") is not True:
+        semantic = {
+            "ok": False,
+            "failures": ["semantic.reconcile.deferred_until_causal_outbox"],
+        }
+        _invalidate_storage_contract_state("runtime.critique_reconciliation.incomplete")
+        return {**first, "semantic": semantic, "ok": False, "passes": [first]}
+
+    semantic = _reconcile_critique_semantics()
+    second = _container.reconcile_outbox()
+    replayed = list(dict.fromkeys([
+        *(first.get("replayed") or []),
+        *(second.get("replayed") or []),
+    ]))
+    conflicts = [
+        *(first.get("conflicts") or []),
+        *(second.get("conflicts") or []),
+    ]
+    outbox = {
+        **second,
+        "pending": first.get("pending", 0),
+        "replayed": replayed,
+        "replayed_count": len(replayed),
+        "pg_down": bool(first.get("pg_down")) or bool(second.get("pg_down")),
+        "conflicts": conflicts,
+        "conflict_count": len(conflicts),
+        "passes": [first, second],
+    }
+    exact = (
+        first.get("ok") is True
+        and semantic.get("ok") is True
+        and second.get("ok") is True
+        and not conflicts
+    )
+    if not exact:
+        _invalidate_storage_contract_state("runtime.critique_reconciliation.incomplete")
+    return {**outbox, "semantic": semantic, "ok": exact}
+
+
+def _startup_reconcile(*, fail_closed: bool = False):
+    """Reapply durable outbox intents before serving traffic.
+
+    Direct and lifespan calls preserve core availability by default.  The lifespan
+    immediately performs an independent exact storage audit afterward; every
+    ledger-backed mutation remains disabled unless that second readback is green.  Operators may use
+    ``fail_closed=True`` when this helper itself is the serving gate.
+    """
+    try:
+        r = _reconcile_durable_critique_state()
         if r.get('replayed_count'):
             logger.info('startup outbox reconcile: %s 재적용, %s pending', r['replayed_count'], r['still_pending'])
+        if r.get('conflict_count'):
+            logger.error(
+                'startup outbox reconcile: %s conflict, %s pending',
+                r['conflict_count'],
+                r['still_pending'],
+            )
+        if fail_closed and not (
+            r.get("ok") is True
+            and r.get("semantic", {}).get("ok") is True
+            and type(r.get("still_pending")) is int
+            and r.get("still_pending") == 0
+            and type(r.get("conflict_count")) is int
+            and r.get("conflict_count") == 0
+        ):
+            raise StorageContractError(
+                "outbox reconcile did not reach an exact zero-pending state"
+            )
         return r
-    except Exception as e:   # noqa: BLE001 — 부팅 복구 실패가 서버 기동을 막지 않음
+    except Exception as e:   # noqa: BLE001 — diagnostic mode preserves historical behavior
+        if fail_closed:
+            raise
         logger.warning('startup outbox reconcile 실패(무시 — 수동 트리거 가능): %s', type(e).__name__)
         return None
 
 
 @asynccontextmanager
 async def _lifespan(app):
-    _warn = open_posture_warning(_current_auth_posture())   # FE5: open 자세면 loud WARN(부팅 안 막음)
-    if _warn:
-        logger.warning(_warn)
-    _startup_reconcile()                     # startup: outbox 자동복구(best-effort, #③)
-    yield
-    for e in _close_resources():             # shutdown: 커넥션 누수 차단
-        logger.warning('shutdown 리소스 close 실패: %s', e)
+    try:
+        _warn = open_posture_warning(_current_auth_posture())   # FE5: open 자세면 loud WARN(부팅 안 막음)
+        if _warn:
+            logger.warning(_warn)
+        # Acquire before the first authoritative scan and retain authority
+        # through any recovery write.  Standby replicas remain read-only for
+        # ledger-bound mutations; generic tree administration still has its
+        # own route-level guards and is not claimed as globally fenced here.
+        with _storage_contract_refresh_lock:
+            with _container.writer_authority(acquire=True) as authority:
+                initial = None
+                if authority:
+                    try:
+                        initial = _storage_contract_readback()
+                    except Exception:
+                        initial = None
+                if (
+                    isinstance(initial, dict)
+                    and _reconciliation_authorized(initial)
+                ):
+                    _startup_reconcile()
+                else:
+                    logger.warning(
+                        "startup outbox reconcile skipped: storage authority unverified"
+                    )
+        storage = _refresh_storage_contract_state()
+        if storage.get("ok") is not True:
+            logger.warning(
+                "critique history disabled until storage audit succeeds: %s",
+                ", ".join(storage.get("failures") or []),
+            )
+        yield
+    finally:
+        for e in _close_resources():             # startup 실패와 정상 shutdown 모두 자원 정리
+            logger.warning('shutdown 리소스 close 실패: %s', e)
 
 
 app = create_fastapi_app(lifespan=_lifespan)
@@ -143,6 +530,15 @@ async def _neo4j_down(request: Request, exc):
 @app.exception_handler(PgOperationalError)
 async def _pg_down(request: Request, exc):
     return JSONResponse(status_code=503, content={'detail': 'PostgreSQL 연결 불가 (의존성 down)'})
+
+
+@app.exception_handler(StorageContractError)
+@app.exception_handler(WriterFenceLost)
+async def _writer_authority_lost(request: Request, exc):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "critique storage writer authority unavailable"},
+    )
 
 
 @app.middleware('http')
@@ -168,9 +564,9 @@ async def _bearer_auth(request: Request, call_next):
     return await call_next(request)
 
 
-@app.get('/healthz')
-def healthz():
-    """liveness/readiness — 의존성 도달성. 하나라도 down 이면 503 (LB/systemd 게이트용)."""
+def _health_snapshot() -> tuple[dict, bool, bool]:
+    """Return O(1) dependency state plus core/full readiness predicates."""
+
     svc = {}
     try:
         kg('RETURN 1 AS ok')
@@ -192,9 +588,46 @@ def healthz():
         svc['mongo'] = 'ok'
     except Exception:
         svc['mongo'] = 'down'
-    healthy = all(v == 'ok' for v in svc.values())
-    return JSONResponse(status_code=200 if healthy else 503,
-                        content={'status': 'ok' if healthy else 'degraded', 'services': svc})
+    with _storage_contract_state_lock:
+        cached_storage_ok = _storage_contract_state.get('ok') is True
+    writer_lease_ok = (
+        _container.writer_lease_ready() if cached_storage_ok else False
+    )
+    svc['writer_lease'] = 'ok' if writer_lease_ok else 'lost'
+    storage_ok = cached_storage_ok and writer_lease_ok
+    svc['critique_history'] = 'ok' if storage_ok else 'disabled'
+    core_healthy = svc.get('neo4j') == 'ok' and svc.get('mongo') == 'ok'
+    fully_healthy = core_healthy and svc.get('pg') == 'ok' \
+        and svc.get('critique_history') == 'ok'
+    return svc, core_healthy, fully_healthy
+
+
+@app.get('/healthz')
+def healthz():
+    """Core liveness: research reads stay available during ledger degradation."""
+
+    svc, core_healthy, fully_healthy = _health_snapshot()
+    return JSONResponse(
+        status_code=200 if core_healthy else 503,
+        content={
+            'status': 'ok' if fully_healthy else 'degraded',
+            'services': svc,
+        },
+    )
+
+
+@app.get('/readyz')
+def readyz():
+    """Fail-closed traffic readiness using the cached exact storage audit."""
+
+    svc, _core_healthy, fully_healthy = _health_snapshot()
+    return JSONResponse(
+        status_code=200 if fully_healthy else 503,
+        content={
+            'status': 'ok' if fully_healthy else 'degraded',
+            'services': svc,
+        },
+    )
 
 
 def _current_auth_posture() -> str:
@@ -300,8 +733,24 @@ def reconcile_outbox_op():
     PG-down 동안 쌓인 outbox 가 영영 미적용(KG↔PG 발산)되지 않도록 운영자가 명시 호출한다 —
     in-process 메서드(container.reconcile_outbox)는 전엔 테스트 외 호출자가 없는 고아였다.
     멱등(ON CONFLICT event_id DO NOTHING)이라 재호출 안전. mutating → LAKATOS_API_TOKEN 설정 시
-    Bearer 강제(_bearer_auth). 반환 {pending, replayed, replayed_count, still_pending, pg_down}."""
-    return _container.reconcile_outbox()
+    Bearer 강제(_bearer_auth). 반환에는 conflict_count/conflicts/ok도 포함하며 conflict entry는
+    pending으로 남기되 뒤의 독립 entry 복구는 계속한다."""
+    if not os.environ.get("LAKATOS_API_TOKEN"):
+        raise HTTPException(403, "reconciliation requires configured operator authentication")
+    with _storage_contract_refresh_lock:
+        with _container.writer_authority(acquire=True) as authority:
+            if not authority:
+                raise HTTPException(503, "reconciliation writer authority is unavailable")
+            _require_reconciliation_authority()
+            result = _reconcile_durable_critique_state()
+            storage = _refresh_storage_contract_state()
+    exact = result.get("ok") is True and storage.get("ok") is True
+    response = {
+        **result,
+        "ok": exact,
+        "storage_contract_ok": storage.get("ok") is True,
+    }
+    return JSONResponse(status_code=200 if exact else 503, content=response)
 
 
 @app.get('/api/ops/outbox-status')
@@ -311,13 +760,28 @@ def outbox_status_op():
     return {'pending': _container.outbox_pending_count()}
 
 
+@app.post('/api/ops/critique-history-contract')
+def critique_history_contract_op():
+    """Explicit exhaustive refresh; ``/healthz`` never scans the append-only ledgers."""
+
+    if not os.environ.get("LAKATOS_API_TOKEN"):
+        raise HTTPException(
+            403, "storage contract refresh requires configured operator authentication"
+        )
+    state = _refresh_storage_contract_state()
+    return JSONResponse(
+        status_code=200 if state.get("ok") is True else 503,
+        content=state,
+    )
+
+
 # 자원 접근 모듈 API — AppContainer 위임(구현은 server.container, server.app 은 얇은 facade).
 # 모듈 전역 `global _PG_POOL` 변이 제거: 풀 lazy 상태가 컨테이너 인스턴스에 캡슐화됨.
 def pg():
     return _container.pg()
 
-def hist(tree, op, node_tag=None, payload=None):
-    return _container.hist(tree, op, node_tag, payload)
+def hist(tree, op, node_tag=None, payload=None, *, event_id=None):
+    return _container.hist(tree, op, node_tag, payload, event_id=event_id)
 
 def kg(q, **kw):
     return _container.kg(q, **kw)
@@ -336,10 +800,22 @@ def _tree_service():
     return TreeService(kg=kg, kg_tx=kg_tx, hist=hist, pg=pg)
 
 
+def _ledger_tree_service():
+    """Tree writer used inside a history-bearing, writer-elected command."""
+
+    return TreeService(
+        kg=kg,
+        kg_tx=_container.writer_fenced_kg_tx,
+        hist=hist,
+        pg=pg,
+    )
+
+
 def _evidence_claim_service(*, store_research_event=None):
     return EvidenceClaimService(
         kg=kg,
         kg_tx=kg_tx,   # B1-step1: bind_embedded_observation 의 다중 KG write 를 단일 트랜잭션으로
+        critique_kg_tx=_container.writer_fenced_kg_tx,
         hist=hist,
         foundation=_certified_foundation_provider,
         load_lineage=_load_lineage,
@@ -349,12 +825,20 @@ def _evidence_claim_service(*, store_research_event=None):
         store_research_event=store_research_event,
         environment_fingerprint=environment_fingerprint,
         fingerprint_sha=fingerprint_sha,
+        critique_ready=_require_critique_history_ready,
+        critique_scope=_container.writer_ledger_scope,
+        on_semantic_divergence=_invalidate_storage_contract_state,
     )
 
 
 def _programme_service():
+    cycle_writer = TreeKgWriter(_container.writer_fenced_kg_tx)
     cycle_ports = {
-        "add_node": add_node,
+        "add_node": lambda name, node, claim: add_cycle_node(
+            name, node, claim
+        ),
+        "compensate_cycle_node": cycle_writer.rollback_cycle_node,
+        "release_cycle_claim": cycle_writer.release_cycle_node,
         "register_prediction": register_prediction,
         "submit_test_result": submit_test_result,
         "add_critique": add_critique,
@@ -368,6 +852,8 @@ def _programme_service():
         compute_metrics=compute_metrics,
         insert_artifact=lambda doc: MONGO.artifacts.insert_one(doc),
         rank_questions=rank_questions,
+        ledger_ready=_require_critique_history_ready,
+        ledger_scope=_container.writer_ledger_scope,
         **cycle_ports,
     )
 
@@ -381,6 +867,9 @@ def _judgement_service():
         reproducible_for_node=_reproducible_for_node,
         producer_replay_for_node=_producer_replay_for_node,   # 나생문 #1 live: 채점 스크립트 재실행 검증
         producer_replay_submit=_producer_replay_submit,        # AG3: submit incoming 값 재유도 → 값소유
+        ledger_ready=_require_critique_history_ready,
+        ledger_kg_tx=_container.writer_fenced_kg_tx,
+        ledger_scope=_container.writer_ledger_scope,
     )
 
 
@@ -427,6 +916,17 @@ def _normalized_parent_edges(n: NodeIn) -> list[ParentEdgeIn]:
 def add_node(name: str, n: NodeIn):
     return _tree_service().add_node(name, n, tree_data=tree_data(name))
 
+
+def add_cycle_node(name: str, n: NodeIn, claim: str):
+    """Injectable compatibility facade for the claim-aware cycle write."""
+
+    return _ledger_tree_service().add_node(
+        name,
+        n,
+        tree_data=tree_data(name),
+        cycle_claim=claim,
+    )
+
 def set_verdict(name: str, tag: str, v: VerdictIn):
     return _judgement_service().set_verdict(name, tag, v)
 
@@ -446,8 +946,17 @@ def reattribute_question(name: str, qname: str, closed_by: str = ''):
 def register_prediction(name: str, tag: str, p: PredictionIn):
     return _judgement_service().register_prediction(name, tag, p)
 
-def submit_test_result(name: str, tag: str, r: TestResultIn):
-    return _judgement_service().submit_test_result(name, tag, r)
+def submit_test_result(
+    name: str,
+    tag: str,
+    r: TestResultIn,
+    *,
+    cycle_claim: str | None = None,
+    cycle_request: list | None = None,
+):
+    return _judgement_service().submit_test_result(
+        name, tag, r, cycle_claim=cycle_claim, cycle_request=cycle_request
+    )
 
 def provenance(name: str, tag: str):
     return _evidence_claim_service().provenance(name, tag)
@@ -928,8 +1437,9 @@ def _load_belief_base(tree: str) -> list:
     """A4: 트리의 영속 belief base 를 KG 에서 로드 (HAS_BELIEF). 없으면 빈 base."""
     # G9(git-흡수 2026-07-02): active base = 포인터가 살아있는(abandoned=false) belief 만. 폐기된 belief 는
     #   물리 삭제가 아니라 abandoned=true 로 표식(git prune: 도달가능 객체는 불멸, 포인터만 죽는다) — 증거 불멸.
-    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_BELIEF]->(b:Belief)
-                 WHERE (b.tree=$tree OR b.tree IS NULL)
+    rows = kg("""MATCH (t:LakatosTree {name:$tree})-[hb:HAS_BELIEF]->(b:Belief)
+                 WHERE coalesce(hb.active, true)=true
+                       AND (b.tree=$tree OR b.tree IS NULL)
                        AND coalesce(b.abandoned, false) = false
                  RETURN b.belief_id AS belief_id, b.statement AS statement, b.kind AS kind,
                         b.credence AS credence, b.problem_balance AS problem_balance,
@@ -953,21 +1463,35 @@ def _load_belief_base(tree: str) -> list:
             for r in selected.values()]
 
 
+def _serialized_live_ledger_command(method):
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        with _container.writer_ledger_scope():
+            return method(*args, **kwargs)
+
+    return wrapped
+
+
+@_serialized_live_ledger_command
 def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
     """A4: 결과 belief base 영속 + removed/demoted belief 와 같은 tag 의 CANONICAL 노드 auto-rejudge
     (→former_canonical, verdict_source='engine') — 전부 단일 kg_tx(원자적, MERGE 멱등). 반환 demote 후보."""
+    _require_critique_history_ready()
     ts = datetime.now(timezone.utc).isoformat()
     beliefs = [dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind, credence=b.credence,
                     problem_balance=b.problem_balance, connectivity=b.connectivity,
                     depends_on=list(b.depends_on)) for b in r.base]
     ops = [("""MATCH (t:LakatosTree {name:$tree})
+               SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+               WITH t
                UNWIND $beliefs AS b
                MERGE (bel:Belief {tree:$tree, belief_id: b.belief_id})
                SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
                    bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
                    bel.depends_on=b.depends_on, bel.updated_at=$ts,
                    bel.abandoned=false, bel.was_credence=null, bel.was_kind=null
-               MERGE (t)-[:HAS_BELIEF]->(bel)""", dict(tree=tree, beliefs=beliefs, ts=ts))]
+               MERGE (t)-[hb:HAS_BELIEF]->(bel)
+               SET hb.active=true""", dict(tree=tree, beliefs=beliefs, ts=ts))]
     # G9 TRAP1: r.base(결과 base)에 재등장한 belief 는 abandoned=false 로 *부활*(git branch-revive). removed
     #   에만 있는 belief 는 아래에서 abandoned=true 표식. 두 op 가 한 tx 라 revive/abandon 이 원자적으로 갈린다.
     demote = list(r.removed) + ([old_canonical_id] if op == 'demote_canonical' and old_canonical_id else [])
@@ -984,42 +1508,33 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
         # A4-richer: spine.reconcile_standing 정책 적용 — CANONICAL ∧ valid_until_rebutted=True 만
         # 자동 강등. 인간이 '반박-자동무효'를 끈 노드(valid_until_rebutted=False=human_locked)는 belief
         # contraction 으로도 자동 강등 금지(인간경계 존중). 전엔 blanket SET 이 이 lock 을 무시했음(버그).
-        # R4(후속 PROM): blanket → per-tag 가드 op — 각 강등이 v1 null-스펙 :VerdictReceipt 를 동반한다.
-        #   per-tag prev 포인터는 pre-read(fail-safe: KG-less 환경/조회실패 시 기존 blanket 무영수증 경로
-        #   유지 — 회귀 0, 영수증 공백은 fsck FORCEFUL_SOURCE_WITHOUT_RECEIPT 가 후행 감사). CAS 미스
-        #   (동시 재채점/head 전진)는 그 태그만 no-op(skip) — critique-side H7 skip 의미론과 동형.
-        _prevs = None
+        # R4(후속 PROM): 각 강등은 관측한 head를 CAS하고 불변 receipt를
+        # 반드시 동반한다. 예전 blanket fallback은 조회 실패/빈 결과에서
+        # FORCEFUL_SOURCE_WITHOUT_RECEIPT를 런타임이 스스로 만들었다. 이제 권위
+        # read가 실패하면 전체 AGM 쓰기를 fail-closed하고, 빈 결과는
+        # "관측된 canonical 없음"으로만 처리한다.
         try:
-            _prevs = {r['tag']: r.get('prev') for r in kg(
+            _prev_rows = kg(
                 """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
                    WHERE e.tag IN $demote AND e.verdict='CANONICAL'
                          AND coalesce(e.valid_until_rebutted, true) = true
                    RETURN e.tag AS tag, e.current_receipt_sha AS prev""",
-                tree=tree, demote=demote)}
-        except Exception:
-            _prevs = None   # fail-safe: 불확실하면 기존 경로(강등은 하되 영수증 없이 — 파괴적 아님)
-        if not _prevs:
-            # 빈 pre-read 도 blanket 폴백 — (a) KG-less/fake 환경 (b) read→tx 사이 canonical 등장(TOCTOU)
-            #   모두에서 강등 의미론(blanket WHERE 재검사)이 보존된다. per-tag 영수증은 pre-read 가 실제
-            #   canonical 을 본 경우에만(원장 공백은 fsck 가 후행 감사 — R6).
-            _prevs = None
-        if _prevs is None:
-            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e)
-                           WHERE e.tag IN $demote AND e.verdict='CANONICAL'
-                                 AND coalesce(e.valid_until_rebutted, true) = true
-                           SET e.verdict='former_canonical', e.verdict_source='engine',
-                               e.node_state='FORMER_CANONICAL',
-                               e.current_best_pointer=false, e.demoted_at=$ts""",
-                        dict(tree=tree, demote=demote, ts=ts)))
-        else:
-            for _tag, _prev in _prevs.items():
-                _rsha = receipt_content_sha(dict(
-                    tree=tree, tag=_tag, target_id=None, verdict='former_canonical',
-                    verdict_source='engine', metric_name=None, metric_value=None,
-                    novel_confirmed=None, lakatos_status=None, judged_at=ts,
-                    judge_script_sha=None, prev_receipt_sha=_prev,
-                    engine_rule_sha=_ENGINE_RULE_SHA))   # jp1: AGM 강등도 판관 행위 — 정체성 봉인(v2)
-                ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+                tree=tree, demote=demote)
+        except Exception as exc:
+            raise HTTPException(
+                503, 'AGM canonical head read failed; revision was not persisted'
+            ) from exc
+        _prevs = {row['tag']: row.get('prev') for row in (_prev_rows or [])}
+        if len(_prevs) != len(_prev_rows or []):
+            raise HTTPException(500, 'duplicate canonical tags block AGM revision')
+        for _tag, _prev in _prevs.items():
+            _rsha = receipt_content_sha(dict(
+                tree=tree, tag=_tag, target_id=None, verdict='former_canonical',
+                verdict_source='engine', metric_name=None, metric_value=None,
+                novel_confirmed=None, lakatos_status=None, judged_at=ts,
+                judge_script_sha=None, prev_receipt_sha=_prev,
+                engine_rule_sha=_ENGINE_RULE_SHA))   # jp1: AGM 강등도 판관 행위 — 정체성 봉인(v2)
+            ops.append(("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                                WHERE e.verdict='CANONICAL'
                                      AND coalesce(e.valid_until_rebutted, true) = true
                                      AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
@@ -1033,9 +1548,9 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
                                    rec.engine_rule_sha=$engine_rule_sha
                                MERGE (e)-[:HAS_RECEIPT]->(rec)
                                SET e.current_receipt_sha=$rsha""",
-                            dict(tree=tree, tag=_tag, ts=ts, prev_rsha=_prev, rsha=_rsha,
-                                 engine_rule_sha=_ENGINE_RULE_SHA)))
-    kg_tx(ops)
+                        dict(tree=tree, tag=_tag, ts=ts, prev_rsha=_prev, rsha=_rsha,
+                             engine_rule_sha=_ENGINE_RULE_SHA)))
+    _container.writer_fenced_kg_tx(ops)
     hist(tree, 'agm_revise', op, {'removed': list(r.removed), 'added': list(r.added),
                                   'programme_shift_candidate': r.programme_shift_candidate,
                                   'auto_demote_candidates': demote,

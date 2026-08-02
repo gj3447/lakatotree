@@ -17,26 +17,52 @@ from server.contexts.tree.schemas import PredictionIn
 
 def _judge(kg):
     return JudgementService(kg=kg, kg_tx=lambda ops: [[{"ok": 1}] for _ in ops],
-                            hist=lambda *a: None,
+                            hist=lambda *a, **k: None,
                             foundation=lambda *a, **k: None,
                             reproducible_for_node=lambda *a, **k: None)
 
 
 def test_prediction_locked_rejects_post_measurement_edit():
     queries: list = []
-    state = {"registered": False}
+    state = {"registered": False, "outboxes": {}}
 
     def kg(query, **k):
         queries.append(query)
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": None}]              # 온톨로지 미선언 → metric 강제 skip
         if "RETURN e.current_receipt_sha AS prev_rsha" in query:
-            return [{"prev_rsha": None}]
+            return [{
+                "prev_rsha": state.get("rsha"),
+                "pred_receipt_sha": state.get("rsha"),
+                "pred_registered_at": state.get("ts"),
+                "pred_prev_receipt_sha": None,
+                "pred_baseline_lineage": state.get("baseline_lineage"),
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in query:
+            row = state["outboxes"].get(k["id"])
+            return [dict(row)] if row is not None else []
         if "SET e.pred_metric" in query:
             # 새 WHERE(pred_registered_at IS NULL) 의 의미를 모킹: 이미 등록됐으면 0행
             if state["registered"]:
                 return []
             state["registered"] = True
+            state.update(
+                rsha=k["rsha"],
+                ts=k["ts"],
+                baseline_lineage=k["baseline_lineage"],
+            )
+            state["outboxes"][k["history_event_id"]] = {
+                "id": k["history_event_id"],
+                "tree": k["tree"],
+                "op": "prediction_register",
+                "node_tag": k["tag"],
+                "payload": k["history_payload_json"],
+                "status": "pending",
+                "created_at": k["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": k["rsha"],
+            }
             return [{"tag": "n"}]
         return []
 
@@ -56,12 +82,35 @@ def test_prediction_locked_rejects_post_measurement_edit():
 
 def test_register_on_fresh_unregistered_node_still_ok():
     """과잉차단 회귀가드: 미등록 새 노드는 정상 등록(잠금이 첫 등록을 막지 않는다)."""
+    outboxes = {}
+
     def kg(query, **k):
         if "RETURN t.ontology AS ontology" in query:
             return [{"ontology": None}]
         if "RETURN e.current_receipt_sha AS prev_rsha" in query:
-            return [{"prev_rsha": None}]
+            return [{
+                "prev_rsha": None,
+                "pred_receipt_sha": None,
+                "pred_registered_at": None,
+                "pred_prev_receipt_sha": None,
+                "pred_baseline_lineage": None,
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in query:
+            row = outboxes.get(k["id"])
+            return [dict(row)] if row is not None else []
         if "SET e.pred_metric" in query:
+            outboxes[k["history_event_id"]] = {
+                "id": k["history_event_id"],
+                "tree": k["tree"],
+                "op": "prediction_register",
+                "node_tag": k["tag"],
+                "payload": k["history_payload_json"],
+                "status": "pending",
+                "created_at": k["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": k["rsha"],
+            }
             return [{"tag": "fresh"}]
         return []
     assert _judge(kg).register_prediction("T", "fresh", PredictionIn(metric_name="m", baseline_value=1.0))["ok"] is True

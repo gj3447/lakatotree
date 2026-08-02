@@ -127,6 +127,7 @@ def test_existing_result_path_is_the_single_canonical_input_and_lock_is_atomic(t
         "result_sha256": params["result_sha256"], "measurement_lock_sha": params["lsha"],
         "source_script_path": params["source_script"],
         "source_result_path": params["source_rp"],
+        "history_payload_sha256": params["history_payload_sha256"],
     }
     assert receipt_content_sha(sealed) == params["rsha"]
     assert out["replay_authoritative"] is True

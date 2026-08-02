@@ -2,12 +2,73 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import subprocess
+import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from judges import arg5_unconditional_ownership_oracle as oracle
 from judges import argument_integrity_bundle_validator_v2 as validator
+
+
+FROZEN_TOOLCHAIN_COMMIT = "a8595209a0045b57cd4b39ed015da11c113e7550"
+
+
+def activate_frozen_toolchain(tmp_path: Path, monkeypatch) -> Path:
+    """Replay the frozen protocol against its immutable committed toolchain.
+
+    The v2 protocol deliberately binds then-current mutable inputs such as
+    ``uv.lock``.  Later dependency work must not rewrite that historical
+    protocol, and synthetic replay must not pretend today's checkout is the
+    frozen environment.  Materialize the exact milestone tree and point only
+    the validator's path authorities at it; all hashes and ``git show`` reads
+    remain real.
+    """
+
+    live_repo = Path(__file__).resolve().parents[1]
+    archive_bytes = subprocess.run(
+        ["git", "archive", "--format=tar", FROZEN_TOOLCHAIN_COMMIT],
+        cwd=live_repo,
+        check=True,
+        capture_output=True,
+    ).stdout
+    frozen_repo = tmp_path / "frozen-toolchain"
+    frozen_repo.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as archive:
+        archive.extractall(frozen_repo, filter="data")
+    git_dir = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        cwd=live_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (frozen_repo / ".git").write_text(
+        f"gitdir: {git_dir}\n", encoding="utf-8"
+    )
+
+    protocol_path = (
+        frozen_repo
+        / "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/harness_v2.json"
+    )
+    activation_path = (
+        frozen_repo
+        / "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/activation_20260802.json"
+    )
+    producer_path = (
+        frozen_repo
+        / "ooptdd_receipts/ARGUMENT_INTEGRITY/v2/real_harness_v2.py"
+    )
+    judge_path = frozen_repo / "judges/arg5_unconditional_ownership_oracle.py"
+    for module in (validator, oracle):
+        monkeypatch.setattr(module, "REPO", frozen_repo)
+        monkeypatch.setattr(module, "PROTOCOL_PATH", protocol_path)
+        monkeypatch.setattr(module, "ACTIVATION_PATH", activation_path)
+    monkeypatch.setattr(validator, "PRODUCER_PATH", producer_path)
+    monkeypatch.setattr(validator, "JUDGE_PATH", judge_path)
+    return frozen_repo
 
 
 def sha(path: Path) -> str:

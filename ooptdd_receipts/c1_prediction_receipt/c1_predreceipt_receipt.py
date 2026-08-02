@@ -48,6 +48,7 @@ class _Kg:
         self.node = {"tag": "seam", "verdict": None, "verdict_source": None, "node_state": None,
                      "pred_registered_at": None, "current_receipt_sha": None}
         self.receipts: list[dict] = []
+        self.outboxes: dict[str, dict] = {}
 
     def __call__(self, query, **p):
         if "t.ontology AS ontology" in query:
@@ -55,7 +56,24 @@ class _Kg:
         if "parent_measured" in query:
             return []
         if "AS prev_rsha" in query:
-            return [{"prev_rsha": self.node["current_receipt_sha"]}]
+            pred_sha = self.node.get("pred_receipt_sha")
+            pred = next(
+                (r for r in self.receipts if r.get("receipt_sha") == pred_sha),
+                {},
+            )
+            return [{
+                "prev_rsha": self.node["current_receipt_sha"],
+                "pred_receipt_sha": pred_sha,
+                "pred_registered_at": pred.get("registered_at"),
+                "pred_prev_receipt_sha": pred.get("prev_receipt_sha"),
+                "pred_baseline_lineage": pred.get("baseline_lineage"),
+                "pred_anchor_bundle_sha256": pred.get("anchor_bundle_sha256"),
+                "pred_anchor_bundle_json": pred.get("anchor_bundle_json"),
+                "pred_history_payload_sha256": pred.get("history_payload_sha256"),
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in query:
+            row = self.outboxes.get(p["id"])
+            return [dict(row)] if row is not None else []
         if "SET e.pred_metric" in query:
             n = self.node
             ok = (n.get("verdict_source") != "scripted" and n.get("pred_registered_at") is None
@@ -71,7 +89,9 @@ class _Kg:
                      pred_novel_threshold=p["novel_threshold"],
                      pred_script_sha=p["judge_script_sha"], pred_credence=p["credence"],
                      pred_registered_at=p["ts"], node_state=p["node_state"],
-                     baseline_lineage=p["baseline_lineage"])
+                     baseline_lineage=p["baseline_lineage"],
+                     anchor_bundle_sha256=p.get("anchor_bundle_sha256"),
+                     anchor_bundle_json=p.get("anchor_bundle_json"))
             if "MERGE (rec:VerdictReceipt" in query and p.get("rsha"):
                 rec = {"receipt_sha": p["rsha"], "receipt_kind": "prediction",
                        "tree": p["tree"], "tag": p["tag"], "metric_name": p["metric_name"],
@@ -84,9 +104,25 @@ class _Kg:
                        "closes_question": p["closes_question"], "credence": p["credence"],
                        "baseline_lineage": p["baseline_lineage"], "registered_at": p["ts"],
                        "prev_receipt_sha": p.get("prev_rsha"),
+                       "anchor_bundle_sha256": p.get("anchor_bundle_sha256"),
+                       "anchor_bundle_json": p.get("anchor_bundle_json"),
+                       "history_payload_sha256": p.get("prediction_payload_sha256"),
                        "verdict": None, "verdict_source": None}
                 self.receipts.append(rec)
                 n["current_receipt_sha"] = p["rsha"]
+                n["pred_receipt_sha"] = p["rsha"]
+            self.outboxes[p["history_event_id"]] = {
+                "id": p["history_event_id"],
+                "tree": p["tree"],
+                "op": "prediction_register",
+                "node_tag": p["tag"],
+                "payload": p["history_payload_json"],
+                "status": "pending",
+                "created_at": p["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": p["rsha"],
+            }
             return [{"tag": n["tag"]}]
         if "n_visits" in query:
             return []
@@ -142,7 +178,10 @@ class _Kg:
                                   "result_sha256": params["result_sha256"],
                                   "measurement_lock_sha": params["lsha"],
                                   "source_script_path": params["source_script"],
-                                  "source_result_path": params["source_rp"]})
+                                  "source_result_path": params["source_rp"],
+                                  "history_payload_sha256": params[
+                                      "history_payload_sha256"
+                                  ]})
         return [[{"claimed": params.get("tag")}] for _ in ops]
 
 

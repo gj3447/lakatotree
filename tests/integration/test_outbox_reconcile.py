@@ -6,6 +6,7 @@ PG 회복 후 reconcile_outbox 가 PG history 에 *정확히 1행* 재적용(ON 
 """
 import psycopg2
 import pytest
+from uuid import uuid4
 
 from server.container import AppContainer
 
@@ -13,6 +14,17 @@ pytestmark = pytest.mark.integration
 
 
 class _DummyMongo:
+    def close(self):
+        pass
+
+
+class _BorrowedDriver:
+    def __init__(self, driver):
+        self._driver = driver
+
+    def session(self, *args, **kwargs):
+        return self._driver.session(*args, **kwargs)
+
     def close(self):
         pass
 
@@ -28,27 +40,76 @@ def _pg_count(pg_kw, tree):
 
 
 def test_pg_down_records_outbox_then_reconcile_replays_once(neo4j_driver, pg_kw):
-    name = "b1_outbox"
-    # 이 테스트 트리의 잔여 outbox 정리(공유 세션 DB 격리)
-    AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw=pg_kw).kg(
-        "MATCH (o:OutboxEntry {tree:$t}) DETACH DELETE o", t=name)
+    name = f"b1_outbox_{uuid4().hex}"
+    bad = {**pg_kw, "host": "127.0.0.1", "port": 1, "connect_timeout": 1}
+    c_down = AppContainer(
+        neo=_BorrowedDriver(neo4j_driver), mongo=_DummyMongo(), pg_kw=pg_kw
+    )
+    c_up = None
+    try:
+        # Pending history intents are now ownership-bound to an existing tree;
+        # this receipt exercises recovery, not the missing-tree rejection gate.
+        c_down.kg("CREATE (t:LakatosTree {name:$tree})", tree=name)
+        assert c_down.acquire_writer_lease() is True
+        # The dedicated election session remains valid while a fresh history
+        # connection observes the simulated outage.  This models a failure
+        # after authority was acquired, rather than an impossible acquisition
+        # through an already-dead endpoint.
+        c_down._pg_kw = bad
+        # 1) PG 다운 → hist 가 이 테스트 전용 pending intent를 KG에 남긴다.
+        c_down.hist(name, "node_add", "v", {"verdict": "progressive"})
+        pending = c_down.kg(
+            "MATCH (o:OutboxEntry {tree:$tree, status:'pending'}) "
+            "RETURN o.id AS id",
+            tree=name,
+        )
+        assert len(pending) == 1
+        event_id = pending[0]["id"]
+        assert _pg_count(pg_kw, name) == 0
 
-    # 1) PG 다운(잘못된 포트) → hist 가 KG OutboxEntry(pending)로 기록(유실 아님)
-    bad = dict(pg_kw, host="127.0.0.1", port=1)
-    c_down = AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw=bad)
-    c_down.hist(name, "test_result", "v", {"verdict": "progressive"})
-    pend = c_down.kg("MATCH (o:OutboxEntry {tree:$t, status:'pending'}) RETURN count(o) AS c", t=name)
-    assert pend[0]["c"] == 1                                   # 유실 대신 outbox 기록
-    assert _pg_count(pg_kw, name) == 0                         # PG 엔 아직 없음
+        # 2) A fresh healthy process replays only the captured identity.
+        c_down.close()
+        c_down = None
+        c_up = AppContainer(
+            neo=_BorrowedDriver(neo4j_driver), mongo=_DummyMongo(), pg_kw=pg_kw
+        )
+        assert c_up.acquire_writer_lease() is True
+        result = c_up.reconcile_outbox()
+        assert event_id in result["replayed"]
+        assert _pg_count(pg_kw, name) == 1
+        assert c_up.kg(
+            "MATCH (o:OutboxEntry {id:$id}) RETURN o.status AS status",
+            id=event_id,
+        ) == [{"status": "applied"}]
 
-    # 2) PG 회복 → reconcile 가 정확히 1행 재적용 + outbox applied
-    c_up = AppContainer(neo=neo4j_driver, mongo=_DummyMongo(), pg_kw=pg_kw)
-    out = c_up.reconcile_outbox()
-    assert out["replayed_count"] >= 1 and out["still_pending"] == out["pending"] - out["replayed_count"]
-    assert _pg_count(pg_kw, name) == 1                         # PG 에 1행 복구
-    pend2 = c_up.kg("MATCH (o:OutboxEntry {tree:$t, status:'pending'}) RETURN count(o) AS c", t=name)
-    assert pend2[0]["c"] == 0                                  # 더 이상 pending 아님(applied)
-
-    # 3) 멱등: 재실행해도 이중적재 없음
-    c_up.reconcile_outbox()
-    assert _pg_count(pg_kw, name) == 1                         # 여전히 1행(ON CONFLICT/applied 멱등)
+        # 3) A second replay is a no-op for this identity.
+        assert event_id not in c_up.reconcile_outbox()["replayed"]
+        assert _pg_count(pg_kw, name) == 1
+    finally:
+        try:
+            connection = psycopg2.connect(**pg_kw)
+            try:
+                with connection, connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM history_event_claims WHERE history_id IN "
+                        "(SELECT id FROM history WHERE tree=%s)",
+                        (name,),
+                    )
+                    cursor.execute("DELETE FROM history WHERE tree=%s", (name,))
+            finally:
+                connection.close()
+        finally:
+            try:
+                with neo4j_driver.session() as session:
+                    session.run(
+                        "MATCH (o:OutboxEntry {tree:$tree}) DETACH DELETE o",
+                        tree=name,
+                    ).consume()
+                    session.run(
+                        "MATCH (t:LakatosTree {name:$tree}) DETACH DELETE t",
+                        tree=name,
+                    ).consume()
+            finally:
+                for container in (c_up, c_down):
+                    if container is not None:
+                        container.close()

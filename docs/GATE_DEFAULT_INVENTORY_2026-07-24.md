@@ -21,7 +21,7 @@
 | 플래그 | 기본값 | 하는 일 | 판정 |
 |---|---|---|---|
 | `LAKATOS_API_TOKEN` | 미설정 = **open(무인증)** | mutating 요청 Bearer 강제 (token_required > irreversible_attested > open 3값 사다리, `server/auth_posture.py`) | ⚠️ 의도적 절충(FE5 open-but-observable: 부팅 loud WARN + /version 공시 + open에서 파괴 verb 403 + loopback 외 bind fail-closed). 단 PROM(2026-07-24) 결론: **지금 flip 권고** — Jupyter 선례(자동생성 토큰으로 UX 비용 ~0), MLflow CVE-2026-2635("개발 도구 무인증"의 회수 사례). "외부 공개 전 flip"이 아니라 자동생성 기본값으로 open 자세 자체 소멸 권고 |
-| `LAKATOS_REPLAY_EXEC` | **OFF** | producer 스크립트 재실행 활성 | ✅ 정당한 fail-closed (임의 코드 실행 = RCE 표면). 단 이것이 값소유 미착륙의 직접 원인 → Phase 1 L3에서 `LAKATOS_REPLAY_SANDBOXED` 선언 배포 한정으로 ON |
+| `LAKATOS_REPLAY_EXEC` | **OFF** | producer 스크립트 재실행 활성 | ✅ 정당한 fail-closed (임의 코드 실행 = RCE 표면). `LAKATOS_REPLAY_SANDBOXED` 선언 배포에서의 재실행은 artifact-bound replay와 L2 근거를 제공하지만, 서명된 receipt-bound T2 verdict anchor가 없는 현재 runtime을 L3로 승급시키지는 않음 |
 | `LAKATOS_REPLAY_SANDBOXED` | 미설정 | 샌드박스 배포 선언 시 EXEC 기본 ON 위임(GO1 flip 2단) | ✅ 정당 (명시 선언 게이트) |
 | `LAKATOS_JUDGE_FRESHNESS_GATE` | **ON (2026-07-24 flip 완료)** — 명시적 거짓(`0`/`false`/`no`/`off`)만 opt-out | 판관 staleness/capability 감지(`server/engine_freshness.py:48-53`) | ✅ flip 완료(사용자 GO). 발화 시 progressive → `partial`(provisional_stale_engine) 강등 + CANONICAL 승격 409 — verdict-affecting 게이트. 발화 조건은 부팅 커밋≠디스크 HEAD(미재기동 감지, `version.py:142-152`, dirty worktree는 물발화). 참고: "비파괴 감지라 안전" 초기 판정은 오류로 정정됨(2026-07-24) |
 
@@ -30,9 +30,13 @@
 | 플래그 | 기본값 | 용도 |
 |---|---|---|
 | `LAKATOS_BIND_HOST` | 필수(fail-loud 검증, `auth_posture.py:67-98`) | 바인드 주소 + listener override 금지 |
-| `LAKATOS_PG_HOST` / `LAKATOS_PG_PORT` / `LAKATOS_PG_USER` / `LAKATOS_PG_PASSWORD` / `LAKATOS_PG_DB` / `LAKATOS_PG_DSN` | localhost 등 | PG 백킹(lazy degrade, 선택) |
+| `LAKATOS_PG_HOST` / `LAKATOS_PG_PORT` / `LAKATOS_PG_USER` / `LAKATOS_PG_PASSWORD` / `LAKATOS_PG_DB` | localhost 등 | core 조회·비원장 동작에는 선택. 모든 원장 기반 mutation은 target-bound storage predeploy/readback이 선행돼야 함; 미검증이면 mutation 전 503 |
+| `NEO4J_DATABASE` | 미설정 시 연결 거부 | 계정별 home database 표류를 막는 명시적 Neo4j database 이름 |
+| `LAKATOS_STORAGE_PG_MIGRATION_USER` / `LAKATOS_STORAGE_PG_MIGRATION_PASSWORD` / `LAKATOS_STORAGE_NEO4J_MIGRATION_USER` / `LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD` | runtime에서 미설정 필수 | 향후 분리 migrator 전용 이름. 현재 runtime launcher와 재시작/백업 경로는 유입을 거부하며 값은 영수증·로그에 남기지 않음 |
+| `LAKATOS_STORAGE_ENVIRONMENT` / `LAKATOS_STORAGE_FENCE_VERIFIER_SHA256` / `LAKATOS_STORAGE_FENCE_PUBLIC_KEY_HEX` / `LAKATOS_STORAGE_PREDEPLOY_RECEIPT` / `LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256` | 미설정 | 배포 환경, verifier+direct-interpreter execution identity, raw Ed25519 authority public key(lowercase hex), read-only predeploy 영수증 절대경로, 독립 raw-file SHA-256의 다섯 pin. 하나라도 없거나 현재 artifact/target과 불일치하면 모든 원장 기반 mutation과 `/readyz`는 503 |
 | `LAKATOS_MONGO_URI` | mongodb://localhost:27017 | Mongo 백킹 |
 | `LAKATOS_RAW_ROOT` | repo 루트 | raw 산출물 루트(재현 해시 경계) |
+| `LAKATOS_PROC_ROOT` | `/proc` | 재시작 스크립트의 PID 환경 소유권 판독 루트. 테스트에서만 가짜 procfs로 오버라이드하며 운영 기본은 `/proc` |
 | `LAKATOS_FSCK_SKIPLIST` | docs/data/fsck_skiplist.json | skiplist 경로 오버라이드 |
 | `LAKATOS_ENGINE_RULE_FLOOR` | docs/data/engine_rule_floor.json | floor 파일 오버라이드 |
 | `LAKATOS_SCRIPT_ROOTS` | 빈 문자열 | replay 허용 스크립트 루트 allowlist |

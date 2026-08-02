@@ -94,7 +94,7 @@ def _service(row: dict, *, env_sha: str = "3" * 64) -> EvidenceClaimService:
     )
 
 
-def test_writer_preserves_result_path_for_scripted_node_in_single_and_bulk_paths():
+def test_writer_preserves_result_path_for_receipt_backed_and_promoted_nodes():
     captured: list[list[tuple[str, dict]]] = []
 
     def tx(ops):
@@ -107,9 +107,38 @@ def test_writer_preserves_result_path_for_scripted_node_in_single_and_bulk_paths
 
     single = captured[0][0][0]
     bulk = captured[1][0][0]
-    guard = "CASE WHEN coalesce(e.verdict_source,'') = 'scripted' THEN e.result_path"
-    assert guard in single and "ELSE $result_path END" in single
-    assert guard in bulk and "ELSE row.result_path END" in bulk
+    assert "AS preserve_measured_authority" in single
+    assert "AS preserve_measured_authority" in bulk
+    assert "WHEN claim_conflict THEN [] ELSE [1] END" in single
+    assert (
+        "e.result_path = CASE WHEN preserve_measured_authority "
+        "THEN e.result_path ELSE $result_path END"
+    ) in single
+    assert (
+        "e.result_path = CASE WHEN preserve_measured_authority "
+        "THEN e.result_path ELSE row.result_path END"
+    ) in bulk
+    assert "OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(authority_receipt:VerdictReceipt)" in single
+    assert "OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(authority_receipt:VerdictReceipt)" in bulk
+    assert "admin" in captured[0][0][1]["forceful"]
+    assert "admin" in captured[1][0][1]["forceful"]
+
+
+def test_writer_authority_guard_covers_legacy_state_and_relationship_receipts():
+    captured: list[list[tuple[str, dict]]] = []
+
+    def tx(ops):
+        captured.append(ops)
+        return [[{"t": "T"}] for _ in ops]
+
+    writer = TreeKgWriter(tx)
+    writer.add_node("T", NodeIn(tag="one"), [])
+    writer.upsert_nodes("T", [NodeIn(tag="many")])
+    for query in (captured[0][0][0], captured[1][0][0]):
+        assert "NOT coalesce(e.verdict,'') IN ['', 'proof']" in query
+        assert "coalesce(e.node_state,'DRAFT') <> 'DRAFT'" in query
+        assert "count(authority_receipt) > 0 AS has_any_receipt" in query
+        assert "OR has_any_receipt" in query
 
 
 def test_repository_projects_every_artifact_cache_field():

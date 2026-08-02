@@ -96,6 +96,7 @@ def _receipt_fields(params):
         judge_script_path=params["script"], result_path=params["rp"],
         result_sha256=params["result_sha256"], measurement_lock_sha=params["lsha"],
         source_script_path=params["source_script"], source_result_path=params["source_rp"],
+        history_payload_sha256=params["history_payload_sha256"],
     )
 
 

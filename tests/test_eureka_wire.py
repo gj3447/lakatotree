@@ -7,12 +7,21 @@ felt/true/hallucinated 를 동일 kg_tx op-list 안에서 산출·영속(원자�
 import importlib
 import os
 
+import pytest
+
+from tests._live_ledger_test_seam import install_live_ledger_test_seam
+
 
 def load_app():
     os.environ.setdefault('NEO4J_URI', 'bolt://localhost:7687')
     os.environ.setdefault('NEO4J_USER', 'neo4j')
     os.environ.setdefault('NEO4J_PASSWORD', 'test')
     return importlib.import_module('server.app')
+
+
+@pytest.fixture(autouse=True)
+def _live_ledger(monkeypatch):
+    install_live_ledger_test_seam(monkeypatch, load_app())
 
 
 def test_eureka_classify_importable_from_package():

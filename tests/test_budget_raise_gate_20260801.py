@@ -6,6 +6,12 @@ from fastapi import HTTPException
 
 from server.contexts.tree.schemas import CreateTreeIn
 from server.contexts.tree.service import TreeService
+from lakatos.write_cert import (
+    build_write_cert,
+    did_key_encode,
+    ed25519_public_key,
+    operation_payload_sha256,
+)
 
 
 class _Svc(TreeService):
@@ -61,3 +67,36 @@ def test_raise_with_attestors_requires_write_cert():
             "T", CreateTreeIn(cycle_budget=5, confirm_budget_raise=True))
     assert e.value.status_code == 403
     assert "write-cert" in e.value.detail
+
+
+def test_budget_authorization_verifies_v4_cert_without_deciding_locked_policy():
+    secret = bytes(range(32))
+    did = did_key_encode(ed25519_public_key(secret))
+    unsigned = CreateTreeIn(cycle_budget=5, confirm_budget_raise=True)
+    verb = "create_tree.cycle_budget_raise"
+    command = {
+        "tree": "T",
+        "tag": "__tree__",
+        "prev_receipt_sha": None,
+        "metric_value": None,
+        "script_sha": None,
+        "verb": verb,
+        "command_version": "v4",
+        "result_sha256": None,
+        "operation_payload_sha256": operation_payload_sha256(
+            verb, unsigned.model_dump(exclude={"write_cert"})
+        ),
+    }
+    spec = CreateTreeIn(
+        cycle_budget=5,
+        confirm_budget_raise=True,
+        write_cert=build_write_cert(secret, command),
+    )
+
+    confirmed, verified, snapshot = _Svc(
+        budget=1, attestors=[did]
+    )._budget_raise_authorization("T", spec)
+
+    assert confirmed is True
+    assert verified is True
+    assert snapshot == (did,)

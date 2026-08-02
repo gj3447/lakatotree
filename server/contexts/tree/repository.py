@@ -62,14 +62,17 @@ def assurance_with_context(row: dict, *, tree_attestors=None, engine_rule_floor=
     L1 천장이었다(라이브 실측: SelfDev 47노드 전부 val<=1, L3 프로브가 partial@L1 되읽힘).
     - lock_bound = bool(measurement_lock_sha) — submit 의 bool(_lsha) 와 동형. row 에 이미 있으면
       보존(기존 fixture 계약). 파생은 사본에만(원본 row shape 불변 — fsck record sha 최소 교란).
-    - temporal_witness = 저장 미러(e.temporal_witness_verified — submit 이 정족수 검증 후 SET).
+    - temporal_witness = False until the ledger stores a signed, receipt-bound
+      T2 verdict anchor.  Historical ``temporal_witness_verified`` values were
+      derived from a T1 prediction anchor plus the server clock and therefore
+      cannot support L3 on permanent read surfaces.
     - floor 대조 대상은 head receipt 봉인 sha(노드별 가변) — 현 프로세스 상수를 넘기면
       항진명제가 읽기 시점으로 이동할 뿐이라 금지."""
     if 'measurement_lock_bound' not in row and row.get('measurement_lock_sha'):
         row = {**row, 'measurement_lock_bound': True}
     return verdict_assurance(row, tree_attestors=tree_attestors,
                              engine_rule_floor=engine_rule_floor,
-                             temporal_witness=bool(row.get('temporal_witness_verified')))
+                             temporal_witness=False)
 
 
 def normalize_node_row(row: dict, *, tree_attestors=None, engine_rule_floor=None) -> dict:
@@ -174,6 +177,11 @@ class TreeKgRepository:
             # PROM16 루프상한: 선언된 사이클 예산도 사전 공시 — 드라이버가 budget_exhausted 를 맞기
             #   *전에* 남은 예산을 알 수 있어야(정책은 읽을 수 있어야 정책이다).
             "t.cycle_budget AS cycle_budget, "
+            # Durable bundle lineage is audit state: expose it rather than
+            # hiding it behind the generic mutation boundary.
+            "t.tree_incarnation_id AS tree_incarnation_id, "
+            "t.tree_upsert_generation AS tree_upsert_generation, "
+            "t.last_tree_upsert_event_id AS last_tree_upsert_event_id, "
             "t.updated_at AS updated_at",
             n=name,
         )

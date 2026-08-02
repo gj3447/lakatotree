@@ -25,12 +25,31 @@ class _Kg:
         self.tree = tree_props
         self.node = {"tag": "n", "node_state": "DRAFT"}
         self.writes = []
+        self.outboxes = {}
 
     def __call__(self, q, **p):
         if "RETURN t.ontology AS ontology, t.research_layout" in q:      # register meta read
             return [dict(self.tree, ontology=None)]
         if "RETURN e.current_receipt_sha AS prev_rsha" in q:
-            return [{"prev_rsha": self.node.get("current_receipt_sha")}]
+            return [{
+                "prev_rsha": self.node.get("current_receipt_sha"),
+                "pred_receipt_sha": self.node.get("pred_receipt_sha"),
+                "pred_registered_at": self.node.get("pred_registered_at"),
+                "pred_prev_receipt_sha": self.node.get("pred_prev_receipt_sha"),
+                "pred_baseline_lineage": self.node.get("baseline_lineage"),
+                "pred_anchor_bundle_sha256": self.node.get("anchor_bundle_sha256"),
+                "pred_anchor_bundle_json": self.node.get("anchor_bundle_json"),
+                "pred_history_payload_sha256": self.node.get("history_payload_sha256"),
+                "pred_history_payload": (
+                    self.outboxes.get(
+                        f"ob-prediction-register-{self.node.get('pred_receipt_sha')}", {}
+                    ).get("payload")
+                ),
+                "pred_anchor_verified": self.node.get("pred_anchor_verified"),
+            }]
+        if "MATCH (o:OutboxEntry {id:$id})" in q:
+            row = self.outboxes.get(p["id"])
+            return [dict(row)] if row is not None else []
         if "e.pred_metric AS m" in q:                                     # submit read
             return [dict(self.node, **self.tree, m=self.node.get("pred_metric"),
                          d="lower", b=1.0, nb=0.0, scale="ratio",
@@ -43,7 +62,32 @@ class _Kg:
         self.writes.append(q)
         if "SET e.pred_metric=$metric_name" in q:
             self.node.update(pred_metric=p["metric_name"], pred_registered_at=p["ts"],
-                             node_state="PREDICTED", current_receipt_sha=p["rsha"])
+                             node_state="PREDICTED", current_receipt_sha=p["rsha"],
+                             pred_receipt_sha=p["rsha"],
+                             pred_prev_receipt_sha=p.get("prev_rsha"),
+                             baseline_lineage=p["baseline_lineage"],
+                             anchor_bundle_sha256=p.get("anchor_bundle_sha256"),
+                             anchor_bundle_json=p.get("anchor_bundle_json"),
+                             history_payload_sha256=p.get("prediction_payload_sha256"))
+            if p.get("anchor_rows"):
+                self.node.update(
+                    pred_anchor_verified=True,
+                    pred_anchor_gen_time=p.get("anchor_gen_time"),
+                    pred_anchor_quorum=p.get("anchor_quorum"),
+                    pred_anchor_threshold=p.get("anchor_threshold"),
+                )
+            self.outboxes[p["history_event_id"]] = {
+                "id": p["history_event_id"],
+                "tree": p["tree"],
+                "op": "prediction_register",
+                "node_tag": p["tag"],
+                "payload": p["history_payload_json"],
+                "status": "pending",
+                "created_at": p["ts"],
+                "reason": "prediction_register_commit_intent",
+                "applied_at": None,
+                "receipt_sha": p["rsha"],
+            }
             return [{"tag": "n"}]                                          # 409 회피 — SET 성공 1행
         if "e.pred_anchor_verified=true" in q:
             self.node.update(pred_anchor_verified=True, pred_anchor_gen_time=p["gt"])
@@ -164,4 +208,5 @@ def test_s8b_submit_mints_measurement_lock_wired():
     src = (Path(__file__).resolve().parents[1] / "server" / "contexts" / "tree"
            / "judgement_service.py").read_text(encoding="utf-8")
     assert "MeasurementLock" in src and "build_measurement_lock(" in src, "S8b lock mint 미배선"
-    assert "temporal_witness_verified=$tw" in src, "S7b temporal_witness persist 미배선"
+    assert "temporal_witness_verified=$tw" in src, "S7b temporal witness cache 미배선"
+    assert "temporal_witness = False" in src, "signed verdict T2 없이 L3 가 열림"

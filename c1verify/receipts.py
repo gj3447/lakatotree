@@ -39,7 +39,8 @@ RECEIPT_FIELDS_V5 = RECEIPT_FIELDS_V4 + (
     "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
     "source_script_path", "source_result_path",
 )
-RECEIPT_FIELDS = RECEIPT_FIELDS_V5
+RECEIPT_FIELDS_V6 = RECEIPT_FIELDS_V5 + ("history_payload_sha256",)
+RECEIPT_FIELDS = RECEIPT_FIELDS_V6
 _RECEIPT_ARTIFACT_IDENTITY_FIELDS = (
     "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
     "source_script_path", "source_result_path",
@@ -49,6 +50,7 @@ _RECEIPT_ENCODING_VERSION_V2 = "v2"
 _RECEIPT_ENCODING_VERSION_V3 = "v3"
 _RECEIPT_ENCODING_VERSION_V4 = "v4"
 _RECEIPT_ENCODING_VERSION_V5 = "v5"
+_RECEIPT_ENCODING_VERSION_V6 = "v6"
 
 
 def _coerce_metric_value(v):
@@ -76,18 +78,21 @@ def canonical_receipt_blob(fields: dict) -> bytes:
 
     jp1 presence-dispatch: a non-null engine_rule_sha selects v2 (14 fields + v2 header); otherwise
     the v1 path stays byte-identical to the pre-jp1 encoding (legacy carve-out by construction)."""
+    v6 = fields.get("history_payload_sha256") is not None
     v5 = any(fields.get(key) is not None for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
     v4 = fields.get("replay_status") is not None
     v3 = fields.get("comment_sha") is not None
     v2 = fields.get("engine_rule_sha") is not None
-    keys = (RECEIPT_FIELDS_V5 if v5 else
+    keys = (RECEIPT_FIELDS_V6 if v6 else
+            (RECEIPT_FIELDS_V5 if v5 else
             (RECEIPT_FIELDS_V4 if v4 else
              (RECEIPT_FIELDS_V3 if v3 else
-              (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1))))
-    ver = (_RECEIPT_ENCODING_VERSION_V5 if v5 else
+              (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)))))
+    ver = (_RECEIPT_ENCODING_VERSION_V6 if v6 else
+           (_RECEIPT_ENCODING_VERSION_V5 if v5 else
            (_RECEIPT_ENCODING_VERSION_V4 if v4 else
             (_RECEIPT_ENCODING_VERSION_V3 if v3 else
-             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))))
+             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION)))))
     payload = {k: fields.get(k) for k in keys}
     payload["metric_value"] = _coerce_metric_value(payload.get("metric_value"))
     if "regenerated_metric" in payload:
@@ -108,7 +113,7 @@ def receipt_content_sha(fields: dict) -> str:
 #: no cross-kind sha collision for any input). The discriminator receipt_kind is INSIDE the sealed
 #: set, so tampering it breaks the sha (kind-smuggling dies). Byte-exact mirror of
 #: lakatos.verdicts.PREDICTION_RECEIPT_FIELDS / canonical_prediction_blob.
-PREDICTION_RECEIPT_FIELDS = (
+PREDICTION_RECEIPT_FIELDS_V1 = (
     "receipt_kind",
     "tree", "tag",
     "metric_name", "direction", "baseline_value", "noise_band", "scale_type",
@@ -116,19 +121,42 @@ PREDICTION_RECEIPT_FIELDS = (
     "judge_script_sha", "closes_question", "credence", "baseline_lineage",
     "registered_at", "prev_receipt_sha",
 )
+PREDICTION_RECEIPT_FIELDS_V2 = (
+    *PREDICTION_RECEIPT_FIELDS_V1,
+    "anchor_bundle_sha256",
+)
+PREDICTION_RECEIPT_FIELDS_V3 = (
+    *PREDICTION_RECEIPT_FIELDS_V2,
+    "history_payload_sha256",
+)
+PREDICTION_RECEIPT_FIELDS = PREDICTION_RECEIPT_FIELDS_V3
 _PREDICTION_ENCODING_VERSION = "v1"
+_PREDICTION_ENCODING_VERSION_V2 = "v2"
+_PREDICTION_ENCODING_VERSION_V3 = "v3"
 _PREDICTION_NUMERIC_FIELDS = ("baseline_value", "noise_band", "novel_threshold", "credence")
 
 
 def canonical_prediction_blob(fields: dict) -> bytes:
     """Same JCS discipline as the verdict blob, distinct type header — byte-identical to
     lakatos.verdicts.canonical_prediction_blob (numeric fields unify to float, registered_at to str)."""
-    payload = {k: fields.get(k) for k in PREDICTION_RECEIPT_FIELDS}
+    v3 = fields.get("history_payload_sha256") is not None
+    v2 = fields.get("anchor_bundle_sha256") is not None
+    keys = (
+        PREDICTION_RECEIPT_FIELDS_V3
+        if v3
+        else (PREDICTION_RECEIPT_FIELDS_V2 if v2 else PREDICTION_RECEIPT_FIELDS_V1)
+    )
+    payload = {k: fields.get(k) for k in keys}
     for k in _PREDICTION_NUMERIC_FIELDS:
         payload[k] = _coerce_metric_value(payload.get(k))
     payload["registered_at"] = _coerce_judged_at(payload.get("registered_at"))
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    header = f"prediction-receipt\x00{_PREDICTION_ENCODING_VERSION}\n"
+    version = (
+        _PREDICTION_ENCODING_VERSION_V3
+        if v3
+        else (_PREDICTION_ENCODING_VERSION_V2 if v2 else _PREDICTION_ENCODING_VERSION)
+    )
+    header = f"prediction-receipt\x00{version}\n"
     return header.encode("utf-8") + body.encode("utf-8")
 
 

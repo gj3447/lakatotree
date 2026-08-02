@@ -80,7 +80,16 @@ def _valid_receipt_sha(receipt_sha: str | None) -> bool:
     )
 
 
-def receipt_backed_conclusive(verdict: str | None, receipt_sha: str | None) -> bool:
+MIN_CLOSURE_ASSURANCE = 2
+
+
+def receipt_backed_conclusive(
+    verdict: str | None,
+    receipt_sha: str | None,
+    *,
+    assurance_level: int | None,
+    qualitative_self_report: bool = False,
+) -> bool:
     """Whether an adjudication identity can close its preregistered target.
 
     ``progressive`` confirms the target and ``rejected`` falsifies it; both are
@@ -88,9 +97,18 @@ def receipt_backed_conclusive(verdict: str | None, receipt_sha: str | None) -> b
     outcomes retain the question. This pure reducer validates the
     content-addressed receipt identity; the application service owns the
     stronger guarantee that receipt persistence and closure commit atomically.
+    A receipt identity alone is not evidence: frontier closure additionally
+    requires replay-verified assurance (L2+) and rejects qualitative
+    self-report, even when the resulting vocabulary is conclusive.
     """
 
-    return _valid_receipt_sha(receipt_sha) and verdict in QUESTION_ANSWER_VERDICTS
+    return (
+        _valid_receipt_sha(receipt_sha)
+        and verdict in QUESTION_ANSWER_VERDICTS
+        and type(assurance_level) is int
+        and assurance_level >= MIN_CLOSURE_ASSURANCE
+        and qualitative_self_report is False
+    )
 
 
 def step(
@@ -99,6 +117,8 @@ def step(
     *,
     verdict: str | None = None,
     receipt_sha: str | None = None,
+    assurance_level: int | None = None,
+    qualitative_self_report: bool = False,
 ) -> QuestionTransition:
     """Reduce one typed event or reject without changing state.
 
@@ -117,7 +137,12 @@ def step(
                 "self-report cannot close a question"
             )
         if state is QuestionState.OPEN:
-            if receipt_backed_conclusive(verdict, receipt_sha):
+            if receipt_backed_conclusive(
+                verdict,
+                receipt_sha,
+                assurance_level=assurance_level,
+                qualitative_self_report=qualitative_self_report,
+            ):
                 return QuestionTransition(
                     state=QuestionState.CLOSED,
                     effects=(QuestionEffect.RECORD_CLOSURE,),
@@ -140,7 +165,12 @@ def step(
                 "REATTRIBUTE is only valid on CLOSED; use CLOSE or ADJUDICATED on OPEN"
             )
         if state is QuestionState.CLOSED:
-            if receipt_backed_conclusive(verdict, receipt_sha):
+            if receipt_backed_conclusive(
+                verdict,
+                receipt_sha,
+                assurance_level=assurance_level,
+                qualitative_self_report=qualitative_self_report,
+            ):
                 return QuestionTransition(
                     state=QuestionState.CLOSED,
                     effects=(QuestionEffect.APPEND_CLOSER,),

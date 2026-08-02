@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,7 @@ def _run_launcher(path: str, *args: str,
                   env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
            "PYTHONPATH": str(ROOT), "LAKATOS_BIND_HOST": "0.0.0.0",
+           "LAKATOS_ENV_FILE": str(ROOT / ".missing-test-server.env"),
            # GitHub Actions installs into setup-python, not a repository .venv. Security posture
            # must be checked before the durable server interpreter requirement in either layout.
            "LAKATOS_PYTHON": str(ROOT / ".missing-ci-venv" / "bin" / "python")}
@@ -91,6 +93,11 @@ def test_launchers_reject_listener_override_and_have_no_fallback_credentials():
     internal = (ROOT / "server/run_internal.sh").read_text(encoding="utf-8")
     assert 'NEO4J_PASSWORD="${NEO4J_PASSWORD:-' not in internal
     assert 'LAKATOS_MONGO_URI="${LAKATOS_MONGO_URI:-' not in internal
+    public = (ROOT / "server/run.sh").read_text(encoding="utf-8")
+    assert "set -euo pipefail" in public
+    assert 'eval "$(' not in public
+    assert "docker exec postgresql" not in public
+    assert ".claude/settings.json" not in public
 
 
 @pytest.mark.parametrize("name,value", [
@@ -111,17 +118,20 @@ def test_internal_launcher_revalidates_env_file_listener_override(tmp_path):
     env_file = tmp_path / "server.env"
     env_file.write_text(
         "NEO4J_URI=bolt://example.invalid\n"
+        "NEO4J_DATABASE=neo4j\n"
         "NEO4J_USER=neo4j\n"
         "NEO4J_PASSWORD=test\n"
         "LAKATOS_MONGO_URI=mongodb://example.invalid\n"
         "UVICORN_FD=9\n",
         encoding="utf-8",
     )
+    env_file.chmod(0o600)
     proc = _run_launcher(
         "server/run_internal.sh",
         env_overrides={
             "LAKATOS_BIND_HOST": "127.0.0.1",
             "LAKATOS_ENV_FILE": str(env_file),
+            "LAKATOS_PYTHON": sys.executable,
         },
     )
     assert proc.returncode == 2, (proc.stdout, proc.stderr)
@@ -132,12 +142,14 @@ def test_internal_launcher_revalidates_token_after_env_file(tmp_path):
     env_file = tmp_path / "server.env"
     env_file.write_text(
         "NEO4J_URI=bolt://example.invalid\n"
+        "NEO4J_DATABASE=neo4j\n"
         "NEO4J_USER=neo4j\n"
         "NEO4J_PASSWORD=test\n"
         "LAKATOS_MONGO_URI=mongodb://example.invalid\n"
         "LAKATOS_API_TOKEN=\n",
         encoding="utf-8",
     )
+    env_file.chmod(0o600)
     proc = _run_launcher(
         "server/run_internal.sh",
         env_overrides={
@@ -148,6 +160,110 @@ def test_internal_launcher_revalidates_token_after_env_file(tmp_path):
     )
     assert proc.returncode == 2, (proc.stdout, proc.stderr)
     assert "LAKATOS_API_TOKEN" in proc.stderr
+
+
+def test_internal_launcher_uses_canonical_env_bind_for_both_checks_and_exec(
+    tmp_path
+):
+    trace = tmp_path / "python-argv.log"
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$TRACE_FILE\"\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    env_file = tmp_path / "server.env"
+    env_file.write_text(
+        f"LAKATOS_PYTHON={fake_python}\n"
+        "LAKATOS_BIND_HOST=0.0.0.0\n"
+        "LAKATOS_API_TOKEN=canonical-token\n"
+        "NEO4J_URI=bolt://example.invalid\n"
+        "NEO4J_DATABASE=neo4j\n"
+        "NEO4J_USER=neo4j\n"
+        "NEO4J_PASSWORD=test\n"
+        "LAKATOS_MONGO_URI=mongodb://example.invalid\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+
+    proc = _run_launcher(
+        "server/run_internal.sh",
+        env_overrides={
+            "LAKATOS_BIND_HOST": "127.0.0.1",
+            "LAKATOS_ENV_FILE": str(env_file),
+            "TRACE_FILE": str(trace),
+        },
+    )
+
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    calls = trace.read_text(encoding="utf-8").splitlines()
+    assert calls[:2] == [
+        "-m server.auth_posture 0.0.0.0",
+        "-m server.auth_posture 0.0.0.0",
+    ]
+    assert calls[2] == (
+        "-m uvicorn --app-dir server app:app --host 0.0.0.0 --port 55170 --workers 1"
+    )
+
+
+@pytest.mark.parametrize("launcher", ["server/run.sh", "server/run_internal.sh"])
+def test_runtime_launchers_reject_migration_credentials(tmp_path, launcher):
+    env_file = tmp_path / "server.env"
+    env_file.write_text(
+        "NEO4J_URI=bolt://example.invalid\n"
+        "NEO4J_DATABASE=neo4j\n"
+        "NEO4J_USER=runtime\n"
+        "NEO4J_PASSWORD=runtime-secret\n"
+        "LAKATOS_MONGO_URI=mongodb://example.invalid\n"
+        "LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD=must-not-leak\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+
+    proc = _run_launcher(
+        launcher,
+        env_overrides={
+            "LAKATOS_BIND_HOST": "127.0.0.1",
+            "LAKATOS_ENV_FILE": str(env_file),
+            "LAKATOS_PYTHON": sys.executable,
+        },
+    )
+
+    assert proc.returncode == 2, (proc.stdout, proc.stderr)
+    assert "migration credential" in proc.stderr
+    assert "must-not-leak" not in proc.stderr
+
+
+@pytest.mark.parametrize("launcher", ["server/run.sh", "server/run_internal.sh"])
+def test_launchers_never_source_world_readable_or_symlink_env(tmp_path, launcher):
+    env_file = tmp_path / "server.env"
+    env_file.write_text("LAKATOS_API_TOKEN=secret\n", encoding="utf-8")
+    env_file.chmod(0o644)
+    insecure = _run_launcher(
+        launcher,
+        env_overrides={
+            "LAKATOS_BIND_HOST": "127.0.0.1",
+            "LAKATOS_ENV_FILE": str(env_file),
+            "LAKATOS_PYTHON": sys.executable,
+        },
+    )
+    assert insecure.returncode == 2
+    assert "0600" in insecure.stderr
+
+    env_file.chmod(0o600)
+    link = tmp_path / "linked.env"
+    link.symlink_to(env_file)
+    symlinked = _run_launcher(
+        launcher,
+        env_overrides={
+            "LAKATOS_BIND_HOST": "127.0.0.1",
+            "LAKATOS_ENV_FILE": str(link),
+            "LAKATOS_PYTHON": sys.executable,
+        },
+    )
+    assert symlinked.returncode == 2
+    assert "symlink" in symlinked.stderr
 
 
 GUARD_DEFECT = test_external_bind_without_token_is_rejected.__name__

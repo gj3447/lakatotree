@@ -23,11 +23,12 @@ class MaterializationPlan:
 
     @property
     def tx_count(self) -> int:
-        return 1 + len(self.node_chunks) + len(self.edge_chunks) + len(self.question_chunks)
+        return 1
 
     @property
     def op_count(self) -> int:
-        return self.tx_count
+        # Guard + durable intent + metadata + chunk statements + final pointer cleanup.
+        return 4 + len(self.node_chunks) + len(self.edge_chunks) + len(self.question_chunks)
 
     @property
     def rows(self) -> int:

@@ -26,6 +26,7 @@ def _server_source() -> str:
 
 def test_history_audit_log_is_append_only():
     src = _server_source()
-    assert not re.search(r"UPDATE\s+history\b", src, re.I), "history must never be UPDATEd"
-    assert not re.search(r"DELETE\s+FROM\s+history\b", src, re.I), "history must never be DELETEd"
-    assert re.search(r"INSERT\s+INTO\s+history\b", src, re.I), "there must be an append path"
+    table = r"(?:public\.)?history\b"
+    assert not re.search(rf"UPDATE\s+{table}", src, re.I), "history must never be UPDATEd"
+    assert not re.search(rf"DELETE\s+FROM\s+{table}", src, re.I), "history must never be DELETEd"
+    assert re.search(rf"INSERT\s+INTO\s+{table}", src, re.I), "there must be an append path"

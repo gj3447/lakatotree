@@ -24,14 +24,14 @@ def test_tampered_mirror_row_fails_content_verify():
         sync._node_row({'tag': 'b', 'verdict': 'canonical_stage'}, name='lk-b', branch='canonical_path'),
     ]
     # 무결 미러: KG 행이 소스 content_sha 를 그대로 지님 → drift 0.
-    clean_kg = {r['name']: {'name': r['name'], 'content_sha': r['content_sha']} for r in src}
+    clean_kg = {r['name']: dict(r) for r in src}
     assert sync.verify_content(src, clean_kg) == []
 
-    # 변조: 한 행의 sha 를 조작 → content_sha_mismatch 검출(카운트는 여전히 2==2).
+    # 변조: 저장된 sha 자체를 조작 → KG 내부 재유도 불일치 검출(카운트는 여전히 2==2).
     tampered = dict(clean_kg)
-    tampered['lk-b'] = {'name': 'lk-b', 'content_sha': 'deadbeefdeadbeef'}
+    tampered['lk-b'] = dict(clean_kg['lk-b'], content_sha='deadbeefdeadbeef')
     drift = sync.verify_content(src, tampered)
-    assert len(drift) == 1 and drift[0]['reason'] == 'content_sha_mismatch', drift
+    assert len(drift) == 1 and drift[0]['reason'] == 'kg_content_sha_invalid', drift
 
     # 부재: KG 에 행이 없음 → missing_in_kg 검출.
     missing = {'lk-a': clean_kg['lk-a']}

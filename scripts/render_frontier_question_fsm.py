@@ -46,8 +46,10 @@ explicit idempotent self-loop.
 `ADJUDICATED` is a transition event, not a client verdict label. The judgement
 service emits it only after minting the content-addressed verdict receipt in the
 same managed transaction. Exact final verdicts `progressive` and `rejected`
-answer the preregistered question positively or negatively. Partial,
-equivalent, conditional, and unverified outcomes keep the question open.
+answer the preregistered question positively or negatively only when the
+sealed assurance is replay-verified (L2 or higher) and the result is not a
+qualitative self-report. Partial, equivalent, conditional, unverified, L0/L1,
+and qualitative-self-report outcomes keep the question open.
 
 ## State diagram
 

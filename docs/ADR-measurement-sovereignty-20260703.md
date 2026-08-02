@@ -107,7 +107,10 @@ write-cert v4는 클라이언트와 서버의 `$HOME`, XDG state, container moun
 snapshot 절대경로는 materialize 이후 v5 receipt와 MeasurementLock에서만 봉인한다. v2/v3의 역사적
 path-bound 서명 바이트는 그대로 보존한다.
 
-읽기 경계가 `authoritative=true`를 내는 조건은 좁다: current v5 receipt와 그 SHA에 해당하는 lock이
+읽기 경계가 `authoritative=true`를 내는 조건은 좁다: current head가 내용해시 유효한
+아티팩트-bound receipt여야 한다. 신규 V6는 V5 아티팩트-정체성 필드를 그대로 유지하며,
+역사적 V5도 byte-exact 재유도가 가능하고 같은 경계를 충족하면 권위 후보로 남는다. 그 receipt와
+해당 SHA의 lock이
 각각 정확히 하나이고, 둘의 내용해시가 유효하며, node cache·lock command/deps/outs/grade/status가 receipt와
 일치하고, 현재 환경 지문이 lock과 같으며, snapshot 파일 두 개를 현재 다시 해시한 값도 봉인 SHA와 같아야
 한다. 하나라도 빠지면 legacy/unbound/env-drift로 명시적 비권위가 되거나 무결성 409가 난다. 이 계약은

@@ -27,7 +27,6 @@ from lakatos.frontier_state import (
     step as step_question,
 )
 
-from lakatos.verdicts import FORCEFUL_SOURCES as _FORCEFUL_SOURCES
 from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
 from server.contexts.tree.mutations import TreeMutationService, TreeSpec
 from server.contexts.tree.repository import TreeKgRepository
@@ -105,16 +104,41 @@ class TreeService:
         return {"tree": name, "leaf1": leaf1, "leaf2": leaf2, "report": report,
                 "report_sha": hashlib.sha256(rb.encode("utf-8")).hexdigest()[:16]}
 
-    def add_node(self, name: str, node: NodeIn, tree_data: dict | None = None) -> dict:
+    def add_node(
+        self,
+        name: str,
+        node: NodeIn,
+        tree_data: dict | None = None,
+        *,
+        cycle_claim: str | None = None,
+    ) -> dict:
         td = tree_data if tree_data is not None else self.tree_data(name)
-        return self._mutations().add_node(name, node, td)
+        return self._mutations().add_node(
+            name, node, td, cycle_claim=cycle_claim
+        )
 
-    def create_tree(self, name: str, spec: CreateTreeIn, create_only: bool = False) -> dict:
+    def create_tree(
+        self,
+        name: str,
+        spec: CreateTreeIn,
+        create_only: bool = False,
+        *,
+        idempotency_key: str | None = None,
+    ) -> dict:
         """나무 생성/메타 upsert(MERGE LakatosTree). 멱등·last-write-wins. hard_core/frontier_rule
         비우면 policy_warnings 경고만(차단 아님). create_only 는 동명 나무를 409 로 거부한다."""
         if not name or '/' in name:
             raise HTTPException(422, "tree name must be one non-empty path segment")
-        self._assert_budget_raise_gate(name, spec)
+        if idempotency_key is not None and not (
+            1 <= len(idempotency_key) <= 256
+            and idempotency_key.isascii()
+            and idempotency_key.isprintable()
+        ):
+            raise HTTPException(
+                422,
+                "Idempotency-Key must be 1..256 printable ASCII characters",
+            )
+        budget_auth = self._budget_raise_authorization(name, spec)
         tree_spec = TreeSpec(
             name=name,
             title=spec.title,
@@ -136,7 +160,74 @@ class TreeService:
             witness_threshold=spec.witness_threshold,
             cycle_budget=spec.cycle_budget,
         )
-        return self._mutations().upsert_tree(tree_spec, create_only=create_only)
+        return self._mutations().upsert_tree(
+            tree_spec,
+            create_only=create_only,
+            idempotency_key=idempotency_key,
+            budget_raise_confirmed=budget_auth[0],
+            budget_write_cert_verified=budget_auth[1],
+            budget_attestors_snapshot=budget_auth[2],
+        )
+
+    def _budget_raise_authorization(
+        self,
+        name: str,
+        spec: CreateTreeIn,
+    ) -> tuple[bool, bool, tuple[str, ...] | None]:
+        """Prepare evidence; the writer decides whether it is needed under lock.
+
+        Exact durable replays must win before mutable budget/attestor policy is
+        consulted.  Consequently this pre-read never rejects: it only verifies
+        a supplied certificate against the observed attestor snapshot.  The
+        writer compares that snapshot and the budget again while holding the
+        tree lock, closing both stale-read raises and A-B-A retry failures.
+        """
+        confirmed = bool(spec.confirm_budget_raise)
+        if spec.cycle_budget is None:
+            return confirmed, False, None
+        try:
+            td = self.tree_data(name)
+        except Exception:  # noqa: BLE001 - evidence read must not preempt durable replay
+            # A failed or malformed advisory read supplies no authorization
+            # evidence.  The lock-held writer still decides safely: exact
+            # durable replay succeeds; a real attested raise fails closed.
+            return confirmed, False, None
+        attestors = tuple(str(value) for value in (td.get("attestor_dids") or []))
+        current = td.get("cycle_budget")
+        should_verify = (
+            type(current) is int
+            and int(spec.cycle_budget) > current
+            and confirmed
+            and bool(attestors)
+            and spec.write_cert is not None
+        )
+        if not should_verify:
+            return confirmed, False, attestors
+
+        from lakatos.write_cert import CertError, operation_payload_sha256, verify_write_cert
+
+        verb = "create_tree.cycle_budget_raise"
+        payload = spec.model_dump(exclude={"write_cert"})
+        expected_command = {
+            "tree": name,
+            "tag": "__tree__",
+            "prev_receipt_sha": None,
+            "metric_value": None,
+            "script_sha": None,
+            "verb": verb,
+            "command_version": "v4",
+            "result_sha256": None,
+            "operation_payload_sha256": operation_payload_sha256(verb, payload),
+        }
+        try:
+            verify_write_cert(
+                spec.write_cert.model_dump(),
+                expected_command=expected_command,
+                allowlist=list(attestors),
+            )
+        except CertError:
+            return confirmed, False, attestors
+        return confirmed, True, attestors
 
     def _assert_budget_raise_gate(self, name: str, spec: CreateTreeIn) -> None:
         """q-selfdev-budget-ratchet: cycle_budget 상향 self-raise 마찰.
@@ -177,15 +268,15 @@ class TreeService:
                     "cycle_budget 상향은 attestor write-cert 필수 "
                     "(assurance_tier 쓰기와 대칭, q-selfdev-budget-ratchet).",
                 )
-            from lakatos.write_cert import verify_write_cert
-            from lakatos.write_cert import operation_payload_sha256
-            payload = spec.model_dump(exclude={"write_cert"})
-            verify_write_cert(
-                spec.write_cert.model_dump(),
-                expected_command="create_tree.cycle_budget_raise",
-                expected_payload_sha256=operation_payload_sha256(payload),
-                allowlist=attestors,
+            _confirmed, verified, _snapshot = self._budget_raise_authorization(
+                name, spec
             )
+            if not verified:
+                raise HTTPException(
+                    403,
+                    "cycle_budget 상향 write-cert 검증 실패 "
+                    "(sign-X-execute-Y 또는 attestor allow-list 불일치).",
+                )
 
     def list_index_janitor(self, *, delete_empty_probes: bool = False) -> dict:
         """q-selfdev-list-index-janitor: 목록에 뜨지만 실체 비정상이거나 빈 Probe 잔해 정리.
@@ -212,7 +303,27 @@ class TreeService:
         if delete_empty_probes:
             for n in empty_probes:
                 try:
-                    self.delete_tree(n, cascade=True)
+                    td = self.tree_data(n)
+                    incarnation = str(
+                        td.get("tree_incarnation_id") or "legacy-unassigned"
+                    )
+                    key_material = json.dumps(
+                        {"tree": n, "incarnation": incarnation},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    janitor_key = "janitor-empty-probe-" + hashlib.sha256(
+                        key_material.encode("utf-8")
+                    ).hexdigest()
+                    self.delete_tree(
+                        n,
+                        cascade=True,
+                        idempotency_key=janitor_key,
+                        require_empty=True,
+                        require_incarnation_match=True,
+                        expected_incarnation_id=td.get("tree_incarnation_id"),
+                    )
                     deleted.append(n)
                 except HTTPException:
                     pass
@@ -224,31 +335,44 @@ class TreeService:
             "deleted": deleted,
         }
 
-    def delete_tree(self, name: str, cascade: bool = False) -> dict:
-        """나무 삭제(파괴적·복구불가) — create_tree 의 짝. 미존재=404. empty-guard: 노드가 있으면
-        cascade=True 일 때만 전체삭제(아니면 409) — typo 로 진짜 연구트리 날리기 방지.
-
-        R10-s4(후속 PROM): engine verdict/:VerdictReceipt 보유 트리는 cascade 여도 409 하드가드 —
-        cascade 한 방이 증거불멸(G1/G9)을 물리 파기하는 열린 창을 봉합. 조회 실패=409 fail-safe
-        (불확실하면 안 지움 — CLAUDE.md §4 파괴적 결정 규율). full tombstone(포인터죽음화)은 DEFER."""
-        n = len(self.tree_data(name).get("nodes", []))   # 404 if missing
-        if n and not cascade:
-            raise HTTPException(409, f"나무에 노드 {n}개 — cascade=true 로만 전체 삭제(파괴적·복구불가)")
-        if n:   # cascade=True 여도 원장 보유면 하드가드(영수증 물리파괴 방지)
-            try:
-                probe = self.kg("MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e) "
-                                "WHERE e.verdict_source IN $forceful OR e.current_receipt_sha IS NOT NULL "
-                                "RETURN count(e) AS n",
-                                tree=name, forceful=sorted(_FORCEFUL_SOURCES))
-                receipted = int((probe[0].get("n") if probe else 0) or 0)
-            except Exception:
-                raise HTTPException(409, "삭제 전 원장 확인 실패 — fail-safe 차단(불확실하면 안 지움). "
-                                         "KG 연결 확인 후 재시도.")
-            if receipted:
-                raise HTTPException(409, f"engine 판결/영수증 보유 노드 {receipted}개 — cascade 삭제 차단"
-                                         f"(증거불멸 G1/G9: 영수증 물리파괴 금지). demote/포인터죽음은 별도 경로.")
-        self._mutations().delete_tree(name)
-        return {"ok": True, "tree": name, "deleted_nodes": n, "cascade": cascade}
+    def delete_tree(
+        self,
+        name: str,
+        cascade: bool = False,
+        *,
+        idempotency_key: str | None = None,
+        require_empty: bool = False,
+        require_incarnation_match: bool = False,
+        expected_incarnation_id: str | None = None,
+    ) -> dict:
+        """Delete only from the writer's lock-held authoritative decision."""
+        if idempotency_key is None or not (
+            1 <= len(idempotency_key) <= 256
+            and idempotency_key.isascii()
+            and idempotency_key.isprintable()
+        ):
+            raise HTTPException(
+                422,
+                "DELETE requires Idempotency-Key with 1..256 printable ASCII characters",
+            )
+        result = self._mutations().delete_tree(
+            name,
+            cascade=cascade,
+            idempotency_key=idempotency_key,
+            require_empty=require_empty,
+            require_incarnation_match=require_incarnation_match,
+            expected_incarnation_id=expected_incarnation_id,
+        )
+        response = {
+            "ok": True,
+            "tree": name,
+            "deleted_nodes": result["deleted_nodes"],
+            "cascade": cascade,
+            "idempotent": result.get("idempotent") is True,
+        }
+        if result.get("superseded") is True:
+            response["superseded"] = True
+        return response
 
     def open_question(self, name: str, question: QuestionIn) -> dict:
         # 2026-07-23 트리-스코프 수리: MERGE 키를 (tree, name) 복합으로 — 종전 {name} 전역 MERGE 는
@@ -256,6 +380,8 @@ class TreeService:
         # close/n_visits 오염이 트리를 걸쳐 새는 결함이었다(실충돌 관측: judgment-ledger-repair-20260723).
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})
+          SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+          WITH t
           MERGE (qn:OpenQuestion {name:$qn, tree:$tree})
           ON CREATE SET qn.status=$open_state, qn.created_at=$ts, qn.n_visits=0
           WITH t, qn, coalesce(qn.status, $open_state) AS before_state
@@ -289,7 +415,10 @@ class TreeService:
         ts = datetime.now(timezone.utc).isoformat()
         closure_id = f'{name}/{qname}/closure'
         rows = self.kg(
-            """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+            """MATCH (t:LakatosTree {name:$tree})
+              SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+              WITH t
+              MATCH (t)-[:HAS_FRONTIER]->(q {name:$qn})
               SET q._cas=coalesce(q._cas, 0) + 0
               WITH q, coalesce(q.status, $open_state) AS before_state
               WITH q, before_state, before_state=$open_state AS transitioned
@@ -344,24 +473,15 @@ class TreeService:
             QuestionState,
             step as step_question,
         )
-        from lakatos.verdicts import force_of_row
+        from lakatos.verdicts import force_of_row, verdict_assurance
 
         if not closed_by or not str(closed_by).strip():
             raise HTTPException(422, "reattribute requires closed_by (node tag)")
 
-        def _as_str_list(value) -> list:
-            if value is None:
-                return []
-            if isinstance(value, list):
-                return [str(x) for x in value if x is not None and str(x)]
-            if isinstance(value, str):
-                # Repair accidental string-concat artifacts later; keep scalar as one tag.
-                return [value] if value else []
-            return [str(value)]
-
         # Load closer node + question state in one read (tree scope).
         rows = self.kg(
-            """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+            """MATCH (t:LakatosTree {name:$tree})
+               MATCH (t)-[:HAS_FRONTIER]->(q {name:$qn})
                OPTIONAL MATCH (t)-[:HAS_NODE]->(n {tag:$by})
                RETURN coalesce(q.status, 'OPEN') AS q_status,
                       q.closed_by AS closed_by,
@@ -372,6 +492,14 @@ class TreeService:
                       n.current_receipt_sha AS current_receipt_sha,
                       n.measurement_grade AS measurement_grade,
                       n.replay_status AS replay_status,
+                      n.measurement_lock_sha AS measurement_lock_sha,
+                      n.qualitative_self_report AS qualitative_self_report,
+                      COUNT { MATCH (n)-[:HAS_RECEIPT]->
+                        (:VerdictReceipt {receipt_sha:n.current_receipt_sha}) }
+                        AS receipt_bindings,
+                      COUNT { MATCH (n)-[:HAS_LOCK]->
+                        (:MeasurementLock {lock_sha:n.measurement_lock_sha}) }
+                        AS lock_bindings,
                       n.node_state AS node_state""",
             tree=name, qn=qname, by=closed_by,
         )
@@ -388,6 +516,10 @@ class TreeService:
             "current_receipt_sha": row.get("current_receipt_sha"),
             "measurement_grade": row.get("measurement_grade"),
             "replay_status": row.get("replay_status"),
+            "measurement_lock_bound": row.get("lock_bindings") == 1,
+            "qualitative_self_report": bool(
+                row.get("qualitative_self_report")
+            ),
             "node_state": row.get("node_state"),
         }
         # Always present the receipt key so force_of_row applies the ledger gate
@@ -395,7 +527,7 @@ class TreeService:
         if "current_receipt_sha" not in closer:
             closer["current_receipt_sha"] = None
 
-        if force_of_row(closer) != "COUNTS":
+        if force_of_row(closer) != "COUNTS" or row.get("receipt_bindings") != 1:
             raise HTTPException(
                 409,
                 f"reattribute 거부: closer {closed_by!r} force_of_row≠COUNTS "
@@ -407,6 +539,7 @@ class TreeService:
 
         receipt_sha = closer.get("current_receipt_sha") or ""
         verdict = closer.get("verdict") or ""
+        closer_assurance = verdict_assurance(closer)
         before = row.get("q_status") or QuestionState.OPEN.value
         try:
             transition = step_question(
@@ -414,6 +547,10 @@ class TreeService:
                 QuestionEvent.REATTRIBUTE,
                 verdict=verdict,
                 receipt_sha=receipt_sha,
+                assurance_level=closer_assurance["val"],
+                qualitative_self_report=closer[
+                    "qualitative_self_report"
+                ],
             )
         except (ValueError, InvalidQuestionTransition) as exc:
             raise HTTPException(
@@ -433,44 +570,38 @@ class TreeService:
         # Unique closure id per closer+time so reattribute does not overwrite the
         # original close MERGE (id was previously tree/qname/closure only).
         closure_id = f"{name}/{qname}/closure/{closed_by}@{ts}"
-        prev_by = _as_str_list(row.get("closed_by"))
-        # Repair known concat glitch from early reattribute (tagA+tagB as one string).
-        if closed_by not in prev_by:
-            # split accidental joins where both tags are known node tags? keep simple:
-            # if a single element contains closed_by as suffix/prefix, rebuild.
-            repaired: list[str] = []
-            for item in prev_by:
-                if item == closed_by:
-                    repaired.append(item)
-                elif item.endswith(closed_by) and len(item) > len(closed_by):
-                    head = item[: -len(closed_by)]
-                    if head:
-                        repaired.append(head)
-                    repaired.append(closed_by)
-                elif closed_by in item and item != closed_by:
-                    # e.g. "v5...d1..." — keep head before closed_by if present
-                    idx = item.find(closed_by)
-                    if idx > 0:
-                        repaired.append(item[:idx])
-                    repaired.append(closed_by)
-                    tail = item[idx + len(closed_by):]
-                    if tail:
-                        repaired.append(tail)
-                else:
-                    repaired.append(item)
-            prev_by = list(dict.fromkeys([x for x in repaired if x]))  # stable unique
-            if closed_by not in prev_by:
-                prev_by = prev_by + [closed_by]
-        prev_ev = _as_str_list(row.get("closed_events"))
-        if closure_id not in prev_ev:
-            prev_ev = prev_ev + [closure_id]
 
         written = self.kg(
-            """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+            """MATCH (t:LakatosTree {name:$tree})
+               SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+               WITH t
+               MATCH (t)-[:HAS_FRONTIER]->(q {name:$qn})
+               MATCH (t)-[:HAS_NODE]->(n {tag:$by})
                WHERE coalesce(q.status, $open_state) = $closed_state
+                 AND coalesce(n.verdict,'')=coalesce($exp_verdict,'')
+                 AND coalesce(n.verdict_source,'')=coalesce($exp_verdict_source,'')
+                 AND coalesce(n.current_receipt_sha,'')=coalesce($exp_receipt_sha,'')
+                 AND coalesce(n.measurement_grade,'')=coalesce($exp_measurement_grade,'')
+                 AND coalesce(n.replay_status,'')=coalesce($exp_replay_status,'')
+                 AND coalesce(n.node_state,'')=coalesce($exp_node_state,'')
+               WITH q,
+                 CASE
+                   WHEN q.closed_by IS NULL THEN []
+                   WHEN valueType(q.closed_by) STARTS WITH 'LIST' THEN q.closed_by
+                   ELSE [toString(q.closed_by)]
+                 END AS current_closed_by,
+                 CASE
+                   WHEN q.closed_events IS NULL THEN []
+                   WHEN valueType(q.closed_events) STARTS WITH 'LIST' THEN q.closed_events
+                   ELSE [toString(q.closed_events)]
+                 END AS current_closed_events
                SET q._cas = coalesce(q._cas, 0) + 0,
-                   q.closed_by = $closed_by_list,
-                   q.closed_events = $closed_events_list
+                   q.closed_by = CASE WHEN $by IN current_closed_by
+                                      THEN current_closed_by
+                                      ELSE current_closed_by + [$by] END,
+                   q.closed_events = CASE WHEN $closure_id IN current_closed_events
+                                          THEN current_closed_events
+                                          ELSE current_closed_events + [$closure_id] END
                MERGE (c:QuestionClosure {id:$closure_id})
                SET c.closed_by=$by, c.at=$ts, c.tree=$tree, c.question=$qn,
                    c.kind='reattribute', c.receipt_sha=$receipt_sha
@@ -482,8 +613,12 @@ class TreeService:
             closure_id=closure_id,
             ts=ts,
             receipt_sha=receipt_sha,
-            closed_by_list=prev_by,
-            closed_events_list=prev_ev,
+            exp_verdict=row.get("verdict"),
+            exp_verdict_source=row.get("verdict_source"),
+            exp_receipt_sha=row.get("current_receipt_sha"),
+            exp_measurement_grade=row.get("measurement_grade"),
+            exp_replay_status=row.get("replay_status"),
+            exp_node_state=row.get("node_state"),
             open_state=QuestionState.OPEN.value,
             closed_state=QuestionState.CLOSED.value,
         )

@@ -51,7 +51,8 @@ def _canon_svc(*, attestors):
             return [{"verdict": "progressive", "verdict_source": "scripted", "node_state": None,
                      "source_trust": 1.0, "novel_confirmed": True, "qualitative_self_report": False,
                      "author": "", "args": [], "assurance_tier": "anchored",
-                     "attestor_dids": attestors, "prev_receipt_sha": None}]
+                     "attestor_dids": attestors, "prev_receipt_sha": None,
+                     "oldrecs": []}]
         if "cur.verdict='CANONICAL'" in query:
             return [{"tag": p.get("tag")}]
         return []

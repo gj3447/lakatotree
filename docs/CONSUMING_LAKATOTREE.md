@@ -27,6 +27,7 @@ cd lakatotree
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .             # library core — stdlib only
+python -m pip install -e ".[storage]" # + signed storage predeploy CLI and DB drivers
 python -m pip install -e ".[server]"  # + HTTP/MCP and required DB drivers
 python -m pip install -e ".[db]"      # + DB drivers without the web surface
 python -m pip install -e ".[prov]"    # + W3C PROV-O libraries
@@ -130,7 +131,9 @@ The engine was never "one instance". Two layers:
 
 - **Library layer** is already per-process: every `tree_metrics` / `judge` call is an independent,
   stateless in-process engine. Running *N* programmes in parallel = *N* engines, today.
-- **Server + KG layer** is fully env-parameterized (`NEO4J_URI`, `LAKATOS_PG_DSN`,
+- **Server + KG layer** is fully env-parameterized (`NEO4J_URI`, the
+  `LAKATOS_PG_HOST`/`PORT`/`USER`/`PASSWORD`/`DB` fields, and the five
+  `LAKATOS_STORAGE_*` deployment pins,
   `LAKATOS_RAW_ROOT`, `LAKATOS_SCRIPT_ROOTS`, `LAKATOS_LOCATIONS`, `LAKATOS_PRODUCER`, …). Run one
   shared server as a coordination ledger (like a single git remote), or many isolated servers each
   on its own store. Singularity is a deployment choice, not an architectural assumption.

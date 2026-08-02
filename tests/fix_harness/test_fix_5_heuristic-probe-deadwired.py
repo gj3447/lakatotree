@@ -64,7 +64,9 @@ def _service() -> ProgrammeService:
         kg=_unused, hist=_unused, pg=_unused,
         tree_data=lambda n: _TD,
         compute_metrics=lambda td: {"bayes": {"canonical_credence": 0.6}},
-        add_node=_unused, register_prediction=_unused, submit_test_result=_unused,
+        add_node=_unused, compensate_cycle_node=_unused,
+        release_cycle_claim=_unused, register_prediction=_unused,
+        submit_test_result=_unused,
         add_critique=_unused, standing=_unused, insert_artifact=_unused,
     )
 

@@ -160,8 +160,8 @@
    "file": "server/app.py",
    "symbol": "submit_test_result",
    "kind": "def",
-   "line_hint": 417,
-   "sha256": "18f6c4941151478a",
+   "line_hint": 727,
+   "sha256": "6464ddeca38651d8",
    "layer": "hard_core",
    "frege_sinn": "compatibility facade delegating scripted test-result judgement to the tree judgement service"
   },
@@ -2116,14 +2116,14 @@
    "frege_sinn": "incore trial(merge-ort 이식) — judge 순수로 쓰기 0 사전판정, 첫 write 전 4xx 격추"
   },
   {
-   "sourceId": "programme_service.ProgrammeService._rollback_cycle_node",
-   "file": "server/contexts/tree/programme_service.py",
-   "symbol": "_rollback_cycle_node",
-   "kind": "function",
-   "line_hint": 366,
-   "sha256": "e7a75b50c7aec024",
-   "layer": "application",
-   "frege_sinn": "보상 롤백 — 이 사이클 생성 신규노드만, 영수증-안전 가드(verdict_source NULL ∧ ¬HAS_RECEIPT)"
+   "sourceId": "writer.TreeKgWriter.rollback_cycle_node",
+   "file": "server/contexts/tree/writer.py",
+   "symbol": "rollback_cycle_node",
+   "kind": "method",
+   "line_hint": 548,
+   "sha256": "fa220718d5a7037d",
+   "layer": "persistence",
+   "frege_sinn": "lock-held exact compensation — remove only the cycle-owned node while immutable receipt and history guards still authorize rollback"
   },
   {
    "sourceId": "advice.advice_for",
@@ -2300,8 +2300,8 @@
    "file": "server/contexts/tree/judgement_service.py",
    "symbol": "submit_test_result",
    "kind": "method",
-   "line_hint": 592,
-   "sha256": "50301c1d5268dd62",
+   "line_hint": 894,
+   "sha256": "9d83ad08b3a664ac",
    "layer": "measurement_judgment_loop",
    "frege_sinn": "측정 제출의 신뢰경계 단일 관문 — sha 서버 재유도·novel 앵커·tier 디스패치·verdict receipt 사슬이 전부 이 안을 통과 (2026-07-03 평가: ~340줄 god-method, 분해 후보)"
   },

@@ -69,9 +69,13 @@ def verify(backend, cid):
 
         captured = []
         old_kg, old_tx = app_mod.kg, app_mod.kg_tx
+        old_ready = app_mod._require_critique_history_ready
+        old_fenced = app_mod._container.writer_fenced_kg_tx
         try:
             app_mod.kg = lambda *args, **kwargs: []
             app_mod.kg_tx = lambda ops: captured.extend(ops) or [[] for _ in ops]
+            app_mod._require_critique_history_ready = lambda: None
+            app_mod._container.writer_fenced_kg_tx = lambda ops: app_mod.kg_tx(ops)
             result = SimpleNamespace(
                 base=(Belief("live", "live", "protective_belt", 0.5, 0, 0, ()),),
                 removed=("old",),
@@ -86,6 +90,8 @@ def verify(backend, cid):
                 app_mod.hist = old_hist
         finally:
             app_mod.kg, app_mod.kg_tx = old_kg, old_tx
+            app_mod._require_critique_history_ready = old_ready
+            app_mod._container.writer_fenced_kg_tx = old_fenced
         cyphers = "\n".join(query for query, _ in captured)
         assert "MERGE (bel:Belief {tree:$tree, belief_id: b.belief_id})" in cyphers
         assert "bel.tree=$tree AND bel.belief_id IN $removed" in cyphers

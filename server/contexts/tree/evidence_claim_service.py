@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -37,18 +39,31 @@ from lakatos.engine import (
     TheoryEmbedding,
 )
 from lakatos.io.replay import LineageReplayGate
+from lakatos.io.reconcile import (
+    HistoryPayloadError,
+    history_event_id,
+    validate_history_record,
+)
 from lakatos.io.envfp import environment_fingerprint as default_environment_fingerprint
 from lakatos.io.envfp import fingerprint_sha as default_fingerprint_sha
 from lakatos.io.lineage import by_output
 from lakatos.io.prov import replay_command
 from lakatos.measurement_lock import lock_sha as measurement_lock_content_sha
+from lakatos.node_state import NodeState
 from lakatos.world_gates import scan_prompt_injection, web_gate, world_action_gate
 from server.contexts.audit import fsck as audit_fsck
 from server.contexts.tree.judgement_service import (RESULT_MAX_BYTES, SCRIPT_MAX_BYTES,
                                                      isolate_script_file)
 from server.contexts.tree.schemas import CritiqueIn, ObservationIn, ResearchEventIn, WorldActionIn
 from server.file_hashing import file_sha
-from server.ports import HistoryAppend, KgQuery, KgTx
+from server.ports import (
+    GuardedKgOps,
+    HistoryAppend,
+    KgQuery,
+    KgTx,
+    KgTxGuardFailed,
+    WriterFenceLost,
+)
 
 
 FoundationProvider = Callable[[str], FoundationMap | None]
@@ -59,6 +74,29 @@ ReproducibleProvider = Callable[[str, str], bool | None]
 StandingProvider = Callable[[str, str], dict]
 CalibrationProvider = Callable[[str], dict]
 StoreResearchEvent = Callable[[str, str, str, str, str, str, Iterable[str] | None, dict], str]
+
+
+def _serialized_critique_command(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        scope = getattr(self, 'critique_scope', None) or (lambda: nullcontext())
+        with scope():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+def normalize_critique_attack(
+    tree: str,
+    node_tag: str,
+    raw: str,
+) -> tuple[str, bool, bool]:
+    """Return canonical attack, direct-node flag, and unambiguous-reference flag."""
+    if raw == node_tag:
+        return node_tag, True, True
+    prefix = tree + "/"
+    normalized = raw[len(prefix):] if raw.startswith(prefix) else raw
+    return normalized, False, bool(normalized) and "/" not in normalized
 
 
 def _is_sha256(value) -> bool:
@@ -127,14 +165,19 @@ class EvidenceClaimService:
         load_lineage: LineageProvider,
         reproducible_for_node: ReproducibleProvider,
         kg_tx: KgTx | None = None,
+        critique_kg_tx: KgTx | None = None,
         standing: StandingProvider | None = None,
         calibration: CalibrationProvider | None = None,
         store_research_event: StoreResearchEvent | None = None,
         environment_fingerprint: EnvironmentProvider = default_environment_fingerprint,
         fingerprint_sha: FingerprintProvider = default_fingerprint_sha,
+        critique_ready: Callable[[], None] | None = None,
+        critique_scope=None,
+        on_semantic_divergence: Callable[[str], None] | None = None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
+        self.critique_kg_tx = critique_kg_tx or kg_tx
         self.hist = hist
         self.foundation = foundation
         self.load_lineage = load_lineage
@@ -144,6 +187,16 @@ class EvidenceClaimService:
         self.store_research_event_provider = store_research_event or self.store_research_event
         self.environment_fingerprint = environment_fingerprint
         self.fingerprint_sha = fingerprint_sha
+        self.critique_ready = critique_ready
+        self.critique_scope = critique_scope or (lambda: nullcontext())
+        self.on_semantic_divergence = on_semantic_divergence
+
+    def _signal_semantic_divergence(self, reason: str) -> None:
+        """Close the process-local critique gate after a committed semantic lag."""
+
+        callback = self.on_semantic_divergence
+        if callback is not None:
+            callback(reason)
 
     def provenance(self, name: str, tag: str) -> dict:
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
@@ -272,9 +325,352 @@ class EvidenceClaimService:
                     replay=replay_command(script or '', result_path or ''),
                     authoritative=True, authority_reason='content_valid_v5_receipt')
 
+    def _critique_standing_snapshot(self, name: str, tag: str) -> dict | None:
+        rows = self.kg(
+            """MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+               OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+               WITH e, [x IN collect({id:a.id, attacks:a.attacks, by:a.by})
+                        WHERE x.id IS NOT NULL | x] AS args
+               RETURN e.verdict AS verdict,
+                      e.valid_until_rebutted AS vur,
+                      e.current_receipt_sha AS prev_receipt_sha,
+                      args""",
+            tree=name,
+            tag=tag,
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise HistoryPayloadError(
+                f"critique standing node identity is duplicated: {name}/{tag}"
+            )
+        row = dict(rows[0])
+        raw_vur = row.get("vur")
+        if raw_vur is not None and type(raw_vur) is not bool:
+            raise HistoryPayloadError(
+                f"critique standing valid_until_rebutted is malformed: {name}/{tag}"
+            )
+        row["vur"] = True if raw_vur is None else raw_vur
+        args = row.get("args")
+        if not isinstance(args, list) or not all(
+            isinstance(item, dict)
+            and isinstance(item.get("id"), str)
+            and isinstance(item.get("attacks"), str)
+            and isinstance(item.get("by"), str)
+            for item in args
+        ):
+            raise HistoryPayloadError(
+                f"critique standing argument projection is malformed: {name}/{tag}"
+            )
+        row["args"] = sorted(
+            ({"id": item["id"], "attacks": item["attacks"], "by": item["by"]}
+             for item in args),
+            key=lambda item: (item["id"], item["attacks"], item["by"]),
+        )
+        return row
+
+    @staticmethod
+    def _critique_standing_decision(tag: str, snapshot: dict) -> dict:
+        verdict_arg = f"verdict:{tag}"
+        arguments, attacks = assemble_af(tag, snapshot["args"])
+        stands = verdict_arg in grounded_extension(arguments, attacks)
+        decision = reconcile_standing(
+            snapshot.get("verdict"),
+            stands=stands,
+            valid_until_rebutted=bool(snapshot.get("vur")),
+        )
+        return {"stands": stands, **decision}
+
+    def _reconcile_one_critique_standing(
+        self,
+        name: str,
+        tag: str,
+        *,
+        attempts: int = 2,
+        project_history: bool = True,
+    ) -> dict | None:
+        """Repair one derived standing invariant with an actor-aware exact CAS."""
+
+        last: dict | None = None
+        for _attempt in range(max(1, attempts)):
+            snapshot = self._critique_standing_snapshot(name, tag)
+            if snapshot is None:
+                return None
+            decision = self._critique_standing_decision(tag, snapshot)
+            last = dict(decision)
+            if decision.get("demoted") is not True:
+                return last
+
+            ts = datetime.now(timezone.utc).isoformat()
+            previous_receipt = snapshot.get("prev_receipt_sha")
+            receipt_sha = receipt_content_sha({
+                "tree": name,
+                "tag": tag,
+                "target_id": None,
+                "verdict": "former_canonical",
+                "verdict_source": "engine",
+                "metric_name": None,
+                "metric_value": None,
+                "novel_confirmed": None,
+                "lakatos_status": None,
+                "judged_at": ts,
+                "judge_script_sha": None,
+                "prev_receipt_sha": previous_receipt,
+                "engine_rule_sha": ENGINE_RULE_SHA,
+            })
+            retraction_event_id = f"ob-standing-{receipt_sha}"
+            retraction_payload = {
+                "from": "CANONICAL",
+                "to": "former_canonical",
+                "reason": decision["reason"],
+                "receipt_sha": receipt_sha,
+            }
+            retraction_payload_json = validate_history_record(
+                name,
+                "standing_retraction",
+                tag,
+                retraction_payload,
+                retraction_event_id,
+            )
+            retraction_query = """MATCH (t:LakatosTree {name:$tree})
+                   SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                   WITH t
+                   MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
+                   SET e._cas=coalesce(e._cas,0)+0
+                   WITH t, e
+                   WHERE coalesce(e.verdict,'')=coalesce($exp_verdict,'')
+                     AND coalesce(e.current_receipt_sha,'')=coalesce($prev_rsha,'')
+                     AND coalesce(e.valid_until_rebutted,true)=$exp_vur
+                   OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                   WITH t, e, [x IN collect({id:a.id, attacks:a.attacks, by:a.by})
+                                    WHERE x.id IS NOT NULL | x] AS arg_fp
+                   WHERE size(arg_fp)=size($exp_args)
+                     AND all(x IN arg_fp WHERE x IN $exp_args)
+                   OPTIONAL MATCH (existing_rec:VerdictReceipt {receipt_sha:$rsha})
+                   WITH t, e, arg_fp,
+                        [r IN collect(existing_rec) WHERE r IS NOT NULL] AS recs
+                   OPTIONAL MATCH (existing_outbox:OutboxEntry {id:$event_id})
+                   WITH t, e, arg_fp, recs,
+                        [o IN collect(existing_outbox) WHERE o IS NOT NULL] AS outboxes
+                   WHERE (size(recs)=0 OR (size(recs)=1 AND coalesce(
+                     recs[0].tree=$tree AND recs[0].tag=$tag
+                     AND recs[0].verdict='former_canonical'
+                     AND recs[0].verdict_source='engine'
+                     AND recs[0].judged_at=$ts
+                     AND coalesce(recs[0].prev_receipt_sha,'')=coalesce($prev_rsha,'')
+                     AND recs[0].engine_rule_sha=$engine_rule_sha, false)))
+                     AND (size(outboxes)=0 OR (size(outboxes)=1 AND coalesce(
+                       outboxes[0].tree=$tree
+                       AND outboxes[0].op='standing_retraction'
+                       AND outboxes[0].node_tag=$tag
+                       AND outboxes[0].payload=$payload
+                       AND outboxes[0].reason='standing_retraction_commit_intent'
+                       AND outboxes[0].created_at=$ts
+                       AND ((outboxes[0].status='pending'
+                             AND outboxes[0].applied_at IS NULL)
+                            OR (outboxes[0].status='applied'
+                                AND outboxes[0].applied_at IS NOT NULL)), false)))
+                   MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
+                     ON CREATE SET rec.tree=$tree, rec.tag=$tag,
+                       rec.verdict='former_canonical', rec.verdict_source='engine',
+                       rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
+                       rec.engine_rule_sha=$engine_rule_sha
+                   MERGE (o:OutboxEntry {id:$event_id})
+                     ON CREATE SET o.tree=$tree, o.op='standing_retraction',
+                       o.node_tag=$tag, o.payload=$payload, o.status='pending',
+                       o.created_at=$ts,
+                       o.reason='standing_retraction_commit_intent'
+                   SET e.verdict='former_canonical', e.verdict_source='engine',
+                       e.node_state=$former_node_state,
+                       e.current_best_pointer=false, e.standing_retracted_at=$ts,
+                       e.current_receipt_sha=$rsha
+                   MERGE (e)-[:HAS_RECEIPT]->(rec)
+                   RETURN e.tag AS tag,
+                     o.tree=$tree AND o.op='standing_retraction'
+                     AND o.node_tag=$tag AND o.payload=$payload
+                     AND o.reason='standing_retraction_commit_intent'
+                     AND ((o.status='pending' AND o.applied_at IS NULL)
+                          OR (o.status='applied' AND o.applied_at IS NOT NULL))
+                       AS outbox_valid"""
+            retraction_params = dict(
+                tree=name, tag=tag,
+                exp_verdict=snapshot.get("verdict"),
+                exp_vur=bool(snapshot.get("vur")), exp_args=snapshot["args"],
+                ts=ts, prev_rsha=previous_receipt, rsha=receipt_sha,
+                engine_rule_sha=ENGINE_RULE_SHA,
+                event_id=retraction_event_id, payload=retraction_payload_json,
+                former_node_state=NodeState.FORMER_CANONICAL.value,
+            )
+            tx_port = getattr(self, "critique_kg_tx", None)
+            if tx_port is None:
+                rows = self.kg(retraction_query, **retraction_params)
+            else:
+                tx_rows = tx_port([(retraction_query, retraction_params)])
+                rows = tx_rows[0] if tx_rows else []
+            if len(rows) == 1 and rows[0].get("outbox_valid") is True:
+                if project_history:
+                    self.hist(
+                        name,
+                        "standing_retraction",
+                        tag,
+                        retraction_payload,
+                        event_id=retraction_event_id,
+                    )
+                return last
+
+        snapshot = self._critique_standing_snapshot(name, tag)
+        if snapshot is None:
+            return None
+        last = self._critique_standing_decision(tag, snapshot)
+        if last.get("demoted") is True:
+            last = {**last, "demoted": False, "demote_skipped": "concurrent_change"}
+        return last
+
+    def audit_critique_standing(self) -> dict:
+        """Read-only exhaustive report of standing and persisted-state violations."""
+
+        try:
+            rows = self.kg(
+                """MATCH (t:LakatosTree)-[:HAS_NODE]->(e)
+                   WHERE e.verdict IN ['CANONICAL','former_canonical']
+                   OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+                   WITH t, e, [x IN collect({id:a.id, attacks:a.attacks, by:a.by})
+                                    WHERE x.id IS NOT NULL | x] AS args
+                   RETURN t.name AS tree, e.tag AS tag, e.verdict AS verdict,
+                          e.node_state AS node_state, args
+                   ORDER BY tree, tag"""
+            )
+            violations = []
+            state_violations = []
+            for row in rows:
+                tree = row.get("tree")
+                tag = row.get("tag")
+                if not isinstance(tree, str) or not isinstance(tag, str):
+                    raise HistoryPayloadError("semantic standing projection is malformed")
+                if row.get("verdict") == "former_canonical":
+                    if row.get("node_state") != NodeState.FORMER_CANONICAL.value:
+                        state_violations.append({
+                            "tree": tree,
+                            "tag": tag,
+                            "node_state": row.get("node_state"),
+                        })
+                    continue
+                snapshot = self._critique_standing_snapshot(tree, tag)
+                if snapshot is None:
+                    raise HistoryPayloadError("semantic standing node disappeared")
+                decision = self._critique_standing_decision(tag, snapshot)
+                if decision.get("demoted") is True:
+                    violations.append({"tree": tree, "tag": tag})
+            failures = []
+            if violations:
+                failures.append("semantic.critique_standing")
+            if state_violations:
+                failures.append("semantic.former_node_state")
+            return {
+                "ok": not failures,
+                "checked": len(rows),
+                "violations": violations,
+                "state_violations": state_violations,
+                "failures": failures,
+            }
+        except Exception as exc:  # noqa: BLE001 - audit is fail-closed and path-safe
+            return {
+                "ok": False,
+                "checked": 0,
+                "violations": [],
+                "state_violations": [],
+                "failures": [f"semantic.audit.{type(exc).__name__}"],
+            }
+
+    def _repair_legacy_former_node_state(
+        self, name: str, tag: str, expected_state: Any
+    ) -> bool:
+        tx_port = getattr(self, "critique_kg_tx", None)
+        query = (
+            """MATCH (t:LakatosTree {name:$tree})
+               SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+               WITH t
+               MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
+               WHERE e.verdict='former_canonical'
+                 AND ((e.node_state IS NULL AND $expected_state IS NULL)
+                      OR e.node_state=$expected_state)
+               SET e.node_state=$former_node_state
+               RETURN e.tag AS tag"""
+        )
+        params = dict(
+            tree=name, tag=tag, expected_state=expected_state,
+            former_node_state=NodeState.FORMER_CANONICAL.value,
+        )
+        if tx_port is None:
+            rows = self.kg(query, **params)
+        else:
+            tx_rows = tx_port([(query, params)])
+            rows = tx_rows[0] if tx_rows else []
+        return len(rows) == 1
+
+    def reconcile_critique_standing(self) -> dict:
+        """Repair every derived standing violation, then prove a fresh clean scan."""
+
+        initial = self.audit_critique_standing()
+        repaired = []
+        state_repaired = []
+        for item in initial.get("violations", []):
+            outcome = self._reconcile_one_critique_standing(
+                item["tree"], item["tag"]
+            )
+            if outcome and outcome.get("demoted") is True:
+                repaired.append({"tree": item["tree"], "tag": item["tag"]})
+        for item in initial.get("state_violations", []):
+            if self._repair_legacy_former_node_state(
+                item["tree"], item["tag"], item.get("node_state")
+            ):
+                state_repaired.append({"tree": item["tree"], "tag": item["tag"]})
+        final = self.audit_critique_standing()
+        return {
+            "ok": final.get("ok") is True,
+            "checked": final.get("checked", 0),
+            "repaired": repaired,
+            "state_repaired": state_repaired,
+            "violations": final.get("violations", []),
+            "state_violations": final.get("state_violations", []),
+            "failures": final.get("failures", []),
+        }
+
+    @_serialized_critique_command
     def add_critique(self, name: str, tag: str, c: CritiqueIn) -> dict:
+        ready = getattr(self, "critique_ready", None)
+        if ready is not None:
+            ready()
         arg_full = f'{name}/{c.arg_id}'
         create_claim = uuid4().hex
+        (
+            normalized_history_attacks,
+            attack_targets_node,
+            attack_reference_valid,
+        ) = normalize_critique_attack(
+            name,
+            tag,
+            c.attacks,
+        )
+        history_payload = c.model_dump()
+        history_payload['attacks'] = normalized_history_attacks
+        critique_event_id = history_event_id(name, 'critique', arg_full)
+        # Validate before the atomic Neo4j mutation.  Neo4j accepts some strings
+        # (notably NUL escapes and lone surrogates) that PostgreSQL JSONB cannot
+        # project; committing such an intent would permanently poison replay.
+        try:
+            history_payload_json = validate_history_record(
+                name,
+                "critique",
+                tag,
+                history_payload,
+                critique_event_id,
+            )
+        except HistoryPayloadError as exc:
+            raise HTTPException(
+                422, "critique contains text PostgreSQL JSONB cannot represent"
+            ) from exc
+        mutation_ts = datetime.now(timezone.utc).isoformat()
         # fail-loud(나생문 #13): MERGE 가 노드 부재 시 no-op 이면 형제 mutation 과 달리 200·history 를
         #   남겨 provenance 를 오염한다 → RETURN e.tag 로 매칭 확인, 0행이면 hist 전에 404.
         # Lock the tree before re-reading the tree-global argument id.  Argument ids are encoded as
@@ -282,59 +678,160 @@ class EvidenceClaimService:
         # when they target different nodes.  The guarded MERGE is first-write-wins and never SETs
         # an existing argument.  ``lkt_argument_id_unique`` is the schema-level second line of
         # defence for writers outside this service.
-        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-              SET t._argument_cas = coalesce(t._argument_cas, 0) + 0
+        mutation_query = """MATCH (t:LakatosTree {name:$tree})
+              SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+              WITH t
+              MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
+              SET e._tree_write_cas=coalesce(e._tree_write_cas,0)+0
               WITH t, e
               OPTIONAL MATCH (existing:Argument {id:$arg_full})
               WITH t, e, [a IN collect(existing) WHERE a IS NOT NULL] AS existing_nodes
               OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(target:Argument)
-                WHERE target.id = CASE
-                    WHEN $attacks STARTS WITH $tree+'/' THEN $attacks
-                    ELSE $tree+'/'+$attacks END
+                WHERE $attack_reference_valid AND NOT $attack_targets_node
+                  AND target.id=$tree+'/'+$normalized_attacks
               WITH t, e, existing_nodes, collect(target.id) AS target_ids
-              WITH t, e, existing_nodes,
-                   CASE WHEN $attacks=$tag THEN $tag
-                        WHEN size(target_ids)>0 THEN last(split(target_ids[0], '/'))
+              OPTIONAL MATCH (prior_intent:OutboxEntry {id:$history_event_id})
+              WITH t, e, existing_nodes, target_ids,
+                   [o IN collect(prior_intent) WHERE o IS NOT NULL] AS prior_intents
+              WITH t, e, existing_nodes, prior_intents,
+                   CASE WHEN $attack_targets_node THEN $normalized_attacks
+                        WHEN $attack_reference_valid AND size(target_ids)=1
+                          THEN $normalized_attacks
                         ELSE null END AS normalized_attacks
-              WITH t, e, existing_nodes, normalized_attacks,
+              WITH t, e, existing_nodes, prior_intents, normalized_attacks,
                    size(existing_nodes) AS preexisting_count,
-                   normalized_attacks IS NOT NULL AS target_valid
-              FOREACH (_ IN CASE WHEN target_valid AND preexisting_count=0 THEN [1] ELSE [] END |
+                   normalized_attacks IS NOT NULL AS target_valid,
+                   CASE
+                     WHEN size(prior_intents)=0 THEN true
+                     WHEN size(prior_intents)=1 THEN coalesce(
+                       prior_intents[0].tree=$tree
+                       AND prior_intents[0].op='critique'
+                       AND prior_intents[0].node_tag=$tag
+                       AND prior_intents[0].payload=$history_payload_json
+                       AND prior_intents[0].reason='critique_commit_intent'
+                       AND prior_intents[0].created_at IS NOT NULL
+                       AND ((prior_intents[0].status='pending'
+                             AND prior_intents[0].applied_at IS NULL)
+                            OR (prior_intents[0].status='applied'
+                                AND prior_intents[0].applied_at IS NOT NULL)),
+                       false)
+                     ELSE false
+                   END AS intent_prevalid
+              FOREACH (_ IN CASE WHEN target_valid AND preexisting_count=0
+                                      AND intent_prevalid THEN [1] ELSE [] END |
                 MERGE (a:Argument {id:$arg_full})
                   ON CREATE SET a:LakatosArgument, a._argument_create_claim=$create_claim,
                                 a.tree_name=$tree, a.local_id=$arg,
                                 a.by=$by, a.kind=$kind, a.body=$body,
                                 a.attacks=normalized_attacks, a.at=$ts)
-              WITH t, e, normalized_attacks, target_valid
+              WITH t, e, normalized_attacks, target_valid, intent_prevalid
               OPTIONAL MATCH (actual:Argument {id:$arg_full})
-              WITH t, e, normalized_attacks, target_valid,
+              WITH t, e, normalized_attacks, target_valid, intent_prevalid,
                    [a IN collect(actual) WHERE a IS NOT NULL] AS actual_nodes
-              WITH t, e, normalized_attacks, target_valid, actual_nodes,
+              WITH t, e, normalized_attacks, target_valid, intent_prevalid, actual_nodes,
                    size(actual_nodes) AS existing_count,
                    CASE WHEN size(actual_nodes)=1 THEN actual_nodes[0] ELSE null END AS actual
-              WITH t, e, normalized_attacks, target_valid, existing_count, actual,
-                   coalesce(actual._argument_create_claim=$create_claim, false) AS created
+              WITH t, e, normalized_attacks, target_valid, intent_prevalid,
+                   existing_count, actual,
+                   coalesce(actual._argument_create_claim=$create_claim, false) AS created,
+                   coalesce(existing_count=1
+                     AND actual:LakatosArgument
+                     AND actual._argument_create_claim IS NULL
+                     AND actual.tree_name=$tree AND actual.local_id=$arg
+                     AND actual.by=$by AND actual.kind=$kind
+                     AND actual.body=$body AND actual.attacks=normalized_attacks
+                     AND actual.at IS NOT NULL
+                     AND COUNT { MATCH (owner)-[:HAS_ARGUMENT]->(actual) }=1
+                     AND EXISTS { MATCH (e)-[:HAS_ARGUMENT]->(actual) }, false) AS idempotent
               FOREACH (_ IN CASE WHEN created THEN [1] ELSE [] END |
                 MERGE (e)-[:HAS_ARGUMENT]->(actual)
                 REMOVE actual._argument_create_claim)
-              WITH t, e, normalized_attacks, target_valid, existing_count, actual, created,
-                   (NOT created AND existing_count=1
-                    AND actual.by=$by AND actual.kind=$kind
-                    AND actual.body=$body AND actual.attacks=normalized_attacks
-                    AND EXISTS { MATCH (e)-[:HAS_ARGUMENT]->(actual) }) AS idempotent
+              FOREACH (_ IN CASE WHEN (created OR idempotent) AND intent_prevalid
+                                      THEN [1] ELSE [] END |
+                MERGE (o:OutboxEntry {id:$history_event_id, tree:$tree,
+                                      op:'critique', node_tag:$tag,
+                                      payload:$history_payload_json})
+                  ON CREATE SET o.status='pending', o.created_at=$ts,
+                                o.reason='critique_commit_intent')
+              WITH t, e, normalized_attacks, target_valid, existing_count,
+                   created, idempotent
+              OPTIONAL MATCH (final_intent:OutboxEntry {id:$history_event_id})
+              WITH e, normalized_attacks, target_valid, existing_count,
+                   created, idempotent,
+                   [o IN collect(final_intent) WHERE o IS NOT NULL] AS final_intents
+              WITH e, normalized_attacks, target_valid, existing_count,
+                   created, idempotent, final_intents,
+                   CASE WHEN size(final_intents)=1 THEN coalesce(
+                     final_intents[0].tree=$tree
+                     AND final_intents[0].op='critique'
+                     AND final_intents[0].node_tag=$tag
+                     AND final_intents[0].payload=$history_payload_json
+                     AND final_intents[0].reason='critique_commit_intent'
+                     AND final_intents[0].created_at IS NOT NULL
+                     AND ((final_intents[0].status='pending'
+                           AND final_intents[0].applied_at IS NULL)
+                          OR (final_intents[0].status='applied'
+                              AND final_intents[0].applied_at IS NOT NULL)),
+                     false) ELSE false END AS intent_valid
               RETURN e.tag AS tag, target_valid,
                      created,
                      coalesce(idempotent, false) AS idempotent,
                      existing_count AS existing_count,
-                     normalized_attacks AS attacks""",
-                tree=name, tag=tag, arg=c.arg_id, arg_full=arg_full,
-                create_claim=create_claim,
-                by=c.by, kind=c.kind, body=c.body,
-                attacks=c.attacks, ts=datetime.now(timezone.utc).isoformat())
+                     normalized_attacks AS attacks,
+                     size(final_intents) AS intent_count,
+                     intent_valid AS intent_valid"""
+        mutation_params = dict(
+            tree=name, tag=tag, arg=c.arg_id, arg_full=arg_full,
+            create_claim=create_claim,
+            by=c.by, kind=c.kind, body=c.body,
+            normalized_attacks=normalized_history_attacks,
+            attack_targets_node=attack_targets_node,
+            attack_reference_valid=attack_reference_valid,
+            ts=mutation_ts,
+            history_event_id=critique_event_id,
+            history_payload_json=history_payload_json,
+        )
+        tx_port = getattr(self, "critique_kg_tx", None)
+        if tx_port is None:
+            tx_port = getattr(self, "kg_tx", None)
+        if tx_port is None:
+            # Lightweight test/in-process ports predate the transaction seam.
+            rows = self.kg(mutation_query, **mutation_params)
+        else:
+            try:
+                tx_rows = tx_port(GuardedKgOps([
+                    (
+                        """MATCH (t:LakatosTree {name:$tree})
+                           SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                           RETURN t.name AS tree""",
+                        {"tree": name},
+                    ),
+                    (mutation_query, mutation_params),
+                ]))
+            except WriterFenceLost as exc:
+                self._signal_semantic_divergence(
+                    "runtime.global_writer_fence.lost"
+                )
+                raise HTTPException(
+                    503, "critique writer authority was lost before commit"
+                ) from exc
+            except KgTxGuardFailed as exc:
+                raise HTTPException(
+                    404, f'노드 없음: {tag} (critique 대상 부재 — 등재 거부)'
+                ) from exc
+            rows = tx_rows[1] if len(tx_rows) > 1 else []
         if not rows:
             raise HTTPException(404, f'노드 없음: {tag} (critique 대상 부재 — 등재 거부)')
         claim = rows[0]
-        required_result = {'target_valid', 'created', 'idempotent', 'existing_count', 'attacks'}
+        required_result = {
+            'target_valid',
+            'created',
+            'idempotent',
+            'existing_count',
+            'attacks',
+            'intent_count',
+            'intent_valid',
+        }
         missing_result = required_result.difference(claim)
         if missing_result:
             raise HTTPException(
@@ -347,6 +844,8 @@ class EvidenceClaimService:
         idempotent = claim['idempotent']
         existing_count = claim['existing_count']
         normalized_attacks = claim['attacks']
+        intent_count = claim['intent_count']
+        intent_valid = claim['intent_valid']
         result_types_valid = (
             type(target_valid) is bool
             and type(created) is bool
@@ -354,9 +853,13 @@ class EvidenceClaimService:
             and type(existing_count) is int
             and existing_count >= 0
             and (normalized_attacks is None or isinstance(normalized_attacks, str))
+            and type(intent_count) is int
+            and intent_count >= 0
+            and type(intent_valid) is bool
         )
         result_state_valid = (
-            (not created or (
+            (not target_valid or normalized_attacks == normalized_history_attacks)
+            and (not created or (
                 target_valid and existing_count == 1
                 and not idempotent and bool(normalized_attacks)
             ))
@@ -369,6 +872,9 @@ class EvidenceClaimService:
                 if target_valid
                 else normalized_attacks is None and not created and not idempotent
             )
+            and (not (created or idempotent) or (
+                intent_count == 1 and intent_valid
+            ))
         )
         if not result_types_valid or not result_state_valid:
             raise HTTPException(500, 'argument integrity result inconsistent')
@@ -378,15 +884,21 @@ class EvidenceClaimService:
             raise HTTPException(
                 409, f"argument '{c.arg_id}' is immutable; concurrent content won the identity")
 
-        if created:
-            history_payload = c.model_dump()
-            history_payload['attacks'] = normalized_attacks
-            self.hist(name, 'critique', tag, history_payload)
-        # ★certify.py:13 의 '새 반박이 G3(stands)를 깨면 자동 철회' 이행 — 승격이 stands 를 *요구*한
-        # 것의 대칭. 비판 등재 직후 grounded standing 을 재계산하고, CANONICAL 의 standing 이 깨졌으면
-        # former_canonical 로 강등(결정론 grounded_extension 사실에만 근거, verdict_source='engine').
-        # Exact retries still reconcile standing.  The argument write and this side effect are two
-        # transactions; returning early here would make a crash between them permanently sticky.
+        # Creators and exact retries persist the same intent atomically with the accepted domain
+        # state. PostgreSQL adopts an exact legacy row or inserts once, then verifies immutable
+        # content before the pending intent is marked applied.
+        history_payload['attacks'] = normalized_attacks
+        cause_projected = self.hist(
+            name,
+            'critique',
+            tag,
+            history_payload,
+            event_id=critique_event_id,
+        )
+        # Exact retries and the autonomous startup/operator sweep share the same
+        # actor-aware standing CAS.  Demotion, receipt, and its PG outbox intent
+        # commit in one Neo transaction; process death can therefore be replayed
+        # without another client retry.
         out: dict = {
             'ok': True,
             'note': (
@@ -396,63 +908,27 @@ class EvidenceClaimService:
         }
         if idempotent:
             out['idempotent'] = True
-        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                     OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
-                     RETURN e.verdict AS verdict,
-                            coalesce(e.valid_until_rebutted, true) AS vur,
-                            e.current_receipt_sha AS prev_receipt_sha,
-                            collect({id:a.id, attacks:a.attacks, by:a.by}) AS args""",
-                       tree=name, tag=tag)
-        if rows:
-            verdict_arg = f'verdict:{tag}'
-            arguments, attacks = assemble_af(tag, rows[0]['args'])
-            stands = verdict_arg in grounded_extension(arguments, attacks)
-            decision = reconcile_standing(rows[0]['verdict'], stands=stands,
-                                          valid_until_rebutted=bool(rows[0]['vur']))
-            out['standing'] = {'stands': stands, **decision}
-            if decision['demoted']:
-                # #H7 (설계감사 2026-06-26): 강등도 H5 와 동형 낙관적 CAS — read→write 사이 동시 재승격/
-                #   새 critique 로 스냅샷(verdict + 논증집합 지문)이 변하면 0행 → stale 강등 *미적용*(skip).
-                #   강등은 사용자 요청이 아니라 critique 의 side-effect 라 409 가 아니라 skip(다음 standing read
-                #   가 최신상태로 재평가). H5(승격 방향)의 강등 방향 미러 — verdict-mutating write 의 원자성 통일.
-                snap_fp = sorted(f"{a['id']}|{a.get('attacks') or ''}"
-                                 for a in (rows[0]['args'] or []) if a.get('id'))
-                # R4(후속 PROM): standing 철회 강등도 원장에 산다 — v1 null-스펙 receipt + 포인터 CAS.
-                _ts = datetime.now(timezone.utc).isoformat()
-                _prev = rows[0].get('prev_receipt_sha')
-                _rsha = receipt_content_sha(dict(
-                    tree=name, tag=tag, target_id=None, verdict='former_canonical',
-                    verdict_source='engine', metric_name=None, metric_value=None,
-                    novel_confirmed=None, lakatos_status=None, judged_at=_ts,
-                    judge_script_sha=None, prev_receipt_sha=_prev,
-                    engine_rule_sha=ENGINE_RULE_SHA))   # jp1: 강등도 판관 행위 — 정체성 봉인(v2)
-                demoted_rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                      SET e._cas = coalesce(e._cas,0) + 0
-                      WITH t, e
-                      WHERE coalesce(e.verdict,'') = coalesce($exp_verdict,'')
-                        AND coalesce(e.current_receipt_sha,'') = coalesce($prev_rsha,'')
-                      WITH t, e
-                      OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
-                      WITH t, e, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
-                      WHERE size(arg_fp) = $exp_argn AND all(x IN arg_fp WHERE x IN $exp_arg_fp)
-                      SET e.verdict='former_canonical', e.verdict_source='engine',
-                          e.current_best_pointer=false, e.standing_retracted_at=$ts
-                      MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
-                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='former_canonical',
-                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev_rsha,
-                          rec.engine_rule_sha=$engine_rule_sha
-                      MERGE (e)-[:HAS_RECEIPT]->(rec)
-                      SET e.current_receipt_sha=$rsha
-                      RETURN e.tag AS tag""",
-                        tree=name, tag=tag, exp_verdict=rows[0]['verdict'],
-                        exp_argn=len(snap_fp), exp_arg_fp=snap_fp,
-                        ts=_ts, prev_rsha=_prev, rsha=_rsha,
-                        engine_rule_sha=ENGINE_RULE_SHA)
-                if not demoted_rows:   # 원자 CAS 0행 = 스냅샷 변경(동시 재승격/critique) → stale 강등 미적용
-                    out['standing']['demote_skipped'] = 'concurrent_change'
-                else:
-                    self.hist(name, 'standing_retraction', tag,
-                              {'from': 'CANONICAL', 'to': 'former_canonical', 'reason': decision['reason']})
+        try:
+            standing_result = self._reconcile_one_critique_standing(
+                name, tag, project_history=cause_projected is not False
+            )
+        except Exception:  # noqa: BLE001 - critique+intent already committed
+            self._signal_semantic_divergence(
+                "runtime.critique_standing.reconciliation_failed"
+            )
+            out["standing_reconciliation_pending"] = True
+        else:
+            if standing_result is not None:
+                out['standing'] = standing_result
+            if cause_projected is False and standing_result is not None:
+                self._signal_semantic_divergence(
+                    "runtime.critique_standing.causal_projection_pending"
+                )
+                out["standing_reconciliation_pending"] = True
+            if standing_result and standing_result.get("demote_skipped"):
+                self._signal_semantic_divergence(
+                    "runtime.critique_standing.reconciliation_incomplete"
+                )
         return out
 
     def add_research_event(self, name: str, tag: str, ev: ResearchEventIn) -> dict:
@@ -462,7 +938,10 @@ class EvidenceClaimService:
                                      f'POST /observation(G-Web) 또는 /world-action(G-WorldAction) 게이트 경로 사용')
         ts = ev.created_at or datetime.now(timezone.utc).isoformat()
         event_id = f'{name}/{tag}/event/{engine_event.name}'
-        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})
+                     SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                     WITH t
+                     MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                      MERGE (ev:ResearchEvent {id:$id})
                      ON CREATE SET ev.name=$event_name, ev.realm=$realm, ev.actor=$actor,
                                    ev.action=$action, ev.target=$tag,
@@ -490,7 +969,10 @@ class EvidenceClaimService:
         evidence_refs: Iterable[str] | None,
         payload: dict,
     ) -> str:
-        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        rows = self.kg("""MATCH (t:LakatosTree {name:$tree})
+                     SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+                     WITH t
+                     MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                      MERGE (ev:ResearchEvent {id:$id})
                      ON CREATE SET ev.name=$id, ev.realm=$realm, ev.actor=$actor,
                                    ev.action=$action, ev.target=$tag,
@@ -656,7 +1138,10 @@ class EvidenceClaimService:
         projection = embedded.kg_projection()
         emb = projection['embedding']
         ts = datetime.now(timezone.utc).isoformat()
-        ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+        ops = [("""MATCH (t:LakatosTree {name:$tree})
+              SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+              WITH t
+              MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
               MATCH (ev:ResearchEvent {id:$event_id})
               SET ev.lakatos_location=$lakatos_location,
                   ev.theoretical_basis=$theoretical_basis,

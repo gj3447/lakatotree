@@ -4,14 +4,22 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 
+import pytest
+
 from judges import argument_integrity_bundle_validator_v2 as validator
 from tests._argument_integrity_v2_fixture import (
     build_bundle,
+    activate_frozen_toolchain,
     rebind_judge_input,
     refresh_manifest,
     sha,
     write_json,
 )
+
+
+@pytest.fixture(autouse=True)
+def _frozen_arg5_toolchain(tmp_path, monkeypatch):
+    activate_frozen_toolchain(tmp_path, monkeypatch)
 
 
 def _validate(root, protocol_path, activation_path):

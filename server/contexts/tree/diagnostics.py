@@ -69,6 +69,9 @@ REQUIRED_CONSTRAINTS = (
     # Arguments use the globally unique ``tree/arg`` content identity.  The application also
     # serializes writes on the tree node; this constraint catches out-of-band writers.
     ConstraintSpec("lkt_argument_id_unique", "LakatosArgument", "id"),
+    # Atomic critique history depends on one durable intent per stable history event.  A
+    # same-named but differently-shaped constraint must not satisfy this requirement.
+    ConstraintSpec("lkt_outbox_id_unique", "OutboxEntry", "id"),
     ConstraintSpec("lkt_research_event_id_unique", "ResearchEvent", "id"),
     # ① real-KG: 연구전통 tradition_id uniqueness — set_tradition 의 MERGE 키 중복(같은 id 두 전통) 방지.
     ConstraintSpec("lkt_research_tradition_id_unique", "ResearchTradition", "tradition_id"),
@@ -96,16 +99,36 @@ def diagnose_required_constraints(rows: Iterable[dict]) -> dict:
 
 
 def _row_satisfies(row: dict, spec) -> bool:
-    if row.get("name") == spec.name:
-        return True
-    labels = _as_set(row.get("labelsOrTypes") or row.get("labels") or row.get("entityType"))
-    properties = _as_set(row.get("properties") or row.get("property") or row.get("propertyNames"))
-    return spec.label in labels and set(spec.properties) <= properties
+    """Require the exact named node-uniqueness constraint shape.
+
+    ``SHOW CONSTRAINTS`` is deployment evidence, not a fuzzy discovery surface.  The
+    previous name-only shortcut and subset comparison could report readiness for a
+    relationship constraint, an existence constraint, or a wider composite key.  All of
+    those are unsafe false positives for MERGE concurrency.
+    """
+
+    uniqueness_types = {
+        "UNIQUENESS",                 # Neo4j 5.x compatibility spelling
+        "NODE_UNIQUENESS",
+        "NODE_PROPERTY_UNIQUENESS",
+        "NODE_KEY",
+    }
+    labels = _as_tuple(row.get("labelsOrTypes") or row.get("labels"))
+    properties = _as_tuple(
+        row.get("properties") or row.get("property") or row.get("propertyNames")
+    )
+    return (
+        row.get("name") == spec.name
+        and row.get("entityType") == "NODE"
+        and row.get("type") in uniqueness_types
+        and labels == (spec.label,)
+        and properties == tuple(spec.properties)
+    )
 
 
-def _as_set(value) -> set[str]:
+def _as_tuple(value) -> tuple[str, ...]:
     if value is None:
-        return set()
+        return ()
     if isinstance(value, str):
-        return {value}
-    return {str(item) for item in value}
+        return (value,)
+    return tuple(str(item) for item in value)

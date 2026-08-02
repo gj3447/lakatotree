@@ -13,6 +13,8 @@
 | `OPEN` | `ADJUDICATED [receipt_backed_conclusive]` | `CLOSED` | `adjudication-close` | RecordQuestionClosure |
 | `OPEN` | `ADJUDICATED` | `OPEN` | `adjudication-retain-open` | none |
 | `CLOSED` | `ADJUDICATED` | `CLOSED` | `duplicate-adjudication` | none |
+| `CLOSED` | `REATTRIBUTE [receipt_backed_conclusive]` | `CLOSED` | `reattribute-append` | AppendQuestionCloser |
+| `CLOSED` | `REATTRIBUTE` | `CLOSED` | `reattribute-retain` | none |
 
 Unlisted state/event pairs are rejected without state change. In particular, `CLOSED + OPEN`
 is invalid. `CLOSED` is intentionally atomic rather than final so duplicate `CLOSE` has an
@@ -21,8 +23,10 @@ explicit idempotent self-loop.
 `ADJUDICATED` is a transition event, not a client verdict label. The judgement
 service emits it only after minting the content-addressed verdict receipt in the
 same managed transaction. Exact final verdicts `progressive` and `rejected`
-answer the preregistered question positively or negatively. Partial,
-equivalent, conditional, and unverified outcomes keep the question open.
+answer the preregistered question positively or negatively only when the
+sealed assurance is replay-verified (L2 or higher) and the result is not a
+qualitative self-report. Partial, equivalent, conditional, unverified, L0/L1,
+and qualitative-self-report outcomes keep the question open.
 
 ## State diagram
 
@@ -35,6 +39,8 @@ stateDiagram-v2
     OPEN --> CLOSED: ADJUDICATED [receipt_backed_conclusive] / RecordQuestionClosure
     OPEN --> OPEN: ADJUDICATED / none
     CLOSED --> CLOSED: ADJUDICATED / none
+    CLOSED --> CLOSED: REATTRIBUTE [receipt_backed_conclusive] / AppendQuestionCloser
+    CLOSED --> CLOSED: REATTRIBUTE / none
 ```
 
 ## Properties
@@ -43,11 +49,13 @@ Safety:
 
 - `closed-does-not-reopen`: A CLOSED question cannot return to OPEN through the OPEN command.
 - `close-is-idempotent`: Repeated CLOSE commands do not increment visits or append closure/history events.
-- `self-report-cannot-close`: An adjudication without a valid content-addressed receipt identity cannot close a question; the application transaction persists that receipt and closure together.
+- `self-report-cannot-close`: An adjudication closes a question only with a valid content-addressed receipt, replay-verified assurance at L2 or above, and no qualitative self-report; the application transaction persists that receipt and closure together.
+- `reattribute-does-not-reopen`: REATTRIBUTE on CLOSED never returns OPEN; it appends a closer only for a conclusive L2-or-higher adjudication without qualitative self-report.
+- `reattribute-requires-receipt`: REATTRIBUTE without a valid content-addressed receipt identity is rejected; self-report cannot reattribute.
 
 Liveness:
 
-- `eventual-close`: An OPEN question reaches CLOSED when a CLOSE command or receipt-backed conclusive ADJUDICATED event is delivered.
+- `eventual-close`: An OPEN question reaches CLOSED when a CLOSE command or a conclusive, receipt-bound, replay-verified ADJUDICATED event without qualitative self-report is delivered.
 
 ## Verification
 

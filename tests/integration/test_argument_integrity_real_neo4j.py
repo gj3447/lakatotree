@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from threading import Barrier
 from uuid import uuid4
 
@@ -25,6 +26,10 @@ from fastapi import HTTPException  # noqa: E402
 from server.container import AppContainer  # noqa: E402
 from server.contexts.tree.evidence_claim_service import EvidenceClaimService  # noqa: E402
 from server.contexts.tree.schemas import CritiqueIn  # noqa: E402
+from server.contexts.tree.writer import (  # noqa: E402
+    TreeHistoryProtected,
+    TreeKgWriter,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -59,7 +64,8 @@ class _World:
         self.container.kg(
             """MATCH (t:LakatosTree {name:$tree})
                CREATE (e:LakatosNode {
-                 name:$node_name, tag:$tag, verdict:'proof', valid_until_rebutted:true
+                 name:$node_name, tag:$tag, verdict:'proof', valid_until_rebutted:true,
+                 _tree_write_cas:0
                })
                CREATE (t)-[:HAS_NODE]->(e)""",
             tree=self.tree,
@@ -68,10 +74,16 @@ class _World:
         )
 
     def service(self) -> EvidenceClaimService:
-        service = object.__new__(EvidenceClaimService)
-        service.kg = self.container.kg
-        service.hist = self.container.hist
-        return service
+        return EvidenceClaimService(
+            kg=self.container.kg,
+            kg_tx=self.container.kg_tx,
+            critique_kg_tx=self.container.writer_fenced_kg_tx,
+            hist=self.container.hist,
+            foundation=lambda _tree: None,
+            load_lineage=lambda: (),
+            reproducible_for_node=lambda _tree, _tag: None,
+            critique_scope=self.container.writer_ledger_scope,
+        )
 
     def history(self, tag: str) -> list[dict]:
         with self.container.pg() as connection, connection.cursor() as cursor:
@@ -104,7 +116,12 @@ class _World:
         )
         tree_rows = self.container.kg(
             "MATCH (t:LakatosTree {name:$tree}) "
-            "RETURN t._argument_cas AS argument_cas",
+            "RETURN properties(t) AS tree_properties",
+            tree=self.tree,
+        )
+        node_rows = self.container.kg(
+            "MATCH (:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:'n'}) "
+            "RETURN properties(e) AS node_properties",
             tree=self.tree,
         )
         arguments = argument_rows[0]["arguments"]
@@ -114,7 +131,8 @@ class _World:
             "relationship_count": relationship_rows[0]["relationship_count"],
             "linked_tags": relationship_rows[0]["linked_tags"],
             "claim_leaks": sum(item["claim"] is not None for item in arguments),
-            "argument_cas": tree_rows[0]["argument_cas"],
+            "tree_properties": tree_rows[0]["tree_properties"],
+            "node_properties": node_rows[0]["node_properties"],
         }
 
 
@@ -130,20 +148,44 @@ def argument_world(neo4j_driver, pg_kw):
         "CREATE CONSTRAINT lkt_argument_id_unique IF NOT EXISTS "
         "FOR (n:LakatosArgument) REQUIRE n.id IS UNIQUE"
     )
-    container.kg("CREATE (t:LakatosTree {name:$tree})", tree=tree)
+    container.kg(
+        "CREATE CONSTRAINT lkt_runtime_writer_lease_name_unique IF NOT EXISTS "
+        "FOR (n:RuntimeWriterLease) REQUIRE n.name IS UNIQUE"
+    )
+    assert container.acquire_writer_lease() is True
+    # Seed both tree-scoped lock properties at their neutral value and snapshot
+    # every tree property.  ARG-1 can then detect even a dummy-lock write or an
+    # accidental new property on a rejected critique.
+    container.kg(
+        "CREATE (t:LakatosTree {name:$tree, _tree_write_cas:0, _argument_cas:0})",
+        tree=tree,
+    )
     world = _World(container=container, tree=tree)
     world.add_node("n")
     try:
         yield world
     finally:
-        with container.pg() as connection, connection.cursor() as cursor:
-            cursor.execute("DELETE FROM history WHERE tree=%s", (tree,))
-        container.kg(
-            "MATCH (a:Argument) WHERE a.id STARTS WITH $prefix DETACH DELETE a",
-            prefix=f"{tree}/",
-        )
-        container.kg("MATCH (t:LakatosTree {name:$tree}) DETACH DELETE t", tree=tree)
-        container.close()
+        try:
+            with container.pg() as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM history_event_claims WHERE history_id IN "
+                    "(SELECT id FROM history WHERE tree=%s)",
+                    (tree,),
+                )
+                cursor.execute("DELETE FROM history WHERE tree=%s", (tree,))
+            container.kg(
+                "MATCH (o:OutboxEntry {tree:$tree}) DETACH DELETE o",
+                tree=tree,
+            )
+            container.kg(
+                "MATCH (a:Argument) WHERE a.id STARTS WITH $prefix DETACH DELETE a",
+                prefix=f"{tree}/",
+            )
+            container.kg(
+                "MATCH (t:LakatosTree {name:$tree}) DETACH DELETE t", tree=tree
+            )
+        finally:
+            container.close()
 
 
 def _critique(*, arg_id="d1", attacks="n", by="alice", kind="doubt", body="question"):
@@ -155,6 +197,10 @@ def _status(call) -> tuple[str, dict | str]:
         return "ok", call()
     except HTTPException as exc:
         return str(exc.status_code), str(exc.detail)
+
+
+def _cycle_writer(world: _World) -> TreeKgWriter:
+    return TreeKgWriter(world.container.kg_tx)
 
 
 def _race(world: _World, tag_and_payload: tuple[tuple[str, CritiqueIn], ...]):
@@ -187,7 +233,18 @@ def test_arg_1_dangling_target_is_rejected_without_side_effects(argument_world):
         "relationship_count": 0,
         "linked_tags": [],
         "claim_leaks": 0,
-        "argument_cas": 0,
+        "tree_properties": {
+            "name": argument_world.tree,
+            "_tree_write_cas": 0,
+            "_argument_cas": 0,
+        },
+        "node_properties": {
+            "name": f"{argument_world.tree}/n",
+            "tag": "n",
+            "verdict": "proof",
+            "valid_until_rebutted": True,
+            "_tree_write_cas": 0,
+        },
     }
     assert argument_world.history("n") == []
 
@@ -259,7 +316,11 @@ def test_arg_4_tree_lock_serializes_cross_node_identity_race(argument_world):
     assert snapshot["argument_count"] == 1
     assert snapshot["relationship_count"] == 1
     assert snapshot["linked_tags"] == [winner["tag"]]
-    assert snapshot["argument_cas"] == 0
+    assert snapshot["tree_properties"] == {
+        "name": argument_world.tree,
+        "_tree_write_cas": 0,
+        "_argument_cas": 0,
+    }
     assert snapshot["claim_leaks"] == 0
     assert (stored["by"], stored["kind"], stored["body"], stored["attacks"]) == (
         winner["payload"].by,
@@ -292,3 +353,103 @@ def test_arg_5_create_claim_has_one_owner_and_does_not_leak(argument_world):
         name="lkt_argument_id_unique",
     )
     assert constraints == [{"n": 1}]
+
+
+def test_cycle_rollback_preserves_existing_critique_binding(argument_world):
+    claim = "cycle-integration-rollback"
+    argument_world.container.kg(
+        "MATCH (:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:'n'}) "
+        "SET e._cycle_created_by=$claim",
+        tree=argument_world.tree,
+        claim=claim,
+    )
+    payload = _critique(arg_id="rollback-bound")
+    assert argument_world.service().add_critique(
+        argument_world.tree, "n", payload
+    )["ok"]
+
+    _cycle_writer(argument_world).rollback_cycle_node(
+        argument_world.tree, "n", claim
+    )
+
+    snapshot = argument_world.snapshot("rollback-bound")
+    assert snapshot["argument_count"] == 1
+    assert snapshot["relationship_count"] == 1
+    assert len(argument_world.history("n")) == 1
+
+
+def test_tree_delete_preserves_legacy_argument_without_outbox(argument_world):
+    argument_world.container.kg(
+        "MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:'n'}) "
+        "CREATE (e)-[:HAS_ARGUMENT]->(:Argument {id:$id, tree_name:$tree, "
+        "local_id:'legacy-delete', attacks:'n', by:'legacy', kind:'doubt', "
+        "body:'preserve me', at:$at})",
+        tree=argument_world.tree,
+        id=f"{argument_world.tree}/legacy-delete",
+        at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    with pytest.raises(TreeHistoryProtected):
+        TreeKgWriter(argument_world.container.kg_tx).delete_tree(
+            argument_world.tree,
+            idempotency_key=f"integration-history-{argument_world.tree}",
+        )
+
+    assert argument_world.container.kg(
+        "RETURN "
+        "COUNT { MATCH (:LakatosTree {name:$tree})-[:HAS_NODE]->"
+        "(:LakatosNode {tag:'n'}) } AS nodes, "
+        "COUNT { MATCH (:Argument {id:$id}) } AS arguments",
+        tree=argument_world.tree,
+        id=f"{argument_world.tree}/legacy-delete",
+    ) == [{"nodes": 1, "arguments": 1}]
+
+
+def test_cycle_rollback_and_critique_share_one_tree_lock(argument_world):
+    payload = _critique(arg_id="rollback-race")
+    claim = "cycle-integration-race"
+    argument_world.container.kg(
+        "MATCH (:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:'n'}) "
+        "SET e._cycle_created_by=$claim",
+        tree=argument_world.tree,
+        claim=claim,
+    )
+    barrier = Barrier(2, timeout=_BARRIER_TIMEOUT)
+    writer = _cycle_writer(argument_world)
+
+    def critique():
+        barrier.wait()
+        return _status(
+            lambda: argument_world.service().add_critique(
+                argument_world.tree, "n", payload
+            )
+        )
+
+    def rollback():
+        barrier.wait()
+        writer.rollback_cycle_node(argument_world.tree, "n", claim)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        critique_future = pool.submit(critique)
+        rollback_future = pool.submit(rollback)
+        critique_status, _detail = critique_future.result(timeout=_FUTURE_TIMEOUT)
+        rollback_future.result(timeout=_FUTURE_TIMEOUT)
+
+    counts = argument_world.container.kg(
+        "RETURN "
+        "COUNT { MATCH (:LakatosTree {name:$tree})-[:HAS_NODE]->"
+        "(:LakatosNode {tag:'n'}) } AS nodes, "
+        "COUNT { MATCH (:Argument {id:$arg_id}) } AS arguments, "
+        "COUNT { MATCH (:OutboxEntry {tree:$tree, op:'critique', node_tag:'n'}) } "
+        "AS intents",
+        tree=argument_world.tree,
+        arg_id=f"{argument_world.tree}/{payload.arg_id}",
+    )[0]
+    history_count = len(argument_world.history("n"))
+    if critique_status == "ok":
+        assert counts == {"nodes": 1, "arguments": 1, "intents": 1}
+        assert history_count == 1
+    else:
+        assert critique_status == "404"
+        assert counts == {"nodes": 0, "arguments": 0, "intents": 0}
+        assert history_count == 0

@@ -84,16 +84,21 @@ def test_writer_preserve_query_uses_preserve_set():
 
 # ── D3: AGM 강등이 node_state 도 갱신해야 ─────────────────────────────────────────────
 
-def test_agm_demote_sets_node_state_both_paths():
-    """blanket·per-tag 두 강등 경로 모두 e.node_state 를 SET 해야 — 영속 상태가
-    'CANONICAL' 로 남으면 읽기 모델이 강등된 노드를 계속 CANONICAL 로 표면화한다."""
+def test_agm_demote_sets_node_state_only_in_receipt_bound_path():
+    """AGM 강등은 receipt-bound per-tag CAS 하나만 유지한다.
+
+    예전 blanket fallback은 영수증 없이 forceful head를 만드는 우회였다.
+    남은 유일 경로가 verdict·node_state·receipt pointer를 함께 갱신함을 고정한다.
+    """
     import inspect
     from server import app as app_mod
     src = inspect.getsource(app_mod._persist_revision)
     demote_blocks = [b for b in src.split('ops.append') if "SET e.verdict='former_canonical'" in b]
-    assert len(demote_blocks) == 2, f'AGM 강등 op 2개(blanket/per-tag) 기대, 실제 {len(demote_blocks)}'
-    for b in demote_blocks:
-        assert "e.node_state='FORMER_CANONICAL'" in b, f'강등 op 에 node_state SET 누락: {b[:200]}'
+    assert len(demote_blocks) == 1, f'receipt-bound AGM 강등 op 1개 기대, 실제 {len(demote_blocks)}'
+    block = demote_blocks[0]
+    assert "e.node_state='FORMER_CANONICAL'" in block
+    assert 'MERGE (rec:VerdictReceipt' in block
+    assert 'SET e.current_receipt_sha=$rsha' in block
 
 
 def test_fsck_has_node_state_drift_check():

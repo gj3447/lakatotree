@@ -93,7 +93,8 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                          result_path: str | None = None, result_sha256: str | None = None,
                          measurement_lock_sha: str | None = None,
                          source_script_path: str | None = None,
-                         source_result_path: str | None = None) -> dict:
+                         source_result_path: str | None = None,
+                         history_payload_sha256: str | None = None) -> dict:
     """G1 :VerdictReceipt 봉인 필드 조립(godmethod L758-761 거동 불변 추출).
 
     lakatos.verdicts.RECEIPT_FIELDS 와 *정확히 1:1*(특성화 골든이 키 집합 동일성 고정). verdict_source
@@ -123,7 +124,8 @@ def build_receipt_fields(*, tree: str, tag: str, target_id, verdict: str, metric
                 result_path=result_path, result_sha256=result_sha256,
                 measurement_lock_sha=measurement_lock_sha,
                 source_script_path=source_script_path,
-                source_result_path=source_result_path)
+                source_result_path=source_result_path,
+                history_payload_sha256=history_payload_sha256)
 
 
 def resolve_measurement(replay, client_metric, *, attested: bool = False, authored: bool = False,

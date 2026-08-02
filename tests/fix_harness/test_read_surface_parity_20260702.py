@@ -36,12 +36,23 @@ _NODE_SET_RE = re.compile(r"\b(?:e|cur|old)\.([a-z_][a-z0-9_]*)\s*=(?!=)")
 _TREE_SET_RE = re.compile(r"\bt\.([a-z_][a-z0-9_]*)\s*=(?!=)")
 _NODE_RETURN_RE = re.compile(r"\be\.([a-z_][a-z0-9_]*)\s+AS\s+")
 _TREE_RETURN_RE = re.compile(r"\bt\.([a-z_][a-z0-9_]*)\s+AS\s+")
-_ALLOW_NODE = frozenset({'_cas'})          # CAS 더미 — 원장 필드 아님
+_ALLOW_NODE = frozenset({
+    '_cas',
+    '_tree_write_cas',
+    '_cycle_created_by',
+    '_cycle_claimed_at',
+    '_cycle_create_claim',
+})  # CAS/transient exact-compensation markers — domain projection 아님
 _ALLOW_TREE = frozenset({
     # create-only claim marker: ON CREATE SET + same-statement REMOVE, never committed/readable state.
     '_create_claim',
     # Tree-scoped CAS dummy used only to serialize immutable Argument identity contenders.
     '_argument_cas',
+    # eager-lock and same-statement create-claim markers are not domain data.
+    '_tree_write_cas',
+    '_bundle_create_claim',
+    # set+remove inside one cycle-budget guard statement; never committed.
+    '_cycle_budget_lock',
 })
 # graph_view 가 소비하나 RETURN 밖에서 합성되는 키(post-normalize 주입/계산).
 _COMPUTED_ROW_KEYS = frozenset({'source', 'tag', 'parent', 'parents', 'parent_edges', 'questions'})
@@ -98,6 +109,7 @@ class _ParityKg:
         self.node: dict = {'tag': tag, 'verdict': 'proof', 'node_state': 'DRAFT'}
         self.tree: dict = {'title': 'T', 'hard_core': '', 'require_novel_anchor': False}
         self.questions: dict[str, dict] = {'q-x': {'status': 'OPEN'}}
+        self.outboxes: dict[str, dict] = {}
 
     def _apply(self, query: str, params: dict) -> None:
         for field, pname in self._ASSIGN.findall(query):
@@ -113,8 +125,25 @@ class _ParityKg:
         return row
 
     def __call__(self, query, **params):   # KgQuery — 읽기 + register 의 가드된 SET
+        if 'MATCH (o:OutboxEntry {id:$id})' in query:
+            row = self.outboxes.get(params['id'])
+            return [dict(row)] if row is not None else []
         if 'SET' in query and 'HAS_NODE' in query:
             self._apply(query, params)
+            event_id = params.get('history_event_id')
+            if event_id and 'MERGE (o:OutboxEntry' in query:
+                self.outboxes.setdefault(event_id, {
+                    'id': event_id,
+                    'tree': params['tree'],
+                    'op': 'prediction_register',
+                    'node_tag': params['tag'],
+                    'payload': params['history_payload_json'],
+                    'status': 'pending',
+                    'created_at': params['ts'],
+                    'reason': 'prediction_register_commit_intent',
+                    'applied_at': None,
+                    'receipt_sha': params['rsha'],
+                })
             return [{'tag': self.tag}]
         if 'HAS_FRONTIER' in query or 'ResearchEvent' in query:
             return []

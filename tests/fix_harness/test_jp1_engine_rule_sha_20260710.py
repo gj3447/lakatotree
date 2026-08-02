@@ -52,7 +52,8 @@ def test_receipt_fields_bind_engine_identity():
     """guard_defect(익명 판관 사망): engine_rule_sha 가 봉인 필드셋에 실재 + v1 13필드 동결.
     S4(2026-07-23): 현행 필드셋은 v3(= v2 + comment_sha) — v2 는 RECEIPT_FIELDS_V2 로 동결."""
     from lakatos.verdicts import (RECEIPT_FIELDS_V2, RECEIPT_FIELDS_V3,
-                                  RECEIPT_FIELDS_V4, RECEIPT_FIELDS_V5)
+                                  RECEIPT_FIELDS_V4, RECEIPT_FIELDS_V5,
+                                  RECEIPT_FIELDS_V6)
     assert "engine_rule_sha" in RECEIPT_FIELDS
     assert RECEIPT_FIELDS_V2 == RECEIPT_FIELDS_V1 + ("engine_rule_sha",)
     assert RECEIPT_FIELDS_V3 == RECEIPT_FIELDS_V2 + ("comment_sha",)
@@ -61,7 +62,10 @@ def test_receipt_fields_bind_engine_identity():
     assert RECEIPT_FIELDS_V5 == RECEIPT_FIELDS_V4 + (
         "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
         "source_script_path", "source_result_path")
-    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V5
+    assert RECEIPT_FIELDS_V6 == RECEIPT_FIELDS_V5 + (
+        "history_payload_sha256",
+    )
+    assert RECEIPT_FIELDS == RECEIPT_FIELDS_V6
     assert len(RECEIPT_FIELDS_V1) == 13 and "engine_rule_sha" not in RECEIPT_FIELDS_V1
 
 
@@ -174,7 +178,8 @@ def test_production_submit_seals_identity():
                     judge_script_path=params["script"], result_path=params["rp"],
                     result_sha256=params["result_sha256"], measurement_lock_sha=params["lsha"],
                     source_script_path=params["source_script"],
-                    source_result_path=params["source_rp"])
+                    source_result_path=params["source_rp"],
+                    history_payload_sha256=params["history_payload_sha256"])
     assert receipt_content_sha(refields) == params["rsha"]
 
 
