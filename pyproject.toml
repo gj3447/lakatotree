@@ -57,6 +57,7 @@ lakatos = "lakatos.cli:main"
 lakatotree-demo = "lakatos.demos.euler:main"
 lakatotree-backtest = "lakatos.backtest_cli:main"
 lakatotree-storage-predeploy = "server.storage_predeploy:main"
+lakatotree-readiness-harness = "server.production_readiness:main"
 
 [project.optional-dependencies]
 # --- storage predeploy CLI (plain base install keeps a working --help surface) ---

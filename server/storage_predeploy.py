@@ -30,6 +30,11 @@ from server.storage_contract import (
     inspect_pg_history_contract,
     pg_projection_rows,
 )
+from server.storage_protocol import (
+    FENCE_RESPONSE_FIELDS,
+    FENCE_SIGNATURE_DOMAIN,
+    FENCE_VERIFICATION_SCHEMA,
+)
 
 
 DRAIN_SCHEMA = "lakatotree-writer-drain/v2"
@@ -40,19 +45,12 @@ NORMALIZATION_RECEIPT_SCHEMA = (
 NORMALIZATION_PROJECTION_DOMAIN = (
     b"lakatotree-neo4j-outbox-payload-projection/v1\0"
 )
-FENCE_VERIFICATION_SCHEMA = "lakatotree-writer-fence-verification/v2"
-FENCE_SIGNATURE_DOMAIN = FENCE_VERIFICATION_SCHEMA.encode("ascii") + b"\0"
 FENCE_EXECUTION_IDENTITY_SCHEMA = "lakatotree-fence-execution-identity/v1"
 RESOURCE_PACKAGE = "server.storage_migrations"
 PG_RESOURCE = "critique_history_v1.sql"
 NEO_RESOURCE = "outbox_identity_v1.cypher"
 NEO_CONNECTION_ACQUISITION_SECONDS = 2.0
 NEO_LEASE_MARGIN_SECONDS = 2.0
-FENCE_RESPONSE_FIELDS = {
-    "schema_version", "active", "nonce", "environment", "target_sha256",
-    "operation_sha256", "lease_id", "drain_receipt_sha256", "verified_at",
-    "expires_at", "evidence_refs", "signature",
-}
 
 
 def _canonical(value: Any) -> bytes:

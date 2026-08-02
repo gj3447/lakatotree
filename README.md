@@ -126,7 +126,7 @@ For programme authoring, evidence-record validation, and tree metrics, use `laka
 
 The input format is a small, **tool-agnostic** JSON contract you can adopt on its own — a producer emits an evidence record; a ~25-line validator rejects it unless the claim was **pre-registered**, **grounded in cited inputs**, and carries **no self-authored verdict** (the producer never grades itself). Emit it from any harness, in any language; LakatoTree is just one consumer. **Spec: [`docs/lakato-evidence-record-v1.md`](docs/lakato-evidence-record-v1.md).**
 
-The CLI is available as a module, for example `python -m lakatos.cli --help`. Commands that read or mutate a named tree require a configured LakatoTree server and its backing stores; the repository's current server launch scripts contain deployment-specific assumptions and are not a portable public quickstart. The pure library and Euler demo do not require that service.
+The CLI is available as a module, for example `python -m lakatos.cli --help`. The base install also provides `lakatotree-readiness-harness` for credential-free, SHA-bound production/L3 evidence-case evaluation; its accepted result is explicitly not deployment approval. Commands that read or mutate a named tree require a configured LakatoTree server and its backing stores; the repository's current server launch scripts contain deployment-specific assumptions and are not a portable public quickstart. The pure library and Euler demo do not require that service.
 
 Optional dependency groups are declared in `pyproject.toml`: `storage`, `server`, `db`, `prov`, `receipts`, `dev`, `integration`, and `all`. From a checkout, install one with `python -m pip install -e ".[dev]"` or the relevant extra.
 
@@ -201,6 +201,7 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 - **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)
 - **Evaluate, continue, or prune it:** [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md)
 - **Audit the progress judge scientifically:** [backtest protocol](docs/BACKTEST_PROTOCOL_2026-07-24.md)
+- **Exercise the bounded production/L3 gate:** run `lakatotree-readiness-harness` for one digest-bound case, then read the [readiness harness](docs/PRODUCTION_L3_READINESS_HARNESS.md) claim boundary
 - **Inspect formal claims:** [formal/Pidna.lean](formal/Pidna.lean)
 - **Review measurement limits:** [measurement-sovereignty ADR](docs/ADR-measurement-sovereignty-20260703.md)
 - **Read the philosophical rationale:** [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md)

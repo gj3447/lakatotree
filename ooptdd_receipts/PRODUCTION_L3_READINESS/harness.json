@@ -1,0 +1,105 @@
+{
+  "schema_version": "lakatotree-requirements-harness/v2",
+  "name": "production-l3-readiness",
+  "tier": "L_IDE",
+  "targets": ["L_RT", "L_MC"],
+  "orchestration": "deterministic-directed-graph",
+  "team_pattern": "producer-reviewer",
+  "claim_boundary": "HARNESS_GREEN proves only that the frozen credential-free case and every declared negative control ran successfully. CASE_ACCEPTED proves only one exact case is internally consistent; raw-byte digest binding is separate and present only on the loaded-evidence path, while the installed CLI separately requires an absolute regular non-symlink path. Neither status is a production deployment receipt, live RBAC readback, writer-drain authorization, or runtime VAL L3 evidence.",
+  "requirements": {
+    "spec": "ooptdd_receipts/PRODUCTION_L3_READINESS/requirements.yaml",
+    "ids": ["PL3H-1", "PL3H-2", "PL3H-3", "PL3H-4", "PL3H-5"]
+  },
+  "fixture": {
+    "path": "ooptdd_receipts/PRODUCTION_L3_READINESS/fixture.v1.json",
+    "file_sha256": "54f840fd7551fbe4ef10451dc93a1b6905c53a244ccbfae81f90415dc7b02707",
+    "canonical_case_sha256": "574c1baa3eed204b77482ed7241d5a794d7e424ee5021668e485f12fe345d857",
+    "expected_case_report_body_sha256": "ca807df60cc34be5eb4eacf47d062e8479491ac7f95659e0b2f558f6cbf8d367",
+    "builder": "production_l3_readiness_receipt:build_fixture_case"
+  },
+  "system_under_test": {
+    "source": "server/production_readiness.py",
+    "symbol": "evaluate_readiness",
+    "entrypoint": "lakatotree-readiness-harness"
+  },
+  "suite": {
+    "source": "ooptdd_receipts/PRODUCTION_L3_READINESS/production_l3_readiness_receipt.py",
+    "symbol": "run_harness_suite",
+    "distribution": "source-checkout-only",
+    "required_events": [
+      {"requirement_id": "PL3H-1", "event": "locked_case_accepted_claim_bounded"},
+      {"requirement_id": "PL3H-2", "event": "storage_authority_attacks_rejected"},
+      {"requirement_id": "PL3H-3", "event": "temporal_crypto_policy_attacks_rejected"},
+      {"requirement_id": "PL3H-4", "event": "temporal_relation_attacks_rejected"},
+      {"requirement_id": "PL3H-5", "event": "live_authority_claim_fail_closed"}
+    ],
+    "required_controls": [
+      "storage.predeploy_file_pin",
+      "storage.predeploy_receipt_pin",
+      "storage.fence_authority_self_binding",
+      "storage.fence_authority_expected_pin",
+      "storage.fence_signature",
+      "storage.fence_zero_writer_projection",
+      "storage.fence_freshness",
+      "storage.fence_expiry_margin",
+      "storage.postgresql_target_binding",
+      "storage.postgresql_runtime_overprivilege",
+      "storage.postgresql_owner_attributes",
+      "storage.postgresql_migrator_attributes",
+      "storage.postgresql_object_ownership",
+      "storage.neo4j_database_binding",
+      "storage.neo4j_runtime_overprivilege",
+      "storage.neo4j_builtin_public_role",
+      "storage.runtime_migration_credentials",
+      "storage.runtime_lease_binding",
+      "temporal.verdict_signature",
+      "temporal.prediction_duplicate_authority",
+      "temporal.anchor_channel",
+      "temporal.producer_attestor_disjoint",
+      "temporal.policy_digest_binding",
+      "temporal.noncanonical_witness_alias",
+      "temporal.small_order_keys",
+      "temporal.endpoint_signer_set",
+      "temporal.all_anchor_ordering",
+      "temporal.anchor_not_after_evaluation",
+      "temporal.runtime_head_binding",
+      "live.adapter_fail_closed"
+    ]
+  },
+  "axes": {
+    "inform": [
+      "Bind reports to exact file, canonical case, operation, target, receipt, policy, and sidecar hashes.",
+      "Report storage and temporal-component gates separately without emitting signatures or witness identifiers."
+    ],
+    "constrain": [
+      "Case evaluation is network-free, environment-free, clock-free, subprocess-free, mutation-free, and bounded by evidence and authority cardinality limits.",
+      "Live mode is UNSUPPORTED and production_ready is always false in this phase."
+    ],
+    "verify": [
+      "Reverify a target-bound predeploy projection and signed writer fence plus exact PostgreSQL and Neo4j role projections.",
+      "Reverify a policy-bound same-authority-set Ed25519 quorum over prediction and current verdict receipts with all-anchor strict ordering."
+    ],
+    "correct": [
+      "Emit deterministic remediation plans without executing production changes.",
+      "Run storage, cryptographic-policy, temporal-relation, and unsupported-live negative-control groups."
+    ]
+  },
+  "case_states": ["CASE_ACCEPTED", "NOT_READY", "UNSUPPORTED", "INVALID"],
+  "suite_states": ["HARNESS_GREEN", "HARNESS_RED"],
+  "case_exit_codes": {
+    "CASE_ACCEPTED": 0,
+    "NOT_READY": 1,
+    "UNSUPPORTED_OR_INVALID": 2
+  },
+  "live_adapter": {
+    "implemented": false,
+    "required_before_production_ready": true,
+    "missing": [
+      "PostgreSQL actor-owner-ACL readback",
+      "Neo4j Enterprise role-privilege readback",
+      "runtime writer-fence and readyz readback",
+      "receipt-bound signed T2 sidecar runtime wiring",
+      "engine-independent temporal re-verification"
+    ]
+  }
+}

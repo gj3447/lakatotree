@@ -32,9 +32,10 @@ from server.contexts.tree.receipt_chain import (
     ReceiptGraphError,
     validate_receipt_graph,
 )
+from server.storage_protocol import STORAGE_CONTRACT_ID
 
 
-CONTRACT_ID = "lakatotree-critique-history-storage/v1"
+CONTRACT_ID = STORAGE_CONTRACT_ID
 
 
 class StorageContractError(RuntimeError):
