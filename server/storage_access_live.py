@@ -398,20 +398,14 @@ def _collect_neo4j_community_impl(
                 "SHOW CURRENT USER YIELD user RETURN user",
                 remaining(),
             )
-            alias_rows = live._neo_rows(
-                session,
-                "SHOW ALIASES FOR DATABASE "
-                "YIELD name, database, location "
-                "WHERE name = $database "
-                "RETURN name, database, location ORDER BY name",
-                remaining(),
-                database=str(config["database"]),
-            )
+            # SHOW ALIASES FOR DATABASE is an Enterprise-only administration
+            # command; Community exposes the same alias facts through the
+            # SHOW DATABASES ``aliases`` column.
             database_catalog_rows = live._neo_rows(
                 session,
-                "SHOW DATABASES YIELD name, type, currentStatus "
+                "SHOW DATABASES YIELD name, type, aliases, currentStatus "
                 "WHERE name = $database "
-                "RETURN name, type, currentStatus AS current_status "
+                "RETURN name, type, aliases, currentStatus AS current_status "
                 "ORDER BY name",
                 remaining(),
                 database=str(config["database"]),
@@ -454,15 +448,20 @@ def _collect_neo4j_community_impl(
     )
     if not authorization_snapshot_stable:
         failures.append("neo4j.authorization_snapshot.unstable")
+    alias_names: list[str] = []
+    for row in database_catalog_rows:
+        aliases = row.get("aliases")
+        if not (
+            isinstance(aliases, list)
+            and all(isinstance(alias, str) for alias in aliases)
+        ):
+            raise live._PortUnavailable("Neo4j alias readback was ambiguous")
+        alias_names.extend(aliases)
+    # Same meaning as the Enterprise alias facts: the count of aliases
+    # targeting the application database and a digest of the canonical list.
     database_alias_projection = [
-        {
-            "name_sha256": live._sha256(str(row.get("name")).encode("utf-8")),
-            "database_sha256": live._sha256(
-                str(row.get("database")).encode("utf-8")
-            ),
-            "location": row.get("location"),
-        }
-        for row in alias_rows
+        {"name_sha256": live._sha256(alias.encode("utf-8"))}
+        for alias in sorted(alias_names)
     ]
     database_catalog_projection = [
         {

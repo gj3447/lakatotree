@@ -117,7 +117,7 @@ _NEO_FACT_KEYS = {
     "system_last_committed_tx", "authorization_snapshot_stable",
     "read_query_count",
 }
-_NEO_COMMUNITY_READ_QUERY_COUNT = 10
+_NEO_COMMUNITY_READ_QUERY_COUNT = 9
 _NEO_COMMUNITY_FACT_KEYS = {
     "database", "challenge_nonce_sha256", "database_name_matches",
     "database_direct_local", "database_alias_count", "database_alias_sha256",

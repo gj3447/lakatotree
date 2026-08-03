@@ -1026,10 +1026,14 @@ class _NeoCommunitySession:
         if "SHOW CURRENT USER" in text:
             return [{"user": "lakatos_audit_user"}]
         if "SHOW ALIASES" in text:
-            return []
+            # Enterprise-only administration command (live 2026.02 rejects it).
+            raise AssertionError(
+                "community collector must not run SHOW ALIASES"
+            )
         if "SHOW DATABASES" in text:
             return [{
-                "name": "neo4j", "type": "standard", "current_status": "online",
+                "name": "neo4j", "type": "standard", "aliases": [],
+                "current_status": "online",
             }]
         if "SHOW SETTINGS" in text:
             # Community 2026.02 predates the abac provider setting.
