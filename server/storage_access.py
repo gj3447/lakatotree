@@ -29,10 +29,14 @@ from lakatos.write_cert import (
     ed25519_verify,
 )
 from server.settings import is_pinned_dns_name
-from server.storage_protocol import NEO4J_SUPPORTED_RELEASES
+from server.storage_protocol import (
+    NEO4J_COMMUNITY_SUPPORTED_RELEASES,
+    NEO4J_SUPPORTED_RELEASES,
+)
 
 
 ACCESS_POLICY_SCHEMA = "lakatotree-storage-access-policy/v1"
+ACCESS_POLICY_ENVIRONMENTS = ("production", "development")
 DATASTORE_ATTESTATION_SCHEMA = "lakatotree-datastore-audit-attestation/v2"
 STORAGE_AUDIT_BUNDLE_SCHEMA = "lakatotree-storage-audit-bundle/v2"
 DATASTORE_ATTESTATION_DOMAIN = DATASTORE_ATTESTATION_SCHEMA.encode("ascii") + b"\0"
@@ -112,6 +116,17 @@ _NEO_FACT_KEYS = {
     "global_unsafe_privilege_sha256", "system_database_id_sha256",
     "system_last_committed_tx", "authorization_snapshot_stable",
     "read_query_count",
+}
+_NEO_COMMUNITY_READ_QUERY_COUNT = 10
+_NEO_COMMUNITY_FACT_KEYS = {
+    "database", "challenge_nonce_sha256", "database_name_matches",
+    "database_direct_local", "database_alias_count", "database_alias_sha256",
+    "database_catalog_sha256", "database_id_sha256", "edition", "version",
+    "enterprise", "community_semantics", "rbac_available",
+    "current_actor_sha256", "named_user_sha256", "named_user_suspended",
+    "auth_settings", "auth_settings_sha256", "native_only_auth",
+    "system_database_id_sha256", "system_last_committed_tx",
+    "authorization_snapshot_stable", "read_query_count",
 }
 
 
@@ -290,8 +305,10 @@ def validate_access_policy(value: Any) -> Mapping[str, Any]:
     )
     if policy["schema_version"] != ACCESS_POLICY_SCHEMA:
         raise StorageAccessError("policy.schema_version is unsupported")
-    if policy["environment"] != "production":
-        raise StorageAccessError("policy.environment must be production")
+    if policy["environment"] not in ACCESS_POLICY_ENVIRONMENTS:
+        raise StorageAccessError(
+            "policy.environment must be production or development"
+        )
     attestors = _exact_mapping(
         policy["attestors"], path="policy.attestors", keys=set(STORES)
     )
@@ -341,13 +358,19 @@ def validate_access_policy(value: Any) -> Mapping[str, Any]:
         },
     )
     pg_host = _text(pg["host"], path="policy.postgresql.host", maximum=253)
+    # Development may bind one literal LAN IP; production stays loopback-only.
+    pg_host_requirement = (
+        "one literal IP"
+        if policy["environment"] == "development"
+        else "one literal loopback IP"
+    )
     try:
         pg_address = ipaddress.ip_address(pg_host)
     except ValueError as exc:
         raise StorageAccessError(
-            "policy.postgresql.host must be one literal loopback IP"
+            f"policy.postgresql.host must be {pg_host_requirement}"
         ) from exc
-    if not pg_address.is_loopback:
+    if policy["environment"] != "development" and not pg_address.is_loopback:
         raise StorageAccessError(
             "policy.postgresql.host must be one literal loopback IP"
         )
@@ -744,6 +767,20 @@ def _neo_version_supported(version: Any) -> bool:
     )
 
 
+def _neo_community_version_supported(version: Any) -> bool:
+    """Pin community settings/SHOW semantics to the audited 2026 window."""
+
+    if not isinstance(version, str):
+        return False
+    match = re.fullmatch(
+        r"2026\.(\d{2})(?:\.(?:0|[1-9]\d*))?", version
+    )
+    return bool(
+        match is not None
+        and (2026, int(match.group(1))) in NEO4J_COMMUNITY_SUPPORTED_RELEASES
+    )
+
+
 def _neo_native_auth_settings_exact(value: Any, *, version: str) -> bool:
     setting_names = (
         _NEO_AUTH_SETTING_NAMES
@@ -1134,9 +1171,123 @@ def _postgresql_projection_failures(
     return failures
 
 
+def _neo4j_community_projection_failures(
+    facts: Mapping[str, Any], policy: Mapping[str, Any], request_nonce: str
+) -> list[str]:
+    """Verify the exact development-only Community fact schema.
+
+    Community has no RBAC, so the projection attests identity, native-only
+    auth, principal existence, and authority-snapshot stability instead of
+    role bindings; it never claims ``audit_principal_read_only``.
+    """
+
+    neo = policy["neo4j"]
+    failures: list[str] = []
+    principal_labels = ("audit", "migrator", "runtime")
+    expected_user_hashes = {
+        label: sha256_bytes(str(neo[f"{label}_user"]).encode("utf-8"))
+        for label in principal_labels
+    }
+    named_users = facts["named_user_sha256"]
+    named_suspended = facts["named_user_suspended"]
+    checks: list[tuple[bool, str]] = [
+        (facts["database"] == neo["database"], "neo4j.database"),
+        (facts["database_name_matches"] is True, "neo4j.database_match"),
+        (facts["database_direct_local"] is True, "neo4j.database_direct_local"),
+        (
+            type(facts["database_alias_count"]) is int
+            and facts["database_alias_count"] == 0,
+            "neo4j.database_alias",
+        ),
+        (
+            facts["database_alias_sha256"] == sha256_bytes(canonical_json([])),
+            "neo4j.database_alias_digest",
+        ),
+        (
+            _is_sha256(facts["database_catalog_sha256"]),
+            "neo4j.database_catalog_digest",
+        ),
+        (
+            facts["challenge_nonce_sha256"] == sha256_bytes(request_nonce.encode("ascii")),
+            "neo4j.challenge_binding",
+        ),
+        (
+            facts["enterprise"] is False
+            and str(facts["edition"]).lower() == "community",
+            "neo4j.community.edition",
+        ),
+        (facts["community_semantics"] is True, "neo4j.community.semantics"),
+        (facts["rbac_available"] is False, "neo4j.community.rbac_available"),
+        (
+            _neo_community_version_supported(facts["version"]),
+            "neo4j.community.version",
+        ),
+        (_is_sha256(facts["database_id_sha256"]), "neo4j.database_id"),
+        (facts["current_actor_sha256"] == sha256_bytes(str(neo["audit_user"]).encode("utf-8")), "neo4j.current_actor"),
+        (
+            isinstance(named_users, Mapping)
+            and set(named_users) == set(principal_labels)
+            and all(
+                named_users[label] == expected_user_hashes[label]
+                for label in principal_labels
+            ),
+            "neo4j.community.named_users",
+        ),
+        (
+            isinstance(named_suspended, Mapping)
+            and set(named_suspended) == set(principal_labels)
+            and all(
+                named_suspended[label] is False for label in principal_labels
+            ),
+            "neo4j.community.named_user_suspended",
+        ),
+        (
+            _neo_native_auth_settings_exact(
+                facts["auth_settings"], version=facts["version"]
+            ),
+            "neo4j.native_only_auth_settings",
+        ),
+        (facts["native_only_auth"] is True, "neo4j.native_only_auth"),
+        (
+            facts["auth_settings_sha256"]
+            == sha256_bytes(canonical_json(facts["auth_settings"])),
+            "neo4j.auth_settings_digest",
+        ),
+        (
+            _is_sha256(facts["system_database_id_sha256"]),
+            "neo4j.system_database_id",
+        ),
+        (
+            type(facts["system_last_committed_tx"]) is int
+            and facts["system_last_committed_tx"] >= 0,
+            "neo4j.system_last_committed_tx",
+        ),
+        (
+            facts["authorization_snapshot_stable"] is True,
+            "neo4j.authorization_snapshot",
+        ),
+        (
+            type(facts["read_query_count"]) is int
+            and facts["read_query_count"] == _NEO_COMMUNITY_READ_QUERY_COUNT,
+            "neo4j.community.read_query_count",
+        ),
+    ]
+    failures.extend(code for ok, code in checks if not ok)
+    return failures
+
+
 def _neo4j_projection_failures(
     facts: Mapping[str, Any], policy: Mapping[str, Any], request_nonce: str
 ) -> list[str]:
+    if (
+        policy["environment"] == "development"
+        and isinstance(facts, Mapping)
+        and set(facts) == _NEO_COMMUNITY_FACT_KEYS
+        and facts["community_semantics"] is True
+    ):
+        # Development-only Community schema; an Enterprise-shaped facts object
+        # still verifies below with the unchanged Enterprise checks.
+        return _neo4j_community_projection_failures(facts, policy, request_nonce)
     if set(facts) != _NEO_FACT_KEYS:
         return ["neo4j.fact_schema"]
     neo = policy["neo4j"]
@@ -1803,10 +1954,23 @@ def verify_access_attestation_pair(
         except (KeyError, TypeError, StorageAccessError, ValueError):
             failures.append("phase_handoff_time_malformed")
     failures = sorted(set(failures))
+    status = "ACCESS_PAIR_VERIFIED" if not failures else "NOT_READY"
+    # A verified development pair is honestly self-labelled and can never be
+    # promoted: production_ready stays False and the deployment status names
+    # the development boundary instead of the production NOT_READY shape.
+    deployment_status = (
+        "DEVELOPMENT_ONLY"
+        if (
+            status == "ACCESS_PAIR_VERIFIED"
+            and isinstance(policy, Mapping)
+            and policy.get("environment") == "development"
+        )
+        else "NOT_READY"
+    )
     return AccessPairProof(
-        "ACCESS_PAIR_VERIFIED" if not failures else "NOT_READY",
+        status,
         False,
-        "NOT_READY",
+        deployment_status,
         tuple(failures),
         predeploy,
         startup,

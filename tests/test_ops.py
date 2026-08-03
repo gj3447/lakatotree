@@ -88,6 +88,7 @@ def _runtime_proof(app, *, lease=None, expires_at='2999-01-01T00:00:00+00:00'):
         ),
         observed_at='2026-08-02T00:00:00+00:00',
         expires_at=expires_at,
+        environment='production',
     )
 
 
@@ -918,6 +919,25 @@ def test_critique_ready_uses_cached_startup_audit_without_ledger_rescan(monkeypa
             'postgresql': {'contract_id': 'lakatotree-critique-history-storage/v1',
                            'ok': True, 'failures': []},
             'neo4j': {'contract_id': 'lakatotree-critique-history-storage/v1',
+                       'ok': False, 'failures': ['neo4j.outbox.pending']},
+            'predeploy_receipt': {'contract_id': 'lakatotree-critique-history-storage/v1',
+                                  'ok': True, 'failures': []},
+            'storage_access': {
+                'contract_id': 'lakatotree-critique-history-storage/v1',
+                'ok': True,
+                'status': 'ACCESS_PAIR_VERIFIED',
+                'production_ready': False,
+                'deployment_status': 'DEVELOPMENT_ONLY',
+                'environment': 'development',
+                'failures': [],
+                'valid_until': '2999-01-01T00:00:00+00:00',
+            },
+        }, False),
+        ({
+            'contract_id': 'lakatotree-critique-history-storage/v1',
+            'postgresql': {'contract_id': 'lakatotree-critique-history-storage/v1',
+                           'ok': True, 'failures': []},
+            'neo4j': {'contract_id': 'lakatotree-critique-history-storage/v1',
                        'ok': True, 'failures': []},
             'predeploy_receipt': {'contract_id': 'lakatotree-critique-history-storage/v1',
                                   'ok': False, 'failures': []},
@@ -1113,3 +1133,70 @@ def test_pg_pool_rolls_back_on_error_and_returns(monkeypatch):
         with app.pg() as c:
             raise ValueError('boom')
     assert events == ['rollback', 'put']                 # 예외→rollback+반납(commit 안 함)
+
+
+def test_runtime_readback_binds_predeploy_and_access_environment(monkeypatch):
+    """Challenge env comes from the receipt and must match the access policy."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    app = load_app()
+
+    def report(predeploy_env, access_env):
+        return {
+            'predeploy_receipt': {
+                'ok': True,
+                'environment': predeploy_env,
+                'artifact': {'kind': 'git', 'source_commit': '6' * 40},
+                'operation_sha256': '4' * 64,
+                'target_sha256': '3' * 64,
+                'file_sha256': '2' * 64,
+                'receipt_sha256': '1' * 64,
+                'historical_drain_lease_id_sha256': 'f' * 64,
+            },
+            'storage_access': {
+                'status': 'ACCESS_PAIR_VERIFIED',
+                'environment': access_env,
+                'policy_file_sha256': 'b' * 64,
+                'startup_bundle_file_sha256': 'e' * 64,
+                'valid_until': '2999-01-01T00:00:00+00:00',
+            },
+        }
+
+    lease = _lease_projection()
+    monkeypatch.setattr(
+        app._container, 'writer_lease_public_projection', lambda: dict(lease)
+    )
+    monkeypatch.setattr(
+        app,
+        'SETTINGS',
+        SimpleNamespace(
+            require_runtime_writer_authority=lambda: (
+                Path('/nonexistent/runtime-authority'), 'a' * 64, 'b' * 64
+            )
+        ),
+    )
+    captured = {}
+
+    def capture_challenge(**kwargs):
+        captured['environment'] = kwargs['environment']
+        raise RuntimeError('stop after environment capture')
+
+    monkeypatch.setattr(app, 'challenge_runtime_authority', capture_challenge)
+
+    for mismatched in (
+        report('development', 'production'),
+        report('production', 'development'),
+        report('staging', 'staging'),
+    ):
+        snapshot_report, proof = app._runtime_snapshot_readback(mismatched)
+        assert snapshot_report['ok'] is False
+        assert proof is None
+    assert captured == {}
+
+    snapshot_report, proof = app._runtime_snapshot_readback(
+        report('development', 'development')
+    )
+    assert captured['environment'] == 'development'
+    assert snapshot_report['ok'] is False
+    assert proof is None

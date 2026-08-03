@@ -982,3 +982,204 @@ def test_live_neo_audit_rejects_authority_commit_during_projection():
     assert result.facts["authorization_snapshot_stable"] is False
     assert result.facts["audit_principal_read_only"] is False
     assert "neo4j.authorization_snapshot.unstable" in result.failure_codes
+
+
+def test_request_accepts_declared_development_environment(tmp_path):
+    request = _request(tmp_path)
+    request["environment"] = "development"
+    assert producer.validate_request(request)["environment"] == "development"
+
+
+class _NeoCommunitySession:
+    def __init__(self, database, *, marker_drift=False):
+        self.database = database
+        self.marker_drift = marker_drift
+        self.marker_calls = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def run(self, query, **params):
+        text = getattr(query, "text", str(query))
+        if "RETURN $challenge_nonce" in text:
+            return [{"challenge_nonce": params["challenge_nonce"]}]
+        if "dbms.components" in text:
+            return [{"version": "2026.02.0", "edition": "community"}]
+        if "CALL db.info" in text:
+            return [{"id": "neo4j-db-id", "name": "neo4j"}]
+        if "SHOW DATABASE system" in text:
+            self.marker_calls += 1
+            return [{
+                "name": "system",
+                "type": "system",
+                "database_id": "system-db-id",
+                "current_status": "online",
+                "writer": True,
+                "last_committed_tx": (
+                    41 + int(self.marker_drift and self.marker_calls > 1)
+                ),
+                "replication_lag": 0,
+            }]
+        if "SHOW CURRENT USER" in text:
+            return [{"user": "lakatos_audit_user"}]
+        if "SHOW ALIASES" in text:
+            return []
+        if "SHOW DATABASES" in text:
+            return [{
+                "name": "neo4j", "type": "standard", "current_status": "online",
+            }]
+        if "SHOW SETTINGS" in text:
+            # Community 2026.02 predates the abac provider setting.
+            return [
+                row for row in _neo_auth_settings()
+                if row["name"] in live._NEO_BASE_AUTH_SETTING_NAMES
+            ]
+        if "SHOW USERS" in text:
+            # Community reports suspended as null for every user.
+            return [
+                {"user": f"lakatos_{label}_user", "suspended": None}
+                for label in ("audit", "migrator", "runtime")
+            ]
+        if "SHOW USER PRIVILEGES" in text or "SHOW PRIVILEGES" in text:
+            raise AssertionError("community collector must not run RBAC queries")
+        raise AssertionError(f"unexpected Neo4j community audit query: {text}")
+
+
+class _NeoCommunityDriver:
+    def __init__(self, **session_options):
+        self.session_options = session_options
+
+    def session(self, *, database, **_kwargs):
+        return _NeoCommunitySession(database, **self.session_options)
+
+
+def _development_policy():
+    policy = _policy()
+    policy["environment"] = "development"
+    policy["postgresql"]["host"] = "192.168.0.25"
+    return policy
+
+
+def test_live_community_collector_matches_the_development_verifier():
+    config = {
+        **_development_policy()["neo4j"],
+        "environment": "development",
+        "challenge_nonce": "1" * 64,
+    }
+    result = producer._collect_neo4j_community_impl(
+        config,
+        5,
+        {},
+        injected_driver=_NeoCommunityDriver(),
+        injected_uri="bolt+s://127.0.0.1:7687",
+    )
+    assert result.status == "OBSERVED"
+    facts = result.facts
+    assert facts["community_semantics"] is True
+    assert facts["rbac_available"] is False
+    assert facts["enterprise"] is False
+    assert facts["read_query_count"] == (
+        storage_access._NEO_COMMUNITY_READ_QUERY_COUNT
+    )
+    assert storage_access._neo4j_projection_failures(
+        facts, _development_policy(), "1" * 64
+    ) == []
+
+
+def test_live_community_collector_flags_authority_commit_during_projection():
+    result = producer._collect_neo4j_community_impl(
+        {
+            **_development_policy()["neo4j"],
+            "environment": "development",
+            "challenge_nonce": "1" * 64,
+        },
+        5,
+        {},
+        injected_driver=_NeoCommunityDriver(marker_drift=True),
+        injected_uri="bolt+s://127.0.0.1:7687",
+    )
+    assert result.status == "PARTIAL"
+    assert result.facts["authorization_snapshot_stable"] is False
+    assert "neo4j.authorization_snapshot.unstable" in result.failure_codes
+
+
+def _community_adapter_result(*, nonce="1" * 64):
+    policy = _development_policy()["neo4j"]
+    empty = hashlib.sha256(_canonical([])).hexdigest()
+    base_settings = [
+        row for row in _neo_auth_settings()
+        if row["name"] in live._NEO_BASE_AUTH_SETTING_NAMES
+    ]
+    facts = {
+        "database": "neo4j",
+        "challenge_nonce_sha256": hashlib.sha256(nonce.encode()).hexdigest(),
+        "database_name_matches": True,
+        "database_direct_local": True,
+        "database_alias_count": 0,
+        "database_alias_sha256": empty,
+        "database_catalog_sha256": hashlib.sha256(_canonical([{
+            "name_sha256": hashlib.sha256(b"neo4j").hexdigest(),
+            "type": "standard", "current_status": "online",
+        }])).hexdigest(),
+        "database_id_sha256": hashlib.sha256(b"neo4j-db-id").hexdigest(),
+        "edition": "community", "version": "2026.02.0",
+        "enterprise": False,
+        "community_semantics": True,
+        "rbac_available": False,
+        "current_actor_sha256": hashlib.sha256(
+            policy["audit_user"].encode()
+        ).hexdigest(),
+        "named_user_sha256": {
+            label: hashlib.sha256(
+                policy[f"{label}_user"].encode()
+            ).hexdigest()
+            for label in ("audit", "migrator", "runtime")
+        },
+        "named_user_suspended": {
+            label: False for label in ("audit", "migrator", "runtime")
+        },
+        "auth_settings": base_settings,
+        "auth_settings_sha256": hashlib.sha256(
+            _canonical(base_settings)
+        ).hexdigest(),
+        "native_only_auth": True,
+        "system_database_id_sha256": hashlib.sha256(b"system-db-id").hexdigest(),
+        "system_last_committed_tx": 41,
+        "authorization_snapshot_stable": True,
+        "read_query_count": storage_access._NEO_COMMUNITY_READ_QUERY_COUNT,
+    }
+    return live.AdapterResult(
+        "OBSERVED", facts, binding_material=_target_details()["neo4j"]
+    )
+
+
+def test_normalizer_accepts_community_projection_only_in_development():
+    def neo(config, timeout, environ):
+        return _community_adapter_result()
+
+    development_config = {
+        **_development_policy()["neo4j"],
+        "environment": "development",
+        "challenge_nonce": "1" * 64,
+    }
+    normalized, binding = producer._normalized_observation(
+        "neo4j", development_config, 5, {}, _ports(neo, neo)
+    )
+    assert normalized["status"] == "OBSERVED"
+    assert normalized["facts"]["community_semantics"] is True
+    assert binding == _target_details()["neo4j"]
+
+    production_config = {
+        **_policy()["neo4j"],
+        "environment": "production",
+        "challenge_nonce": "1" * 64,
+    }
+    with pytest.raises(
+        producer.StorageAuditCollectionError, match="not read-only"
+    ):
+        producer._normalized_observation(
+            "neo4j", production_config, 5, {}, _ports(neo, neo)
+        )

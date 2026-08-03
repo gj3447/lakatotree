@@ -461,6 +461,15 @@ def _runtime_snapshot_readback(
             not isinstance(value, str) for value in required_sha_values
         ):
             return failure, None
+        # The runtime challenge environment originates from the verified
+        # predeploy receipt and must match the verified access-pair policy
+        # environment exactly; any drift or unknown value fails closed.
+        environment = predeploy.get("environment")
+        if (
+            environment not in ("production", "development")
+            or access.get("environment") != environment
+        ):
+            return failure, None
         lease = _container.writer_lease_public_projection()
         if lease is None:
             return failure, None
@@ -474,7 +483,7 @@ def _runtime_snapshot_readback(
             executable=executable,
             expected_executable_sha256=verifier_sha,
             public_key_hex=public_key,
-            environment=predeploy.get("environment"),
+            environment=environment,
             boot_id=_RUNTIME_BOOT_ID,
             artifact=artifact,
             operation_sha256=predeploy["operation_sha256"],

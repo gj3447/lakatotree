@@ -1834,6 +1834,7 @@ def _patch_healthy_storage_runtime(app, monkeypatch):
         ),
         observed_at="2026-08-02T00:00:00+00:00",
         expires_at="2999-01-01T00:00:00+00:00",
+        environment="production",
     )
     monkeypatch.setattr(
         app,

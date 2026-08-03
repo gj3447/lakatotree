@@ -47,10 +47,10 @@ def _lease(
     }
 
 
-def _challenge(*, wheel: bool = False, lease=None):
+def _challenge(*, wheel: bool = False, lease=None, environment="production"):
     return authority.build_runtime_challenge(
         nonce="d" * 64,
-        environment="production",
+        environment=environment,
         boot_id="e" * 64,
         artifact=_artifact(wheel=wheel),
         operation_sha256="1" * 64,
@@ -148,6 +148,7 @@ def test_runtime_snapshot_accepts_git_and_wheel_artifact_identity(wheel):
         ("predeploy_receipt_file_sha256", "0" * 64),
         ("startup_bundle_file_sha256", "0" * 64),
         ("effect_scope", "all-runtime-writes"),
+        ("environment", "development"),
     ],
 )
 def test_runtime_snapshot_rejects_individually_resigned_binding_splices(
@@ -166,6 +167,44 @@ def test_runtime_snapshot_rejects_individually_resigned_binding_splices(
             evaluated_at=NOW,
             authority_not_after=NOW + timedelta(minutes=1),
         )
+
+
+def test_development_snapshot_verifies_but_is_development_only():
+    challenge = _challenge(environment="development")
+    raw, public = _response(challenge)
+
+    proof = authority.verify_runtime_snapshot(
+        raw,
+        challenge=challenge,
+        public_key_hex=public,
+        evaluated_at=NOW,
+        authority_not_after=NOW + timedelta(minutes=1),
+    )
+
+    assert proof.environment == "development"
+    report = proof.public_report()
+    assert report["ok"] is True
+    assert report["environment"] == "development"
+    assert report["production_ready"] is False
+    assert report["deployment_status"] == "DEVELOPMENT_ONLY"
+
+    production_report = authority.verify_runtime_snapshot(
+        _response(_challenge())[0],
+        challenge=_challenge(),
+        public_key_hex=public,
+        evaluated_at=NOW,
+        authority_not_after=NOW + timedelta(minutes=1),
+    ).public_report()
+    assert production_report["environment"] == "production"
+    assert production_report["deployment_status"] == "NOT_READY"
+
+
+def test_runtime_challenge_rejects_undeclared_environments():
+    for environment in ("staging", "prod", "", None):
+        with pytest.raises(
+            authority.RuntimeAuthorityError, match="must be production"
+        ):
+            _challenge(environment=environment)
 
 
 def test_runtime_snapshot_rejects_drain_lease_as_runtime_lease():

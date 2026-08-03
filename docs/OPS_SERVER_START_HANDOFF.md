@@ -155,6 +155,18 @@ app DB와 system DB ACCESS 및 exact mutable SHOW/procedure 권한만 가진다.
 admin/break-glass role도 실패다. system authorization scan은 writer `lastCommittedTxn` 앞뒤가
 같아야 하지만, 이것을 PG+Neo 전체의 원자적 snapshot으로 해석하면 안 된다. 현재 Enterprise
 실환경 vocabulary 영수증이 없으므로 이 단계는 계속 NOT_READY다.
+예외는 명시 선언한 development profile 하나뿐이다. policy/request의
+`environment=development`면 PG host로 loopback 대신 literal IP 하나(예: LAN IP)를 허용하고,
+live 서버가 실제 Community(2026.01~2026.06)일 때만 RBAC 검사 대신 Community 전용 fact set
+(`community_semantics=true`, `rbac_available=false`, native-only auth, 세 principal 존재,
+system authority 안정성, exact `read_query_count`)을 서명·검증한다. 이 경우도 audit principal의
+read-only는 주장하지 않으며, 결과는 `ACCESS_PAIR_VERIFIED`지만 `deployment_status`가
+`DEVELOPMENT_ONLY`, `production_ready`는 항상 false로 모든 서명 산출물에 정직하게 기록된다.
+runtime writer authority challenge도 같은 선언 환경을 그대로 물려받아 서명·검증되며(정책·
+receipt·challenge 환경이 정확히 일치하지 않으면 fail-closed), development snapshot 역시
+`DEVELOPMENT_ONLY`로만 표기된다. production policy는 지금과 동일하게 Enterprise 의미만
+허용하고, DEVELOPMENT_ONLY pair/snapshot은 production approval/L3 경로 어디에서도 승인
+근거가 되지 않는다.
 서명은 두 datastore key 아래 네 개의 domain-separated signature이며, verifier는 stateless다.
 predeploy/startup nonce 재사용은 거부하지만 동일한 유효 pair의 만료 전 재검증은 막지 않는다.
 그 다음 앱은 별도 runtime authority에 fresh nonce challenge를 보내 current boot, full Git 또는

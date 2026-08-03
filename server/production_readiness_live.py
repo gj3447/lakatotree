@@ -889,6 +889,11 @@ def collect_runtime(config: Mapping[str, Any], timeout: float, environ: Mapping[
                     expected_artifact=config["expected_artifact"],
                     evaluated_at=datetime.now(timezone.utc),
                 )
+                if proof.environment != "production":
+                    # A DEVELOPMENT_ONLY snapshot never enters readiness facts.
+                    raise RuntimeAuthorityError(
+                        "runtime authority snapshot environment is not production"
+                    )
                 report = proof.public_report()
                 facts["runtime_authority"] = {
                     "http_status": status_code,

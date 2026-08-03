@@ -14,6 +14,14 @@ NEO4J_SUPPORTED_RELEASES = frozenset({
     (2026, 5),
     (2026, 6),
 })
+NEO4J_COMMUNITY_SUPPORTED_RELEASES = frozenset({
+    (2026, 1),
+    (2026, 2),
+    (2026, 3),
+    (2026, 4),
+    (2026, 5),
+    (2026, 6),
+})
 FENCE_VERIFICATION_SCHEMA = "lakatotree-writer-fence-verification/v2"
 FENCE_SIGNATURE_DOMAIN = FENCE_VERIFICATION_SCHEMA.encode("ascii") + b"\0"
 FENCE_RESPONSE_FIELDS = frozenset({

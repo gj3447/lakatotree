@@ -187,3 +187,28 @@ def test_cli_emits_only_sanitized_typed_result(monkeypatch, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "NOT_READY"
     assert output["failures"] == ["storage_access.policy.unavailable"]
+
+
+def test_development_pair_report_carries_development_only_label(
+    tmp_path, monkeypatch
+):
+    settings, _raw = _settings(tmp_path)
+    monkeypatch.setattr(
+        verifier,
+        "verify_access_attestation_pair_bytes",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status="ACCESS_PAIR_VERIFIED",
+            failures=(),
+            deployment_status="DEVELOPMENT_ONLY",
+            environment="development",
+        ),
+    )
+    report = verifier.verify_pinned_storage_access(
+        settings,
+        evaluated_at=datetime(2026, 8, 2, 0, 3, tzinfo=timezone.utc),
+        environ={},
+    )
+    assert report["status"] == "ACCESS_PAIR_VERIFIED"
+    assert report["production_ready"] is False
+    assert report["deployment_status"] == "DEVELOPMENT_ONLY"
+    assert report["environment"] == "development"

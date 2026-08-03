@@ -120,6 +120,7 @@ def _components():
         lease_postgresql_advisory_key=(1279349588, 20260802),
         observed_at=(NOW - timedelta(seconds=1)).isoformat(),
         expires_at=(NOW + timedelta(minutes=2)).isoformat(),
+        environment="production",
         authority_did=_DIDS["runtime"],
         storage_access_policy_file_sha256="d" * 64,
     )
