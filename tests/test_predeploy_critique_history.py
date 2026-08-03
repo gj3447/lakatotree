@@ -1444,8 +1444,24 @@ def test_apply_hashes_and_executes_each_captured_migration_read_once(
             return b"changed-on-second-read"
         return captured[name]
 
+    class _Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def execute(self, _statement, *_params):
+            return None
+
+        def fetchone(self):
+            return ("lakatotree_owner",)
+
     class _Connection:
         autocommit = False
+
+        def cursor(self):
+            return _Cursor()
 
         def close(self):
             return None
@@ -1523,7 +1539,10 @@ def test_apply_hashes_and_executes_each_captured_migration_read_once(
     monkeypatch.setattr(module, "pg_projection_rows", lambda *_args: [])
     monkeypatch.setattr(
         module, "_bounded_pg_migration",
-        lambda _connection, _expires, source: executed.setdefault("pg", source),
+        lambda _connection, _expires, source: (
+            executed.setdefault("pg", source),
+            "lakatotree_owner",
+        )[1],
     )
     monkeypatch.setattr(
         module, "_bounded_neo_migration",
