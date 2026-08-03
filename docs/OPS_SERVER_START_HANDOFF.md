@@ -172,7 +172,11 @@ snapshot 수명 최대 1시간(3600초, 관측 후 30초 신선도와 commit mar
 bundle 유효기간 내내 ledger가 열려 있고, 6시간 창의 갱신은 bundle 재수집 + env 재핀 +
 재시작으로 한다. production policy는 지금과 동일하게 Enterprise 의미만 허용하고,
 DEVELOPMENT_ONLY pair/snapshot은 production approval/L3 경로 어디에서도 승인 근거가
-되지 않는다.
+되지 않는다. 선언된 development 배포에서는 검증 완료된 development access pair
+(`ACCESS_PAIR_VERIFIED` + `DEVELOPMENT_ONLY`, 정책·receipt·runtime env 세 곳 환경 일치,
+유효기간 내, 실패 0)가 outbox reconciliation(`POST /api/ops/reconcile-outbox` 및 startup
+replay)을 승인하므로 PG outage 뒤에도 pending ledger entry를 회수할 수 있다. 이 승인은
+ledger *복구*에 한정되며 production approval이나 L3의 근거가 되는 일은 결코 없다.
 서명은 두 datastore key 아래 네 개의 domain-separated signature이며, verifier는 stateless다.
 predeploy/startup nonce 재사용은 거부하지만 동일한 유효 pair의 만료 전 재검증은 막지 않는다.
 그 다음 앱은 별도 runtime authority에 fresh nonce challenge를 보내 current boot, full Git 또는

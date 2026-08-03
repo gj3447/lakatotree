@@ -914,6 +914,10 @@ def test_critique_ready_uses_cached_startup_audit_without_ledger_rescan(monkeypa
                 'valid_until': '2999-01-01T00:00:00+00:00',
             },
         }, True),
+        # A fully verified DEVELOPMENT_ONLY pair authorizes nothing while the
+        # runtime settings do not declare a development deployment.  The
+        # production-approval boundary for this shape lives in
+        # test_production_approval.py::test_development_only_storage_pair_cannot_enter_live_review.
         ({
             'contract_id': 'lakatotree-critique-history-storage/v1',
             'postgresql': {'contract_id': 'lakatotree-critique-history-storage/v1',
@@ -921,7 +925,8 @@ def test_critique_ready_uses_cached_startup_audit_without_ledger_rescan(monkeypa
             'neo4j': {'contract_id': 'lakatotree-critique-history-storage/v1',
                        'ok': False, 'failures': ['neo4j.outbox.pending']},
             'predeploy_receipt': {'contract_id': 'lakatotree-critique-history-storage/v1',
-                                  'ok': True, 'failures': []},
+                                  'ok': True, 'failures': [],
+                                  'environment': 'development'},
             'storage_access': {
                 'contract_id': 'lakatotree-critique-history-storage/v1',
                 'ok': True,
@@ -969,9 +974,187 @@ def test_critique_ready_uses_cached_startup_audit_without_ledger_rescan(monkeypa
         }, False),
     ],
 )
-def test_reconciliation_authority_is_exact_and_pending_only(report, expected):
+def test_reconciliation_authority_is_exact_and_pending_only(
+    report, expected, monkeypatch
+):
     app = load_app()
+    # Pin the undeclared (non-development) runtime environment explicitly so
+    # the table above never depends on the developer's shell environment.
+    monkeypatch.setattr(
+        app, 'SETTINGS', replace(app.SETTINGS, storage_environment=None)
+    )
     assert app._reconciliation_authorized(report) is expected
+
+
+# ── development recovery scope: a *fully verified* development access pair
+#    authorizes outbox reconciliation (ledger recovery) only.  It never enters
+#    production approval or readiness (see
+#    test_production_approval.py::test_development_only_storage_pair_cannot_enter_live_review
+#    and test_development_runtime_snapshot_cannot_enter_live_review). ──
+
+def _development_reconciliation_report(app):
+    report = _reconciliation_report(app)
+    report['predeploy_receipt'] = {
+        'contract_id': app.CONTRACT_ID,
+        'ok': True,
+        'failures': [],
+        'environment': 'development',
+    }
+    report['storage_access'] = {
+        **_verified_access(app),
+        'deployment_status': 'DEVELOPMENT_ONLY',
+        'environment': 'development',
+    }
+    return report
+
+
+def _declare_environment(monkeypatch, app, environment):
+    monkeypatch.setattr(
+        app, 'SETTINGS', replace(app.SETTINGS, storage_environment=environment)
+    )
+
+
+def test_development_access_pair_authorizes_reconciliation(monkeypatch):
+    app = load_app()
+    _declare_environment(monkeypatch, app, 'development')
+    report = _development_reconciliation_report(app)
+    assert app._reconciliation_authorized(report) is True
+
+
+def test_development_reconciliation_requires_declared_environment(monkeypatch):
+    # The same fully verified development report is rejected unless the
+    # runtime settings themselves declare the development deployment.
+    app = load_app()
+    report = _development_reconciliation_report(app)
+    for declared in ('production', None, 'staging'):
+        _declare_environment(monkeypatch, app, declared)
+        assert app._reconciliation_authorized(report) is False
+
+
+@pytest.mark.parametrize(
+    'access_overrides',
+    [
+        {'failures': ['storage_access.unverified']},               # any failure
+        {'ok': False, 'failures': ['storage_access.unverified']},
+        {                                                          # NOT_READY-with-failures
+            'ok': False,
+            'status': 'NOT_READY',
+            'deployment_status': 'NOT_READY',
+            'failures': ['storage_access.unverified'],
+            'valid_until': None,
+        },
+        {'valid_until': '2000-01-01T00:00:00+00:00'},              # stale validity
+        {'valid_until': None},                                     # missing validity
+        {'status': 'NOT_READY'},                                   # status drift
+        {'production_ready': True},                                # laundering attempt
+        {'environment': 'staging'},                                # unknown environment
+        {'environment': 'production'},                             # env mismatch vs receipt
+        {'environment': None},                                     # missing field value
+    ],
+)
+def test_development_reconciliation_rejects_unverified_access(
+    access_overrides, monkeypatch
+):
+    app = load_app()
+    _declare_environment(monkeypatch, app, 'development')
+    report = _development_reconciliation_report(app)
+    report['storage_access'].update(access_overrides)
+    assert app._reconciliation_authorized(report) is False
+
+
+def test_development_reconciliation_rejects_missing_environment_field(monkeypatch):
+    app = load_app()
+    _declare_environment(monkeypatch, app, 'development')
+    report = _development_reconciliation_report(app)
+    del report['storage_access']['environment']
+    assert app._reconciliation_authorized(report) is False
+
+
+_MISSING = object()
+
+
+@pytest.mark.parametrize(
+    'receipt_environment',
+    ['production', 'staging', None, _MISSING],
+)
+def test_development_reconciliation_requires_receipt_environment_agreement(
+    receipt_environment, monkeypatch
+):
+    # Access-report environment must agree with the verified predeploy receipt
+    # environment — the same cross-check _runtime_snapshot_readback performs.
+    app = load_app()
+    _declare_environment(monkeypatch, app, 'development')
+    report = _development_reconciliation_report(app)
+    if receipt_environment is _MISSING:
+        del report['predeploy_receipt']['environment']
+    else:
+        report['predeploy_receipt']['environment'] = receipt_environment
+    assert app._reconciliation_authorized(report) is False
+
+
+def test_production_reconciliation_shape_unchanged_by_development_scope(monkeypatch):
+    # The declared development environment must not widen the production
+    # branch: a DEVELOPMENT_ONLY report keeps failing in production settings,
+    # and the exact production NOT_READY shape stays authorized as before.
+    app = load_app()
+    _declare_environment(monkeypatch, app, 'production')
+    assert app._reconciliation_authorized(
+        _development_reconciliation_report(app)
+    ) is False
+    assert app._reconciliation_authorized(_reconciliation_report(app)) is True
+
+
+def test_development_recovery_runs_full_reconcile_pipeline(monkeypatch):
+    # End-to-end over _reconcile_durable_critique_state: the commit scope
+    # re-derives authority from the development report and still requires the
+    # runtime snapshot leg.
+    app = load_app()
+    _writer_up(monkeypatch, app)
+    _declare_environment(monkeypatch, app, 'development')
+    monkeypatch.setattr(
+        app._container,
+        'reconcile_outbox',
+        lambda: {
+            'ok': True, 'pending': 0, 'replayed': [], 'replayed_count': 0,
+            'still_pending': 0, 'pg_down': False, 'conflicts': [],
+            'conflict_count': 0,
+        },
+    )
+    monkeypatch.setattr(
+        app, '_reconcile_critique_semantics',
+        lambda: {'ok': True, 'failures': [], 'violations': []},
+    )
+    monkeypatch.setattr(
+        app, '_require_reconciliation_authority',
+        lambda: _development_reconciliation_report(app),
+    )
+    result = app._reconcile_durable_critique_state()
+    assert result['ok'] is True
+
+
+def test_development_recovery_still_requires_runtime_snapshot_leg(monkeypatch):
+    app = load_app()
+    _writer_up(monkeypatch, app)
+    _declare_environment(monkeypatch, app, 'development')
+    monkeypatch.setattr(
+        app,
+        '_runtime_snapshot_readback',
+        lambda _report: (
+            {
+                'ok': False,
+                'production_ready': False,
+                'deployment_status': 'NOT_READY',
+                'failures': ['runtime.snapshot.unverified'],
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        app, '_require_reconciliation_authority',
+        lambda: _development_reconciliation_report(app),
+    )
+    with pytest.raises(app.WriterFenceLost, match='runtime snapshot'):
+        app._reconcile_durable_critique_state()
 
 
 def test_healthz_does_not_scan_or_block_on_outbox_backlog(monkeypatch):
