@@ -981,6 +981,7 @@ def _validated_pg_endpoint(
     *,
     expected_host: str | None = None,
     expected_port: int | None = None,
+    allow_non_loopback_expected: bool = False,
 ) -> tuple[str, int, dict[str, str]]:
     """Return explicit TLS conninfo with no libpq ambient-authority fallback."""
 
@@ -1028,7 +1029,7 @@ def _validated_pg_endpoint(
                 "PostgreSQL v2 target must use one literal IP"
             ) from exc
         if not (
-            expected_ip.is_loopback
+            (expected_ip.is_loopback or allow_non_loopback_expected)
             and certificate_host_ip == expected_ip
             and hostaddr_ip == expected_ip
             and type(expected_port) is int
@@ -1106,6 +1107,11 @@ def _collect_postgresql_impl(
             str(config["database"]),
             expected_host=(str(config["host"]) if "host" in config else None),
             expected_port=(config.get("port") if "host" in config else None),
+            # Development access policies may pin one non-loopback literal IP;
+            # every production caller leaves this unset and stays loopback-only.
+            allow_non_loopback_expected=(
+                config.get("environment") == "development"
+            ),
         )
     else:
         if (

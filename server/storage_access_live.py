@@ -619,6 +619,7 @@ def collect_signed_storage_audit(
 
     configs = {
         "postgresql": {
+            "environment": policy["environment"],
             "host": policy["postgresql"]["host"],
             "port": policy["postgresql"]["port"],
             "database": policy["postgresql"]["database"],
