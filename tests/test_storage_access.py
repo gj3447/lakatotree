@@ -1244,3 +1244,59 @@ def test_failing_development_pair_stays_not_ready_not_development_only():
     assert result.status == "NOT_READY"
     assert result.production_ready is False
     assert result.deployment_status == "NOT_READY"
+
+
+@pytest.mark.parametrize(
+    ("environment", "expires_at", "accepted"),
+    (
+        # development: exactly the declared 6h window is the inclusive bound
+        ("development", "2026-08-02T06:00:00+00:00", True),
+        ("development", "2026-08-02T06:00:01+00:00", False),
+        # production: exactly 300s stays the inclusive bound, 301s fails
+        ("production", "2026-08-02T00:05:00+00:00", True),
+        ("production", "2026-08-02T00:05:01+00:00", False),
+        # production can never borrow the development window
+        ("production", "2026-08-02T06:00:00+00:00", False),
+    ),
+)
+def test_attestation_validity_window_is_environment_bound(
+    environment, expires_at, accepted
+):
+    observation = (
+        _community_observation()
+        if environment == "development"
+        else _neo_observation()
+    )
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment=environment,
+            observation=observation,
+            observed_at="2026-08-02T00:00:00+00:00",
+            expires_at=expires_at,
+        ),
+        policy=_policy(environment=environment),
+        expected=_expected(environment=environment),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is accepted
+    if not accepted:
+        assert "freshness_invalid" in result.failures
+
+
+def test_attestation_environment_must_match_the_development_policy():
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="production",
+            expected=_expected(environment="development"),
+            observation=_community_observation(),
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is False
+    assert "environment_mismatch" in result.failures

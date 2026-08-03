@@ -25,6 +25,8 @@ from lakatos.write_cert import did_key_encode, ed25519_public_key
 from server import production_readiness_live as live
 from server.storage_access import (
     ACCESS_POLICY_SCHEMA,
+    DEVELOPMENT_MAX_VALIDITY_SECONDS,
+    MAX_VALIDITY_SECONDS,
     PHASES,
     STORAGE_AUDIT_BUNDLE_SCHEMA,
     STORES,
@@ -788,6 +790,13 @@ def collect_signed_storage_audit(
         "previous_phase_bundle_file_sha256": previous_file_sha,
     }
     signed: dict[str, dict[str, Mapping[str, Any]]] = {store: {} for store in STORES}
+    # Production keeps the 5-minute attestation window; only a declared
+    # development request signs the longer 6-hour home window.
+    validity_seconds = (
+        DEVELOPMENT_MAX_VALIDITY_SECONDS
+        if request["environment"] == "development"
+        else MAX_VALIDITY_SECONDS
+    )
     for store in STORES:
         for position in ("before", "after"):
             observed_at = observed_times[store][position]
@@ -800,7 +809,9 @@ def collect_signed_storage_audit(
                 observation=observations[store][position],
                 target_binding=bindings[store][position],
                 observed_at=observed_at.isoformat(),
-                expires_at=(observed_at + timedelta(seconds=300)).isoformat(),
+                expires_at=(
+                    observed_at + timedelta(seconds=validity_seconds)
+                ).isoformat(),
                 evidence_refs=[
                     f"request-sha256:{request_file_sha256}",
                     f"policy-sha256:{expected['access_policy_file_sha256']}",

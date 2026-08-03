@@ -34,6 +34,7 @@ RUNTIME_EFFECT_SCOPE = "critique-history-ledger/v1"
 RUNTIME_ENVIRONMENTS = ("production", "development")
 MAX_RUNTIME_SNAPSHOT_BYTES = 64 * 1024
 MAX_SNAPSHOT_LIFETIME_SECONDS = 300
+DEVELOPMENT_MAX_SNAPSHOT_LIFETIME_SECONDS = 3600
 MAX_SNAPSHOT_AGE_SECONDS = 30
 MIN_COMMIT_MARGIN_SECONDS = 2
 
@@ -469,10 +470,18 @@ def verify_runtime_snapshot(
     outer_expiry = authority_not_after.astimezone(timezone.utc)
     observed = _time(body["observed_at"], field="observed_at")
     expires = _time(body["expires_at"], field="expires_at")
+    # The signed body environment is challenge-bound and restricted to the
+    # declared set; only development gets the longer home snapshot lifetime.
+    # Freshness (age) and the commit margin stay identical in both.
+    max_lifetime_seconds = (
+        DEVELOPMENT_MAX_SNAPSHOT_LIFETIME_SECONDS
+        if body["environment"] == "development"
+        else MAX_SNAPSHOT_LIFETIME_SECONDS
+    )
     if not (
         observed <= now < expires <= outer_expiry
         and now - observed <= timedelta(seconds=MAX_SNAPSHOT_AGE_SECONDS)
-        and expires - observed <= timedelta(seconds=MAX_SNAPSHOT_LIFETIME_SECONDS)
+        and expires - observed <= timedelta(seconds=max_lifetime_seconds)
         and expires - now >= timedelta(seconds=MIN_COMMIT_MARGIN_SECONDS)
     ):
         raise RuntimeAuthorityError("runtime snapshot is stale or exceeds its authority")

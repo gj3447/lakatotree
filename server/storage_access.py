@@ -45,6 +45,7 @@ PHASES = ("predeploy", "startup")
 POSITIONS = ("before", "after")
 MAX_OBSERVATION_BYTES = 512 * 1024
 MAX_VALIDITY_SECONDS = 300
+DEVELOPMENT_MAX_VALIDITY_SECONDS = 21600
 MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 MAX_JSON_NESTING = 32
 
@@ -1607,6 +1608,14 @@ def verify_datastore_attestation(
                 bytes.fromhex(signature_hex),
             )
         )
+        # Validity keys off the validated policy environment (the attestation
+        # body environment is bound to it via environment_mismatch below);
+        # only the declared development profile gets the longer home window.
+        max_validity_seconds = (
+            DEVELOPMENT_MAX_VALIDITY_SECONDS
+            if policy["environment"] == "development"
+            else MAX_VALIDITY_SECONDS
+        )
         checks = [
             (signature_ok, "signature_invalid"),
             (store == expected_store, "store_mismatch"),
@@ -1620,7 +1629,7 @@ def verify_datastore_attestation(
             ),
             (
                 observed_at <= evaluated_at < expires_at
-                and timedelta(0) < expires_at - observed_at <= timedelta(seconds=MAX_VALIDITY_SECONDS),
+                and timedelta(0) < expires_at - observed_at <= timedelta(seconds=max_validity_seconds),
                 "freshness_invalid",
             ),
         ]

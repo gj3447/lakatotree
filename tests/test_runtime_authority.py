@@ -429,3 +429,51 @@ def test_runtime_authority_cli_verifies_only_pinned_public_files(tmp_path, capsy
     ])
     assert result == 1
     assert json.loads(capsys.readouterr().out)["status"] == "NOT_READY"
+
+
+@pytest.mark.parametrize(
+    ("environment", "lifetime_seconds", "accepted"),
+    (
+        # development: exactly the declared 1h lifetime is the inclusive bound
+        ("development", 3600, True),
+        ("development", 3601, False),
+        # production: exactly 300s stays the inclusive bound, 301s fails
+        ("production", 300, True),
+        ("production", 301, False),
+        # production can never borrow the development lifetime
+        ("production", 3600, False),
+    ),
+)
+def test_snapshot_lifetime_bound_is_environment_bound(
+    environment, lifetime_seconds, accepted
+):
+    challenge = _challenge(environment=environment)
+    expires = NOW + timedelta(seconds=lifetime_seconds)
+    raw, public = _response(challenge, observed=NOW, expires=expires)
+
+    def verify():
+        return authority.verify_runtime_snapshot(
+            raw,
+            challenge=challenge,
+            public_key_hex=public,
+            evaluated_at=NOW,
+            authority_not_after=expires,
+        )
+
+    if accepted:
+        proof = verify()
+        assert proof.environment == environment
+        # freshness (age) stays identical in development: a stale read fails
+        with pytest.raises(authority.RuntimeAuthorityError, match="stale"):
+            authority.verify_runtime_snapshot(
+                raw,
+                challenge=challenge,
+                public_key_hex=public,
+                evaluated_at=NOW + timedelta(seconds=31),
+                authority_not_after=expires,
+            )
+    else:
+        with pytest.raises(
+            authority.RuntimeAuthorityError, match="stale or exceeds"
+        ):
+            verify()

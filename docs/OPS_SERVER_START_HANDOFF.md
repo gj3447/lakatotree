@@ -164,9 +164,15 @@ read-only는 주장하지 않으며, 결과는 `ACCESS_PAIR_VERIFIED`지만 `dep
 `DEVELOPMENT_ONLY`, `production_ready`는 항상 false로 모든 서명 산출물에 정직하게 기록된다.
 runtime writer authority challenge도 같은 선언 환경을 그대로 물려받아 서명·검증되며(정책·
 receipt·challenge 환경이 정확히 일치하지 않으면 fail-closed), development snapshot 역시
-`DEVELOPMENT_ONLY`로만 표기된다. production policy는 지금과 동일하게 Enterprise 의미만
-허용하고, DEVELOPMENT_ONLY pair/snapshot은 production approval/L3 경로 어디에서도 승인
-근거가 되지 않는다.
+`DEVELOPMENT_ONLY`로만 표기된다. 유효기간도 환경별이다: production은 access attestation
+5분·snapshot 수명 최대 300초 그대로이고, development만 access pair 6시간(21600초)·
+snapshot 수명 최대 1시간(3600초, 관측 후 30초 신선도와 commit margin은 동일)을 허용한다.
+홈 운영은 bundle 재수집 없이 몇 분 간격의 주기적
+`POST /api/ops/critique-history-contract`(예: systemd timer)로 runtime proof만 갱신하면
+bundle 유효기간 내내 ledger가 열려 있고, 6시간 창의 갱신은 bundle 재수집 + env 재핀 +
+재시작으로 한다. production policy는 지금과 동일하게 Enterprise 의미만 허용하고,
+DEVELOPMENT_ONLY pair/snapshot은 production approval/L3 경로 어디에서도 승인 근거가
+되지 않는다.
 서명은 두 datastore key 아래 네 개의 domain-separated signature이며, verifier는 stateless다.
 predeploy/startup nonce 재사용은 거부하지만 동일한 유효 pair의 만료 전 재검증은 막지 않는다.
 그 다음 앱은 별도 runtime authority에 fresh nonce challenge를 보내 current boot, full Git 또는
