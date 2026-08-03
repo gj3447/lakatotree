@@ -2937,6 +2937,7 @@ class JudgementService:
                    """ + LOCKED_BUDGET_GUARD + """
                    MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                    SET e._cas = coalesce(e._cas,0) + 0
+                   WITH t, e
                    OPTIONAL MATCH (e)-[:HAS_PREDICTION_TEMPORAL_COMMITMENT]->
                      (temporal_commitment:PredictionTemporalCommitment)
                    WITH t, e,
