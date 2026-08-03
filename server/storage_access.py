@@ -28,6 +28,7 @@ from lakatos.write_cert import (
     ed25519_sign,
     ed25519_verify,
 )
+from server.settings import is_pinned_dns_name
 from server.storage_protocol import NEO4J_SUPPORTED_RELEASES
 
 
@@ -407,10 +408,12 @@ def validate_access_policy(value: Any) -> Mapping[str, Any]:
         )
     try:
         ipaddress.ip_address(parsed_uri.hostname)
-    except ValueError as exc:
-        raise StorageAccessError(
-            "policy.neo4j.uri host must be one literal IP"
-        ) from exc
+    except ValueError:
+        if not is_pinned_dns_name(parsed_uri.hostname) or uri != uri.lower():
+            raise StorageAccessError(
+                "policy.neo4j.uri host must be one literal IP or lowercase "
+                "pinned DNS name"
+            ) from None
     neo_database = _text(
         neo["database"], path="policy.neo4j.database", maximum=63
     )

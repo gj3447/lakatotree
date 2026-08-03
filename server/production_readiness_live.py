@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
+from server.settings import is_pinned_dns_name
 from server.storage_protocol import NEO4J_SUPPORTED_RELEASES, STORAGE_CONTRACT_ID
 from server.runtime_authority import (
     RUNTIME_EFFECT_SCOPE,
@@ -2545,8 +2546,12 @@ def _validated_neo_uri(value: str) -> str:
         raise _PortUnavailable("Neo4j URI must include one pinned port")
     try:
         ipaddress.ip_address(parsed.hostname)
-    except ValueError as exc:
-        raise _PortUnavailable("Neo4j URI host must be one literal IP") from exc
+    except ValueError:
+        if not is_pinned_dns_name(parsed.hostname):
+            raise _PortUnavailable(
+                "Neo4j URI host must be one literal IP or lowercase pinned "
+                "DNS name"
+            ) from None
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
     return urlunsplit((parsed.scheme, f"{host}:{port}", parsed.path, "", ""))
 

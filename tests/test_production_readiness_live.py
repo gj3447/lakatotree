@@ -812,11 +812,16 @@ def test_neo4j_endpoint_requires_literal_system_trusted_tls():
     assert live._validated_neo_uri("bolt+s://127.0.0.1:7687") == (
         "bolt+s://127.0.0.1:7687"
     )
+    assert live._validated_neo_uri("bolt+s://neo4j.metahumotonic.com:7687") == (
+        "bolt+s://neo4j.metahumotonic.com:7687"
+    )
     for uri in (
         "bolt://127.0.0.1:7687",
         "bolt+s://localhost:7687",
         "neo4j+s://127.0.0.1:7687",
-        "bolt+s://db.example:7687",
+        "bolt+s://dbhost:7687",
+        "bolt+s://-bad.example.com:7687",
+        "bolt+s://neo4j..example.com:7687",
     ):
         with pytest.raises(live._PortUnavailable):
             live._validated_neo_uri(uri)

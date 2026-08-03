@@ -117,7 +117,8 @@ def test_neo4j_migration_profile_requires_system_trusted_transport():
         "neo4j+s://192.0.2.20:7687",
         "bolt+s://user:pass@192.0.2.20:7687",
         "bolt+s://192.0.2.20:7687?trust=all",
-        "bolt+s://runtime.example:7687",
+        "bolt+s://Runtime.example:7687",
+        "bolt+s://example:7687",
         "bolt+s://192.0.2.20",
     ):
         with pytest.raises(RuntimeError):
@@ -136,12 +137,27 @@ def test_runtime_neo4j_profile_uses_the_same_pinned_endpoint_shape():
     assert password == "runtime-secret"
     for uri in (
         "neo4j+s://192.0.2.20:7687",
-        "bolt+s://runtime.example:7687",
         "bolt+s://192.0.2.20",
         "bolt+s://user:pass@192.0.2.20:7687",
+        "bolt+s://Neo4j.example.com:7687",
+        "bolt+s://neo4j.example.com.:7687",
+        "bolt+s://example:7687",
+        "bolt+s://-bad.example.com:7687",
+        "bolt+s://neo4j..example.com:7687",
+        "bolt+s://192.0.2.20.21:7687",
     ):
         with pytest.raises(RuntimeError):
             _settings(neo4j_uri=uri).require_neo4j()
+
+
+def test_runtime_neo4j_profile_accepts_one_lowercase_pinned_dns_name():
+    uri, user, password = _settings(
+        neo4j_uri="bolt+s://neo4j.metahumotonic.com:7687",
+        neo4j_migration_uri="bolt+s://neo4j.metahumotonic.com:7687",
+    ).require_neo4j()
+    assert uri == "bolt+s://neo4j.metahumotonic.com:7687"
+    assert user == "lakatos_runtime"
+    assert password == "runtime-secret"
 
 
 def _runtime_profile(tmp_path: Path, **overrides) -> ServerSettings:

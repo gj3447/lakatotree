@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import stat
 from urllib.parse import urlsplit
 
@@ -83,6 +84,26 @@ def _load_immutable_pinned_file(path: Path, sha256_hex: str) -> bytes:
     return raw
 
 
+_PINNED_DNS_LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def is_pinned_dns_name(host: str) -> bool:
+    """Accept one lowercase multi-label DNS name a public certificate can bind.
+
+    Byte-exact pin: uppercase, trailing dots, empty labels, and single-label
+    names are rejected so the configured endpoint has exactly one spelling.
+    """
+
+    if not 1 <= len(host) <= 253:
+        return False
+    labels = host.split(".")
+    if len(labels) < 2:
+        return False
+    if any(_PINNED_DNS_LABEL.fullmatch(label) is None for label in labels):
+        return False
+    return any(ch.isalpha() for ch in labels[-1])
+
+
 def _require_pinned_neo4j_uri(value: str, *, setting: str) -> str:
     """Require the one endpoint shape that live access evidence can bind."""
 
@@ -103,13 +124,17 @@ def _require_pinned_neo4j_uri(value: str, *, setting: str) -> str:
         or parsed.fragment
     ):
         raise RuntimeError(
-            f"{setting} must be one credential-free bolt+s literal-IP endpoint "
+            f"{setting} must be one credential-free bolt+s endpoint "
             "with an explicit port"
         )
     try:
         ipaddress.ip_address(parsed.hostname)
-    except ValueError as exc:
-        raise RuntimeError(f"{setting} host must be one literal IP") from exc
+    except ValueError:
+        if not is_pinned_dns_name(parsed.hostname) or value != value.lower():
+            raise RuntimeError(
+                f"{setting} host must be one literal IP or lowercase pinned "
+                "DNS name"
+            ) from None
     return value
 
 

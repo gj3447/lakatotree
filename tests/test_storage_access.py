@@ -519,9 +519,18 @@ def test_policy_rejects_looser_membership_and_builtin_neo_role():
         access.validate_access_policy(policy)
 
     policy = _policy()
-    policy["neo4j"]["uri"] = "bolt+s://db.example:7687"
+    policy["neo4j"]["uri"] = "bolt+s://Db.example.com:7687"
     with pytest.raises(access.StorageAccessError, match="literal IP"):
         access.validate_access_policy(policy)
+
+    policy = _policy()
+    policy["neo4j"]["uri"] = "bolt+s://dbhost:7687"
+    with pytest.raises(access.StorageAccessError, match="literal IP"):
+        access.validate_access_policy(policy)
+
+    policy = _policy()
+    policy["neo4j"]["uri"] = "bolt+s://neo4j.metahumotonic.com:7687"
+    access.validate_access_policy(policy)
 
     policy = _policy()
     policy["postgresql"]["host"] = "192.0.2.10"
