@@ -40,6 +40,7 @@ jobs:
                   "server/schema.sql",
                   "server/storage_migrations/critique_history_v1.sql",
                   "server/storage_migrations/outbox_identity_v1.cypher",
+                  "server/storage_provisioning/postgresql_large_object_acl_v1.sql",
               }
               assert required <= names, required - names
               entry_points = next(
@@ -47,17 +48,188 @@ jobs:
                   for name in names if name.endswith(".dist-info/entry_points.txt")
               )
               assert "lakatotree-storage-predeploy = server.storage_predeploy:main" in entry_points
+              assert "lakatotree-readiness-harness = server.production_readiness:main" in entry_points
+              assert "lakatotree-readiness-collect = server.production_readiness_live:main" in entry_points
+              assert "lakatotree-storage-audit = server.storage_access_live:main" in entry_points
+              assert "lakatotree-storage-access-verify = server.storage_access_verify:main" in entry_points
+              assert "lakatotree-runtime-authority-verify = server.runtime_authority:main" in entry_points
+              assert "lakatotree-production-approval-verify = server.production_approval:main" in entry_points
           PY
       - name: Install and execute the packaged storage surface
         run: |
           storage_wheel=$(find "$RUNNER_TEMP/wheel" -maxdepth 1 -name 'lakatotree-*.whl' -print -quit)
           test -n "$storage_wheel"
+          python -m venv "$RUNNER_TEMP/readiness-base-wheel-venv"
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/pip" install --no-deps "$storage_wheel"
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/pip" check
           for suffix in a b; do
             python -m venv "$RUNNER_TEMP/storage-wheel-venv-$suffix"
             "$RUNNER_TEMP/storage-wheel-venv-$suffix/bin/pip" install "${storage_wheel}[storage]"
             "$RUNNER_TEMP/storage-wheel-venv-$suffix/bin/pip" check
           done
+          python -m venv "$RUNNER_TEMP/readiness-live-wheel-venv"
+          "$RUNNER_TEMP/readiness-live-wheel-venv/bin/pip" install \
+            "${storage_wheel}[readiness-live]"
+          "$RUNNER_TEMP/readiness-live-wheel-venv/bin/pip" check
           cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-harness" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-collect" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-storage-audit" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-storage-access-verify" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-runtime-authority-verify" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-production-approval-verify" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - \
+            "$GITHUB_WORKSPACE/ooptdd_receipts/PRODUCTION_L3_READINESS/harness.json" \
+            "$GITHUB_WORKSPACE/ooptdd_receipts/PRODUCTION_L3_READINESS/fixture.v1.json" \
+            "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-harness" <<'PY'
+          import json, pathlib, subprocess, sys
+          manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          fixture = pathlib.Path(sys.argv[2]).resolve()
+          completed = subprocess.run(
+              [sys.argv[3], "--evidence", str(fixture), "--evidence-sha256",
+               manifest["fixture"]["file_sha256"]],
+              check=False, capture_output=True, text=True,
+          )
+          assert completed.returncode == 0, completed.stderr
+          report = json.loads(completed.stdout)
+          assert report["status"] == "CASE_ACCEPTED"
+          assert report["evidence_bytes_bound"] is True
+          assert report["production_ready"] is False
+          assert report["l3_assurance"] == "UNAVAILABLE"
+          PY
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - <<'PY'
+          import importlib.resources
+          from server.production_readiness import evaluate_readiness
+          from server.production_readiness_live import (
+              NEO4J_PASSWORD_ENV, NEO4J_URI_ENV, NEO4J_USER_ENV,
+              POSTGRESQL_DSN_ENV, collect_live_evidence, collect_neo4j,
+              collect_postgresql,
+          )
+          from server.storage_predeploy import _artifact_identity, operation_identity
+          assert callable(evaluate_readiness)
+          assert callable(collect_live_evidence)
+          provisioning = importlib.resources.files(
+              "server.storage_provisioning"
+          ).joinpath("postgresql_large_object_acl_v1.sql").read_text()
+          assert "requires a direct superuser session" in provisioning
+          artifact = _artifact_identity()
+          assert artifact["kind"] == "wheel-record"
+          assert operation_identity(artifact)["artifact"] == artifact
+          pg = collect_postgresql(
+              {"database": "lakatos", "owner_role": "owner",
+               "migrator_role": "migrator", "runtime_role": "runtime"},
+              3, {POSTGRESQL_DSN_ENV: "host=127.0.0.1 dbname=lakatos"},
+          )
+          neo = collect_neo4j(
+              {"database": "neo4j"}, 1,
+              {NEO4J_URI_ENV: "bolt+s://127.0.0.1:1", NEO4J_USER_ENV: "u",
+               NEO4J_PASSWORD_ENV: "p"},
+          )
+          assert pg.failure_codes == ("postgresql.dependency_unavailable",)
+          assert neo.failure_codes == ("neo4j.dependency_unavailable",)
+          PY
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - \
+            "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-runtime-authority-verify" <<'PY'
+          import hashlib, json, pathlib, subprocess, sys
+          from datetime import datetime, timedelta, timezone
+          from lakatos.write_cert import ed25519_public_key, ed25519_sign
+          from server.runtime_authority import (
+              RUNTIME_SNAPSHOT_SCHEMA, build_runtime_challenge, canonical_json,
+              challenge_sha256, signing_bytes,
+          )
+          from server.storage_predeploy import _artifact_identity
+          now = datetime.now(timezone.utc)
+          secret = bytes([29]) * 32
+          public = ed25519_public_key(secret).hex()
+          artifact = _artifact_identity()
+          boot = "e" * 64
+          challenge = build_runtime_challenge(
+              nonce="d" * 64, environment="production", boot_id=boot,
+              artifact=artifact, operation_sha256="1" * 64,
+              target_sha256="2" * 64,
+              storage_access_policy_file_sha256="3" * 64,
+              predeploy_receipt_file_sha256="4" * 64,
+              predeploy_receipt_sha256="5" * 64,
+              startup_bundle_file_sha256="6" * 64,
+              historical_drain_lease_id_sha256="7" * 64,
+              runtime_writer_lease={
+                  "lease_id": "critique-history-writer-v1",
+                  "owner_token_sha256": "c" * 64,
+                  "generation": 1,
+                  "postgresql_backend_pid": 4242,
+                  "postgresql_advisory_key": [1279349588, 20260802],
+              },
+              workers=[{"worker_id": "8" * 64, "boot_id": boot}],
+          )
+          body = {
+              "schema_version": RUNTIME_SNAPSHOT_SCHEMA,
+              "challenge_sha256": challenge_sha256(challenge),
+              **{key: value for key, value in challenge.items()
+                 if key != "schema_version"},
+              "active": True,
+              "observed_at": now.isoformat(),
+              "expires_at": (now + timedelta(seconds=20)).isoformat(),
+              "evidence_refs": ["9" * 64],
+          }
+          snapshot = canonical_json({
+              **body,
+              "signature": ed25519_sign(secret, signing_bytes(body)).hex(),
+          })
+          artifact_raw = canonical_json(artifact)
+          snapshot_path = pathlib.Path("runtime-snapshot.json").resolve()
+          artifact_path = pathlib.Path("runtime-artifact.json").resolve()
+          snapshot_path.write_bytes(snapshot)
+          artifact_path.write_bytes(artifact_raw)
+          completed = subprocess.run([
+              sys.argv[1], "--snapshot", str(snapshot_path),
+              "--snapshot-sha256", hashlib.sha256(snapshot).hexdigest(),
+              "--expected-artifact", str(artifact_path),
+              "--expected-artifact-sha256", hashlib.sha256(artifact_raw).hexdigest(),
+              "--public-key-hex", public, "--evaluated-at", now.isoformat(),
+          ], check=False, capture_output=True, text=True)
+          assert completed.returncode == 0, completed.stderr
+          report = json.loads(completed.stdout)
+          assert report["artifact_kind"] == "wheel-record"
+          assert report["production_ready"] is False
+          assert report["deployment_status"] == "NOT_READY"
+          PY
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - \
+            "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-collect" <<'PY'
+          import hashlib, json, pathlib, subprocess, sys
+          request = {
+              "schema_version": "lakatotree-production-readiness-collection-request/v1",
+              "target_id": "wheel-smoke",
+              "timeout_seconds": 1,
+              "adapters": {
+                  "runtime": None, "postgresql": None, "neo4j": None,
+                  "predeploy": None, "temporal": None,
+              },
+          }
+          raw = json.dumps(
+              request, sort_keys=True, separators=(",", ":")
+          ).encode()
+          request_path = pathlib.Path("readiness-request.json").resolve()
+          output_path = pathlib.Path("readiness-evidence.json").resolve()
+          request_path.write_bytes(raw)
+          completed = subprocess.run(
+              [sys.argv[1], "--request", str(request_path), "--request-sha256",
+               hashlib.sha256(raw).hexdigest(), "--output", str(output_path)],
+              check=False, capture_output=True, text=True,
+          )
+          assert completed.returncode == 1, completed.stderr
+          evidence = json.loads(output_path.read_text())
+          assert evidence["status"] == "COLLECTION_INCOMPLETE"
+          assert evidence["request_bytes_bound"] is True
+          assert evidence["verification_status"] == "UNVERIFIED"
+          assert evidence["snapshot_coherence"] == "UNATTESTED"
+          assert "mutation_attempts" not in evidence
+          assert "production_ready" not in evidence
+          PY
+          "$RUNNER_TEMP/readiness-live-wheel-venv/bin/python" - <<'PY'
+          import cryptography, neo4j, psycopg2, pydantic
+          from server.production_readiness_live import default_ports
+          assert callable(default_ports)
+          PY
           "$RUNNER_TEMP/storage-wheel-venv-a/bin/lakatotree-storage-predeploy" --help
           for suffix in a b; do
             "$RUNNER_TEMP/storage-wheel-venv-$suffix/bin/python" - \
@@ -164,9 +336,13 @@ jobs:
     # #3: 통합티어(실 Neo4j+PG kg_tx 원자성/멱등 = README "가장 consequential" 보증)를 CI 에서 실제로 실행.
     # 전엔 LAKATOS_IT 미설정이라 8개 integration 테스트가 영영 skip(죽은 게이트)이었다.
     # P0 closure: 실제 저장소 계약은 릴리스 차단 게이트다. 재시도로 flaky 를 녹색화하지 않는다.
-    name: integration — testcontainers Neo4j+PG (LAKATOS_IT, blocking)
+    name: integration — Neo4j + ${{ matrix.pg_image }} (blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_image: ["postgres:16-alpine", "postgres:17-alpine"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -185,6 +361,7 @@ jobs:
       - name: pytest integration tier (real Neo4j+PG via testcontainers)
         env:
           LAKATOS_IT: "1"
+          LAKATOS_PG_IMAGE: ${{ matrix.pg_image }}
         run: python -m pytest tests/integration -q
 
   argument-integrity-harness:
@@ -326,3 +503,36 @@ jobs:
           PY
       - name: run the installed c1verify suite (any engine import => ImportError => RED)
         run: cd /tmp && /tmp/c1venv/bin/python -m pytest --pyargs c1verify.tests -q
+      - name: isolated interpreter disables site and bytecode side effects
+        run: |
+          cd /tmp && /tmp/c1venv/bin/python -I -S -B - <<'PY'
+          import sys
+          assert "site" not in sys.modules
+          assert not any("site-packages" in item for item in sys.path)
+          assert sys.dont_write_bytecode is True
+          PY
+      - name: installed temporal CLI is present and malformed evidence fails closed
+        run: |
+          cd /tmp
+          set +e
+          printf '{}' | /tmp/c1venv/bin/c1verify-temporal \
+            > "$RUNNER_TEMP/c1-temporal-report.json" \
+            2> "$RUNNER_TEMP/c1-temporal-stderr.txt"
+          cli_rc=$?
+          set -e
+          test "$cli_rc" -eq 2
+          test ! -s "$RUNNER_TEMP/c1-temporal-stderr.txt"
+          /tmp/c1venv/bin/python - "$RUNNER_TEMP/c1-temporal-report.json" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          raw = Path(sys.argv[1]).read_bytes()
+          report = json.loads(raw)
+          assert report["schema_version"] == "lakatotree-c1-two-ended-temporal-report/v1"
+          assert report["status"] == "ERROR"
+          assert report["input_sha256"] == hashlib.sha256(b"{}").hexdigest()
+          assert report["reason_code"] == "batch.field_set"
+          assert raw == json.dumps(
+              report, sort_keys=True, separators=(",", ":"),
+              ensure_ascii=False, allow_nan=False,
+          ).encode("utf-8") + b"\n"
+          PY

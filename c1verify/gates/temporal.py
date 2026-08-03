@@ -19,12 +19,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 
 from .._decision import ACCEPT, REJECT, gate_decision
-from .._ed25519 import KeyTypeError, did_key_decode, ed25519_verify
+from .._ed25519 import (
+    KeyTypeError,
+    did_key_decode,
+    did_key_encode,
+    ed25519_public_key_is_strict,
+    ed25519_verify,
+)
 
 GATE = "temporal"
 _ANCHOR_DOMAIN = b"lakatotree-temporal-anchor/v1\n"   # write_cert 도메인과 바이트 동일(엔진-CI 골든 핀)
+_MAX_AUTHORITIES = 64
+_ANCHOR_FIELDS = {"witness_did", "digest", "gen_time", "signature", "channel"}
 
 _RESIDUAL = ("witness KEY-OWNERSHIP independence is out-of-band: this gate proves k distinct did:keys "
              "signed the same spec_digest before the verdict, NOT that those keys are held by k "
@@ -42,10 +51,16 @@ def _signed_bytes(digest_hex: str, gen_time_iso: str) -> bytes:
     return _ANCHOR_DOMAIN + body.encode("utf-8")
 
 
-def _parse_iso(ts: str):
-    from datetime import datetime, timezone
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+def _parse_iso(ts: str) -> datetime:
+    if not isinstance(ts, str) or not ts or ts != ts.strip():
+        raise ValueError("canonical timestamp string required")
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None or dt.utcoffset() is None:
+            raise ValueError("timezone-aware timestamp required")
+        return dt.astimezone(timezone.utc)
+    except (ValueError, OverflowError, AttributeError, TypeError) as exc:
+        raise ValueError("bounded timezone-aware timestamp required") from exc
 
 
 def _reject(reason: str) -> dict:
@@ -62,37 +77,90 @@ def verify_temporal(payload, ctx) -> dict:
     allow = payload.get("witness_allowlist")
     threshold = payload.get("threshold")
     verdict_time = payload.get("verdict_time")
-    if not isinstance(anchors, list) or not spec_digest or not isinstance(allow, list) \
-            or not isinstance(threshold, int) or threshold < 1 or not verdict_time:
+    if (
+        not isinstance(anchors, list)
+        or len(anchors) > _MAX_AUTHORITIES
+        or not isinstance(spec_digest, str)
+        or not spec_digest
+        or spec_digest != spec_digest.strip()
+        or not isinstance(allow, list)
+        or not allow
+        or len(allow) > _MAX_AUTHORITIES
+        or type(threshold) is not int
+        or threshold < 1
+        or not isinstance(verdict_time, str)
+        or not verdict_time
+        or verdict_time != verdict_time.strip()
+    ):
         return _reject("temporal payload 필드 부족(anchors/spec_digest/witness_allowlist/threshold/verdict_time)")
 
     want_digest = _anchor_digest(spec_digest)
-    allow_set = {str(w).strip() for w in allow if w}
-    valid: dict[str, str] = {}
+    allow_set: set[str] = set()
+    try:
+        for witness in allow:
+            if (
+                not isinstance(witness, str)
+                or not witness
+                or witness != witness.strip()
+            ):
+                return _reject("witness allow-list 비정규")
+            public_key = did_key_decode(witness)
+            if (
+                did_key_encode(public_key) != witness
+                or not ed25519_public_key_is_strict(public_key)
+            ):
+                return _reject("witness allow-list 비정규")
+            if witness in allow_set:
+                return _reject("witness allow-list 중복")
+            allow_set.add(witness)
+        verdict_dt = _parse_iso(verdict_time)
+    except (KeyTypeError, ValueError, OverflowError, AttributeError, TypeError):
+        return _reject("witness allow-list 또는 verdict_time 파싱 실패(fail-closed)")
+
+    valid: dict[str, tuple[str, datetime]] = {}
     for a in anchors:
-        if not isinstance(a, dict):
+        if not isinstance(a, dict) or set(a) != _ANCHOR_FIELDS:
             continue
-        w = str(a.get("witness_did") or "").strip()
+        w = a.get("witness_did")
+        gen_time = a.get("gen_time")
+        signature = a.get("signature")
+        if (
+            not isinstance(w, str)
+            or not w
+            or w != w.strip()
+            or not isinstance(gen_time, str)
+            or not gen_time
+            or gen_time != gen_time.strip()
+            or not isinstance(signature, str)
+            or len(signature) != 128
+            or any(char not in "0123456789abcdef" for char in signature)
+            or a.get("channel") != "ed25519-witness"
+        ):
+            continue
         if w not in allow_set:                              # 비허가 증인 미계상
             continue
         if a.get("digest") != want_digest:                  # 밀반입 봉쇄
             continue
         try:
             pub = did_key_decode(w)
-            ok = ed25519_verify(pub, _signed_bytes(want_digest, str(a.get("gen_time") or "")),
-                                bytes.fromhex(a.get("signature") or ""))
-        except (KeyTypeError, ValueError):
+            if did_key_encode(pub) != w or not ed25519_public_key_is_strict(pub):
+                continue
+            parsed_time = _parse_iso(gen_time)
+            ok = ed25519_verify(
+                pub,
+                _signed_bytes(want_digest, gen_time),
+                bytes.fromhex(signature),
+            )
+        except (KeyTypeError, ValueError, OverflowError, AttributeError, TypeError):
             continue
-        if ok and w not in valid:                           # distinct 증인 1회 계상(Sybil 봉쇄)
-            valid[w] = str(a.get("gen_time") or "")
+        if ok and (w not in valid or parsed_time > valid[w][1]):
+            # 같은 증인의 여러 유효 진술 중 가장 늦은 절대시각을 보존한다.
+            valid[w] = (gen_time, parsed_time)
     if len(valid) < threshold:
         return _reject(f"증인 정족수 미달: 유효 distinct {len(valid)} < threshold {threshold}")
-    try:
-        max_t1 = max(_parse_iso(t) for t in valid.values())
-        if max_t1 > _parse_iso(str(verdict_time)):
-            return _reject("백데이트: max(T1) > verdict_time(예측 앵커가 판정보다 늦음)")
-    except (ValueError, AttributeError) as exc:
-        return _reject(f"시각 파싱 실패(fail-closed): {exc}")
+    max_t1 = max(value[1] for value in valid.values())
+    if max_t1 > verdict_dt:
+        return _reject("백데이트: max(T1) > verdict_time(예측 앵커가 판정보다 늦음)")
     return gate_decision(GATE, ACCEPT,
                          f"k-of-N 정족수 재검증 통과(distinct {len(valid)} ≥ {threshold}, max T1 ≤ verdict)",
                          residual_trust_surface=_RESIDUAL)

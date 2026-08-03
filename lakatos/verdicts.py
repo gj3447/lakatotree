@@ -455,6 +455,7 @@ _RECEIPT_ENCODING_VERSION_V3 = 'v3'   # EXTAUDIT S4: comment_sha 봉인 세대 �
 _RECEIPT_ENCODING_VERSION_V4 = 'v4'   # replay 진단(status/reason/regenerated) 봉인 세대
 _RECEIPT_ENCODING_VERSION_V5 = 'v5'   # replay artifact identity 봉인 세대
 _RECEIPT_ENCODING_VERSION_V6 = 'v6'   # canonical test-result summary commitment
+_RECEIPT_ENCODING_VERSION_V7 = 'v7'   # pre-verdict receipt-bound T1 commitment
 # 고정 필드셋 — 순서 무관(sort_keys), 그러나 집합은 규약. receipt_sha 자신은 제외(자기참조).
 #   seq 불포함 의도: prev_receipt_sha 가 payload 에 있어 체인 위치가 sha 에 인코딩된다(같은 내용+같은 prev=
 #   같은 receipt=멱등; 다른 prev=다른 sha). 순서는 prev-링크 walk 로 복원(fold 는 seq 불요) — git reflog 동형.
@@ -490,7 +491,8 @@ RECEIPT_FIELDS_V5 = RECEIPT_FIELDS_V4 + (
     'source_script_path', 'source_result_path',
 )
 RECEIPT_FIELDS_V6 = RECEIPT_FIELDS_V5 + ('history_payload_sha256',)
-RECEIPT_FIELDS = RECEIPT_FIELDS_V6
+RECEIPT_FIELDS_V7 = RECEIPT_FIELDS_V6 + ('prediction_temporal_commitment_sha256',)
+RECEIPT_FIELDS = RECEIPT_FIELDS_V7
 
 _RECEIPT_ARTIFACT_IDENTITY_FIELDS = (
     'judge_script_path', 'result_path', 'result_sha256', 'measurement_lock_sha',
@@ -505,7 +507,7 @@ def _coerce_metric_value(v):
         return None
     try:
         f = float(v)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return f if math.isfinite(f) else None
 
@@ -531,28 +533,32 @@ def canonical_receipt_blob(fields: dict, *, fieldset: tuple | None = None) -> by
     if fieldset is None:
         # A non-null artifact identity member selects v5.  Historical v4 maps lack these
         # properties (or project them as null), so their exact v4 bytes remain re-derivable.
+        v7 = fields.get('prediction_temporal_commitment_sha256') is not None
         v6 = fields.get('history_payload_sha256') is not None
         v5 = any(fields.get(key) is not None for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
         v4 = fields.get('replay_status') is not None
         v3 = fields.get('comment_sha') is not None
         v2 = fields.get('engine_rule_sha') is not None
-        keys = (RECEIPT_FIELDS_V6 if v6 else
+        keys = (RECEIPT_FIELDS_V7 if v7 else
+                (RECEIPT_FIELDS_V6 if v6 else
                 (RECEIPT_FIELDS_V5 if v5 else
                 (RECEIPT_FIELDS_V4 if v4 else
                  (RECEIPT_FIELDS_V3 if v3 else
-                  (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)))))
+                  (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1))))))
     else:
+        v7 = 'prediction_temporal_commitment_sha256' in fieldset
         v6 = 'history_payload_sha256' in fieldset
         v5 = any(key in fieldset for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
         v4 = 'replay_status' in fieldset
         v3 = 'comment_sha' in fieldset
         v2 = 'engine_rule_sha' in fieldset
         keys = fieldset
-    ver = (_RECEIPT_ENCODING_VERSION_V6 if v6 else
+    ver = (_RECEIPT_ENCODING_VERSION_V7 if v7 else
+           (_RECEIPT_ENCODING_VERSION_V6 if v6 else
            (_RECEIPT_ENCODING_VERSION_V5 if v5 else
            (_RECEIPT_ENCODING_VERSION_V4 if v4 else
             (_RECEIPT_ENCODING_VERSION_V3 if v3 else
-             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION)))))
+             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))))))
     payload = {k: fields.get(k) for k in keys}
     payload['metric_value'] = _coerce_metric_value(payload.get('metric_value'))
     if 'regenerated_metric' in payload:

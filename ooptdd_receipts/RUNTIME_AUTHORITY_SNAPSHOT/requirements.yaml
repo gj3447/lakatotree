@@ -1,0 +1,47 @@
+name: lakatotree-runtime-authority-snapshot
+target:
+  mode: in_process
+  callable: runtime_authority_snapshot_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: RAS-1
+    description: A fresh external signature binds the exact boot, artifact, operation, target, access evidence, runtime lease, singleton worker, and narrow ledger effect scope.
+    gate:
+      - {event: exact_runtime_snapshot_verified, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:RUNTIME_AUTHORITY_SNAPSHOT:exact_runtime_snapshot_verified
+      source: runtime_authority_snapshot_receipt.py
+      symbol: verify
+      must_emit: exact_runtime_snapshot_verified
+
+  - id: RAS-2
+    description: Signature, field, artifact, boot, lease, expiry, historical-drain reuse, and replay splices fail closed.
+    gate:
+      - {event: runtime_snapshot_attacks_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:RUNTIME_AUTHORITY_SNAPSHOT:runtime_snapshot_attacks_rejected
+      source: runtime_authority_snapshot_receipt.py
+      symbol: verify
+      must_emit: runtime_snapshot_attacks_rejected
+
+  - id: RAS-3
+    description: PostgreSQL ledger mutations commit on the same session that owns the advisory election lease and roll back when authority is lost.
+    gate:
+      - {event: lease_session_commit_fence_verified, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:RUNTIME_AUTHORITY_SNAPSHOT:lease_session_commit_fence_verified
+      source: runtime_authority_snapshot_receipt.py
+      symbol: verify
+      must_emit: lease_session_commit_fence_verified
+
+  - id: RAS-4
+    description: Public and collector projections omit authority material and never convert the signed admission snapshot into deployment approval.
+    gate:
+      - {event: runtime_snapshot_claim_bounded, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:RUNTIME_AUTHORITY_SNAPSHOT:runtime_snapshot_claim_bounded
+      source: runtime_authority_snapshot_receipt.py
+      symbol: verify
+      must_emit: runtime_snapshot_claim_bounded

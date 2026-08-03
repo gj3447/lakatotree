@@ -1,0 +1,19 @@
+{
+  "schema_version": "lakatotree-c1-two-ended-temporal-ooptdd-harness/v1",
+  "claim_boundary": "This hermetic receipt proves the standalone C1 verifier and a separately executed synthetic time-authority process can rederive one bounded batch of exact current-head temporal proofs. Fixture authority keys are test-only; the receipt is neither production evidence nor deployment approval.",
+  "required_controls": [
+    "process.no_inprocess_c1_import",
+    "process.two_process_positive",
+    "process.batch_single_round",
+    "process.c1_isolated_argv",
+    "identity.result_bindings",
+    "crypto.sidecar_splice",
+    "crypto.v7_commitment_seal",
+    "identity.authority_executable_pin",
+    "identity.authority_signer_pin",
+    "identity.artifact_pin",
+    "identity.python_pin",
+    "claim.per_proof_only",
+    "manifest.exact_control_set"
+  ]
+}

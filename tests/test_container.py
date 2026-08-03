@@ -5,7 +5,9 @@
 # KG: span_lakatotree_server_architecture
 """
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import inspect
+import json
 from threading import Event
 
 import pytest
@@ -22,12 +24,12 @@ from server.ports import (
 )
 
 
-def test_outbox_state_transitions_use_only_the_writer_fenced_port():
+def test_outbox_state_transitions_follow_the_explicit_history_scope_port():
     pending_source = inspect.getsource(AppContainer._record_pending_outbox)
     applied_source = inspect.getsource(AppContainer._mark_outbox_applied)
 
-    assert "self.writer_fenced_kg_tx" in pending_source
-    assert "self.writer_fenced_kg_tx" in applied_source
+    assert "self._history_kg_tx" in pending_source
+    assert "self._history_kg_tx" in applied_source
     assert "self.kg_tx(" not in pending_source
     assert "self.kg_tx(" not in applied_source
 
@@ -280,10 +282,14 @@ def test_global_writer_lease_allows_one_replica_and_live_loss_fails_closed(
 
     class _Connection:
         closed = False
+        autocommit = True
         holds = False
 
         def cursor(self):
             return _Cursor(self)
+
+        def get_backend_pid(self):
+            return 4242
 
         def close(self):
             self.closed = True
@@ -300,6 +306,17 @@ def test_global_writer_lease_allows_one_replica_and_live_loss_fails_closed(
 
     assert first.acquire_writer_lease() is True
     assert first.writer_lease_ready() is True
+    projection = first.writer_lease_public_projection()
+    assert projection == {
+        "lease_id": "critique-history-writer-v1",
+        "owner_token_sha256": hashlib.sha256(
+            first._writer_fence_token.encode("ascii")
+        ).hexdigest(),
+        "generation": 1,
+        "postgresql_backend_pid": 4242,
+        "postgresql_advisory_key": [1279349588, 20260802],
+    }
+    assert first._writer_fence_token not in json.dumps(projection)
     assert second.acquire_writer_lease() is False
     assert first.writer_fenced_kg_tx([("MUTATE", {})]) == [
         [{"mutated": True}]
@@ -343,6 +360,68 @@ def test_writer_fence_rejects_a_token_taken_over_before_domain_mutation(
     assert all(query != "MUTATE" for query in queries)
 
 
+def test_writer_fenced_neo_rechecks_pg_lease_after_domain_ops(monkeypatch):
+    staged = []
+    committed = []
+    rolled_back = []
+    guard_calls = []
+
+    class _Tx:
+        def run(self, query, **params):
+            text = str(query)
+            if "RuntimeWriterLease" in text:
+                rows = [{
+                    "owner_token": params["owner_token"],
+                    "generation": params["generation"],
+                }]
+            else:
+                staged.append(text)
+                rows = [{"mutated": True}]
+            return type("R", (), {"data": lambda _self: rows})()
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute_write(self, unit):
+            try:
+                result = unit(_Tx())
+            except BaseException:
+                rolled_back.extend(staged)
+                staged.clear()
+                raise
+            committed.extend(staged)
+            staged.clear()
+            return result
+
+    class _Neo(_FakeNeo):
+        def session(self):
+            return _Session()
+
+    c = _container(
+        neo=_Neo(),
+        writer_commit_guard=lambda: guard_calls.append(True),
+    )
+    c._writer_lease_conn = object()
+    c._writer_fence_token = "owner"
+    c._writer_fence_generation = 4
+    lease_checks = iter((True, False))
+    monkeypatch.setattr(
+        c, "_pg_writer_lease_ready_unlocked", lambda: next(lease_checks)
+    )
+    monkeypatch.setattr(c, "_close_writer_lease_unlocked", lambda: None)
+
+    with pytest.raises(WriterFenceLost, match="lost before Neo4j commit"):
+        c.writer_fenced_kg_tx([("MUTATE", {})])
+
+    assert committed == []
+    assert rolled_back == ["MUTATE"]
+    assert guard_calls == []
+
+
 def test_writer_acquire_revalidates_pg_after_neo_claim(monkeypatch):
     """A PG lease lost while Neo claim blocks is never published as authority."""
 
@@ -372,6 +451,9 @@ def test_writer_acquire_revalidates_pg_after_neo_claim(monkeypatch):
         def cursor(self):
             return _Cursor()
 
+        def get_backend_pid(self):
+            return 4242
+
         def close(self):
             self.closed = True
 
@@ -400,6 +482,66 @@ def test_writer_acquire_revalidates_pg_after_neo_claim(monkeypatch):
     assert c.acquire_writer_lease() is False
     assert c._writer_lease_conn is None
     assert c._writer_fence_token is None
+
+
+def test_writer_lease_connection_enters_autocommit_before_posture_guard(
+    monkeypatch,
+):
+    events = []
+
+    class _Cursor:
+        row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, _params=None):
+            if "pg_try_advisory_lock" in query:
+                self.row = (True,)
+
+        def fetchone(self):
+            return self.row
+
+    class _Connection:
+        closed = False
+        _autocommit = False
+
+        @property
+        def autocommit(self):
+            return self._autocommit
+
+        @autocommit.setter
+        def autocommit(self, value):
+            self._autocommit = value
+            events.append(("autocommit", value))
+
+        def cursor(self):
+            return _Cursor()
+
+        def get_backend_pid(self):
+            return 4242
+
+        def close(self):
+            self.closed = True
+
+    connection = _Connection()
+    monkeypatch.setattr(
+        "server.container.psycopg2.connect", lambda **_kwargs: connection
+    )
+    c = _container(
+        pg_connection_guard=lambda _conn: events.append(("guard", True))
+    )
+    monkeypatch.setattr(c, "_claim_neo_writer_fence_unlocked", lambda _token: 3)
+    ready_checks = iter((False, True))
+    monkeypatch.setattr(
+        c, "_writer_lease_ready_unlocked", lambda: next(ready_checks)
+    )
+
+    assert c.acquire_writer_lease() is True
+    assert events == [("autocommit", True), ("guard", True)]
 
 
 def test_writer_authority_releases_global_lease_on_exception(monkeypatch):
@@ -484,6 +626,194 @@ def test_pg_returns_connection_to_the_pool_that_checked_it_out():
     assert len(calls) == 1
     assert origin.returned == [connection]
     assert foreign.returned == []
+
+
+def test_pg_connection_guard_runs_before_use_and_discards_rejected_connection():
+    returned = []
+
+    class _Connection:
+        closed = False
+
+        def commit(self):
+            raise AssertionError("rejected connection must not commit")
+
+        def rollback(self):
+            return None
+
+    connection = _Connection()
+
+    class _Pool:
+        def getconn(self):
+            return connection
+
+        def putconn(self, value, close=False):
+            returned.append((value, close))
+
+    c = _container(
+        pg_connection_guard=lambda _conn: (_ for _ in ()).throw(
+            RuntimeError("runtime posture rejected")
+        )
+    )
+    c.pg_pool = lambda: _Pool()
+    with pytest.raises(RuntimeError, match="posture rejected"):
+        with c.pg():
+            raise AssertionError("rejected connection reached caller")
+    assert returned == [(connection, True)]
+
+
+def test_writer_fenced_pg_rolls_back_when_final_commit_guard_rejects(
+    monkeypatch,
+):
+    events = []
+
+    class _Connection:
+        closed = False
+
+        def commit(self):
+            events.append("commit")
+
+        def rollback(self):
+            events.append("rollback")
+
+    connection = _Connection()
+
+    class _Pool:
+        def getconn(self):
+            return connection
+
+        def putconn(self, value, close=False):
+            events.append(("putconn", value, close))
+
+    def reject_commit():
+        events.append("guard")
+        raise WriterFenceLost("authority replaced")
+
+    c = _container(
+        writer_commit_guard=reject_commit,
+        on_history_divergence=events.append,
+    )
+    c._writer_lease_conn = connection
+    monkeypatch.setattr(c, "_pg_writer_lease_ready_unlocked", lambda: True)
+
+    with pytest.raises(WriterFenceLost, match="authority replaced"):
+        with c._writer_fenced_pg():
+            events.append("body")
+
+    assert "commit" not in events
+    assert events[:3] == ["body", "guard", "rollback"]
+    assert events[-1] == "runtime.storage_commit_authority.lost"
+
+
+def test_core_hist_bypasses_commit_authority_outside_ledger_scope(
+    monkeypatch,
+):
+    events = []
+
+    class _Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, *_args):
+            return None
+
+    class _Connection:
+        closed = False
+        autocommit = True
+
+        def cursor(self):
+            return _Cursor()
+
+        def commit(self):
+            events.append("commit")
+
+        def rollback(self):
+            events.append("rollback")
+
+    class _Pool:
+        def getconn(self):
+            return _Connection()
+
+        def putconn(self, _value, close=False):
+            events.append(("putconn", close))
+
+    class _HistoryContainer(AppContainer):
+        @staticmethod
+        def _insert_history(*_args, **_kwargs):
+            return None, None, None
+
+    def reject_commit():
+        events.append("guard")
+        raise WriterFenceLost("ledger authority rejected")
+
+    c = _HistoryContainer(
+        neo=_FakeNeo(),
+        mongo=_FakeMongo(),
+        pg_kw={},
+        writer_commit_guard=reject_commit,
+    )
+    c.pg_pool = lambda: _Pool()
+    c._writer_lease_conn = _Connection()
+    monkeypatch.setattr(c, "_pg_writer_lease_ready_unlocked", lambda: True)
+
+    assert c.hist("tree", "core_event") is True
+    assert events == ["commit", ("putconn", False)]
+
+    with pytest.raises(WriterFenceLost, match="ledger authority rejected"):
+        with c.writer_ledger_scope():
+            c.hist("tree", "ledger_event")
+    assert events[-2:] == ["guard", "rollback"]
+
+
+def test_writer_fenced_pg_commits_on_the_lease_owning_session(monkeypatch):
+    events = []
+
+    class _Connection:
+        closed = False
+        autocommit = True
+
+        def commit(self):
+            events.append("lease-commit")
+
+        def rollback(self):
+            events.append("lease-rollback")
+
+    lease_connection = _Connection()
+    c = _container(writer_commit_guard=lambda: events.append("guard"))
+    c._writer_lease_conn = lease_connection
+    c.pg_pool = lambda: (_ for _ in ()).throw(
+        AssertionError("ledger transaction must not open a pooled connection")
+    )
+    monkeypatch.setattr(c, "_pg_writer_lease_ready_unlocked", lambda: True)
+
+    with c._writer_fenced_pg() as connection:
+        assert connection is lease_connection
+        assert connection.autocommit is False
+        events.append("body")
+
+    assert events == ["body", "guard", "lease-commit"]
+    assert lease_connection.autocommit is True
+
+
+def test_history_outbox_transition_uses_generic_or_ledger_port_by_scope(
+    monkeypatch,
+):
+    c = _container()
+    calls = []
+    monkeypatch.setattr(
+        c, "_execute_kg_tx", lambda ops: calls.append("generic") or list(ops)
+    )
+    monkeypatch.setattr(
+        c, "writer_fenced_kg_tx", lambda ops: calls.append("ledger") or list(ops)
+    )
+
+    assert c._history_kg_tx([("RETURN 1", {})]) == [("RETURN 1", {})]
+    with c.writer_ledger_scope():
+        assert c._history_kg_tx([("RETURN 2", {})]) == [("RETURN 2", {})]
+
+    assert calls == ["generic", "ledger"]
 
 
 def test_hist_swallows_pg_operational_error(caplog):

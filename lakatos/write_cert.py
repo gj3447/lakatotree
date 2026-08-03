@@ -12,7 +12,8 @@ git push cert(builtin/receive-pack.c:2179-2199): 서명된 blob 이 *곧 명령 
     prev_receipt_sha가 G1 영수증 체인 포인터에
     CAS 바인딩되어 replay 가 구조적으로 죽는다(재제출=옛 포인터 서명=불일치; 같은 노드 재채점은
     어차피 409 — git 의 HMAC nonce 가 막던 창을 내용주소 체인이 대신 막는다).
-  · 신원 = did:key(Ed25519, multicodec 0xed01). 검증은 순수 파이썬 RFC 8032(외부 의존 0 —
+  · 신원 = did:key(Ed25519, multicodec 0xed01). 검증은 순수 파이썬 LakatoTree strict
+    Ed25519 profile(RFC 8032 방정식 + 비항등 prime-subgroup A/R, 외부 의존 0 —
     q_signer_key_substrate 결정: cryptography vendor 불가 → hashlib 만). secp256k1(0xe701) 등
     타 키타입은 명시 거부. p333 DID==PeerId 와 포맷 동형(코드 공유 아님).
   · 강제는 G6 tier 체인 안에서(assurance.GATE_WRITE_CERT): anchored tier ∧ 트리가 attestor
@@ -133,7 +134,7 @@ def canonical_cert_blob(command: dict, issued_at: str) -> bytes:
         {"command": body, "issued_at": issued_at})
 
 
-# ── 순수 Ed25519 (RFC 8032) — hashlib 만 사용, 외부 의존 0 ──────────────────────────────────
+# ── 순수 LakatoTree strict Ed25519 profile — hashlib 만 사용, 외부 의존 0 ──────────────────
 _P = 2**255 - 19
 _L = 2**252 + 27742317777372353535851937790883648493
 _D = (-121665 * pow(121666, _P - 2, _P)) % _P
@@ -194,6 +195,15 @@ def _point_equal(p, q) -> bool:
             and (p[1] * q[2] - q[1] * p[2]) % _P == 0)
 
 
+def _point_is_strict_prime_order(point) -> bool:
+    """Reject identity/torsion points; accept only the prime-order subgroup."""
+
+    return (
+        not _point_equal(point, _IDENT)
+        and _point_equal(_point_mul(_L, point), _IDENT)
+    )
+
+
 def _point_compress(p) -> bytes:
     z_inv = _inv(p[2])
     x = p[0] * z_inv % _P
@@ -239,19 +249,32 @@ def ed25519_sign(secret32: bytes, msg: bytes) -> bytes:
 
 
 def ed25519_verify(public32: bytes, msg: bytes, sig64: bytes) -> bool:
+    """LakatoTree strict Ed25519 profile: prime-order non-identity A/R and ``s < L``.
+
+    Rejecting an identity ``R`` is intentionally stricter than general RFC 8032
+    interoperability; LakatoTree-generated signatures do not rely on that edge case.
+    """
+
     if len(public32) != 32 or len(sig64) != 64:
         return False
     a = _point_decompress(public32)
-    if a is None:
+    if a is None or not _point_is_strict_prime_order(a):
         return False
     rp = _point_decompress(sig64[:32])
-    if rp is None:
+    if rp is None or not _point_is_strict_prime_order(rp):
         return False
     s = int.from_bytes(sig64[32:], "little")
     if s >= _L:                      # malleability 거부(RFC 8032 §5.1.7)
         return False
     k = int.from_bytes(_sha512(sig64[:32] + public32 + msg), "little") % _L
     return _point_equal(_point_mul(s, _B), _point_add(rp, _point_mul(k, a)))
+
+
+def ed25519_public_key_is_strict(public32: bytes) -> bool:
+    """Whether ``public32`` is canonical, non-identity, and prime-subgroup Ed25519."""
+
+    point = _point_decompress(public32)
+    return point is not None and _point_is_strict_prime_order(point)
 
 
 # ── did:key (multicodec) — ed25519(0xed01) 만, 타 키타입 명시 거부 ──────────────────────────

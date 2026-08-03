@@ -40,7 +40,10 @@ RECEIPT_FIELDS_V5 = RECEIPT_FIELDS_V4 + (
     "source_script_path", "source_result_path",
 )
 RECEIPT_FIELDS_V6 = RECEIPT_FIELDS_V5 + ("history_payload_sha256",)
-RECEIPT_FIELDS = RECEIPT_FIELDS_V6
+RECEIPT_FIELDS_V7 = RECEIPT_FIELDS_V6 + (
+    "prediction_temporal_commitment_sha256",
+)
+RECEIPT_FIELDS = RECEIPT_FIELDS_V7
 _RECEIPT_ARTIFACT_IDENTITY_FIELDS = (
     "judge_script_path", "result_path", "result_sha256", "measurement_lock_sha",
     "source_script_path", "source_result_path",
@@ -51,6 +54,7 @@ _RECEIPT_ENCODING_VERSION_V3 = "v3"
 _RECEIPT_ENCODING_VERSION_V4 = "v4"
 _RECEIPT_ENCODING_VERSION_V5 = "v5"
 _RECEIPT_ENCODING_VERSION_V6 = "v6"
+_RECEIPT_ENCODING_VERSION_V7 = "v7"
 
 
 def _coerce_metric_value(v):
@@ -60,7 +64,7 @@ def _coerce_metric_value(v):
         return None
     try:
         f = float(v)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return f if math.isfinite(f) else None
 
@@ -78,21 +82,24 @@ def canonical_receipt_blob(fields: dict) -> bytes:
 
     jp1 presence-dispatch: a non-null engine_rule_sha selects v2 (14 fields + v2 header); otherwise
     the v1 path stays byte-identical to the pre-jp1 encoding (legacy carve-out by construction)."""
+    v7 = fields.get("prediction_temporal_commitment_sha256") is not None
     v6 = fields.get("history_payload_sha256") is not None
     v5 = any(fields.get(key) is not None for key in _RECEIPT_ARTIFACT_IDENTITY_FIELDS)
     v4 = fields.get("replay_status") is not None
     v3 = fields.get("comment_sha") is not None
     v2 = fields.get("engine_rule_sha") is not None
-    keys = (RECEIPT_FIELDS_V6 if v6 else
+    keys = (RECEIPT_FIELDS_V7 if v7 else
+            (RECEIPT_FIELDS_V6 if v6 else
             (RECEIPT_FIELDS_V5 if v5 else
             (RECEIPT_FIELDS_V4 if v4 else
              (RECEIPT_FIELDS_V3 if v3 else
-              (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1)))))
-    ver = (_RECEIPT_ENCODING_VERSION_V6 if v6 else
+              (RECEIPT_FIELDS_V2 if v2 else RECEIPT_FIELDS_V1))))))
+    ver = (_RECEIPT_ENCODING_VERSION_V7 if v7 else
+           (_RECEIPT_ENCODING_VERSION_V6 if v6 else
            (_RECEIPT_ENCODING_VERSION_V5 if v5 else
            (_RECEIPT_ENCODING_VERSION_V4 if v4 else
             (_RECEIPT_ENCODING_VERSION_V3 if v3 else
-             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION)))))
+             (_RECEIPT_ENCODING_VERSION_V2 if v2 else _RECEIPT_ENCODING_VERSION))))))
     payload = {k: fields.get(k) for k in keys}
     payload["metric_value"] = _coerce_metric_value(payload.get("metric_value"))
     if "regenerated_metric" in payload:

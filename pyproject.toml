@@ -57,10 +57,24 @@ lakatos = "lakatos.cli:main"
 lakatotree-demo = "lakatos.demos.euler:main"
 lakatotree-backtest = "lakatos.backtest_cli:main"
 lakatotree-storage-predeploy = "server.storage_predeploy:main"
+lakatotree-readiness-harness = "server.production_readiness:main"
+lakatotree-readiness-collect = "server.production_readiness_live:main"
+lakatotree-storage-audit = "server.storage_access_live:main"
+lakatotree-storage-access-verify = "server.storage_access_verify:main"
+lakatotree-runtime-authority-verify = "server.runtime_authority:main"
+lakatotree-production-approval-verify = "server.production_approval:main"
 
 [project.optional-dependencies]
-# --- storage predeploy CLI (plain base install keeps a working --help surface) ---
+# --- storage predeploy CLI (`[storage]`; base wheel keeps readiness CLI dependency-free) ---
 storage = [
+  "pydantic==2.13.4",
+  "psycopg2-binary==2.9.12",
+  "neo4j==6.2.0",
+  "cryptography==49.0.0",
+]
+# --- read-only live evidence producer (collector top level remains stdlib-only) ---
+readiness-live = [
+  "pydantic==2.13.4",
   "psycopg2-binary==2.9.12",
   "neo4j==6.2.0",
   "cryptography==49.0.0",
@@ -117,4 +131,9 @@ include = ["lakatos*", "server*"]
 
 [tool.setuptools.package-data]
 lakatos = ["resources/*.json"]
-server = ["schema.sql", "storage_migrations/*.sql", "storage_migrations/*.cypher"]
+server = [
+  "schema.sql",
+  "storage_migrations/*.sql",
+  "storage_migrations/*.cypher",
+  "storage_provisioning/*.sql",
+]

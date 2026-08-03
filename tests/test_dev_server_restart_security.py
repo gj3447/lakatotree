@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import shlex
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -44,8 +46,9 @@ def test_restart_validates_sourced_listener_before_stopping_old_process():
     script = (ROOT / "scripts/dev_server_restart.sh").read_text(encoding="utf-8")
     sourced = script.index('. "$ENV_FILE"')
     posture = script.index('-m server.auth_posture')
+    access = script.index('-m server.storage_access_verify')
     old_pid_lookup = script.index('PID="$(listener_pid)"')
-    assert sourced < posture < old_pid_lookup
+    assert sourced < posture < access < old_pid_lookup
     assert 'UVICORN_FD' not in script or 'server.auth_posture' in script
 
 
@@ -98,15 +101,26 @@ def test_lastboot_backup_is_atomic_and_mode_0600_under_public_umask(tmp_path):
         "99999999 (python) " + " ".join(["S", *(["0"] * 18), "12345"]) + "\n",
         encoding="utf-8",
     )
+    interpreter = Path(sys.executable).resolve()
+    verifier_stub = tmp_path / "verifier-python"
+    verifier_stub.write_text(
+        "#!/bin/sh\n"
+        "if [ \"${1:-}\" = '-m' ] && "
+        "[ \"${2:-}\" = 'server.storage_access_verify' ]; then exit 0; fi\n"
+        f"exec {shlex.quote(str(interpreter))} \"$@\"\n",
+        encoding="utf-8",
+    )
+    verifier_stub.chmod(0o755)
     (environ_dir / "cwd").symlink_to(ROOT, target_is_directory=True)
-    (environ_dir / "exe").symlink_to(ROOT / ".venv" / "bin" / "python")
+    (environ_dir / "exe").symlink_to(verifier_stub)
     env_file = tmp_path / "server.env"
     env_file.write_text(
         "NEO4J_URI=bolt://example.invalid\n"
         "NEO4J_DATABASE=neo4j\n"
         "NEO4J_USER=neo4j\n"
         "NEO4J_PASSWORD=canonical\n"
-        "LAKATOS_MONGO_URI=mongodb://example.invalid\n",
+        "LAKATOS_MONGO_URI=mongodb://example.invalid\n"
+        f"LAKATOS_PYTHON={verifier_stub}\n",
         encoding="utf-8",
     )
     env_file.chmod(0o600)
@@ -114,6 +128,7 @@ def test_lastboot_backup_is_atomic_and_mode_0600_under_public_umask(tmp_path):
         **os.environ,
         "PATH": f"{fake_bin}:/usr/bin:/bin",
         "HOME": str(tmp_path),
+        "LAKATOS_PYTHON": str(verifier_stub),
         "LAKATOS_SERVER_ENV": str(env_file),
         "LAKATOS_PROC_ROOT": str(proc_root),
     }

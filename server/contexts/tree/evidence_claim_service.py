@@ -18,7 +18,10 @@ from fastapi import HTTPException
 
 from lakatos.engine_identity import ENGINE_RULE_SHA, effective_floor
 from lakatos.verdict.argue import assemble_af, grounded_extension
-from server.contexts.tree.repository import assurance_with_context
+from server.contexts.tree.repository import (
+    TemporalProofBatchProvider,
+    assurance_with_context,
+)
 from lakatos.verdict.spine import reconcile_standing
 from lakatos.verdicts import format_verdict_with_val, receipt_content_sha, verdict_assurance
 from lakatos.verdict.certify import gate_check, certify_claim, next_actions as cert_next_actions, is_measurement_owned
@@ -174,6 +177,7 @@ class EvidenceClaimService:
         critique_ready: Callable[[], None] | None = None,
         critique_scope=None,
         on_semantic_divergence: Callable[[str], None] | None = None,
+        temporal_proof_provider: TemporalProofBatchProvider | None = None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
@@ -190,6 +194,7 @@ class EvidenceClaimService:
         self.critique_ready = critique_ready
         self.critique_scope = critique_scope or (lambda: nullcontext())
         self.on_semantic_divergence = on_semantic_divergence
+        self.temporal_proof_provider = temporal_proof_provider
 
     def _signal_semantic_divergence(self, reason: str) -> None:
         """Close the process-local critique gate after a committed semantic lag."""
@@ -1227,15 +1232,26 @@ class EvidenceClaimService:
         # 도출은 읽기 시점(저장 금지) — armed/disarmed progressive 가 표면에서 구분된다(급소 #5).
         # P3(2026-07-28): repository 와 동일 파생으로 L2/L3 까지 재도출(이전엔 무-kwargs L1 천장).
         _att = [str(d).strip() for d in (rows[0].get('attestor_dids') or []) if d and str(d).strip()]
+        temporal_proof = None
+        temporal_provider = getattr(self, 'temporal_proof_provider', None)
+        if temporal_provider is not None:
+            temporal_proof = temporal_provider(
+                name,
+                {tag: rows[0].get('current_receipt_sha')},
+            ).get(tag)
         assurance = assurance_with_context(rows[0], tree_attestors=_att,
-                                           engine_rule_floor=effective_floor())
-        return dict(tag=tag, verdict=format_verdict_with_val(rows[0]['verdict'], assurance),
-                    assurance=assurance, stands=stands,
-                    grounded_extension=sorted(ext),
-                    # A3: 어느 논증이 *패퇴*했는지(공격받고 grounded extension 밖) 명시 — 사람이 왜
-                    # 판결이 서는지/안 서는지 본다. Dung 경로는 이미 e2e 배선됨, 이건 가시성 echo.
-                    defeated=sorted(set(arguments) - set(ext)),
-                    note='stands=False → 막지 못한 의문 존재, 판결 재검토 필요 (코드빌딩=순수agent)')
+                                           engine_rule_floor=effective_floor(),
+                                           temporal_proof=temporal_proof)
+        result = dict(tag=tag, verdict=format_verdict_with_val(rows[0]['verdict'], assurance),
+                      assurance=assurance, stands=stands,
+                      grounded_extension=sorted(ext),
+                      # A3: 어느 논증이 *패퇴*했는지(공격받고 grounded extension 밖) 명시 — 사람이 왜
+                      # 판결이 서는지/안 서는지 본다. Dung 경로는 이미 e2e 배선됨, 이건 가시성 echo.
+                      defeated=sorted(set(arguments) - set(ext)),
+                      note='stands=False → 막지 못한 의문 존재, 판결 재검토 필요 (코드빌딩=순수agent)')
+        if temporal_proof is not None:
+            result['temporal_proof'] = temporal_proof.public_dict()
+        return result
 
     def research_events(self, name: str, tag: str) -> dict:
         rows = self.research_event_rows(name, tag)

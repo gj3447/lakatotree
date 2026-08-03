@@ -24,6 +24,7 @@ from lakatos import write_cert as W
 from server.contexts.audit import fsck as F
 from server.contexts.tree.judgement import create_judgement_router
 from server.contexts.tree.judgement_service import JudgementService
+from server.contexts.tree.temporal_proof import TemporalProof
 
 
 class _ChainKg:
@@ -86,6 +87,42 @@ def test_fsck_detects_dangling_pointer_on_enriched_record():
     assert 'RECEIPT_CHAIN_MISMATCH' not in {f.check_id for f in F.fsck_node(ok)}
     plain = {'verdict': 'proof', 'current_receipt_sha': 'x1' * 32}   # 비동봉 = 판단 보류
     assert 'RECEIPT_CHAIN_MISMATCH' not in {f.check_id for f in F.fsck_node(plain)}
+
+
+def test_receipt_read_and_verify_expose_one_current_head_temporal_proof():
+    kg = _ChainKg()
+    calls = []
+
+    def temporal_provider(tree, heads):
+        calls.append((tree, dict(heads)))
+        return {
+            'n': TemporalProof(
+                component_ok=True,
+                l3_eligible=False,
+                reason='independent_verifier_unavailable',
+                chain_ok=True,
+                verdict_receipt_sha256=kg.head,
+            )
+        }
+
+    svc = JudgementService(
+        kg=kg,
+        kg_tx=lambda ops: [[{'ok': 1}] for _ in ops],
+        hist=lambda *a, **k: None,
+        foundation=lambda *a, **k: None,
+        reproducible_for_node=lambda *a, **k: None,
+        temporal_proof_provider=temporal_provider,
+    )
+
+    exposed = svc.load_receipt_chain('T', 'n')
+    assert exposed['temporal_proof']['verdict_receipt_sha256'] == kg.head
+    assert exposed['temporal_proof']['l3_eligible'] is False
+    assert calls == [('T', {'n': kg.head})]
+
+    calls.clear()
+    verified = svc.verify_verdict_chain('T', 'n')
+    assert verified['temporal_proof'] == exposed['temporal_proof']
+    assert calls == [('T', {'n': kg.head})]
 
 
 # ── guard_mechanism (양성): 열쇠공 — keygen→sign→verify 폐루프 ─────────────────────────────

@@ -9,8 +9,10 @@ import hashlib
 import hmac
 import importlib.metadata
 import importlib.resources
+import ipaddress
 import json
 import os
+import re
 import secrets
 import shlex
 import stat
@@ -30,29 +32,34 @@ from server.storage_contract import (
     inspect_pg_history_contract,
     pg_projection_rows,
 )
+from server.storage_protocol import (
+    FENCE_RESPONSE_FIELDS,
+    FENCE_SIGNATURE_DOMAIN,
+    FENCE_VERIFICATION_SCHEMA,
+)
 
 
 DRAIN_SCHEMA = "lakatotree-writer-drain/v2"
-RECEIPT_SCHEMA = "lakatotree-storage-predeploy-receipt/v4"
+RECEIPT_SCHEMA = "lakatotree-storage-predeploy-receipt/v5"
 NORMALIZATION_RECEIPT_SCHEMA = (
     "lakatotree-neo4j-outbox-payload-normalization/v1"
 )
 NORMALIZATION_PROJECTION_DOMAIN = (
     b"lakatotree-neo4j-outbox-payload-projection/v1\0"
 )
-FENCE_VERIFICATION_SCHEMA = "lakatotree-writer-fence-verification/v2"
-FENCE_SIGNATURE_DOMAIN = FENCE_VERIFICATION_SCHEMA.encode("ascii") + b"\0"
 FENCE_EXECUTION_IDENTITY_SCHEMA = "lakatotree-fence-execution-identity/v1"
 RESOURCE_PACKAGE = "server.storage_migrations"
 PG_RESOURCE = "critique_history_v1.sql"
-NEO_RESOURCE = "outbox_identity_v1.cypher"
+NEO_RESOURCES = (
+    "outbox_identity_v1.cypher",
+    "temporal_proof_identity_v1.cypher",
+)
+# Backward-compatible name for callers that refer to the original resource.
+NEO_RESOURCE = NEO_RESOURCES[0]
+MIGRATION_RESOURCES = (PG_RESOURCE, *NEO_RESOURCES)
 NEO_CONNECTION_ACQUISITION_SECONDS = 2.0
 NEO_LEASE_MARGIN_SECONDS = 2.0
-FENCE_RESPONSE_FIELDS = {
-    "schema_version", "active", "nonce", "environment", "target_sha256",
-    "operation_sha256", "lease_id", "drain_receipt_sha256", "verified_at",
-    "expires_at", "evidence_refs", "signature",
-}
+_PG_ROLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,62}\Z")
 
 
 def _canonical(value: Any) -> bytes:
@@ -153,11 +160,11 @@ def _resource_bytes(name: str) -> bytes:
 
 def migration_sources(resources: dict[str, bytes] | None = None) -> dict[str, str]:
     resources = resources or {
-        name: _resource_bytes(name) for name in (PG_RESOURCE, NEO_RESOURCE)
+        name: _resource_bytes(name) for name in MIGRATION_RESOURCES
     }
     return {
         name: _sha_bytes(resources[name])
-        for name in (PG_RESOURCE, NEO_RESOURCE)
+        for name in MIGRATION_RESOURCES
     }
 
 
@@ -241,6 +248,7 @@ def operation_identity(
     body = {
         "contract_id": CONTRACT_ID,
         "artifact": artifact or _artifact_identity(),
+        "migration_order": list(MIGRATION_RESOURCES),
         "migration_sources": migration_sources(resources),
     }
     return {**body, "sha256": _sha_bytes(_canonical(body))}
@@ -298,6 +306,97 @@ def _database_clients():
     return psycopg2, LazyNeo4jDriver
 
 
+def _migration_pg_connect_parameters(settings: ServerSettings, psycopg2: Any) -> dict[str, str]:
+    """Parse a self-contained, strict TLS/SCRAM migration profile.
+
+    Every authority-bearing libpq input is explicit.  Ambient service files,
+    passfiles, client certificates, multi-host fallback, and weaker transports
+    are rejected before the first connection attempt.
+    """
+
+    if any(key.startswith("PG") for key in os.environ):
+        raise RuntimeError("PostgreSQL migration ambient PG authority is present")
+    try:
+        parameters = dict(
+            psycopg2.extensions.parse_dsn(settings.require_pg_migration_dsn())
+        )
+    except Exception as exc:  # noqa: BLE001 - never reflect credential-bearing DSN
+        raise RuntimeError("PostgreSQL migration DSN is invalid") from exc
+    forbidden = {
+        "service", "passfile", "sslcert", "sslkey", "sslpassword", "options",
+    }
+    if forbidden & set(parameters):
+        raise RuntimeError("PostgreSQL migration DSN contains ambient/client authority")
+    required = {
+        "host", "hostaddr", "port", "dbname", "user", "password",
+        "sslmode", "sslrootcert", "channel_binding", "require_auth",
+        "target_session_attrs", "gssencmode", "load_balance_hosts",
+    }
+    if any(not parameters.get(field) for field in required):
+        raise RuntimeError("PostgreSQL migration DSN lacks a strict required field")
+    if any("," in str(parameters[field]) for field in ("host", "hostaddr", "port")):
+        raise RuntimeError("PostgreSQL migration DSN must select exactly one endpoint")
+    try:
+        hostaddr_ip = ipaddress.ip_address(str(parameters["hostaddr"]))
+        configured_port = int(str(parameters["port"]))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("PostgreSQL migration hostaddr/port is invalid") from exc
+    if not (
+        str(parameters["host"]) == settings.pg_host
+        and configured_port == settings.pg_port
+        and str(parameters["dbname"]) == settings.pg_db
+        and str(parameters["user"]) == settings.pg_migration_user
+        and hmac.compare_digest(
+            str(parameters["password"]), settings.pg_migration_password or ""
+        )
+    ):
+        raise RuntimeError("PostgreSQL migration DSN differs from the pinned target/profile")
+    try:
+        configured_host_ip = ipaddress.ip_address(settings.pg_host)
+    except ValueError:
+        configured_host_ip = None
+    if configured_host_ip is not None and hostaddr_ip != configured_host_ip:
+        raise RuntimeError(
+            "PostgreSQL migration hostaddr differs from the literal pinned host"
+        )
+    root_cert = str(parameters["sslrootcert"])
+    if root_cert != "system":
+        root_path = Path(root_cert)
+        try:
+            root_info = root_path.lstat()
+            root_resolved = root_path.resolve(strict=True)
+        except OSError as exc:
+            raise RuntimeError("PostgreSQL migration CA file is unavailable") from exc
+        if (
+            not root_path.is_absolute()
+            or root_resolved != root_path
+            or stat.S_ISLNK(root_info.st_mode)
+            or not stat.S_ISREG(root_info.st_mode)
+            or bool(root_info.st_mode & 0o022)
+        ):
+            raise RuntimeError("PostgreSQL migration CA file is not immutable enough")
+    exact_security = {
+        "sslmode": "verify-full",
+        "channel_binding": "require",
+        "require_auth": "scram-sha-256",
+        "target_session_attrs": "read-write",
+        "gssencmode": "disable",
+        "load_balance_hosts": "disable",
+    }
+    if any(str(parameters.get(key)) != value for key, value in exact_security.items()):
+        raise RuntimeError("PostgreSQL migration DSN weakens transport/authentication")
+    parameters.update({
+        "application_name": "lakatotree-storage-predeploy",
+        "connect_timeout": "10",
+        "options": "-c search_path=pg_catalog",
+        "sslcertmode": "disable",
+        "sslnegotiation": "postgres",
+        "ssl_min_protocol_version": "TLSv1.2",
+        "ssl_max_protocol_version": "TLSv1.3",
+    })
+    return parameters
+
+
 def target_identity(
     settings: ServerSettings,
     connection: Any,
@@ -305,16 +404,37 @@ def target_identity(
 ) -> dict[str, Any]:
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT current_database() AS database, "
-            "(SELECT oid::text FROM pg_database "
-            " WHERE datname=current_database()) AS database_oid, "
-            "inet_server_addr()::text AS server_address, "
-            "inet_server_port() AS server_port, "
-            "current_setting('server_version_num') AS server_version_num, "
-            "(SELECT system_identifier::text FROM pg_control_system()) AS system_identifier"
+            "SELECT pg_catalog.current_database() AS database, "
+            "(SELECT oid::text FROM pg_catalog.pg_database "
+            " WHERE datname=pg_catalog.current_database()) AS database_oid, "
+            "pg_catalog.host(pg_catalog.inet_server_addr()) AS server_address, "
+            "pg_catalog.inet_server_port() AS server_port, "
+            "pg_catalog.current_setting('server_version_num') AS server_version_num, "
+            "(SELECT system_identifier::text FROM pg_catalog.pg_control_system()) "
+            "AS system_identifier, "
+            "pg_catalog.current_setting('search_path') AS search_path"
         )
         names = [item.name if hasattr(item, "name") else item[0] for item in cursor.description]
         pg = dict(zip(names, cursor.fetchone(), strict=True))
+    if pg.pop("search_path", None) != "pg_catalog":
+        raise RuntimeError("PostgreSQL migration search_path differs from pg_catalog")
+    if pg["server_port"] != settings.pg_port:
+        raise RuntimeError("PostgreSQL server port differs from the configured target")
+    try:
+        configured_pg_ip = ipaddress.ip_address(settings.pg_host)
+    except ValueError:
+        configured_pg_ip = None
+    if configured_pg_ip is not None:
+        try:
+            observed_pg_ip = ipaddress.ip_address(str(pg["server_address"]))
+        except ValueError as exc:
+            raise RuntimeError(
+                "PostgreSQL server address is not a literal IP"
+            ) from exc
+        if observed_pg_ip != configured_pg_ip:
+            raise RuntimeError(
+                "PostgreSQL server address differs from the configured target"
+            )
     neo_rows = _neo_query(
         driver,
         "CALL db.info() YIELD id, name RETURN id, name",
@@ -1296,29 +1416,116 @@ def verify_predeploy_receipt(
         raise ValueError("predeploy receipt is not valid JSON") from exc
     if not isinstance(document, dict):
         raise ValueError("predeploy receipt must be an object")
+    artifact = _artifact_identity()
+    operation = operation_identity(artifact)
+    target = target_identity(settings, connection, driver)
+    return verify_predeploy_receipt_document(
+        document,
+        file_sha256=file_sha,
+        expected_file_sha256=expected_file_sha256,
+        expected_environment=settings.storage_environment,
+        expected_fence_verifier_sha256=settings.storage_fence_verifier_sha256,
+        expected_fence_public_key_hex=settings.storage_fence_public_key_hex,
+        artifact=artifact,
+        operation=operation,
+        target=target,
+        evaluated_at=datetime.now(timezone.utc),
+    )
+
+
+_PREDEPLOY_RECEIPT_BODY_FIELDS = {
+    "schema_version", "contract_id", "environment", "artifact", "operation",
+    "target_sha256", "target", "principals", "writer_drain", "postgresql", "neo4j",
+    "created_at",
+}
+
+
+def principal_bindings(
+    *,
+    postgresql_migrator: str,
+    postgresql_runtime: str,
+    neo4j_migrator: str,
+    neo4j_runtime: str,
+) -> dict[str, str]:
+    values = {
+        "postgresql_migrator_sha256": postgresql_migrator,
+        "postgresql_runtime_sha256": postgresql_runtime,
+        "neo4j_migrator_sha256": neo4j_migrator,
+        "neo4j_runtime_sha256": neo4j_runtime,
+    }
+    if any(not isinstance(value, str) or not value for value in values.values()):
+        raise ValueError("predeploy principal binding names are missing")
+    return {
+        field: _sha_bytes(value.encode("utf-8")) for field, value in values.items()
+    }
+
+
+def verify_predeploy_receipt_document(
+    document: Any,
+    *,
+    file_sha256: str,
+    expected_file_sha256: str,
+    expected_environment: str | None,
+    expected_fence_verifier_sha256: str | None,
+    expected_fence_public_key_hex: str | None,
+    artifact: dict[str, Any],
+    operation: dict[str, Any],
+    target: dict[str, Any],
+    evaluated_at: datetime,
+    expected_principals: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Purely reverify one already-loaded v5 receipt against explicit authority.
+
+    The caller remains responsible for obtaining ``target`` from live stores and
+    for binding ``file_sha256`` to raw bytes.  Keeping this core pure lets the
+    one-shot access auditor and the runtime readback share the exact historical
+    fence/postflight checks instead of maintaining a weaker receipt parser.
+    """
+
+    if not isinstance(document, dict):
+        raise ValueError("predeploy receipt must be an object")
+    if not (
+        _exact_sha256(file_sha256)
+        and _exact_sha256(expected_file_sha256)
+        and hmac.compare_digest(file_sha256, expected_file_sha256)
+    ):
+        raise ValueError("predeploy receipt file SHA-256 mismatch")
+    if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
+        raise ValueError("predeploy receipt evaluation time must be timezone-aware")
+    evaluated_at = evaluated_at.astimezone(timezone.utc)
     body = dict(document)
     self_digest = body.pop("receipt_sha256", None)
+    if set(body) != _PREDEPLOY_RECEIPT_BODY_FIELDS:
+        raise ValueError("predeploy receipt has a non-exact field set")
     if not (
         _exact_sha256(self_digest)
         and hmac.compare_digest(self_digest, _sha_bytes(_canonical(body)))
     ):
         raise ValueError("predeploy receipt self-digest mismatch")
-
-    artifact = _artifact_identity()
-    operation = operation_identity(artifact)
-    target = target_identity(settings, connection, driver)
     if not (
         body.get("schema_version") == RECEIPT_SCHEMA
         and body.get("contract_id") == CONTRACT_ID
         and isinstance(body.get("environment"), str)
         and bool(body.get("environment"))
-        and body.get("environment") == settings.storage_environment
+        and body.get("environment") == expected_environment
         and body.get("artifact") == artifact
         and body.get("operation") == operation
         and body.get("target_sha256") == target["sha256"]
         and body.get("target") == target["details"]
     ):
         raise ValueError("predeploy receipt is artifact-, operation-, or target-mismatched")
+    principals = body.get("principals")
+    principal_fields = {
+        "postgresql_migrator_sha256", "postgresql_runtime_sha256",
+        "neo4j_migrator_sha256", "neo4j_runtime_sha256",
+    }
+    if not (
+        isinstance(principals, dict)
+        and set(principals) == principal_fields
+        and all(_exact_sha256(value) for value in principals.values())
+        and (expected_principals is None or principals == expected_principals)
+    ):
+        raise ValueError("predeploy receipt principal binding is invalid")
 
     created_at = _parse_time(body.get("created_at"), "created_at")
     drain = body.get("writer_drain")
@@ -1336,10 +1543,10 @@ def verify_predeploy_receipt(
     signed_response = live.get("signed_response")
     try:
         signed_body = _verify_fence_response_signature(
-            signed_response, settings.storage_fence_public_key_hex
+            signed_response, expected_fence_public_key_hex
         )
         authority_key_sha256 = _fence_authority_sha256(
-            settings.storage_fence_public_key_hex
+            expected_fence_public_key_hex
         )
     except (RuntimeError, ValueError) as exc:
         raise ValueError(
@@ -1373,7 +1580,7 @@ def verify_predeploy_receipt(
         and all(isinstance(item, str) and item for item in drain_evidence)
         and live.get("schema_version") == FENCE_VERIFICATION_SCHEMA
         and _exact_sha256(live.get("verifier_sha256"))
-        and live.get("verifier_sha256") == settings.storage_fence_verifier_sha256
+        and live.get("verifier_sha256") == expected_fence_verifier_sha256
         and live.get("authority_key_sha256") == authority_key_sha256
         and signed_fence_valid
         and isinstance(live_evidence, list) and bool(live_evidence)
@@ -1381,7 +1588,7 @@ def verify_predeploy_receipt(
         and drain_verified <= live_verified <= created_at < live_expires <= drain_expires
         and (drain_expires - drain_verified).total_seconds() <= 900
         and (live_expires - live_verified).total_seconds() <= 60
-        and created_at <= datetime.now(timezone.utc) + timedelta(seconds=5)
+        and created_at <= evaluated_at + timedelta(seconds=5)
     )
     if not historical_fence_valid:
         raise ValueError("predeploy receipt has incoherent historical fence evidence")
@@ -1418,12 +1625,18 @@ def verify_predeploy_receipt(
     return {
         "ok": True,
         "contract_id": CONTRACT_ID,
-        "file_sha256": file_sha,
+        "file_sha256": file_sha256,
         "receipt_sha256": self_digest,
         "environment": body["environment"],
         "created_at": created_at.isoformat(),
+        "artifact": dict(artifact),
+        "artifact_identity_sha256": _sha_bytes(_canonical(artifact)),
         "target_sha256": target["sha256"],
         "operation_sha256": operation["sha256"],
+        "historical_drain_lease_id_sha256": _sha_bytes(
+            drain["lease_id"].encode("utf-8")
+        ),
+        "principals": dict(principals),
     }
 
 
@@ -1437,18 +1650,106 @@ def _bounded_pg_migration(
     if remaining < 5:
         raise ValueError("writer-drain lease has insufficient time for PostgreSQL migration")
     with connection.cursor() as cursor:
-        cursor.execute("SELECT set_config('lock_timeout', %s, false)",
+        cursor.execute("SELECT pg_catalog.set_config('lock_timeout', %s, false)",
                        (f"{max(1000, min(int(remaining * 1000), 30000))}ms",))
-        cursor.execute("SELECT set_config('statement_timeout', %s, false)",
+        cursor.execute("SELECT pg_catalog.set_config('statement_timeout', %s, false)",
                        (f"{max(1000, int(remaining * 1000))}ms",))
     timer = threading.Timer(remaining, connection.cancel)
     timer.daemon = True
     timer.start()
+    primary_error: BaseException | None = None
     try:
         with connection.cursor() as cursor:
+            cursor.execute("SELECT current_user::text,session_user::text")
+            identity = cursor.fetchone()
+            if (
+                not isinstance(identity, tuple)
+                or len(identity) != 2
+                or identity[0] != identity[1]
+                or not isinstance(identity[0], str)
+            ):
+                raise RuntimeError(
+                    "PostgreSQL migration session identity is not exact"
+                )
+            migrator_role = identity[0]
+            cursor.execute(
+                "SELECT parent.rolname,m.admin_option,m.inherit_option,"
+                " m.set_option,"
+                " parent.rolsuper,parent.rolcreatedb,parent.rolcreaterole,"
+                " parent.rolinherit,parent.rolreplication,"
+                " parent.rolbypassrls,parent.rolcanlogin,"
+                " member.rolsuper,member.rolcreatedb,member.rolcreaterole,"
+                " member.rolinherit,member.rolreplication,"
+                " member.rolbypassrls,member.rolcanlogin"
+                " FROM pg_catalog.pg_auth_members m"
+                " JOIN pg_catalog.pg_roles parent ON parent.oid=m.roleid"
+                " JOIN pg_catalog.pg_roles member ON member.oid=m.member"
+                " WHERE member.rolname=current_user"
+                " ORDER BY parent.rolname"
+            )
+            memberships = list(cursor.fetchall())
+            if (
+                len(memberships) != 1
+                or len(memberships[0]) != 18
+                or memberships[0][1:4] != (False, False, True)
+                or memberships[0][4:11] != (False,) * 7
+                or memberships[0][11:18]
+                != (False, False, False, False, False, False, True)
+            ):
+                raise RuntimeError(
+                    "PostgreSQL migrator lacks one exact SET-only owner role"
+                )
+            owner_role = memberships[0][0]
+            if (
+                not isinstance(owner_role, str)
+                or _PG_ROLE_NAME.fullmatch(owner_role) is None
+                or owner_role == migrator_role
+            ):
+                raise RuntimeError(
+                    "PostgreSQL migration owner role is invalid"
+                )
+            quoted_owner = '"' + owner_role.replace('"', '""') + '"'
+            cursor.execute(f"SET ROLE {quoted_owner}")
+            cursor.execute("SELECT current_user::text,session_user::text")
+            if cursor.fetchone() != (owner_role, migrator_role):
+                raise RuntimeError(
+                    "PostgreSQL migration SET ROLE readback failed"
+                )
             cursor.execute(source.decode("utf-8"))
+            cursor.execute("SELECT current_user::text,session_user::text")
+            if cursor.fetchone() != (owner_role, migrator_role):
+                raise RuntimeError(
+                    "PostgreSQL migration source changed its owner authority"
+                )
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
         timer.cancel()
+        # The resource contains an explicit transaction while the caller uses
+        # autocommit. ``connection.rollback()`` is then a no-op in psycopg2 and
+        # can strand the session INERROR under the owner role.  SQL ROLLBACK is
+        # accepted in that failed transaction and must precede RESET ROLE.
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("ROLLBACK")
+                cursor.execute("RESET ROLE")
+                cursor.execute("SELECT current_user::text,session_user::text")
+                reset_identity = cursor.fetchone()
+                if (
+                    not isinstance(reset_identity, tuple)
+                    or len(reset_identity) != 2
+                    or reset_identity[0] != reset_identity[1]
+                ):
+                    raise RuntimeError(
+                        "PostgreSQL migration role reset readback failed"
+                    )
+        except Exception as cleanup_error:
+            if primary_error is None:
+                raise
+            raise RuntimeError(
+                "PostgreSQL migration failed and role cleanup also failed"
+            ) from cleanup_error
 
 
 def _bounded_neo_migration(driver: Any, expires_at: str, source: bytes) -> None:
@@ -1600,12 +1901,16 @@ def inspect_target() -> dict[str, Any]:
     psycopg2, LazyNeo4jDriver = _database_clients()
     settings = ServerSettings.from_env()
     resources = {
-        name: _resource_bytes(name) for name in (PG_RESOURCE, NEO_RESOURCE)
+        name: _resource_bytes(name) for name in MIGRATION_RESOURCES
     }
     artifact = _artifact_identity()
     operation = operation_identity(artifact, resources)
-    connection = psycopg2.connect(**settings.pg_kw)
+    connection = psycopg2.connect(
+        **_migration_pg_connect_parameters(settings, psycopg2)
+    )
     driver = LazyNeo4jDriver(
+        settings_factory=lambda: settings,
+        credential_profile="migration",
         connection_acquisition_timeout=NEO_CONNECTION_ACQUISITION_SECONDS,
         connection_timeout=NEO_CONNECTION_ACQUISITION_SECONDS,
     )
@@ -1685,12 +1990,16 @@ def _apply_after_receipt_reservation(
     receipt_reservation.verify(expect_empty=True)
     psycopg2, LazyNeo4jDriver = _database_clients()
     resources = {
-        name: _resource_bytes(name) for name in (PG_RESOURCE, NEO_RESOURCE)
+        name: _resource_bytes(name) for name in MIGRATION_RESOURCES
     }
     artifact = _artifact_identity()
     operation = operation_identity(artifact, resources)
-    connection = psycopg2.connect(**settings.pg_kw)
+    connection = psycopg2.connect(
+        **_migration_pg_connect_parameters(settings, psycopg2)
+    )
     driver = LazyNeo4jDriver(
+        settings_factory=lambda: settings,
+        credential_profile="migration",
         connection_acquisition_timeout=NEO_CONNECTION_ACQUISITION_SECONDS,
         connection_timeout=NEO_CONNECTION_ACQUISITION_SECONDS,
     )
@@ -1718,6 +2027,10 @@ def _apply_after_receipt_reservation(
                 "neo4j.constraint.lkt_outbox_id_unique.missing",
                 "neo4j.constraint.lkt_argument_id_unique.missing",
                 "neo4j.constraint.lkt_runtime_writer_lease_name_unique.missing",
+                "neo4j.constraint.lkt_prediction_temporal_commitment_sha_unique.missing",
+                "neo4j.constraint.lkt_prediction_temporal_commitment_target_unique.missing",
+                "neo4j.constraint.lkt_temporal_proof_sidecar_sha_unique.missing",
+                "neo4j.constraint.lkt_temporal_proof_sidecar_target_unique.missing",
                 "neo4j.outbox.pending",
         }
         # A completely fresh target legitimately has no singleton yet; the
@@ -1760,17 +2073,18 @@ def _apply_after_receipt_reservation(
             raise RuntimeError("PostgreSQL exact readback failed after migration")
         projections = pg_projection_rows(connection)
 
-        drain = _revalidate_drain(
-            drain_receipt, environment, target["sha256"], operation["sha256"],
-            drain["sha256"], fence_verifier, fence_verifier_sha256,
-            fence_public_key_hex,
-        )
-        receipt_reservation.verify(expect_empty=True)
-        _bounded_neo_migration(
-            driver,
-            drain["live_fence"]["expires_at"],
-            resources[NEO_RESOURCE],
-        )
+        for neo_resource in NEO_RESOURCES:
+            drain = _revalidate_drain(
+                drain_receipt, environment, target["sha256"], operation["sha256"],
+                drain["sha256"], fence_verifier, fence_verifier_sha256,
+                fence_public_key_hex,
+            )
+            receipt_reservation.verify(expect_empty=True)
+            _bounded_neo_migration(
+                driver,
+                drain["live_fence"]["expires_at"],
+                resources[neo_resource],
+            )
         drain = _revalidate_drain(
             drain_receipt, environment, target["sha256"], operation["sha256"],
             drain["sha256"], fence_verifier, fence_verifier_sha256,
@@ -1807,6 +2121,12 @@ def _apply_after_receipt_reservation(
             "operation": operation,
             "target_sha256": target["sha256"],
             "target": target["details"],
+            "principals": principal_bindings(
+                postgresql_migrator=settings.pg_migration_user or "",
+                postgresql_runtime=settings.pg_user,
+                neo4j_migrator=settings.neo4j_migration_user or "",
+                neo4j_runtime=settings.neo4j_user or "",
+            ),
             "writer_drain": drain,
             "postgresql": {"ok": True, "report": pg_report},
             "neo4j": {

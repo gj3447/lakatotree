@@ -116,7 +116,11 @@ def test_neo4j_constraint_diagnostics_emit_safe_missing_migrations():
     assert "LakatosTree.name" in report["present"]
     assert "LakatosNode.name" in report["missing"]
     assert {"OpenQuestion.(tree+name)", "Belief.(tree+belief_id)", "LakatosArgument.id",
-            "OutboxEntry.id", "ResearchEvent.id", "ResearchTradition.tradition_id"} <= set(report["missing"])
+            "OutboxEntry.id", "ResearchEvent.id", "ResearchTradition.tradition_id",
+            "PredictionTemporalCommitment.commitment_sha256",
+            "PredictionTemporalCommitment.(tree_incarnation_id+tree+tag+prediction_receipt_sha256)",
+            "TemporalProofSidecar.sidecar_sha256",
+            "TemporalProofSidecar.(tree_incarnation_id+tree+tag+verdict_receipt_sha256)"} <= set(report["missing"])
     assert report["migration_cypher"] == [
         "CREATE CONSTRAINT lkt_node_name_unique IF NOT EXISTS FOR (n:LakatosNode) REQUIRE n.name IS UNIQUE",
         "CREATE CONSTRAINT lkt_open_question_tree_name_key IF NOT EXISTS FOR (n:OpenQuestion) REQUIRE (n.tree, n.name) IS UNIQUE",
@@ -125,6 +129,10 @@ def test_neo4j_constraint_diagnostics_emit_safe_missing_migrations():
         "CREATE CONSTRAINT lkt_outbox_id_unique IF NOT EXISTS FOR (n:OutboxEntry) REQUIRE n.id IS UNIQUE",
         "CREATE CONSTRAINT lkt_research_event_id_unique IF NOT EXISTS FOR (n:ResearchEvent) REQUIRE n.id IS UNIQUE",
         "CREATE CONSTRAINT lkt_research_tradition_id_unique IF NOT EXISTS FOR (n:ResearchTradition) REQUIRE n.tradition_id IS UNIQUE",
+        "CREATE CONSTRAINT lkt_prediction_temporal_commitment_sha_unique IF NOT EXISTS FOR (n:PredictionTemporalCommitment) REQUIRE n.commitment_sha256 IS UNIQUE",
+        "CREATE CONSTRAINT lkt_prediction_temporal_commitment_target_unique IF NOT EXISTS FOR (n:PredictionTemporalCommitment) REQUIRE (n.tree_incarnation_id, n.tree, n.tag, n.prediction_receipt_sha256) IS UNIQUE",
+        "CREATE CONSTRAINT lkt_temporal_proof_sidecar_sha_unique IF NOT EXISTS FOR (n:TemporalProofSidecar) REQUIRE n.sidecar_sha256 IS UNIQUE",
+        "CREATE CONSTRAINT lkt_temporal_proof_sidecar_target_unique IF NOT EXISTS FOR (n:TemporalProofSidecar) REQUIRE (n.tree_incarnation_id, n.tree, n.tag, n.verdict_receipt_sha256) IS UNIQUE",
     ]
 
 

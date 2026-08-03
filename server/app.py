@@ -14,11 +14,14 @@ env: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD, LAKATOS_PG_HOST/PORT/USER/PASSWORD/DB,
 실행: bash run.sh   → http://localhost:55170  (대시보드 = / , API = /api/*)
 """
 import logging
+import hashlib
 import os
 import secrets
 import sys
+from dataclasses import dataclass
+from contextvars import ContextVar
 from threading import Lock, RLock
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -39,7 +42,7 @@ from lakatos.io.lineage import by_output, roots as lin_roots
 from server.auth_posture import classify as _classify_posture, open_posture_warning   # FE5 auth 자세 관측화
 from lakatos.io.envfp import environment_fingerprint, fingerprint_sha
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import TypeAdapter
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from psycopg2 import OperationalError as PgOperationalError
@@ -81,6 +84,13 @@ from server.contexts.tree.judgement_service import (
 from server.contexts.tree.programme import create_programme_router
 from server.contexts.tree.programme_service import ProgrammeService
 from server.contexts.tree.service import TreeService
+from server.contexts.tree.temporal_api import create_temporal_router
+from server.contexts.tree.temporal_service import TemporalProofService
+from server.contexts.tree.temporal_verifier_port import (
+    SubprocessIndependentTemporalVerifier,
+    SubprocessTimeAuthority,
+    UnavailableIndependentTemporalVerifier,
+)
 from server.contexts.tree.writer import TreeKgWriter
 from server.dashboard_view import VERDICT_COLORS, render_dashboard
 from server.graph_view import tree_dot, tree_dot_view, tree_graph
@@ -98,11 +108,22 @@ from server.storage_contract import (
     pg_projection_rows,
 )
 from server.storage_predeploy import verify_predeploy_receipt
+from server.storage_access_verify import verify_pinned_storage_access
+from server.runtime_authority import (
+    VerifiedRuntimeSnapshot,
+    snapshot_is_current,
+)
+from server.runtime_authority_live import challenge_runtime_authority
 from server.ports import WriterFenceLost
 
-NEO = LazyNeo4jDriver()
-PG_KW = ServerSettings.from_env().pg_kw
-MONGO = LazyMongoDatabase()
+SETTINGS = ServerSettings.from_env()
+NEO = LazyNeo4jDriver(settings_factory=lambda settings=SETTINGS: settings)
+# Strict storage mode resolves its complete pinned profile only when opening a
+# connection.  Keeping the constructor fallback empty lets the application
+# publish a cached fail-closed readiness result for incomplete profiles instead
+# of crashing during import, while the factory remains the only connection path.
+PG_KW = {} if SETTINGS.storage_access_requested else SETTINGS.pg_kw
+MONGO = LazyMongoDatabase(settings_factory=lambda settings=SETTINGS: settings)
 
 logger = logging.getLogger('lakatotree.server')   # OPS-OBSERVABILITY-1: print → 구조화 logger
 
@@ -119,20 +140,171 @@ _storage_contract_state_lock = Lock()
 _storage_contract_refresh_lock = RLock()
 
 
+def _new_runtime_identity() -> tuple[str, str]:
+    boot_id = secrets.token_hex(32)
+    worker_id = hashlib.sha256(
+        b"lakatotree-runtime-worker/v1\0"
+        + boot_id.encode("ascii")
+        + b"\0"
+        + str(os.getpid()).encode("ascii")
+    ).hexdigest()
+    return boot_id, worker_id
+
+
+_RUNTIME_BOOT_ID, _RUNTIME_WORKER_ID = _new_runtime_identity()
+
+
+def _reset_runtime_identity_after_fork() -> None:
+    global _RUNTIME_BOOT_ID, _RUNTIME_WORKER_ID, _runtime_snapshot_proof
+    _RUNTIME_BOOT_ID, _RUNTIME_WORKER_ID = _new_runtime_identity()
+    _runtime_snapshot_proof = None
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_runtime_identity_after_fork)
+
+
+@dataclass(frozen=True)
+class _WriterOperationAuthority:
+    storage_generation: int
+    proof: VerifiedRuntimeSnapshot
+
+
+_runtime_snapshot_proof: VerifiedRuntimeSnapshot | None = None
+_reconciliation_commit_authority: ContextVar[
+    _WriterOperationAuthority | None
+] = ContextVar("reconciliation_commit_authority", default=None)
+_writer_operation_authority: ContextVar[
+    _WriterOperationAuthority | None
+] = ContextVar("writer_operation_authority", default=None)
+
+
+def _access_valid_until_is_current(
+    value: object, *, evaluated_at: datetime | None = None
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        expires = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, OverflowError):
+        return False
+    if expires.tzinfo is None or expires.utcoffset() is None:
+        return False
+    evaluated_at = evaluated_at or datetime.now(timezone.utc)
+    return evaluated_at.astimezone(timezone.utc) < expires.astimezone(timezone.utc)
+
+
 def _invalidate_storage_contract_state(reason: str) -> None:
     """Immediately close critique traffic after a runtime ledger divergence."""
 
-    with _storage_contract_state_lock:
-        _storage_contract_state.update(
-            checked=True,
-            ok=False,
-            failures=[reason],
-            checked_at=datetime.now(timezone.utc).isoformat(),
-            generation=int(_storage_contract_state.get("generation", 0)) + 1,
-        )
+    global _runtime_snapshot_proof
     container = globals().get("_container")
-    if container is not None:
-        container.release_writer_lease()
+
+    def invalidate() -> None:
+        global _runtime_snapshot_proof
+        with _storage_contract_state_lock:
+            _storage_contract_state.update(
+                checked=True,
+                ok=False,
+                failures=[reason],
+                checked_at=datetime.now(timezone.utc).isoformat(),
+                generation=int(_storage_contract_state.get("generation", 0)) + 1,
+                access_valid_until=None,
+                runtime_snapshot={
+                    "ok": False,
+                    "production_ready": False,
+                    "deployment_status": "NOT_READY",
+                    "failures": [reason],
+                },
+            )
+            _runtime_snapshot_proof = None
+
+    if container is None:
+        invalidate()
+        return
+    # State revocation and datastore commit share one local linearization
+    # boundary.  An invalidation can therefore occur wholly before a commit
+    # (which then fails its guard) or wholly after it, never between the final
+    # guard and the commit itself.
+    with container.writer_commit_barrier():
+        invalidate()
+    container.release_writer_lease()
+
+
+@contextmanager
+def _storage_writer_authority_scope():
+    """Capture the exact generation/deadline used by one ledger command."""
+
+    recovery = _reconciliation_commit_authority.get()
+    with _storage_contract_state_lock:
+        state = dict(_storage_contract_state)
+        proof = _runtime_snapshot_proof
+    if recovery is not None:
+        authority = recovery
+        if state.get("generation") != authority.storage_generation:
+            raise WriterFenceLost(
+                "reconciliation storage authority generation changed"
+            )
+    else:
+        if (
+            state.get("ok") is not True
+            or type(state.get("generation")) is not int
+            or not isinstance(proof, VerifiedRuntimeSnapshot)
+            or state.get("runtime_snapshot", {}).get("body_sha256")
+            != proof.body_sha256
+        ):
+            raise WriterFenceLost(
+                "runtime storage writer admission authority is unavailable"
+            )
+        lease = _container.writer_lease_public_projection()
+        if lease is None or not snapshot_is_current(
+            proof,
+            boot_id=_RUNTIME_BOOT_ID,
+            lease=lease,
+            evaluated_at=datetime.now(timezone.utc),
+        ):
+            raise WriterFenceLost(
+                "runtime signed writer snapshot is unavailable"
+            )
+        authority = _WriterOperationAuthority(state["generation"], proof)
+    token = _writer_operation_authority.set(authority)
+    try:
+        yield
+    finally:
+        _writer_operation_authority.reset(token)
+
+
+def _require_storage_commit_authority() -> None:
+    """Recheck deadline/generation at the final datastore commit boundary."""
+
+    with _storage_contract_state_lock:
+        state = dict(_storage_contract_state)
+        published_proof = _runtime_snapshot_proof
+    recovery = _reconciliation_commit_authority.get()
+    operation = _writer_operation_authority.get()
+    expected = recovery if recovery is not None else operation
+    if (
+        expected is None
+        or expected.storage_generation != state.get("generation")
+    ):
+        raise WriterFenceLost("runtime storage commit authority is unavailable")
+    proof = expected.proof
+    if recovery is None and not (
+        state.get("ok") is True
+        and isinstance(published_proof, VerifiedRuntimeSnapshot)
+        and published_proof.body_sha256 == proof.body_sha256
+        and state.get("runtime_snapshot", {}).get("body_sha256")
+        == proof.body_sha256
+    ):
+        raise WriterFenceLost("runtime storage commit authority was replaced")
+    lease = _container.writer_lease_public_projection()
+    if lease is None or not snapshot_is_current(
+        proof,
+        boot_id=_RUNTIME_BOOT_ID,
+        lease=lease,
+        evaluated_at=datetime.now(timezone.utc),
+    ):
+        raise WriterFenceLost("runtime signed writer authority expired or drifted")
 
 
 _container = AppContainer(
@@ -141,6 +313,26 @@ _container = AppContainer(
     pg_kw=PG_KW,
     logger=logger,
     on_history_divergence=_invalidate_storage_contract_state,
+    pg_connection_guard=(
+        SETTINGS.verify_pg_runtime_connection
+        if SETTINGS.storage_access_requested
+        else None
+    ),
+    pg_kw_factory=(
+        (lambda settings=SETTINGS: settings.pg_kw)
+        if SETTINGS.storage_access_requested
+        else None
+    ),
+    writer_commit_guard=(
+        _require_storage_commit_authority
+        if SETTINGS.storage_access_requested
+        else None
+    ),
+    writer_authority_scope=(
+        _storage_writer_authority_scope
+        if SETTINGS.storage_access_requested
+        else None
+    ),
 )
 
 
@@ -152,7 +344,8 @@ def _close_resources() -> list:
 def _storage_contract_readback() -> dict:
     """Use the same facades as requests so tests and alternate composition stay honest."""
 
-    settings = ServerSettings.from_env()
+    settings = SETTINGS
+    access_report = verify_pinned_storage_access(settings)
     with pg() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SET LOCAL statement_timeout = '10s'")
@@ -197,10 +390,12 @@ def _storage_contract_readback() -> dict:
             pg_report["ok"] is True
             and neo_report["ok"] is True
             and receipt_report["ok"] is True
+            and access_report["ok"] is True
         ),
         "postgresql": pg_report,
         "neo4j": neo_report,
         "predeploy_receipt": receipt_report,
+        "storage_access": access_report,
     }
 
 
@@ -211,6 +406,7 @@ def _require_storage_contract() -> dict:
             *report["postgresql"].get("failures", []),
             *report["neo4j"].get("failures", []),
             *report["predeploy_receipt"].get("failures", []),
+            *report["storage_access"].get("failures", []),
         ]
         raise StorageContractError(
             "critique history storage is not ready: " + ", ".join(failures)
@@ -218,9 +414,102 @@ def _require_storage_contract() -> dict:
     return report
 
 
+def _authority_time(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _runtime_snapshot_readback(
+    report: dict,
+) -> tuple[dict, VerifiedRuntimeSnapshot | None]:
+    """Challenge the distinct runtime authority for the already-held lease."""
+
+    failure = {
+        "ok": False,
+        "production_ready": False,
+        "deployment_status": "NOT_READY",
+        "failures": ["runtime.snapshot.unverified"],
+    }
+    try:
+        predeploy = report.get("predeploy_receipt")
+        access = report.get("storage_access")
+        if not (
+            isinstance(predeploy, dict)
+            and predeploy.get("ok") is True
+            and isinstance(access, dict)
+            and access.get("status") == "ACCESS_PAIR_VERIFIED"
+        ):
+            return failure, None
+        artifact = predeploy.get("artifact")
+        required_sha_values = (
+            predeploy.get("operation_sha256"),
+            predeploy.get("target_sha256"),
+            predeploy.get("file_sha256"),
+            predeploy.get("receipt_sha256"),
+            predeploy.get("historical_drain_lease_id_sha256"),
+            access.get("policy_file_sha256"),
+            access.get("startup_bundle_file_sha256"),
+        )
+        if not isinstance(artifact, dict) or any(
+            not isinstance(value, str) for value in required_sha_values
+        ):
+            return failure, None
+        lease = _container.writer_lease_public_projection()
+        if lease is None:
+            return failure, None
+        access_expiry = _authority_time(access.get("valid_until"))
+        if access_expiry is None:
+            return failure, None
+        executable, verifier_sha, public_key = (
+            SETTINGS.require_runtime_writer_authority()
+        )
+        proof = challenge_runtime_authority(
+            executable=executable,
+            expected_executable_sha256=verifier_sha,
+            public_key_hex=public_key,
+            environment=predeploy.get("environment"),
+            boot_id=_RUNTIME_BOOT_ID,
+            artifact=artifact,
+            operation_sha256=predeploy["operation_sha256"],
+            target_sha256=predeploy["target_sha256"],
+            storage_access_policy_file_sha256=access["policy_file_sha256"],
+            predeploy_receipt_file_sha256=predeploy["file_sha256"],
+            predeploy_receipt_sha256=predeploy["receipt_sha256"],
+            startup_bundle_file_sha256=access["startup_bundle_file_sha256"],
+            historical_drain_lease_id_sha256=predeploy[
+                "historical_drain_lease_id_sha256"
+            ],
+            runtime_writer_lease=lease,
+            workers=[{
+                "worker_id": _RUNTIME_WORKER_ID,
+                "boot_id": _RUNTIME_BOOT_ID,
+            }],
+            authority_not_after=access_expiry,
+        )
+        current_lease = _container.writer_lease_public_projection()
+        if current_lease != lease or not snapshot_is_current(
+            proof,
+            boot_id=_RUNTIME_BOOT_ID,
+            lease=current_lease or {},
+            evaluated_at=datetime.now(timezone.utc),
+        ):
+            return failure, None
+        return proof.public_report(), proof
+    except Exception:  # noqa: BLE001 - never expose key, path, signature, or lease
+        return failure, None
+
+
 def _refresh_storage_contract_state() -> dict:
     """Run the exhaustive audit once on startup or by explicit operator request."""
 
+    global _runtime_snapshot_proof
     # One process-local refresh may own/release the process-global lease at a
     # time.  The container guard additionally blocks local critique commits and
     # remote replicas (via PG election) throughout acquire -> audit -> publish.
@@ -234,6 +523,14 @@ def _refresh_storage_contract_state() -> dict:
             if not writer_lease_ok:
                 candidate_ok = False
                 failures = ["runtime.global_writer_lease.unavailable"]
+                access_report = None
+                runtime_snapshot_report = {
+                    "ok": False,
+                    "failures": ["runtime.snapshot.writer_lease_unavailable"],
+                    "production_ready": False,
+                    "deployment_status": "NOT_READY",
+                }
+                runtime_proof = None
                 semantic = {
                     "ok": False,
                     "failures": ["runtime.global_writer_lease.unavailable"],
@@ -241,24 +538,58 @@ def _refresh_storage_contract_state() -> dict:
             else:
                 try:
                     report = _storage_contract_readback()
+                    access_report = report.get("storage_access")
                     semantic = _semantic_contract_readback()
                     failures = [
                         *report.get("postgresql", {}).get("failures", []),
                         *report.get("neo4j", {}).get("failures", []),
                         *report.get("predeploy_receipt", {}).get("failures", []),
+                        *report.get("storage_access", {}).get("failures", []),
                         *semantic.get("failures", []),
                     ]
                     writer_lease_ok = _container.writer_lease_ready()
                     if not writer_lease_ok:
                         failures.append("runtime.global_writer_lease.lost")
-                    candidate_ok = (
+                    preliminary_ok = (
                         report.get("ok") is True
+                        and isinstance(access_report, dict)
+                        and access_report.get("status") == "ACCESS_PAIR_VERIFIED"
+                        and access_report.get("failures") == []
+                        and _access_valid_until_is_current(
+                            access_report.get("valid_until")
+                        )
                         and semantic.get("ok") is True
                         and writer_lease_ok
+                    )
+                    if preliminary_ok:
+                        runtime_snapshot_report, runtime_proof = (
+                            _runtime_snapshot_readback(report)
+                        )
+                    else:
+                        runtime_snapshot_report = {
+                            "ok": False,
+                            "failures": ["runtime.snapshot.prerequisite_unverified"],
+                            "production_ready": False,
+                            "deployment_status": "NOT_READY",
+                        }
+                        runtime_proof = None
+                    failures.extend(runtime_snapshot_report.get("failures", []))
+                    candidate_ok = (
+                        preliminary_ok
+                        and runtime_snapshot_report.get("ok") is True
+                        and isinstance(runtime_proof, VerifiedRuntimeSnapshot)
                     )
                 except Exception as exc:  # noqa: BLE001 - core server remains available
                     candidate_ok = False
                     failures = [type(exc).__name__]
+                    access_report = None
+                    runtime_snapshot_report = {
+                        "ok": False,
+                        "failures": ["runtime.snapshot.refresh_failed"],
+                        "production_ready": False,
+                        "deployment_status": "NOT_READY",
+                    }
+                    runtime_proof = None
                     semantic = {
                         "ok": False,
                         "failures": [type(exc).__name__],
@@ -276,9 +607,7 @@ def _refresh_storage_contract_state() -> dict:
                     result = dict(_storage_contract_state)
                     stale = True
                 else:
-                    next_generation = current_generation + (
-                        0 if candidate_ok else 1
-                    )
+                    next_generation = current_generation + 1
                     _storage_contract_state.update(
                         checked=True,
                         ok=candidate_ok,
@@ -287,6 +616,17 @@ def _refresh_storage_contract_state() -> dict:
                         generation=next_generation,
                         semantic=semantic,
                         writer_lease={"ok": writer_lease_ok},
+                        storage_access=access_report,
+                        runtime_snapshot=runtime_snapshot_report,
+                        access_valid_until=(
+                            runtime_proof.expires_at
+                            if candidate_ok
+                            and isinstance(runtime_proof, VerifiedRuntimeSnapshot)
+                            else None
+                        ),
+                    )
+                    _runtime_snapshot_proof = (
+                        runtime_proof if candidate_ok else None
                     )
                     result = dict(_storage_contract_state)
                     stale = False
@@ -306,7 +646,26 @@ def _require_critique_history_ready() -> None:
 
     with _storage_contract_state_lock:
         state = dict(_storage_contract_state)
-    if state.get("ok") is not True or not _container.writer_lease_ready():
+        proof = _runtime_snapshot_proof
+    lease = (
+        _container.writer_lease_public_projection()
+        if state.get("ok") is True
+        else None
+    )
+    authority_current = (
+        isinstance(proof, VerifiedRuntimeSnapshot)
+        and lease is not None
+        and snapshot_is_current(
+            proof,
+            boot_id=_RUNTIME_BOOT_ID,
+            lease=lease,
+            evaluated_at=datetime.now(timezone.utc),
+        )
+    )
+    if state.get("ok") is True and not authority_current:
+        _invalidate_storage_contract_state("runtime.snapshot.expired_or_drifted")
+        state["ok"] = False
+    if state.get("ok") is not True or not authority_current:
         if state.get("ok") is True:
             _invalidate_storage_contract_state(
                 "runtime.global_writer_lease.lost"
@@ -323,7 +682,10 @@ def _reconciliation_authorized(report: dict) -> bool:
     pg_report = report.get("postgresql")
     neo_report = report.get("neo4j")
     receipt = report.get("predeploy_receipt")
-    if not all(isinstance(item, dict) for item in (pg_report, neo_report, receipt)):
+    access = report.get("storage_access")
+    if not all(
+        isinstance(item, dict) for item in (pg_report, neo_report, receipt, access)
+    ):
         return False
     pg_exact = (
         pg_report.get("contract_id") == CONTRACT_ID
@@ -345,7 +707,16 @@ def _reconciliation_authorized(report: dict) -> bool:
             )
         )
     )
-    return pg_exact and neo_exact and receipt_exact
+    access_exact = (
+        access.get("contract_id") == CONTRACT_ID
+        and access.get("ok") is True
+        and access.get("status") == "ACCESS_PAIR_VERIFIED"
+        and access.get("failures") == []
+        and access.get("production_ready") is False
+        and access.get("deployment_status") == "NOT_READY"
+        and _access_valid_until_is_current(access.get("valid_until"))
+    )
+    return pg_exact and neo_exact and receipt_exact and access_exact
 
 
 def _require_reconciliation_authority() -> dict:
@@ -374,6 +745,34 @@ def _require_reconciliation_authority() -> dict:
     return report
 
 
+@contextmanager
+def _reconciliation_commit_scope(report: dict, expected_generation: int):
+    """Grant only this recovery task the already verified live deadline."""
+
+    if type(expected_generation) is not int or expected_generation < 0:
+        raise WriterFenceLost("reconciliation generation is invalid")
+    if not _reconciliation_authorized(report):
+        raise WriterFenceLost("reconciliation report is not commit authority")
+    runtime_report, proof = _runtime_snapshot_readback(report)
+    if (
+        runtime_report.get("ok") is not True
+        or not isinstance(proof, VerifiedRuntimeSnapshot)
+    ):
+        raise WriterFenceLost("reconciliation runtime snapshot is unavailable")
+    with _storage_contract_state_lock:
+        if _storage_contract_state.get("generation") != expected_generation:
+            raise WriterFenceLost(
+                "reconciliation storage authority generation changed"
+            )
+    token = _reconciliation_commit_authority.set(
+        _WriterOperationAuthority(expected_generation, proof)
+    )
+    try:
+        yield
+    finally:
+        _reconciliation_commit_authority.reset(token)
+
+
 def _semantic_contract_readback() -> dict:
     return _evidence_claim_service().audit_critique_standing()
 
@@ -391,7 +790,14 @@ def _reconcile_durable_critique_state() -> dict:
                 raise StorageContractError(
                     "runtime global writer authority is required for reconciliation"
                 )
-            return _reconcile_durable_critique_state_held()
+            with _storage_contract_state_lock:
+                expected_generation = int(
+                    _storage_contract_state.get("generation", 0)
+                )
+            report = _require_reconciliation_authority()
+            with _reconciliation_commit_scope(report, expected_generation):
+                with _container.writer_ledger_scope():
+                    return _reconcile_durable_critique_state_held()
 
 
 def _reconcile_durable_critique_state_held() -> dict:
@@ -589,11 +995,30 @@ def _health_snapshot() -> tuple[dict, bool, bool]:
     except Exception:
         svc['mongo'] = 'down'
     with _storage_contract_state_lock:
-        cached_storage_ok = _storage_contract_state.get('ok') is True
-    writer_lease_ok = (
-        _container.writer_lease_ready() if cached_storage_ok else False
+        cached_state = dict(_storage_contract_state)
+        proof = _runtime_snapshot_proof
+    cached_storage_ok = cached_state.get('ok') is True
+    lease = (
+        _container.writer_lease_public_projection()
+        if cached_storage_ok
+        else None
     )
+    signed_authority_ok = (
+        isinstance(proof, VerifiedRuntimeSnapshot)
+        and lease is not None
+        and snapshot_is_current(
+            proof,
+            boot_id=_RUNTIME_BOOT_ID,
+            lease=lease,
+            evaluated_at=datetime.now(timezone.utc),
+        )
+    )
+    if cached_storage_ok and not signed_authority_ok:
+        _invalidate_storage_contract_state("runtime.snapshot.expired_or_drifted")
+        cached_storage_ok = False
+    writer_lease_ok = cached_storage_ok and signed_authority_ok
     svc['writer_lease'] = 'ok' if writer_lease_ok else 'lost'
+    svc['runtime_authority'] = 'ok' if signed_authority_ok else 'unverified'
     storage_ok = cached_storage_ok and writer_lease_ok
     svc['critique_history'] = 'ok' if storage_ok else 'disabled'
     core_healthy = svc.get('neo4j') == 'ok' and svc.get('mongo') == 'ok'
@@ -628,6 +1053,42 @@ def readyz():
             'services': svc,
         },
     )
+
+
+@app.get('/api/ops/runtime-authority-snapshot')
+def runtime_authority_snapshot():
+    """Read back the exact cached public proof without refreshing authority."""
+
+    with _storage_contract_state_lock:
+        state = dict(_storage_contract_state)
+        proof = _runtime_snapshot_proof
+    lease = (
+        _container.writer_lease_public_projection()
+        if state.get("ok") is True
+        else None
+    )
+    current = (
+        isinstance(proof, VerifiedRuntimeSnapshot)
+        and lease is not None
+        and state.get("runtime_snapshot", {}).get("body_sha256")
+        == proof.body_sha256
+        and snapshot_is_current(
+            proof,
+            boot_id=_RUNTIME_BOOT_ID,
+            lease=lease,
+            evaluated_at=datetime.now(timezone.utc),
+        )
+    )
+    if not current:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "NOT_READY",
+                "production_ready": False,
+                "deployment_status": "NOT_READY",
+            },
+        )
+    return Response(content=proof.canonical_response, media_type="application/json")
 
 
 def _current_auth_posture() -> str:
@@ -796,8 +1257,37 @@ def _safe_rebuild_plan(artifact, bo):
 
 NODE_LABELS = 'PrismExperiment|LakatosNode'
 
+
+def _ledger_scope():
+    """Use signed cross-store authority only in an explicitly armed runtime."""
+
+    return (
+        _container.writer_ledger_scope()
+        if SETTINGS.storage_access_requested
+        else nullcontext()
+    )
+
+
+def _ledger_kg_tx(ops):
+    return (
+        _container.writer_fenced_kg_tx(ops)
+        if SETTINGS.storage_access_requested
+        else kg_tx(ops)
+    )
+
+
+def _ledger_ready():
+    if SETTINGS.storage_access_requested:
+        _require_critique_history_ready()
+
 def _tree_service():
-    return TreeService(kg=kg, kg_tx=kg_tx, hist=hist, pg=pg)
+    return TreeService(
+        kg=kg,
+        kg_tx=kg_tx,
+        hist=hist,
+        pg=pg,
+        temporal_proof_provider=_temporal_service().read_proofs_for_heads,
+    )
 
 
 def _ledger_tree_service():
@@ -805,9 +1295,10 @@ def _ledger_tree_service():
 
     return TreeService(
         kg=kg,
-        kg_tx=_container.writer_fenced_kg_tx,
+        kg_tx=_ledger_kg_tx,
         hist=hist,
         pg=pg,
+        temporal_proof_provider=_temporal_service().read_proofs_for_heads,
     )
 
 
@@ -815,7 +1306,7 @@ def _evidence_claim_service(*, store_research_event=None):
     return EvidenceClaimService(
         kg=kg,
         kg_tx=kg_tx,   # B1-step1: bind_embedded_observation 의 다중 KG write 를 단일 트랜잭션으로
-        critique_kg_tx=_container.writer_fenced_kg_tx,
+        critique_kg_tx=_ledger_kg_tx,
         hist=hist,
         foundation=_certified_foundation_provider,
         load_lineage=_load_lineage,
@@ -825,14 +1316,15 @@ def _evidence_claim_service(*, store_research_event=None):
         store_research_event=store_research_event,
         environment_fingerprint=environment_fingerprint,
         fingerprint_sha=fingerprint_sha,
-        critique_ready=_require_critique_history_ready,
-        critique_scope=_container.writer_ledger_scope,
+        critique_ready=_ledger_ready,
+        critique_scope=_ledger_scope,
         on_semantic_divergence=_invalidate_storage_contract_state,
+        temporal_proof_provider=_temporal_service().read_proofs_for_heads,
     )
 
 
 def _programme_service():
-    cycle_writer = TreeKgWriter(_container.writer_fenced_kg_tx)
+    cycle_writer = TreeKgWriter(_ledger_kg_tx)
     cycle_ports = {
         "add_node": lambda name, node, claim: add_cycle_node(
             name, node, claim
@@ -852,13 +1344,14 @@ def _programme_service():
         compute_metrics=compute_metrics,
         insert_artifact=lambda doc: MONGO.artifacts.insert_one(doc),
         rank_questions=rank_questions,
-        ledger_ready=_require_critique_history_ready,
-        ledger_scope=_container.writer_ledger_scope,
+        ledger_ready=_ledger_ready,
+        ledger_scope=_ledger_scope,
         **cycle_ports,
     )
 
 
 def _judgement_service():
+    temporal_service = _temporal_service()
     return JudgementService(
         kg=kg,
         kg_tx=kg_tx,
@@ -867,9 +1360,56 @@ def _judgement_service():
         reproducible_for_node=_reproducible_for_node,
         producer_replay_for_node=_producer_replay_for_node,   # 나생문 #1 live: 채점 스크립트 재실행 검증
         producer_replay_submit=_producer_replay_submit,        # AG3: submit incoming 값 재유도 → 값소유
-        ledger_ready=_require_critique_history_ready,
-        ledger_kg_tx=_container.writer_fenced_kg_tx,
-        ledger_scope=_container.writer_ledger_scope,
+        ledger_ready=_ledger_ready,
+        ledger_kg_tx=(
+            _container.writer_fenced_kg_tx
+            if SETTINGS.storage_access_requested
+            else None
+        ),
+        ledger_scope=_ledger_scope,
+        prediction_temporal_commitment_provider=(
+            temporal_service.verified_prediction_commitment
+        ),
+        temporal_proof_provider=temporal_service.read_proofs_for_heads,
+    )
+
+
+def _temporal_service():
+    return TemporalProofService(
+        kg=kg,
+        ledger_kg_tx=_ledger_kg_tx,
+        hist=hist,
+        ledger_ready=_ledger_ready,
+        ledger_scope=_ledger_scope,
+        independent_verifier=_independent_temporal_verifier(),
+    )
+
+
+def _independent_temporal_verifier():
+    if not SETTINGS.temporal_independent_verifier_requested:
+        return None
+    try:
+        (
+            python,
+            artifact_directory,
+            artifact_sha,
+            python_sha,
+            authority_executable,
+            authority_sha,
+            authority_did,
+        ) = SETTINGS.require_temporal_independent_verifier()
+    except RuntimeError:
+        return UnavailableIndependentTemporalVerifier()
+    return SubprocessIndependentTemporalVerifier(
+        python_executable=python,
+        artifact_directory=artifact_directory,
+        expected_artifact_sha256=artifact_sha,
+        expected_python_sha256=python_sha,
+        time_authority=SubprocessTimeAuthority(
+            executable=authority_executable,
+            expected_executable_sha256=authority_sha,
+            expected_signer_did=authority_did,
+        ),
     )
 
 
@@ -889,6 +1429,7 @@ app.include_router(create_tree_router(_tree_service))
 app.include_router(create_evidence_claim_router(_evidence_claim_service))
 app.include_router(create_programme_router(_programme_service))
 app.include_router(create_judgement_router(_judgement_service))
+app.include_router(create_temporal_router(_temporal_service))
 app.include_router(create_lineage_router(_lineage_service))
 
 

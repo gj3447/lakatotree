@@ -25,13 +25,43 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from lakatos.write_cert import did_key_decode, ed25519_verify
+from lakatos.write_cert import did_key_decode, did_key_encode, ed25519_verify
 
 _ANCHOR_DOMAIN = b"lakatotree-temporal-anchor/v1\n"   # 도메인 분리 — verdict/prediction blob 과 sha-space 격리
+TWO_ENDED_SIDECAR_SCHEMA = "lakatotree-two-ended-temporal-sidecar/v1"
+TEMPORAL_AUTHORITY_POLICY_SCHEMA = "lakatotree-temporal-authority-policy/v1"
+TEMPORAL_AUTHORITY_POLICY_DOMAIN = b"lakatotree-temporal-authority-policy/v1\0"
+TWO_ENDED_SIDECAR_DOMAIN = b"lakatotree-two-ended-temporal-sidecar/v1\0"
 
 
 class AnchorInvalid(ValueError):
     """temporal anchor 검증 실패 — fail-closed(조용한 통과 없음, c1verify REJECT 규율)."""
+
+
+def _canonical_json_bytes(value: dict) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def temporal_authority_policy_sha256(policy: dict) -> str:
+    """Frozen production-harness identity for one authority-policy snapshot."""
+
+    return hashlib.sha256(
+        TEMPORAL_AUTHORITY_POLICY_DOMAIN + _canonical_json_bytes(policy)
+    ).hexdigest()
+
+
+def two_ended_temporal_sidecar_sha256(sidecar: dict) -> str:
+    """Frozen production-harness identity for one two-ended sidecar."""
+
+    return hashlib.sha256(
+        TWO_ENDED_SIDECAR_DOMAIN + _canonical_json_bytes(sidecar)
+    ).hexdigest()
 
 
 def anchor_digest(receipt_sha_hex: str) -> str:
@@ -76,22 +106,35 @@ def verify_temporal_anchor(anchor: dict, *, expect_receipt_sha: str,
     순서: 증인 신원(allow-list — 비면 즉시 실패=solo box 무증인) → digest 바인딩(다른 receipt 커버
     토큰 밀반입 봉쇄) → Ed25519 서명(gen_time 봉인 포함). allow-list 는 out-of-band 로 보유한
     k-of-N 증인 DID — 연구자와 분리돼야 진짜 외부성."""
-    if not anchor:
+    if not isinstance(anchor, dict) or not anchor:
         raise AnchorInvalid("anchor 없음")
-    witness = str(anchor.get("witness_did") or "").strip()
-    if not witness:
-        raise AnchorInvalid("witness_did 없음")
+    witness = anchor.get("witness_did")
+    if not isinstance(witness, str) or not witness or witness != witness.strip():
+        raise AnchorInvalid("witness_did 없음/비정규")
     if not witness_allowlist or witness not in witness_allowlist:
         raise AnchorInvalid(f"증인 {witness[:24]}… 는 witness allow-list 밖(solo box=무증인, L3 불가)")
     want = anchor_digest(expect_receipt_sha)
     if anchor.get("digest") != want:
         raise AnchorInvalid("digest 불일치 — 다른 receipt 를 커버한 토큰(밀반입 봉쇄)")
-    gen_time = str(anchor.get("gen_time") or "")
+    gen_time = anchor.get("gen_time")
+    if not isinstance(gen_time, str) or not gen_time or gen_time != gen_time.strip():
+        raise AnchorInvalid("gen_time 없음/비정규")
+    signature = anchor.get("signature")
+    if not (
+        isinstance(signature, str)
+        and len(signature) == 128
+        and all(char in "0123456789abcdef" for char in signature)
+    ):
+        raise AnchorInvalid("signature 는 lowercase Ed25519 hex 여야 함")
+    if anchor.get("channel") != "ed25519-witness":
+        raise AnchorInvalid("channel 은 ed25519-witness 여야 함")
     try:
         _parse_iso(gen_time)
         pub = did_key_decode(witness)
-        ok = ed25519_verify(pub, _signed_bytes(want, gen_time), bytes.fromhex(anchor.get("signature") or ""))
-    except ValueError as exc:
+        if did_key_encode(pub) != witness:
+            raise ValueError("non-canonical did:key")
+        ok = ed25519_verify(pub, _signed_bytes(want, gen_time), bytes.fromhex(signature))
+    except (ValueError, OverflowError, TypeError, AttributeError) as exc:
         raise AnchorInvalid(f"시각/서명 파싱 실패: {exc}") from exc
     if not ok:
         raise AnchorInvalid("증인 서명 불일치")
@@ -99,10 +142,13 @@ def verify_temporal_anchor(anchor: dict, *, expect_receipt_sha: str,
 
 
 def _parse_iso(ts: str) -> datetime:
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    if dt.tzinfo is None or dt.utcoffset() is None:
-        raise ValueError("timezone-aware ISO-8601 timestamp required")
-    return dt.astimezone(timezone.utc)
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None or dt.utcoffset() is None:
+            raise ValueError("timezone-aware ISO-8601 timestamp required")
+        return dt.astimezone(timezone.utc)
+    except (ValueError, OverflowError, AttributeError, TypeError) as exc:
+        raise ValueError("bounded timezone-aware ISO-8601 timestamp required") from exc
 
 
 def anchor_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool:
@@ -111,7 +157,7 @@ def anchor_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool:
     파싱 실패 = False(fail-closed). 이것이 '결과 먼저, 예측 나중'을 물리적으로 막는 핵심 부등식."""
     try:
         return _parse_iso(pred_gen_time) <= _parse_iso(verdict_gen_time)
-    except (ValueError, AttributeError):
+    except (ValueError, OverflowError, AttributeError, TypeError):
         return False
 
 
@@ -120,7 +166,7 @@ def anchor_strict_ordering_ok(pred_gen_time: str, verdict_gen_time: str) -> bool
 
     try:
         return _parse_iso(pred_gen_time) < _parse_iso(verdict_gen_time)
-    except (ValueError, AttributeError):
+    except (ValueError, OverflowError, AttributeError, TypeError):
         return False
 
 

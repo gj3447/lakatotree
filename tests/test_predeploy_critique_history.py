@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import importlib
 import json
 import hashlib
 import http.server
@@ -830,7 +831,7 @@ def test_receipt_publish_fsyncs_mode_before_link(tmp_path, monkeypatch):
 
 def test_installable_migration_resources_are_present_and_content_bound():
     sources = module.migration_sources()
-    assert set(sources) == {module.PG_RESOURCE, module.NEO_RESOURCE}
+    assert tuple(sources) == module.MIGRATION_RESOURCES
     assert all(len(value) == 64 for value in sources.values())
 
 
@@ -1078,7 +1079,7 @@ def test_live_fence_executes_private_bytes_after_configured_path_swap(
 
 
 def test_live_fence_rejects_sitecustomize_forged_response(tmp_path):
-    """A mutable Python runtime closure may forge JSON, but not the authority signature."""
+    """A mutable runtime can at most forge JSON, never a valid authority response."""
 
     poisoned = tmp_path / "poisoned-runtime"
     venv.EnvBuilder(with_pip=False, symlinks=False).create(poisoned)
@@ -1131,10 +1132,14 @@ os._exit(0)
         now,
     )
 
-    with pytest.raises(RuntimeError, match="signature is invalid"):
+    with pytest.raises(RuntimeError) as rejected:
         module.verify_live_fence(
             verifier, verifier_sha, drain, _fence_public_key_hex()
         )
+    assert str(rejected.value) in {
+        "writer-fence authority signature is invalid",
+        "external writer-fence verifier rejected the lease",
+    }
 
 
 def test_bounded_neo_migration_never_starts_query_after_lease_expiry(monkeypatch):
@@ -1205,6 +1210,10 @@ def test_bounded_pg_migration_arms_timeouts_and_cancel_before_source(
     events = []
 
     class _Cursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.statement = None
+
         def __enter__(self):
             events.append("cursor-enter")
             return self
@@ -1214,12 +1223,38 @@ def test_bounded_pg_migration_arms_timeouts_and_cancel_before_source(
             return False
 
         def execute(self, statement, params=None):
+            self.statement = statement
             events.append(("sql", statement, params))
+            if statement.startswith("SET ROLE "):
+                self.connection.current_user = "lakatotree_owner"
+            elif statement == "ROLLBACK":
+                self.connection.aborted = False
+            elif statement == "RESET ROLE":
+                self.connection.current_user = "lakatotree_migrator"
+
+        def fetchone(self):
+            assert self.statement == "SELECT current_user::text,session_user::text"
+            return (
+                self.connection.current_user,
+                "lakatotree_migrator",
+            )
+
+        def fetchall(self):
+            assert "FROM pg_catalog.pg_auth_members" in self.statement
+            return [(
+                "lakatotree_owner",
+                False, False, True,
+                False, False, False, False, False, False, False,
+                False, False, False, False, False, False, True,
+            )]
 
     class _Connection:
+        current_user = "lakatotree_migrator"
+        aborted = False
+
         def cursor(self):
             events.append("cursor-open")
-            return _Cursor()
+            return _Cursor(self)
 
         def cancel(self):
             events.append("connection-cancel")
@@ -1246,12 +1281,101 @@ def test_bounded_pg_migration_arms_timeouts_and_cancel_before_source(
 
     sql_events = [event for event in events if isinstance(event, tuple) and event[0] == "sql"]
     assert [event[1] for event in sql_events[:2]] == [
-        "SELECT set_config('lock_timeout', %s, false)",
-        "SELECT set_config('statement_timeout', %s, false)",
+        "SELECT pg_catalog.set_config('lock_timeout', %s, false)",
+        "SELECT pg_catalog.set_config('statement_timeout', %s, false)",
     ]
-    assert sql_events[2] == ("sql", source.decode("utf-8"), None)
-    assert events.index("timer-start") < events.index(sql_events[2])
-    assert events[-1] == "timer-cancel"
+    source_event = ("sql", source.decode("utf-8"), None)
+    assert source_event in sql_events
+    assert events.index("timer-start") < events.index(source_event)
+    assert ("sql", 'SET ROLE "lakatotree_owner"', None) in sql_events
+    assert events.index("timer-cancel") < events.index(
+        ("sql", "ROLLBACK", None)
+    )
+    assert ("sql", "RESET ROLE", None) in sql_events
+
+
+def test_bounded_pg_migration_sql_rolls_back_aborted_autocommit_session(
+    monkeypatch,
+):
+    events = []
+
+    class _Cursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.statement = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, statement, params=None):
+            self.statement = statement
+            events.append((statement, params))
+            if self.connection.aborted and statement != "ROLLBACK":
+                raise RuntimeError("transaction is aborted")
+            if statement.startswith("SET ROLE "):
+                self.connection.current_user = "lakatotree_owner"
+            elif statement == "BROKEN MIGRATION":
+                self.connection.aborted = True
+                raise RuntimeError("source failed")
+            elif statement == "ROLLBACK":
+                self.connection.aborted = False
+            elif statement == "RESET ROLE":
+                self.connection.current_user = "lakatotree_migrator"
+
+        def fetchone(self):
+            return (
+                self.connection.current_user,
+                "lakatotree_migrator",
+            )
+
+        def fetchall(self):
+            return [(
+                "lakatotree_owner",
+                False, False, True,
+                False, False, False, False, False, False, False,
+                False, False, False, False, False, False, True,
+            )]
+
+    class _Connection:
+        current_user = "lakatotree_migrator"
+        aborted = False
+
+        def cursor(self):
+            return _Cursor(self)
+
+        def cancel(self):
+            return None
+
+    class _Timer:
+        daemon = False
+
+        def __init__(self, _seconds, _callback):
+            return None
+
+        def start(self):
+            return None
+
+        def cancel(self):
+            return None
+
+    connection = _Connection()
+    monkeypatch.setattr(module.threading, "Timer", _Timer)
+
+    with pytest.raises(RuntimeError, match="source failed"):
+        module._bounded_pg_migration(
+            connection,
+            (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat(),
+            b"BROKEN MIGRATION",
+        )
+
+    rollback_index = events.index(("ROLLBACK", None))
+    reset_index = events.index(("RESET ROLE", None))
+    assert rollback_index < reset_index
+    assert connection.aborted is False
+    assert connection.current_user == "lakatotree_migrator"
 
 
 @pytest.mark.parametrize(
@@ -1307,12 +1431,12 @@ def test_apply_rejects_relative_receipt_path_before_loading_database_clients(
 def test_apply_hashes_and_executes_each_captured_migration_read_once(
     tmp_path, monkeypatch
 ):
-    reads = {module.PG_RESOURCE: 0, module.NEO_RESOURCE: 0}
+    reads = {name: 0 for name in module.MIGRATION_RESOURCES}
     captured = {
-        module.PG_RESOURCE: b"postgresql-captured-once",
-        module.NEO_RESOURCE: b"neo4j-captured-once",
+        name: f"{name}-captured-once".encode()
+        for name in module.MIGRATION_RESOURCES
     }
-    executed = {}
+    executed = {"neo": []}
 
     def resource_bytes(name):
         reads[name] += 1
@@ -1344,6 +1468,10 @@ def test_apply_hashes_and_executes_each_captured_migration_read_once(
         storage_environment="staging",
         storage_fence_verifier_sha256="f" * 64,
         storage_fence_public_key_hex=_fence_public_key_hex(),
+        pg_migration_user="lakatos_migrator",
+        pg_user="lakatos_runtime",
+        neo4j_migration_user="lakatos_migrator_user",
+        neo4j_user="lakatos_runtime_user",
         pg_kw={},
     )
     target = {
@@ -1378,6 +1506,7 @@ def test_apply_hashes_and_executes_each_captured_migration_read_once(
 
     monkeypatch.setattr(module.ServerSettings, "from_env", lambda: settings)
     monkeypatch.setattr(module, "_database_clients", lambda: (_Psycopg, _Driver))
+    monkeypatch.setattr(module, "_migration_pg_connect_parameters", lambda *_args: {})
     monkeypatch.setattr(module, "_resource_bytes", resource_bytes)
     monkeypatch.setattr(
         module, "_artifact_identity",
@@ -1398,7 +1527,7 @@ def test_apply_hashes_and_executes_each_captured_migration_read_once(
     )
     monkeypatch.setattr(
         module, "_bounded_neo_migration",
-        lambda _driver, _expires, source: executed.setdefault("neo", source),
+        lambda _driver, _expires, source: executed["neo"].append(source),
     )
 
     receipt = module.apply(
@@ -1409,11 +1538,17 @@ def test_apply_hashes_and_executes_each_captured_migration_read_once(
         fence_verifier_sha256="f" * 64,
     )
 
-    assert reads == {module.PG_RESOURCE: 1, module.NEO_RESOURCE: 1}
-    assert executed == {"pg": captured[module.PG_RESOURCE], "neo": captured[module.NEO_RESOURCE]}
+    assert reads == {name: 1 for name in module.MIGRATION_RESOURCES}
+    assert executed == {
+        "pg": captured[module.PG_RESOURCE],
+        "neo": [captured[name] for name in module.NEO_RESOURCES],
+    }
     assert receipt["operation"]["migration_sources"] == {
         name: module._sha_bytes(source) for name, source in captured.items()
     }
+    assert receipt["operation"]["migration_order"] == list(
+        module.MIGRATION_RESOURCES
+    )
     normalization = receipt["neo4j"]["payload_normalization"]
     assert normalization["updated_count"] == 0
     assert normalization["before"] == normalization["after"]
@@ -1452,6 +1587,7 @@ def test_authority_denial_precedes_the_first_migration_mutation(
 
     monkeypatch.setattr(module.ServerSettings, "from_env", lambda: settings)
     monkeypatch.setattr(module, "_database_clients", lambda: (_Psycopg, _Driver))
+    monkeypatch.setattr(module, "_migration_pg_connect_parameters", lambda *_args: {})
     monkeypatch.setattr(module, "_resource_bytes", lambda name: name.encode())
     monkeypatch.setattr(
         module,
@@ -1538,6 +1674,12 @@ def _sealed_predeploy_receipt(tmp_path, monkeypatch, *, neo=None):
         "operation": operation,
         "target_sha256": target["sha256"],
         "target": target["details"],
+        "principals": module.principal_bindings(
+            postgresql_migrator="lakatos_migrator",
+            postgresql_runtime="lakatos_runtime",
+            neo4j_migrator="lakatos_migrator_user",
+            neo4j_runtime="lakatos_runtime_user",
+        ),
         "writer_drain": {
             "sha256": "d" * 64,
             "schema_version": module.DRAIN_SCHEMA,
@@ -1645,7 +1787,59 @@ def _patch_healthy_storage_runtime(app, monkeypatch):
     )
     monkeypatch.setattr(app._container, "acquire_writer_lease", lambda: True)
     monkeypatch.setattr(app._container, "writer_lease_ready", lambda: True)
+    lease = {
+        "lease_id": "critique-history-writer-v1",
+        "owner_token_sha256": "9" * 64,
+        "generation": 7,
+        "postgresql_backend_pid": 4242,
+        "postgresql_advisory_key": [1279349588, 20260802],
+    }
+    monkeypatch.setattr(
+        app._container,
+        "writer_lease_public_projection",
+        lambda: dict(lease),
+    )
     monkeypatch.setattr(app._container, "release_writer_lease", lambda: None)
+    monkeypatch.setattr(
+        app,
+        "verify_pinned_storage_access",
+        lambda _settings: {
+            "contract_id": module.CONTRACT_ID,
+            "ok": True,
+            "status": "ACCESS_PAIR_VERIFIED",
+            "production_ready": False,
+            "deployment_status": "NOT_READY",
+            "failures": [],
+            "valid_until": "2999-01-01T00:00:00+00:00",
+        },
+    )
+    proof = app.VerifiedRuntimeSnapshot(
+        canonical_response=b'{"synthetic":true}',
+        body_sha256="8" * 64,
+        challenge_sha256="7" * 64,
+        boot_id=app._RUNTIME_BOOT_ID,
+        artifact={"kind": "git", "source_commit": "6" * 40},
+        artifact_identity_sha256="5" * 64,
+        operation_sha256="4" * 64,
+        target_sha256="3" * 64,
+        predeploy_receipt_file_sha256="2" * 64,
+        predeploy_receipt_sha256="1" * 64,
+        startup_bundle_file_sha256="a" * 64,
+        lease_id=lease["lease_id"],
+        lease_owner_token_sha256=lease["owner_token_sha256"],
+        lease_generation=lease["generation"],
+        lease_postgresql_backend_pid=lease["postgresql_backend_pid"],
+        lease_postgresql_advisory_key=tuple(
+            lease["postgresql_advisory_key"]
+        ),
+        observed_at="2026-08-02T00:00:00+00:00",
+        expires_at="2999-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr(
+        app,
+        "_runtime_snapshot_readback",
+        lambda _report: (proof.public_report(), proof),
+    )
 
 
 def _set_runtime_pins(monkeypatch, receipt, file_sha):
@@ -1661,15 +1855,38 @@ def _set_runtime_pins(monkeypatch, receipt, file_sha):
     return configured
 
 
+@pytest.fixture
+def _reload_server_app(monkeypatch):
+    """Reload an immutable settings snapshot and restore it after the case.
+
+    ``importlib.reload`` mutates the existing module object.  Without the
+    finalizer, a strict storage snapshot leaks into later test modules even
+    after pytest's environment monkeypatch has been undone.
+    """
+
+    def reload_current_environment():
+        import server.app as app
+
+        return importlib.reload(app)
+
+    yield reload_current_environment
+
+    # Undo both environment and module-attribute patches before rebuilding the
+    # default module snapshot.  Calling undo again in pytest's fixture teardown
+    # is intentionally a no-op.
+    monkeypatch.undo()
+    reload_current_environment()
+
+
 def test_all_runtime_pins_valid_reach_readyz_and_mutation_gate(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, _reload_server_app
 ):
     receipt, file_sha, _target = _sealed_predeploy_receipt(
         tmp_path, monkeypatch
     )
     _set_runtime_pins(monkeypatch, receipt, file_sha)
 
-    import server.app as app
+    app = _reload_server_app()
 
     _patch_healthy_storage_runtime(app, monkeypatch)
 
@@ -1696,7 +1913,7 @@ def test_all_runtime_pins_valid_reach_readyz_and_mutation_gate(
     ],
 )
 def test_each_runtime_pin_failure_reaches_cached_readyz_and_mutation_503(
-    tmp_path, monkeypatch, pin, replacement
+    tmp_path, monkeypatch, pin, replacement, _reload_server_app
 ):
     receipt, file_sha, _target = _sealed_predeploy_receipt(
         tmp_path, monkeypatch
@@ -1709,7 +1926,7 @@ def test_each_runtime_pin_failure_reaches_cached_readyz_and_mutation_503(
     else:
         monkeypatch.setenv(pin, replacement)
 
-    import server.app as app
+    app = _reload_server_app()
 
     _patch_healthy_storage_runtime(app, monkeypatch)
 

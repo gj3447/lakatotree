@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import json
 
 from fastapi import HTTPException
@@ -14,9 +14,13 @@ from lakatos.node_state import derive_state_value
 from lakatos.coverage import resolve_coverage_status
 from lakatos.engine_identity import effective_floor
 from lakatos.verdicts import format_verdict_with_val, verdict_assurance
+from server.contexts.tree.temporal_proof import TemporalProof
 
 
 KgQuery = Callable[..., list[dict]]
+TemporalProofBatchProvider = Callable[
+    [str, Mapping[str, str | None]], Mapping[str, TemporalProof]
+]
 
 
 def normalize_text(value) -> str:
@@ -55,27 +59,46 @@ def normalize_tree_row(row: dict) -> dict:
     return out
 
 
-def assurance_with_context(row: dict, *, tree_attestors=None, engine_rule_floor=None) -> dict:
+def assurance_with_context(
+    row: dict,
+    *,
+    tree_attestors=None,
+    engine_rule_floor=None,
+    temporal_proof: TemporalProof | None = None,
+) -> dict:
     """읽기 시점 VAL 재도출 — submit 시점(judgement_service response_assurance)과 동형 의미론.
 
     P3 수술(2026-07-28, finding_d286e6ed37a462c1): 읽기 경로가 kwargs 를 안 넘겨 전 영구 표면이
     L1 천장이었다(라이브 실측: SelfDev 47노드 전부 val<=1, L3 프로브가 partial@L1 되읽힘).
     - lock_bound = bool(measurement_lock_sha) — submit 의 bool(_lsha) 와 동형. row 에 이미 있으면
       보존(기존 fixture 계약). 파생은 사본에만(원본 row shape 불변 — fsck record sha 최소 교란).
-    - temporal_witness = False until the ledger stores a signed, receipt-bound
-      T2 verdict anchor.  Historical ``temporal_witness_verified`` values were
-      derived from a T1 prediction anchor plus the server clock and therefore
-      cannot support L3 on permanent read surfaces.
+    - temporal_witness 는 저장 캐시가 아니라 현재 head 에 다시 바인딩된 two-ended proof 에서만
+      도출한다. Gate-3 proof 는 component_ok 여도 독립 검증자/시간 권위가 없어 l3_eligible=False
+      이므로 L2 천장을 정직하게 유지한다.
     - floor 대조 대상은 head receipt 봉인 sha(노드별 가변) — 현 프로세스 상수를 넘기면
       항진명제가 읽기 시점으로 이동할 뿐이라 금지."""
     if 'measurement_lock_bound' not in row and row.get('measurement_lock_sha'):
         row = {**row, 'measurement_lock_bound': True}
+    temporal_witness = bool(
+        temporal_proof is not None
+        and temporal_proof.component_ok
+        and temporal_proof.l3_eligible
+        and temporal_proof.verdict_receipt_sha256 == row.get('current_receipt_sha')
+    )
     return verdict_assurance(row, tree_attestors=tree_attestors,
                              engine_rule_floor=engine_rule_floor,
-                             temporal_witness=False)
+                             chain_ok=(temporal_proof.chain_ok
+                                       if temporal_proof is not None else None),
+                             temporal_witness=temporal_witness)
 
 
-def normalize_node_row(row: dict, *, tree_attestors=None, engine_rule_floor=None) -> dict:
+def normalize_node_row(
+    row: dict,
+    *,
+    tree_attestors=None,
+    engine_rule_floor=None,
+    temporal_proof: TemporalProof | None = None,
+) -> dict:
     out = dict(row)
     out["tag"] = normalize_text(out.get("tag"))
     out["verdict"] = normalize_text(out.get("verdict")) or "proof"
@@ -99,8 +122,11 @@ def normalize_node_row(row: dict, *, tree_attestors=None, engine_rule_floor=None
     # P3(2026-07-28): 호출자가 트리 컨텍스트(attestors/floor)를 주입하면 L2/L3 까지 재도출 —
     # 미주입은 승급 불가일 뿐(기존 의미론 보존, test_extaudit_val:84).
     out["assurance"] = assurance_with_context(out, tree_attestors=tree_attestors,
-                                              engine_rule_floor=engine_rule_floor)
+                                              engine_rule_floor=engine_rule_floor,
+                                              temporal_proof=temporal_proof)
     out["verdict_display"] = format_verdict_with_val(out["verdict"], out["assurance"])
+    if temporal_proof is not None:
+        out["temporal_proof"] = temporal_proof.public_dict()
     return out
 
 
@@ -152,8 +178,13 @@ class TreeKgRepository:
 
     # KG: rf-lkt-engine-typed-kg-read-normalization-20260616
 
-    def __init__(self, kg: KgQuery):
+    def __init__(
+        self,
+        kg: KgQuery,
+        temporal_proof_provider: TemporalProofBatchProvider | None = None,
+    ):
         self.kg = kg
+        self.temporal_proof_provider = temporal_proof_provider
 
     def list_trees(self) -> list[dict]:
         # G6: tier 를 목록에도 공시 — '이 트리 판결을 얼마나 믿을 것인가'가 열람의 첫 질문.
@@ -282,8 +313,21 @@ class TreeKgRepository:
         attestors = [str(d).strip() for d in (tree_meta.get("attestor_dids") or [])
                      if d and str(d).strip()]
         floor = effective_floor()
+        temporal_proofs: Mapping[str, TemporalProof] = {}
+        if self.temporal_proof_provider is not None:
+            temporal_proofs = self.temporal_proof_provider(
+                name,
+                {
+                    str(row.get("tag")): row.get("current_receipt_sha")
+                    for row in nodes
+                    if row.get("tag")
+                },
+            )
         normalized_nodes = [normalize_node_row(row, tree_attestors=attestors,
-                                               engine_rule_floor=floor) for row in nodes]
+                                               engine_rule_floor=floor,
+                                               temporal_proof=temporal_proofs.get(
+                                                   str(row.get("tag"))
+                                               )) for row in nodes]
         for r in normalized_nodes:
             if r["tag"] in node_source:
                 r["source"] = node_source[r["tag"]]

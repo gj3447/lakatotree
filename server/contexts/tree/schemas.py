@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ★server-set-only 경계(적대 재검증 2026-06-21): verdict_source 등 server 전용 필드는 client 가 절대 못 쓴다.
@@ -166,6 +165,20 @@ class PredictionIn(BaseModel):
         return self
 
 
+class PredictionTemporalCommitmentIn(BaseModel):
+    """Receipt-bound T1 statements; policy and receipt identity are server-owned."""
+
+    model_config = _SERVER_SET_ONLY
+    prediction_anchors: list[dict] = Field(min_length=1, max_length=32)
+
+
+class TemporalSidecarFinalizeIn(BaseModel):
+    """Receipt-bound T2 statements; T1 and all graph identity are server-owned."""
+
+    model_config = _SERVER_SET_ONLY
+    verdict_anchors: list[dict] = Field(min_length=1, max_length=32)
+
+
 class CertCommandIn(BaseModel):
     """G10 write-cert 의 서명된 *명령*(push-cert 명령행 아날로그) — 고정 필드셋(서명 범위 전부).
 
@@ -283,6 +296,8 @@ class ResearchEventIn(BaseModel):
     created_at: str | None = None
 
     def to_engine(self, target: str) -> ResearchEvent:
+        from fastapi import HTTPException
+
         try:
             realm = Realm(self.realm)
         except ValueError as exc:
@@ -432,6 +447,8 @@ class FoundationRequirementIn(BaseModel):
     risk_if_missing: str = ""
 
     def to_engine(self) -> FoundationRequirement:
+        from fastapi import HTTPException
+
         try:
             kind = KnowledgeKind(self.kind)
         except ValueError as exc:

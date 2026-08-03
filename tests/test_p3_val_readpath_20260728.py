@@ -26,6 +26,7 @@ os.environ.setdefault('NEO4J_PASSWORD', 'test')
 
 from lakatos.engine_identity import ENGINE_RULE_SHA  # noqa: E402
 from server.contexts.tree.repository import TreeKgRepository, normalize_node_row  # noqa: E402
+from server.contexts.tree.temporal_proof import TemporalProof  # noqa: E402
 
 WDID = 'did:key:zAttestor1'
 
@@ -48,6 +49,17 @@ def _l3_row(**over):
 def _kwargs():
     from lakatos.engine_identity import effective_floor
     return dict(tree_attestors=[WDID], engine_rule_floor=effective_floor())
+
+
+def _temporal_proof(*, l3_eligible=False, component_ok=True, chain_ok=True,
+                    verdict_receipt_sha256='r' * 64, reason='gate3_verified'):
+    return TemporalProof(
+        component_ok=component_ok,
+        l3_eligible=l3_eligible,
+        reason=reason,
+        chain_ok=chain_ok,
+        verdict_receipt_sha256=verdict_receipt_sha256,
+    )
 
 
 # ── guard_mechanism: 읽기 재도출로 L3 ─────────────────────────────────────────────────
@@ -77,6 +89,80 @@ def test_load_tree_data_caps_legacy_t1_only_marker_at_l2():
 
     data = TreeKgRepository(kg).load_tree_data('T')
     assert data['nodes'][0]['assurance']['val'] == 2, data['nodes'][0]['assurance']
+
+
+def test_load_tree_data_batch_reverifies_gate3_proof_once_and_exposes_it():
+    nodes = [
+        _l3_row(tag='n1', current_receipt_sha='1' * 64),
+        _l3_row(tag='n2', current_receipt_sha='2' * 64),
+        _l3_row(tag='n3', current_receipt_sha='3' * 64),
+    ]
+    calls = []
+
+    def kg(query, **params):
+        if 'HAS_FRONTIER' in query:
+            return []
+        if 'ResearchEvent' in query:
+            return []
+        if 'HAS_NODE' in query:
+            return nodes
+        return [dict(title='t', note='', hard_core='', positive_heuristic='',
+                     coverage_status=None, coverage_statement='', coverage_backlog=[],
+                     attestor_dids=[WDID], research_layout=None, layout_owner_did=None,
+                     layout_sig=None, witness_dids=[WDID], witness_threshold=1,
+                     require_certified_evidence=None, assurance_tier='anchored')]
+
+    def temporal_provider(tree, heads):
+        calls.append((tree, dict(heads)))
+        return {
+            tag: _temporal_proof(verdict_receipt_sha256=head)
+            for tag, head in heads.items()
+        }
+
+    data = TreeKgRepository(kg, temporal_provider).load_tree_data('T')
+    assert calls == [('T', {
+        'n1': '1' * 64,
+        'n2': '2' * 64,
+        'n3': '3' * 64,
+    })]
+    assert [item['assurance']['val'] for item in data['nodes']] == [2, 2, 2]
+    assert all(item['temporal_proof']['component_ok'] is True for item in data['nodes'])
+    assert all(item['temporal_proof']['l3_eligible'] is False for item in data['nodes'])
+
+
+def test_current_head_independently_eligible_proof_can_rederive_l3():
+    out = normalize_node_row(
+        _l3_row(),
+        temporal_proof=_temporal_proof(l3_eligible=True),
+        **_kwargs(),
+    )
+    assert out['assurance']['val'] == 3
+
+
+def test_independently_eligible_proof_for_different_head_cannot_rederive_l3():
+    out = normalize_node_row(
+        _l3_row(),
+        temporal_proof=_temporal_proof(
+            l3_eligible=True,
+            verdict_receipt_sha256='f' * 64,
+        ),
+        **_kwargs(),
+    )
+    assert out['assurance']['val'] == 2
+
+
+def test_receipt_chain_refutation_from_batch_proof_demotes_to_l0():
+    out = normalize_node_row(
+        _l3_row(),
+        temporal_proof=_temporal_proof(
+            component_ok=False,
+            chain_ok=False,
+            verdict_receipt_sha256=None,
+            reason='receipt_chain_invalid',
+        ),
+        **_kwargs(),
+    )
+    assert out['assurance'] == {'val': 0, 'basis': ('receipt_chain_broken',)}
 
 
 # ── guard_defect: 음성 오라클 — 각 연언을 죽이면 정확히 그 사다리로 떨어진다 ────────────
@@ -143,3 +229,24 @@ def test_standing_negative_oracle_witness_flip():
     svc.kg = kg
     out = svc.standing('T', 'n')
     assert out['assurance']['val'] == 2, out
+
+
+def test_standing_uses_current_head_temporal_batch_proof_and_exposes_it():
+    from server.contexts.tree.evidence_claim_service import EvidenceClaimService
+    node = _l3_row()
+    calls = []
+
+    def kg(query, **params):
+        if 'HAS_ARGUMENT' in query:
+            return [dict(node, args=[], attestor_dids=[WDID])]
+        return []
+
+    svc = object.__new__(EvidenceClaimService)
+    svc.kg = kg
+    svc.temporal_proof_provider = lambda tree, heads: (
+        calls.append((tree, dict(heads))) or {'n': _temporal_proof()}
+    )
+    out = svc.standing('T', 'n')
+    assert calls == [('T', {'n': 'r' * 64})]
+    assert out['assurance']['val'] == 2
+    assert out['temporal_proof']['reason'] == 'gate3_verified'

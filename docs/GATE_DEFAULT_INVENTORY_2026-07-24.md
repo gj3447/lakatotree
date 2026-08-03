@@ -34,6 +34,11 @@
 | `NEO4J_DATABASE` | 미설정 시 연결 거부 | 계정별 home database 표류를 막는 명시적 Neo4j database 이름 |
 | `LAKATOS_STORAGE_PG_MIGRATION_USER` / `LAKATOS_STORAGE_PG_MIGRATION_PASSWORD` / `LAKATOS_STORAGE_NEO4J_MIGRATION_USER` / `LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD` | runtime에서 미설정 필수 | 향후 분리 migrator 전용 이름. 현재 runtime launcher와 재시작/백업 경로는 유입을 거부하며 값은 영수증·로그에 남기지 않음 |
 | `LAKATOS_STORAGE_ENVIRONMENT` / `LAKATOS_STORAGE_FENCE_VERIFIER_SHA256` / `LAKATOS_STORAGE_FENCE_PUBLIC_KEY_HEX` / `LAKATOS_STORAGE_PREDEPLOY_RECEIPT` / `LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256` | 미설정 | 배포 환경, verifier+direct-interpreter execution identity, raw Ed25519 authority public key(lowercase hex), read-only predeploy 영수증 절대경로, 독립 raw-file SHA-256의 다섯 pin. 하나라도 없거나 현재 artifact/target과 불일치하면 모든 원장 기반 mutation과 `/readyz`는 503 |
+| `LAKATOS_STORAGE_ACCESS_POLICY` / `LAKATOS_STORAGE_ACCESS_POLICY_SHA256` / `LAKATOS_STORAGE_ACCESS_PREDEPLOY_BUNDLE` / `LAKATOS_STORAGE_ACCESS_PREDEPLOY_BUNDLE_SHA256` / `LAKATOS_STORAGE_ACCESS_STARTUP_BUNDLE` / `LAKATOS_STORAGE_ACCESS_STARTUP_BUNDLE_SHA256` | 미설정 | 서명된 least-privilege 정책과 predeploy/startup phase pair의 절대경로+raw-file pin. 하나라도 부분 설정이면 strict mode로 들어가고, exact pair 검증 전 원장 mutation과 readiness를 fail-closed |
+| `LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER` / `LAKATOS_STORAGE_RUNTIME_WRITER_VERIFIER_SHA256` / `LAKATOS_STORAGE_RUNTIME_WRITER_PUBLIC_KEY_HEX` | 미설정 | 현재 boot·artifact·singleton worker·전체 PG/Neo writer lease를 짧게 서명하는 별도 runtime authority. historical fence 키와 달라야 하며, verifier 출력은 시간·바이트 상한 안에서만 수용 |
+| `LAKATOS_TEMPORAL_C1_PYTHON` / `LAKATOS_TEMPORAL_C1_ARTIFACT_DIRECTORY` / `LAKATOS_TEMPORAL_C1_ARTIFACT_SHA256` / `LAKATOS_TEMPORAL_C1_PYTHON_SHA256` / `LAKATOS_TEMPORAL_TIME_AUTHORITY_EXECUTABLE` / `LAKATOS_TEMPORAL_TIME_AUTHORITY_EXECUTABLE_SHA256` / `LAKATOS_TEMPORAL_TIME_AUTHORITY_DID` | 미설정 | Gate 4의 별도 C1 Python·완전 import closure와 시간관측 authority executable/DID pin. 7개가 모두 있어야 활성화되며 부분 설정·pin drift·timeout·포화는 현재 receipt chain을 깨졌다고 오판하지 않고 L2 유지. 테스트용 동일 UID fixture는 운영 독립성 증거가 아님 |
+| `LAKATOS_STORAGE_PG_RUNTIME_DSN` / `LAKATOS_STORAGE_PG_RUNTIME_CA_SHA256` | 미설정 | strict runtime의 TLS 검증 PostgreSQL DSN과 immutable CA pin. 평문·비검증 TLS나 migration principal 혼입은 기동 전 거부 |
+| `LAKATOS_STORAGE_PG_MIGRATION_DSN` / `LAKATOS_STORAGE_NEO4J_MIGRATION_URI` | runtime에서 미설정 필수 | 별도 operator migration profile의 endpoint. runtime launcher 유입 시 거부하며 migration coordinator에서만 사용 |
 | `LAKATOS_MONGO_URI` | mongodb://localhost:27017 | Mongo 백킹 |
 | `LAKATOS_RAW_ROOT` | repo 루트 | raw 산출물 루트(재현 해시 경계) |
 | `LAKATOS_PROC_ROOT` | `/proc` | 재시작 스크립트의 PID 환경 소유권 판독 루트. 테스트에서만 가짜 procfs로 오버라이드하며 운영 기본은 `/proc` |
@@ -49,9 +54,13 @@
 
 ## D. 테스트 티어 플래그 (운영 무관)
 
-`LAKATOS_IT`(통합 티어), `LAKATOS_KG_LIVE`(라이브 KG), `LAKATOS_TEST_CID`, `LAKATOS_SERVER_LOG`, `LAKATOS_SERVER_ENV`, `LAKATOS_GIT_SRC`, `LAKATOS_PYTHON`, `LAKATOS_ENV_FILE`, `LAKATOS_SERVER`(examples 서버 URL).
+`LAKATOS_IT`(통합 티어), `LAKATOS_PG_IMAGE`(통합 PostgreSQL 16/17 이미지), `LAKATOS_KG_LIVE`(라이브 KG), `LAKATOS_TEST_CID`, `LAKATOS_SERVER_LOG`, `LAKATOS_SERVER_ENV`, `LAKATOS_GIT_SRC`, `LAKATOS_PYTHON`, `LAKATOS_ENV_FILE`, `LAKATOS_SERVER`(examples 서버 URL).
 
 참고: `LAKATOS_PRODUCER`, `LAKATOS_LOCATIONS`는 env가 아니라 모듈 상수(`lakatos/io/adapters.py`, `lakatos/engine.py`)라 인벤토리 대상 밖.
+
+Gate 5의 approval policy/review/receipt는 의도적으로 runtime env나 `/readyz` 설정이 아니다.
+`lakatotree-production-approval-verify`에 read-only 절대경로와 별도 raw-file SHA pin으로 넘기는
+오프라인 release evidence이며, repository에는 approver private key나 자동 apply 설정이 없다.
 
 ## E. 코드 구조 게이트 (env 없음) — 미발동 잔여
 

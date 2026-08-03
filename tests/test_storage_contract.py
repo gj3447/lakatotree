@@ -472,6 +472,40 @@ def _neo_constraints(**outbox_overrides):
             "labelsOrTypes": ["RuntimeWriterLease"],
             "properties": ["name"],
         },
+        {
+            "name": "lkt_prediction_temporal_commitment_sha_unique",
+            "type": "UNIQUENESS",
+            "entityType": "NODE",
+            "labelsOrTypes": ["PredictionTemporalCommitment"],
+            "properties": ["commitment_sha256"],
+        },
+        {
+            "name": "lkt_prediction_temporal_commitment_target_unique",
+            "type": "UNIQUENESS",
+            "entityType": "NODE",
+            "labelsOrTypes": ["PredictionTemporalCommitment"],
+            "properties": [
+                "tree_incarnation_id", "tree", "tag",
+                "prediction_receipt_sha256",
+            ],
+        },
+        {
+            "name": "lkt_temporal_proof_sidecar_sha_unique",
+            "type": "UNIQUENESS",
+            "entityType": "NODE",
+            "labelsOrTypes": ["TemporalProofSidecar"],
+            "properties": ["sidecar_sha256"],
+        },
+        {
+            "name": "lkt_temporal_proof_sidecar_target_unique",
+            "type": "UNIQUENESS",
+            "entityType": "NODE",
+            "labelsOrTypes": ["TemporalProofSidecar"],
+            "properties": [
+                "tree_incarnation_id", "tree", "tag",
+                "verdict_receipt_sha256",
+            ],
+        },
     ]
 
 
@@ -990,6 +1024,20 @@ def test_expected_constraint_name_on_wrong_label_is_shape_conflict():
     report = _diagnose_neo_outbox_projection(constraints, [], [])
 
     assert "neo4j.constraint.lkt_outbox_id_unique.shape" in report["failures"]
+
+
+def test_temporal_target_constraint_requires_exact_composite_shape():
+    constraints = _neo_constraints()
+    for row in constraints:
+        if row["name"] == "lkt_temporal_proof_sidecar_target_unique":
+            row["properties"] = ["tree", "tag", "verdict_receipt_sha256"]
+
+    report = _diagnose_neo_outbox_projection(constraints, [], [])
+
+    assert (
+        "neo4j.constraint.lkt_temporal_proof_sidecar_target_unique.shape"
+        in report["failures"]
+    )
 
 
 def test_neo_storage_contract_requires_argument_guard_and_rejects_extra_constraints():

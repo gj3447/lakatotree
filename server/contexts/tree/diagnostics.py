@@ -75,6 +75,26 @@ REQUIRED_CONSTRAINTS = (
     ConstraintSpec("lkt_research_event_id_unique", "ResearchEvent", "id"),
     # ① real-KG: 연구전통 tradition_id uniqueness — set_tradition 의 MERGE 키 중복(같은 id 두 전통) 방지.
     ConstraintSpec("lkt_research_tradition_id_unique", "ResearchTradition", "tradition_id"),
+    ConstraintSpec(
+        "lkt_prediction_temporal_commitment_sha_unique",
+        "PredictionTemporalCommitment",
+        "commitment_sha256",
+    ),
+    CompositeUniqueSpec(
+        "lkt_prediction_temporal_commitment_target_unique",
+        "PredictionTemporalCommitment",
+        ("tree_incarnation_id", "tree", "tag", "prediction_receipt_sha256"),
+    ),
+    ConstraintSpec(
+        "lkt_temporal_proof_sidecar_sha_unique",
+        "TemporalProofSidecar",
+        "sidecar_sha256",
+    ),
+    CompositeUniqueSpec(
+        "lkt_temporal_proof_sidecar_target_unique",
+        "TemporalProofSidecar",
+        ("tree_incarnation_id", "tree", "tag", "verdict_receipt_sha256"),
+    ),
 )
 
 

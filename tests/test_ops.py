@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from threading import Event
 
 import pytest
@@ -38,15 +39,109 @@ def _all_up(monkeypatch, app):
     monkeypatch.setattr(app.MONGO, 'command', lambda *a, **k: {})
     monkeypatch.setattr(app.MONGO, 'list_collection_names', lambda *a, **k: [])
     monkeypatch.setattr(app._container, 'writer_lease_ready', lambda: True)
+    lease = _lease_projection()
+    monkeypatch.setattr(
+        app._container, 'writer_lease_public_projection', lambda: dict(lease)
+    )
+    monkeypatch.setattr(
+        app._container, '_pg_writer_lease_ready_unlocked', lambda: True
+    )
+    proof = _runtime_proof(app, lease=lease)
+    app._runtime_snapshot_proof = proof
     app._storage_contract_state.update(
-        checked=True, ok=True, failures=[], checked_at="2026-08-02T00:00:00+00:00"
+        checked=True, ok=True, failures=[], checked_at="2026-08-02T00:00:00+00:00",
+        access_valid_until="2999-01-01T00:00:00+00:00",
+        runtime_snapshot=proof.public_report(),
     )
 
 
+def _lease_projection(*, generation=7):
+    return {
+        'lease_id': 'critique-history-writer-v1',
+        'owner_token_sha256': '9' * 64,
+        'generation': generation,
+        'postgresql_backend_pid': 4242,
+        'postgresql_advisory_key': [1279349588, 20260802],
+    }
+
+
+def _runtime_proof(app, *, lease=None, expires_at='2999-01-01T00:00:00+00:00'):
+    lease = lease or _lease_projection()
+    return app.VerifiedRuntimeSnapshot(
+        canonical_response=b'{"synthetic":true}',
+        body_sha256='8' * 64,
+        challenge_sha256='7' * 64,
+        boot_id=app._RUNTIME_BOOT_ID,
+        artifact={'kind': 'git', 'source_commit': '6' * 40},
+        artifact_identity_sha256='5' * 64,
+        operation_sha256='4' * 64,
+        target_sha256='3' * 64,
+        predeploy_receipt_file_sha256='2' * 64,
+        predeploy_receipt_sha256='1' * 64,
+        startup_bundle_file_sha256='a' * 64,
+        lease_id=lease['lease_id'],
+        lease_owner_token_sha256=lease['owner_token_sha256'],
+        lease_generation=lease['generation'],
+        lease_postgresql_backend_pid=lease['postgresql_backend_pid'],
+        lease_postgresql_advisory_key=tuple(
+            lease['postgresql_advisory_key']
+        ),
+        observed_at='2026-08-02T00:00:00+00:00',
+        expires_at=expires_at,
+    )
+
+
+def _verified_access(app):
+    return {
+        'contract_id': app.CONTRACT_ID,
+        'ok': True,
+        'status': 'ACCESS_PAIR_VERIFIED',
+        'production_ready': False,
+        'deployment_status': 'NOT_READY',
+        'failures': [],
+        'valid_until': '2999-01-01T00:00:00+00:00',
+        'policy_file_sha256': 'b' * 64,
+        'predeploy_receipt_file_sha256': 'c' * 64,
+        'predeploy_bundle_file_sha256': 'd' * 64,
+        'startup_bundle_file_sha256': 'e' * 64,
+    }
+
+
 def _writer_up(monkeypatch, app):
+    lease = _lease_projection()
+    proof = _runtime_proof(app, lease=lease)
     monkeypatch.setattr(app._container, 'acquire_writer_lease', lambda: True)
     monkeypatch.setattr(app._container, 'writer_lease_ready', lambda: True)
+    monkeypatch.setattr(
+        app._container, 'writer_lease_public_projection', lambda: dict(lease)
+    )
+    monkeypatch.setattr(
+        app._container, '_pg_writer_lease_ready_unlocked', lambda: True
+    )
     monkeypatch.setattr(app._container, 'release_writer_lease', lambda: None)
+    monkeypatch.setattr(
+        app,
+        '_runtime_snapshot_readback',
+        lambda _report: (proof.public_report(), proof),
+    )
+
+
+def _reconciliation_report(app):
+    return {
+        'contract_id': app.CONTRACT_ID,
+        'postgresql': {
+            'contract_id': app.CONTRACT_ID, 'ok': True, 'failures': [],
+        },
+        'neo4j': {
+            'contract_id': app.CONTRACT_ID,
+            'ok': False,
+            'failures': ['neo4j.outbox.pending'],
+        },
+        'predeploy_receipt': {
+            'contract_id': app.CONTRACT_ID, 'ok': True, 'failures': [],
+        },
+        'storage_access': _verified_access(app),
+    }
 
 
 # ── DEPLOY-1: /healthz ──
@@ -74,6 +169,26 @@ def test_readyz_requires_full_cached_storage_authority(monkeypatch):
     assert degraded.status_code == 503
     assert degraded.json()['services']['critique_history'] == 'disabled'
     assert client.get('/healthz').status_code == 200
+
+
+def test_expired_access_pair_closes_readyz_and_critique_authority(monkeypatch):
+    app = load_app()
+    _all_up(monkeypatch, app)
+    app._runtime_snapshot_proof = _runtime_proof(
+        app, expires_at="2000-01-01T00:00:00+00:00"
+    )
+    app._storage_contract_state["runtime_snapshot"] = (
+        app._runtime_snapshot_proof.public_report()
+    )
+    app._storage_contract_state["access_valid_until"] = "2000-01-01T00:00:00+00:00"
+    response = TestClient(app.app).get('/readyz')
+    assert response.status_code == 503
+    assert app._storage_contract_state["failures"] == [
+        "runtime.snapshot.expired_or_drifted"
+    ]
+    with pytest.raises(app.HTTPException) as captured:
+        app._require_critique_history_ready()
+    assert captured.value.status_code == 503
 
 
 def test_runtime_history_divergence_immediately_closes_readyz_and_critique_gate(
@@ -190,6 +305,169 @@ def test_stale_green_audit_cannot_overwrite_semantic_invalidation(monkeypatch):
         'runtime.critique_standing.reconciliation_failed'
     ]
     assert result['generation'] == 201
+
+
+def test_invalidation_linearizes_after_an_active_commit_barrier(monkeypatch):
+    app = load_app()
+    barrier_entered = Event()
+    release_commit = Event()
+    invalidation_started = Event()
+    order = []
+    with app._storage_contract_state_lock:
+        app._storage_contract_state.update(
+            generation=300,
+            checked=True,
+            ok=True,
+            failures=[],
+            access_valid_until='2999-01-01T00:00:00+00:00',
+        )
+    monkeypatch.setattr(
+        app._container,
+        'release_writer_lease',
+        lambda: order.append('lease-released'),
+    )
+
+    def active_commit():
+        with app._container.writer_commit_barrier():
+            barrier_entered.set()
+            assert release_commit.wait(timeout=5)
+            order.append('commit-complete')
+
+    def invalidate():
+        invalidation_started.set()
+        app._invalidate_storage_contract_state('concurrent-invalidation')
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        commit = executor.submit(active_commit)
+        assert barrier_entered.wait(timeout=5)
+        revocation = executor.submit(invalidate)
+        assert invalidation_started.wait(timeout=5)
+        assert revocation.done() is False
+        with app._storage_contract_state_lock:
+            assert app._storage_contract_state['generation'] == 300
+            assert app._storage_contract_state['ok'] is True
+        release_commit.set()
+        commit.result(timeout=5)
+        revocation.result(timeout=5)
+
+    assert order == ['commit-complete', 'lease-released']
+    with app._storage_contract_state_lock:
+        assert app._storage_contract_state['generation'] == 301
+        assert app._storage_contract_state['failures'] == [
+            'concurrent-invalidation'
+        ]
+
+
+def test_successful_refresh_advances_generation(monkeypatch):
+    app = load_app()
+    _writer_up(monkeypatch, app)
+    report = {
+        'ok': True,
+        'postgresql': {'failures': []},
+        'neo4j': {'failures': []},
+        'predeploy_receipt': {'failures': []},
+        'storage_access': _verified_access(app),
+    }
+    monkeypatch.setattr(app, '_storage_contract_readback', lambda: report)
+    monkeypatch.setattr(
+        app,
+        '_semantic_contract_readback',
+        lambda: {'ok': True, 'failures': [], 'violations': []},
+    )
+    with app._storage_contract_state_lock:
+        app._storage_contract_state.update(
+            generation=400,
+            checked=True,
+            ok=False,
+            failures=['before-refresh'],
+        )
+
+    refreshed = app._refresh_storage_contract_state()
+
+    assert refreshed['ok'] is True
+    assert refreshed['generation'] == 401
+
+
+def test_normal_writer_token_rejects_generation_replacement(monkeypatch):
+    app = load_app()
+    _all_up(monkeypatch, app)
+    with app._storage_contract_state_lock:
+        app._storage_contract_state.update(
+            generation=500,
+            checked=True,
+            ok=True,
+            failures=[],
+            access_valid_until='2999-01-01T00:00:00+00:00',
+        )
+
+    with app._storage_writer_authority_scope():
+        app._require_storage_commit_authority()
+        with app._storage_contract_state_lock:
+            app._storage_contract_state['generation'] = 501
+        with pytest.raises(app.WriterFenceLost, match='unavailable'):
+            app._require_storage_commit_authority()
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        {"postgresql_backend_pid": 4243},
+        {"postgresql_advisory_key": [1279349588, 20260803]},
+    ],
+)
+def test_final_commit_guard_rejects_exact_postgresql_lease_drift(
+    monkeypatch, replacement
+):
+    app = load_app()
+    _all_up(monkeypatch, app)
+    lease = _lease_projection()
+    monkeypatch.setattr(
+        app._container,
+        'writer_lease_public_projection',
+        lambda: dict(lease),
+    )
+
+    with app._storage_writer_authority_scope():
+        lease.update(replacement)
+        with pytest.raises(app.WriterFenceLost, match='expired or drifted'):
+            app._require_storage_commit_authority()
+
+
+def test_recovery_token_has_priority_and_still_obeys_generation_and_expiry(
+    monkeypatch,
+):
+    app = load_app()
+    _all_up(monkeypatch, app)
+    current_proof = _runtime_proof(app)
+    with app._storage_contract_state_lock:
+        app._storage_contract_state.update(
+            generation=600,
+            checked=True,
+            ok=True,
+            failures=[],
+            access_valid_until='2999-01-01T00:00:00+00:00',
+        )
+    operation = app._writer_operation_authority.set(
+        app._WriterOperationAuthority(600, current_proof)
+    )
+    recovery = app._reconciliation_commit_authority.set(
+        app._WriterOperationAuthority(601, current_proof)
+    )
+    try:
+        with pytest.raises(app.WriterFenceLost, match='unavailable'):
+            app._require_storage_commit_authority()
+        app._reconciliation_commit_authority.reset(recovery)
+        expired = _runtime_proof(
+            app, expires_at='2000-01-01T00:00:00+00:00'
+        )
+        recovery = app._reconciliation_commit_authority.set(
+            app._WriterOperationAuthority(600, expired)
+        )
+        with pytest.raises(app.WriterFenceLost, match='expired or drifted'):
+            app._require_storage_commit_authority()
+    finally:
+        app._reconciliation_commit_authority.reset(recovery)
+        app._writer_operation_authority.reset(operation)
 
 
 def test_healthz_503_when_neo4j_down(monkeypatch):
@@ -330,6 +608,10 @@ def test_startup_reconcile_runs_outbox_recovery(monkeypatch):
         lambda: {'ok': True, 'failures': [], 'violations': []},
     )
     monkeypatch.setattr(app._container, 'reconcile_outbox', fake)
+    monkeypatch.setattr(
+        app, '_require_reconciliation_authority',
+        lambda: _reconciliation_report(app),
+    )
     r = app._startup_reconcile()
     assert calls == [1, 1] and r['replayed_count'] == 0
 
@@ -362,12 +644,54 @@ def test_durable_reconcile_projects_cause_before_semantic_effect(monkeypatch):
 
     monkeypatch.setattr(app._container, 'reconcile_outbox', outbox)
     monkeypatch.setattr(app, '_reconcile_critique_semantics', semantic)
+    monkeypatch.setattr(
+        app, '_require_reconciliation_authority',
+        lambda: _reconciliation_report(app),
+    )
 
     result = app._reconcile_durable_critique_state()
 
     assert order == ['critique', 'semantic', 'standing']
     assert result['ok'] is True
     assert result['replayed'] == ['critique', 'standing']
+
+
+def test_reconciliation_never_adopts_generation_published_during_authority_audit(
+    monkeypatch,
+):
+    app = load_app()
+    _writer_up(monkeypatch, app)
+    with app._storage_contract_state_lock:
+        app._storage_contract_state.update(
+            generation=700,
+            checked=True,
+            ok=False,
+            failures=['recovery-required'],
+        )
+    entered = []
+
+    def invalidating_audit():
+        with app._storage_contract_state_lock:
+            app._storage_contract_state.update(
+                generation=701,
+                ok=False,
+                failures=['concurrent-invalidation'],
+            )
+        return _reconciliation_report(app)
+
+    monkeypatch.setattr(
+        app, '_require_reconciliation_authority', invalidating_audit
+    )
+    monkeypatch.setattr(
+        app,
+        '_reconcile_durable_critique_state_held',
+        lambda: entered.append(True),
+    )
+
+    with pytest.raises(app.WriterFenceLost, match='generation changed'):
+        app._reconcile_durable_critique_state()
+
+    assert entered == []
 
 
 def test_startup_reconcile_swallows_errors(monkeypatch):
@@ -441,6 +765,7 @@ def test_lifespan_authorized_pending_reconciles_then_uses_second_audit(monkeypat
                    'ok': False, 'failures': ['neo4j.outbox.pending']},
         'predeploy_receipt': {'contract_id': app.CONTRACT_ID,
                               'ok': True, 'failures': []},
+        'storage_access': _verified_access(app),
     }
     monkeypatch.setattr(app, '_storage_contract_readback', lambda: initial)
     monkeypatch.setattr(
@@ -507,8 +832,15 @@ def test_storage_contract_readback_requires_pinned_predeploy_receipt(monkeypatch
 
 def test_storage_contract_readback_consumes_exact_pinned_receipt(monkeypatch):
     app = load_app()
-    monkeypatch.setenv('LAKATOS_STORAGE_PREDEPLOY_RECEIPT', '/receipt.json')
-    monkeypatch.setenv('LAKATOS_STORAGE_PREDEPLOY_RECEIPT_SHA256', 'a' * 64)
+    monkeypatch.setattr(
+        app,
+        'SETTINGS',
+        replace(
+            app.SETTINGS,
+            storage_predeploy_receipt='/receipt.json',
+            storage_predeploy_receipt_sha256='a' * 64,
+        ),
+    )
     monkeypatch.setattr(app, 'pg', lambda: _Conn())
     monkeypatch.setattr(
         app, 'inspect_pg_history_contract',
@@ -523,6 +855,9 @@ def test_storage_contract_readback_consumes_exact_pinned_receipt(monkeypatch):
         app, 'verify_predeploy_receipt',
         lambda *_a, **_k: {'ok': True, 'failures': [], 'contract_id': 'ok'},
     )
+    monkeypatch.setattr(
+        app, 'verify_pinned_storage_access', lambda _settings: _verified_access(app)
+    )
 
     report = app._storage_contract_readback()
 
@@ -532,15 +867,16 @@ def test_storage_contract_readback_consumes_exact_pinned_receipt(monkeypatch):
 
 def test_critique_ready_uses_cached_startup_audit_without_ledger_rescan(monkeypatch):
     app = load_app()
+    _all_up(monkeypatch, app)
     app._storage_contract_state.update(
-        checked=True, ok=True, failures=[], checked_at="2026-08-02T00:00:00+00:00"
+        checked=True, ok=True, failures=[], checked_at="2026-08-02T00:00:00+00:00",
+        access_valid_until="2999-01-01T00:00:00+00:00",
     )
     monkeypatch.setattr(
         app,
         '_storage_contract_readback',
         lambda: (_ for _ in ()).throw(AssertionError('request-path ledger rescan')),
     )
-    monkeypatch.setattr(app._container, 'writer_lease_ready', lambda: True)
 
     app._require_critique_history_ready()
 
@@ -567,6 +903,15 @@ def test_critique_ready_uses_cached_startup_audit_without_ledger_rescan(monkeypa
                        'ok': False, 'failures': ['neo4j.outbox.pending']},
             'predeploy_receipt': {'contract_id': 'lakatotree-critique-history-storage/v1',
                                   'ok': True, 'failures': []},
+            'storage_access': {
+                'contract_id': 'lakatotree-critique-history-storage/v1',
+                'ok': True,
+                'status': 'ACCESS_PAIR_VERIFIED',
+                'production_ready': False,
+                'deployment_status': 'NOT_READY',
+                'failures': [],
+                'valid_until': '2999-01-01T00:00:00+00:00',
+            },
         }, True),
         ({
             'contract_id': 'lakatotree-critique-history-storage/v1',

@@ -19,8 +19,18 @@ from functools import lru_cache
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _canonical_git_sha(value: str) -> str | None:
+    candidate = value.strip()
+    if (
+        len(candidate) == 40
+        and all(char in "0123456789abcdef" for char in candidate)
+    ):
+        return candidate
+    return None
+
+
 def _manual_git_head_sha(root: str) -> str:
-    """git 실행파일 부재 시 *root 자신의* .git/HEAD만 읽는 제한적 fallback."""
+    """Resolve the exact full SHA from this repository without invoking Git."""
     git_dir = os.path.join(root, ".git")
     try:
         # linked worktree의 .git은 실제 git-dir를 가리키는 text file이다.
@@ -38,10 +48,48 @@ def _manual_git_head_sha(root: str) -> str:
         with open(head, encoding="utf-8") as f:
             ref = f.read().strip()
         if ref.startswith("ref:"):
-            refpath = os.path.join(git_dir, ref.split(" ", 1)[1].strip())
-            with open(refpath, encoding="utf-8") as f:
-                return f.read().strip()[:7]
-        return ref[:7]   # detached HEAD = 직접 sha
+            ref_name = ref.split(":", 1)[1].strip()
+            if (
+                not ref_name.startswith("refs/")
+                or os.path.isabs(ref_name)
+                or ".." in ref_name.split("/")
+            ):
+                return "unknown"
+            common_dir = git_dir
+            common_dir_file = os.path.join(git_dir, "commondir")
+            if os.path.isfile(common_dir_file):
+                with open(common_dir_file, encoding="utf-8") as f:
+                    common_pointer = f.read().strip()
+                common_dir = os.path.realpath(
+                    common_pointer
+                    if os.path.isabs(common_pointer)
+                    else os.path.join(git_dir, common_pointer)
+                )
+            for ref_root in dict.fromkeys((git_dir, common_dir)):
+                refpath = os.path.join(ref_root, *ref_name.split("/"))
+                try:
+                    with open(refpath, encoding="utf-8") as f:
+                        resolved = _canonical_git_sha(f.read())
+                except OSError:
+                    resolved = None
+                if resolved is not None:
+                    return resolved
+            for ref_root in dict.fromkeys((git_dir, common_dir)):
+                packed_refs = os.path.join(ref_root, "packed-refs")
+                try:
+                    with open(packed_refs, encoding="utf-8") as f:
+                        for line in f:
+                            if line.startswith(("#", "^")):
+                                continue
+                            fields = line.rstrip("\n").split(" ", 1)
+                            if len(fields) != 2 or fields[1] != ref_name:
+                                continue
+                            resolved = _canonical_git_sha(fields[0])
+                            return resolved or "unknown"
+                except OSError:
+                    continue
+            return "unknown"
+        return _canonical_git_sha(ref) or "unknown"
     except OSError:
         return "unknown"
 
@@ -85,11 +133,12 @@ def _git_head_sha(root: str) -> str:
 
     try:
         out = subprocess.run(
-            ["git", "-C", exact_root, "rev-parse", "--short", "HEAD"],
+            ["git", "-C", exact_root, "rev-parse", "--verify", "HEAD^{commit}"],
             capture_output=True, text=True, timeout=5,
         )
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
+        resolved = _canonical_git_sha(out.stdout)
+        if out.returncode == 0 and resolved is not None:
+            return resolved
         return "unknown"
     except OSError:
         # git binary 자체가 없을 때만 own .git fallback. top-level mismatch/명령 실패는

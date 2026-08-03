@@ -37,7 +37,7 @@ def _init_repo(root: Path, *, marked: bool) -> str:
         (root / "README.md").write_text("# enclosing repository\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")
-    return _git(root, "rev-parse", "--short", "HEAD")
+    return _git(root, "rev-parse", "--verify", "HEAD^{commit}")
 
 
 def _event(cid: str, name: str, **attrs):

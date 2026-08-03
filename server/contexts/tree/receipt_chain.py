@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -21,6 +23,7 @@ RECEIPT_CHAIN_ROWS_CYPHER = """
 MATCH (t:LakatosTree)-[:HAS_NODE]->(e)
 OPTIONAL MATCH (e)-[:HAS_RECEIPT]->(rec:VerdictReceipt)
 RETURN elementId(e) AS node_element_id, t.name AS tree, e.tag AS tag,
+       t.tree_incarnation_id AS tree_incarnation_id,
        e.current_receipt_sha AS current_receipt_sha,
        e.pred_receipt_sha AS pred_receipt_sha,
        collect(CASE WHEN rec IS NULL THEN null ELSE {
@@ -47,7 +50,46 @@ ORDER BY receipt_sha, receipt_element_id
 @dataclass(frozen=True)
 class ReceiptChainIndex:
     ancestors_by_scope: dict[tuple[str, str], frozenset[str]]
+    ordered_ancestry_by_scope: dict[tuple[str, str], tuple[str, ...]]
+    current_by_scope: dict[tuple[str, str], str | None]
+    prediction_by_scope: dict[tuple[str, str], str | None]
+    graph_sha256_by_scope: dict[tuple[str, str], str | None]
+    tree_incarnation_by_scope: dict[tuple[str, str], str | None]
     receipt_by_sha: dict[str, dict[str, Any]]
+
+
+RECEIPT_GRAPH_PREFIX_SCHEMA = "lakatotree-receipt-graph-prefix/v1"
+_RECEIPT_GRAPH_PREFIX_DOMAIN = b"lakatotree-receipt-graph-prefix/v1\0"
+
+
+def receipt_graph_prefix_sha256(
+    *,
+    tree_incarnation_id: str,
+    tree: str,
+    tag: str,
+    prediction_receipt_sha256: str,
+    verdict_receipt_sha256: str,
+    chain: Iterable[str],
+) -> str:
+    """Hash the logical genesis-to-verdict prefix, never Neo4j element ids."""
+
+    body = {
+        "schema_version": RECEIPT_GRAPH_PREFIX_SCHEMA,
+        "tree_incarnation_id": tree_incarnation_id,
+        "tree": tree,
+        "tag": tag,
+        "prediction_receipt_sha256": prediction_receipt_sha256,
+        "verdict_receipt_sha256": verdict_receipt_sha256,
+        "chain": list(chain),
+    }
+    canonical = json.dumps(
+        body,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(_RECEIPT_GRAPH_PREFIX_DOMAIN + canonical).hexdigest()
 
 
 def _sha(value: Any) -> bool:
@@ -120,6 +162,11 @@ def validate_receipt_graph(
     seen_scopes: set[tuple[str, str]] = set()
     seen_receipt_elements: set[str] = set()
     ancestors_by_scope: dict[tuple[str, str], frozenset[str]] = {}
+    ordered_ancestry_by_scope: dict[tuple[str, str], tuple[str, ...]] = {}
+    current_by_scope: dict[tuple[str, str], str | None] = {}
+    prediction_by_scope: dict[tuple[str, str], str | None] = {}
+    graph_sha256_by_scope: dict[tuple[str, str], str | None] = {}
+    tree_incarnation_by_scope: dict[tuple[str, str], str | None] = {}
     for row in nodes:
         node_element_id = row.get("node_element_id")
         tree = row.get("tree")
@@ -178,11 +225,13 @@ def validate_receipt_graph(
 
         by_sha = {receipt["receipt_sha"]: receipt for receipt in receipts}
         ancestors: set[str] = set()
+        head_to_genesis: list[str] = []
         cursor = current
         while cursor is not None:
             if cursor in ancestors or cursor not in by_sha:
                 raise ReceiptGraphError("receipt ancestry cannot reach genesis")
             ancestors.add(cursor)
+            head_to_genesis.append(cursor)
             cursor = by_sha[cursor].get("prev_receipt_sha")
         if ancestors != set(by_sha):
             raise ReceiptGraphError("bound receipt side branch is unreachable from head")
@@ -195,11 +244,38 @@ def validate_receipt_graph(
             ):
                 raise ReceiptGraphError("prediction pointer is not an ancestor receipt")
         ancestors_by_scope[scope] = frozenset(ancestors)
+        ordered = tuple(reversed(head_to_genesis))
+        ordered_ancestry_by_scope[scope] = ordered
+        current_by_scope[scope] = current
+        prediction_by_scope[scope] = prediction
+        graph_sha256_by_scope[scope] = (
+            receipt_graph_prefix_sha256(
+                tree_incarnation_id=(
+                    str(row.get("tree_incarnation_id") or "legacy-unbound")
+                ),
+                tree=tree,
+                tag=tag,
+                prediction_receipt_sha256=prediction,
+                verdict_receipt_sha256=current,
+                chain=ordered,
+            )
+            if current is not None and prediction is not None
+            else None
+        )
+        incarnation = row.get("tree_incarnation_id")
+        tree_incarnation_by_scope[scope] = (
+            incarnation if isinstance(incarnation, str) and incarnation else None
+        )
 
     if seen_receipt_elements != set(physical_by_element):
         raise ReceiptGraphError("orphan receipt is not represented by one node chain")
 
     return ReceiptChainIndex(
         ancestors_by_scope=ancestors_by_scope,
+        ordered_ancestry_by_scope=ordered_ancestry_by_scope,
+        current_by_scope=current_by_scope,
+        prediction_by_scope=prediction_by_scope,
+        graph_sha256_by_scope=graph_sha256_by_scope,
+        tree_incarnation_by_scope=tree_incarnation_by_scope,
         receipt_by_sha=receipt_by_sha,
     )

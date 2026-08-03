@@ -27,7 +27,13 @@ def _anchor(n, spec_digest, gt):
     body = json.dumps({"digest": ad, "gen_time": gt}, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False)
     sig = ed25519_sign(_W[n], _DOMAIN + body.encode())
-    return {"witness_did": DID[n], "digest": ad, "gen_time": gt, "signature": sig.hex()}
+    return {
+        "witness_did": DID[n],
+        "digest": ad,
+        "gen_time": gt,
+        "signature": sig.hex(),
+        "channel": "ed25519-witness",
+    }
 
 
 # ── (a) 골든 상호대조: 엔진 서명을 c1verify 가 바이트 동일하게 검증 ──────────────────────────
@@ -88,6 +94,42 @@ def test_gate_rejects_unauthorized_and_sybil():
     p2 = _payload([_anchor(1, "specdig", "2026-07-23T01:00:00+00:00"),
                    _anchor(1, "specdig", "2026-07-23T01:00:01+00:00")], threshold=2)
     assert verify_temporal(p2, {})["decision"] == "REJECT"
+
+
+def test_gate_uses_latest_duplicate_time_and_matches_engine_strict_shape():
+    early = _anchor(1, "specdig", "2026-07-23T01:00:00+00:00")
+    late = _anchor(1, "specdig", "2026-07-23T03:00:00+00:00")
+    payload = _payload([early, late], threshold=1)
+    assert verify_temporal(payload, {})["decision"] == "REJECT"
+
+    for mutate in (
+        lambda anchor: anchor.pop("channel"),
+        lambda anchor: anchor.__setitem__("channel", "server-clock"),
+        lambda anchor: anchor.__setitem__("signature", anchor["signature"].upper()),
+    ):
+        malformed = _anchor(1, "specdig", "2026-07-23T01:00:00+00:00")
+        mutate(malformed)
+        assert verify_temporal(_payload([malformed], threshold=1), {})[
+            "decision"
+        ] == "REJECT"
+
+    naive = _anchor(1, "specdig", "2026-07-23T01:00:00")
+    assert verify_temporal(_payload([naive], threshold=1), {})["decision"] == "REJECT"
+
+    underflow = _anchor(1, "specdig", "0001-01-01T00:00:00+23:59")
+    assert verify_temporal(_payload([underflow], threshold=1), {})[
+        "decision"
+    ] == "REJECT"
+
+    valid = _anchor(1, "specdig", "2026-07-23T01:00:00+00:00")
+    assert verify_temporal(
+        _payload(
+            [valid],
+            threshold=1,
+            verdict_time="9999-12-31T23:59:59-23:59",
+        ),
+        {},
+    )["decision"] == "REJECT"
 
 
 def test_gate_is_total_on_garbage():

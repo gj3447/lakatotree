@@ -7,7 +7,7 @@ target:
 
 requirements:
   - id: RID-A-1
-    description: an exact marker-bearing LakatoTree git root exposes its own short HEAD
+    description: an exact marker-bearing LakatoTree git root exposes its full immutable HEAD
     gate:
       - {event: exact_identity_accepted, op: ">=", count: 1}
     longinus:

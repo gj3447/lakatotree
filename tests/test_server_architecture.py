@@ -86,7 +86,7 @@ def test_neo4j_database_is_explicit_and_secrets_are_not_repr(monkeypatch):
             return None
 
     driver = _Driver()
-    monkeypatch.setenv("NEO4J_URI", "bolt://example.invalid:7687")
+    monkeypatch.setenv("NEO4J_URI", "bolt+s://192.0.2.10:7687")
     monkeypatch.setenv("NEO4J_USER", "runtime")
     monkeypatch.setenv("NEO4J_PASSWORD", "neo-secret")
     monkeypatch.setenv("NEO4J_DATABASE", "research")
@@ -112,7 +112,7 @@ def test_neo4j_database_is_explicit_and_secrets_are_not_repr(monkeypatch):
             "neo4j_uri": "bolt://alice:uri-secret@example.invalid:7687",
         }
     )
-    with pytest.raises(RuntimeError, match="must not contain credentials"):
+    with pytest.raises(RuntimeError, match="credential-free"):
         unsafe.require_neo4j()
     assert "uri-secret" not in repr(unsafe)
 
@@ -396,6 +396,19 @@ def test_server_app_evidence_claim_facades_delegate_to_context_service():
         assert len(body) == 1
         assert isinstance(body[0], ast.Return)
         assert "_evidence_claim_service(" in ast.unparse(body[0])
+
+
+def test_permanent_tree_surfaces_receive_the_batch_temporal_proof_port():
+    tree = ast.parse((ROOT / "server" / "app.py").read_text(encoding="utf-8"))
+    funcs = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+
+    for name in {"_tree_service", "_ledger_tree_service", "_evidence_claim_service"}:
+        rendered = ast.unparse(funcs[name])
+        assert "temporal_proof_provider=_temporal_service().read_proofs_for_heads" in rendered
+
+    judgement = ast.unparse(funcs["_judgement_service"])
+    assert "temporal_proof_provider=temporal_service.read_proofs_for_heads" in judgement
+    assert "prediction_temporal_commitment_provider=temporal_service.verified_prediction_commitment" in judgement
 
 
 def test_server_app_programme_facades_delegate_to_context_service():

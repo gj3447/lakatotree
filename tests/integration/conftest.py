@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 LAKATOS_IT = os.getenv('LAKATOS_IT')
+LAKATOS_PG_IMAGE = os.getenv('LAKATOS_PG_IMAGE', 'postgres:16-alpine')
 _ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -23,22 +24,34 @@ def pytest_configure(config):
 
 
 @pytest.fixture(scope='session')
-def neo4j_driver():
-    """세션 1회 실 Neo4j 컨테이너 + 드라이버."""
+def neo4j_connection_info():
+    """세션 1회 실 Neo4j 컨테이너의 ephemeral pinned endpoint/credential."""
     if not LAKATOS_IT:
         pytest.skip('LAKATOS_IT 미설정 — 통합티어 skip (hermetic 단위 suite 보존)')
     from testcontainers import neo4j as neo4j_mod
-    from neo4j import GraphDatabase
 
     with neo4j_mod.Neo4jContainer('neo4j:5.26') as neo:
-        uri = neo.get_connection_url()
-        password = getattr(neo, 'password', None) or 'password'
-        driver = GraphDatabase.driver(uri, auth=('neo4j', password))
-        try:
-            driver.verify_connectivity()
-            yield driver
-        finally:
-            driver.close()
+        yield {
+            'uri': neo.get_connection_url(),
+            'user': 'neo4j',
+            'password': getattr(neo, 'password', None) or 'password',
+        }
+
+
+@pytest.fixture(scope='session')
+def neo4j_driver(neo4j_connection_info):
+    """세션 1회 실 Neo4j 드라이버."""
+    from neo4j import GraphDatabase
+
+    driver = GraphDatabase.driver(
+        neo4j_connection_info['uri'],
+        auth=(neo4j_connection_info['user'], neo4j_connection_info['password']),
+    )
+    try:
+        driver.verify_connectivity()
+        yield driver
+    finally:
+        driver.close()
 
 
 @pytest.fixture(scope='session')
@@ -48,7 +61,7 @@ def pg_kw():
         pytest.skip('LAKATOS_IT 미설정 — 통합티어 skip (hermetic 단위 suite 보존)')
     from testcontainers import postgres as pg_mod
     import psycopg2
-    with pg_mod.PostgresContainer('postgres:16-alpine') as pg:
+    with pg_mod.PostgresContainer(LAKATOS_PG_IMAGE) as pg:
         kw = dict(host=pg.get_container_host_ip(), port=int(pg.get_exposed_port(5432)),
                   user=pg.username, password=pg.password, dbname=pg.dbname)
         conn = psycopg2.connect(**kw)
