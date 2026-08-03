@@ -30,6 +30,7 @@ from server.storage_access import (
     STORES,
     StorageAccessError,
     _NEO_COMMUNITY_READ_QUERY_COUNT,
+    _neo_community_native_auth_settings_exact,
     build_attestation_body,
     build_storage_audit_bundle,
     canonical_json,
@@ -290,6 +291,72 @@ def _neo4j_server_edition(
     return editions.pop()
 
 
+def _neo_community_authorization_projection(
+    session: Any, config: Mapping[str, Any], remaining: Any
+) -> dict[str, Any]:
+    """Read the auth-relevant Community projection once, in a fixed order.
+
+    Community leaves the system ``lastCommittedTxn``/``writer`` columns NULL,
+    so authorization stability is attested by exact digest equality of this
+    projection before and after the audit reads instead of a transaction
+    counter.
+    """
+
+    system_rows = live._neo_rows(
+        session,
+        "SHOW DATABASE system "
+        "YIELD name, type, databaseID, currentStatus "
+        "RETURN name, type, databaseID AS database_id, "
+        "currentStatus AS current_status",
+        remaining(),
+        maximum=2,
+    )
+    system_database_id = None
+    if len(system_rows) == 1:
+        row = system_rows[0]
+        database_id = row.get("database_id")
+        if (
+            row.get("name") == "system"
+            and row.get("type") == "system"
+            and row.get("current_status") == "online"
+            and isinstance(database_id, str)
+            and bool(database_id)
+        ):
+            system_database_id = database_id
+    # SHOW ALIASES FOR DATABASE is an Enterprise-only administration command;
+    # Community exposes the same alias facts through the SHOW DATABASES
+    # ``aliases`` column.
+    catalog_rows = live._neo_rows(
+        session,
+        "SHOW DATABASES YIELD name, type, aliases, currentStatus "
+        "WHERE name = $database "
+        "RETURN name, type, aliases, currentStatus AS current_status "
+        "ORDER BY name",
+        remaining(),
+        database=str(config["database"]),
+    )
+    setting_rows = live._neo_rows(
+        session,
+        "SHOW SETTINGS $setting_names "
+        "YIELD name, value, startupValue "
+        "RETURN name, value, startupValue AS startup_value ORDER BY name",
+        remaining(),
+        setting_names=list(live._NEO_AUTH_SETTING_NAMES),
+    )
+    user_rows = live._neo_rows(
+        session,
+        "SHOW USERS YIELD user, suspended "
+        "RETURN user, suspended ORDER BY user",
+        remaining(),
+    )
+    return {
+        "system_database_id": system_database_id,
+        "database_catalog": catalog_rows,
+        "auth_settings": setting_rows,
+        "users": user_rows,
+    }
+
+
 def _collect_neo4j_community_impl(
     config: Mapping[str, Any],
     timeout: float,
@@ -390,42 +457,16 @@ def _collect_neo4j_community_impl(
         with driver.session(
             database="system", default_access_mode=READ_ACCESS
         ) as session:
-            system_marker_before = live._neo_system_authority_marker(
-                session, remaining()
+            snapshot_before = _neo_community_authorization_projection(
+                session, config, remaining
             )
             user_rows = live._neo_rows(
                 session,
                 "SHOW CURRENT USER YIELD user RETURN user",
                 remaining(),
             )
-            # SHOW ALIASES FOR DATABASE is an Enterprise-only administration
-            # command; Community exposes the same alias facts through the
-            # SHOW DATABASES ``aliases`` column.
-            database_catalog_rows = live._neo_rows(
-                session,
-                "SHOW DATABASES YIELD name, type, aliases, currentStatus "
-                "WHERE name = $database "
-                "RETURN name, type, aliases, currentStatus AS current_status "
-                "ORDER BY name",
-                remaining(),
-                database=str(config["database"]),
-            )
-            auth_setting_rows = live._neo_rows(
-                session,
-                "SHOW SETTINGS $setting_names "
-                "YIELD name, value, startupValue "
-                "RETURN name, value, startupValue AS startup_value ORDER BY name",
-                remaining(),
-                setting_names=list(live._NEO_AUTH_SETTING_NAMES),
-            )
-            named_user_rows = live._neo_rows(
-                session,
-                "SHOW USERS YIELD user, suspended "
-                "RETURN user, suspended ORDER BY user",
-                remaining(),
-            )
-            system_marker_after = live._neo_system_authority_marker(
-                session, remaining()
+            snapshot_after = _neo_community_authorization_projection(
+                session, config, remaining
             )
     except live._PortUnavailable:
         raise
@@ -442,9 +483,15 @@ def _collect_neo4j_community_impl(
     if len(user_rows) != 1 or not isinstance(user_rows[0].get("user"), str):
         raise live._PortUnavailable("Neo4j current user readback was ambiguous")
     current_user = str(user_rows[0]["user"])
+    system_database_id = snapshot_before["system_database_id"]
+    database_catalog_rows = snapshot_before["database_catalog"]
+    auth_setting_rows = snapshot_before["auth_settings"]
+    named_user_rows = snapshot_before["users"]
+    authorization_snapshot_sha256 = live._sha256(live._canonical(snapshot_before))
     authorization_snapshot_stable = bool(
-        system_marker_before is not None
-        and system_marker_before == system_marker_after
+        system_database_id is not None
+        and authorization_snapshot_sha256
+        == live._sha256(live._canonical(snapshot_after))
     )
     if not authorization_snapshot_stable:
         failures.append("neo4j.authorization_snapshot.unstable")
@@ -535,17 +582,14 @@ def _collect_neo4j_community_impl(
         "named_user_suspended": named_user_suspended,
         "auth_settings": auth_settings,
         "auth_settings_sha256": live._sha256(live._canonical(auth_settings)),
-        "native_only_auth": live._neo_native_auth_settings_exact(
-            auth_settings, version=str(version)
+        "native_only_auth": _neo_community_native_auth_settings_exact(
+            auth_settings
         ),
         "system_database_id_sha256": (
-            live._sha256(system_marker_before["database_id"].encode("utf-8"))
-            if system_marker_before is not None else None
+            live._sha256(system_database_id.encode("utf-8"))
+            if system_database_id is not None else None
         ),
-        "system_last_committed_tx": (
-            system_marker_before["last_committed_tx"]
-            if system_marker_before is not None else None
-        ),
+        "authorization_snapshot_sha256": authorization_snapshot_sha256,
         "authorization_snapshot_stable": authorization_snapshot_stable,
         "read_query_count": (
             (_NEO_COMMUNITY_READ_QUERY_COUNT - 1) + int(challenge_bound)

@@ -117,7 +117,7 @@ _NEO_FACT_KEYS = {
     "system_last_committed_tx", "authorization_snapshot_stable",
     "read_query_count",
 }
-_NEO_COMMUNITY_READ_QUERY_COUNT = 9
+_NEO_COMMUNITY_READ_QUERY_COUNT = 12
 _NEO_COMMUNITY_FACT_KEYS = {
     "database", "challenge_nonce_sha256", "database_name_matches",
     "database_direct_local", "database_alias_count", "database_alias_sha256",
@@ -125,7 +125,7 @@ _NEO_COMMUNITY_FACT_KEYS = {
     "enterprise", "community_semantics", "rbac_available",
     "current_actor_sha256", "named_user_sha256", "named_user_suspended",
     "auth_settings", "auth_settings_sha256", "native_only_auth",
-    "system_database_id_sha256", "system_last_committed_tx",
+    "system_database_id_sha256", "authorization_snapshot_sha256",
     "authorization_snapshot_stable", "read_query_count",
 }
 
@@ -767,6 +767,29 @@ def _neo_version_supported(version: Any) -> bool:
     )
 
 
+def _neo_community_native_auth_settings_exact(value: Any) -> bool:
+    """Community has no pluggable auth-provider settings at all.
+
+    The collector requests every ``_NEO_AUTH_SETTING_NAMES`` name; on a real
+    Community server only ``dbms.security.auth_enabled`` exists, so native-only
+    auth is attested by exactly that one enabled row — any provider row in the
+    readback means the server is not Community-native and must fail.
+    """
+
+    if not isinstance(value, list) or len(value) != 1:
+        return False
+    row = value[0]
+    if not isinstance(row, Mapping) or set(row) != {"name", "value", "startup_value"}:
+        return False
+    return (
+        row.get("name") == "dbms.security.auth_enabled"
+        and isinstance(row.get("value"), str)
+        and isinstance(row.get("startup_value"), str)
+        and row["value"] == row["startup_value"]
+        and row["value"].strip().lower() == "true"
+    )
+
+
 def _neo_community_version_supported(version: Any) -> bool:
     """Pin community settings/SHOW semantics to the audited 2026 window."""
 
@@ -1242,9 +1265,7 @@ def _neo4j_community_projection_failures(
             "neo4j.community.named_user_suspended",
         ),
         (
-            _neo_native_auth_settings_exact(
-                facts["auth_settings"], version=facts["version"]
-            ),
+            _neo_community_native_auth_settings_exact(facts["auth_settings"]),
             "neo4j.native_only_auth_settings",
         ),
         (facts["native_only_auth"] is True, "neo4j.native_only_auth"),
@@ -1258,9 +1279,8 @@ def _neo4j_community_projection_failures(
             "neo4j.system_database_id",
         ),
         (
-            type(facts["system_last_committed_tx"]) is int
-            and facts["system_last_committed_tx"] >= 0,
-            "neo4j.system_last_committed_tx",
+            _is_sha256(facts["authorization_snapshot_sha256"]),
+            "neo4j.community.authorization_snapshot_digest",
         ),
         (
             facts["authorization_snapshot_stable"] is True,

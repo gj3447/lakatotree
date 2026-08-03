@@ -994,7 +994,7 @@ class _NeoCommunitySession:
     def __init__(self, database, *, marker_drift=False):
         self.database = database
         self.marker_drift = marker_drift
-        self.marker_calls = 0
+        self.users_calls = 0
 
     def __enter__(self):
         return self
@@ -1011,18 +1011,19 @@ class _NeoCommunitySession:
         if "CALL db.info" in text:
             return [{"id": "neo4j-db-id", "name": "neo4j"}]
         if "SHOW DATABASE system" in text:
-            self.marker_calls += 1
-            return [{
+            row = {
                 "name": "system",
                 "type": "system",
                 "database_id": "system-db-id",
                 "current_status": "online",
-                "writer": True,
-                "last_committed_tx": (
-                    41 + int(self.marker_drift and self.marker_calls > 1)
-                ),
-                "replication_lag": 0,
-            }]
+            }
+            if "lastCommittedTxn" in text:
+                # Live Community leaves the Enterprise-populated columns NULL,
+                # so the Enterprise transaction marker can never be valid here.
+                row.update(
+                    writer=None, last_committed_tx=None, replication_lag=None
+                )
+            return [row]
         if "SHOW CURRENT USER" in text:
             return [{"user": "lakatos_audit_user"}]
         if "SHOW ALIASES" in text:
@@ -1036,17 +1037,22 @@ class _NeoCommunitySession:
                 "current_status": "online",
             }]
         if "SHOW SETTINGS" in text:
-            # Community 2026.02 predates the abac provider setting.
+            # Community has no pluggable auth-provider settings at all; only
+            # dbms.security.auth_enabled exists on the live server.
             return [
                 row for row in _neo_auth_settings()
-                if row["name"] in live._NEO_BASE_AUTH_SETTING_NAMES
+                if row["name"] == "dbms.security.auth_enabled"
             ]
         if "SHOW USERS" in text:
             # Community reports suspended as null for every user.
-            return [
+            self.users_calls += 1
+            rows = [
                 {"user": f"lakatos_{label}_user", "suspended": None}
                 for label in ("audit", "migrator", "runtime")
             ]
+            if self.marker_drift and self.users_calls > 1:
+                rows.append({"user": "break_glass", "suspended": None})
+            return rows
         if "SHOW USER PRIVILEGES" in text or "SHOW PRIVILEGES" in text:
             raise AssertionError("community collector must not run RBAC queries")
         raise AssertionError(f"unexpected Neo4j community audit query: {text}")
@@ -1115,7 +1121,7 @@ def _community_adapter_result(*, nonce="1" * 64):
     empty = hashlib.sha256(_canonical([])).hexdigest()
     base_settings = [
         row for row in _neo_auth_settings()
-        if row["name"] in live._NEO_BASE_AUTH_SETTING_NAMES
+        if row["name"] == "dbms.security.auth_enabled"
     ]
     facts = {
         "database": "neo4j",
@@ -1151,7 +1157,9 @@ def _community_adapter_result(*, nonce="1" * 64):
         ).hexdigest(),
         "native_only_auth": True,
         "system_database_id_sha256": hashlib.sha256(b"system-db-id").hexdigest(),
-        "system_last_committed_tx": 41,
+        "authorization_snapshot_sha256": hashlib.sha256(
+            b"auth-projection"
+        ).hexdigest(),
         "authorization_snapshot_stable": True,
         "read_query_count": storage_access._NEO_COMMUNITY_READ_QUERY_COUNT,
     }

@@ -945,16 +945,13 @@ def test_phase_handoff_uses_earliest_expiry_of_all_predeploy_attestations():
 
 
 def _community_auth_settings():
-    # 2026.02 predates the abac provider setting; only the base names exist.
-    values = {
-        "dbms.security.auth_enabled": "true",
-        "dbms.security.authentication_providers": "native",
-        "dbms.security.authorization_providers": "native",
-    }
-    return [
-        {"name": name, "value": values[name], "startup_value": values[name]}
-        for name in access._NEO_BASE_AUTH_SETTING_NAMES
-    ]
+    # Community has no pluggable auth-provider settings at all; the live
+    # SHOW SETTINGS readback contains only the enabled native-auth flag.
+    return [{
+        "name": "dbms.security.auth_enabled",
+        "value": "true",
+        "startup_value": "true",
+    }]
 
 
 def _community_observation(*, nonce="1" * 64):
@@ -992,11 +989,26 @@ def _community_observation(*, nonce="1" * 64):
             ),
             "native_only_auth": True,
             "system_database_id_sha256": access.sha256_bytes(b"system-db-id"),
-            "system_last_committed_tx": 41,
+            "authorization_snapshot_sha256": access.sha256_bytes(
+                b"auth-projection"
+            ),
             "authorization_snapshot_stable": True,
             "read_query_count": access._NEO_COMMUNITY_READ_QUERY_COUNT,
         },
     }
+
+
+def _tamper_auth_provider_row(facts):
+    """A provider setting appearing on 'community' must fail even if the
+    self-reported digest is consistently recomputed."""
+    facts["auth_settings"].append({
+        "name": "dbms.security.authentication_providers",
+        "value": "ldap",
+        "startup_value": "ldap",
+    })
+    facts["auth_settings_sha256"] = access.sha256_bytes(
+        access.canonical_json(facts["auth_settings"])
+    )
 
 
 def test_development_policy_accepts_one_lan_literal_ip_only():
@@ -1100,8 +1112,16 @@ def test_development_still_verifies_enterprise_shaped_facts_fully():
             "neo4j.community.named_user_suspended",
         ),
         (
-            lambda facts: facts.update(read_query_count=12),
+            lambda facts: facts.update(read_query_count=11),
             "neo4j.community.read_query_count",
+        ),
+        (
+            _tamper_auth_provider_row,
+            "neo4j.native_only_auth_settings",
+        ),
+        (
+            lambda facts: facts.update(authorization_snapshot_sha256="0"),
+            "neo4j.community.authorization_snapshot_digest",
         ),
         (
             lambda facts: facts.update(database_alias_count=1),
