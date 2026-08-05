@@ -66,36 +66,78 @@ _LEGACY_MAC_ROOTS = (
 _SERVER_ENV_CACHE: dict | None = None
 
 
+_ENV_KEYS = ('LAKATOS_SCRIPT_ROOTS', 'LAKATOS_RAW_ROOT')
+
+
+def _scan_server_process() -> dict:
+    """/proc 에서 **서버**(uvicorn) 프로세스의 LAKATOS_* 를 읽는다. 못 찾으면 {}.
+
+    ★같은 변수를 MCP 클라이언트 프로세스도 갖고 있다(.claude.json 의 env). 그래서
+    'LAKATOS_SCRIPT_ROOTS= 가 있는 첫 프로세스'를 집으면 클라이언트 자신을 집어
+    자기 설정을 서버 설정이라고 되읽는 자기참조가 된다(2026-08-05 실측). 서버만
+    RAW_ROOT 를 갖고 cmdline 에 uvicorn/app:app 이 있으므로 그걸로 판별한다.
+    """
+    best: dict = {}
+    try:
+        pids = os.listdir('/proc')
+    except OSError:
+        return {}
+    for pid in pids:
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f'/proc/{pid}/environ', 'rb') as f:
+                raw = f.read().decode('utf-8', 'replace')
+        except OSError:                        # 대부분 남의 프로세스 — 조용히 건너뛴다
+            continue
+        if 'LAKATOS_SCRIPT_ROOTS=' not in raw:
+            continue
+        found = {}
+        for item in raw.split('\0'):
+            k, _, v = item.partition('=')
+            if k in _ENV_KEYS and v:
+                found[k] = v
+        if not found:
+            continue
+        try:
+            with open(f'/proc/{pid}/cmdline', 'rb') as f:
+                cmdline = f.read().decode('utf-8', 'replace')
+        except OSError:
+            cmdline = ''
+        is_server = 'uvicorn' in cmdline or 'app:app' in cmdline
+        # 서버 확정이면 즉시 채택. 아니면 키를 더 많이 가진 후보를 잠정 보관한다.
+        if is_server:
+            return found
+        if len(found) > len(best):
+            best = found
+    return best
+
+
 def _server_env() -> dict:
     """서버 프로세스의 LAKATOS_* 설정을 읽는다.
 
     ★이 변수들은 **서버 프로세스에만** 있고 MCP 클라이언트 프로세스에는 없다. 그래서
     os.environ 만 보면 항상 비어 있고 preflight 가 서버와 어긋난다(2026-07-29 실측).
     로컬 서버면 /proc 에서 실제 값을 읽고, 못 찾으면 자기 env → 빈 값 순으로 강등한다.
+
+    2026-08-05: 위 순서가 코드에서는 뒤집혀 있었다. `if not any(env.values())` 라
+    자기 env 에 키가 **하나라도** 차 있으면 /proc 조회를 통째로 건너뛰었고, 실제로
+    .claude.json 이 클라이언트에 SCRIPT_ROOTS 만 좁게 주고 있어서 RAW_ROOT 를 영영
+    못 배웠다. 결과는 거짓경고 — result_path 가 RAW_ROOT(/data/kjra/PROJECT) 안인데도
+    "동기화 루트 밖"이라고 우겼고, 서버는 그 파일을 멀쩡히 읽어 봉인했다
+    (script_sha_server_verified=true 로 실측 확인). /proc 조회는 바로 이 드리프트를
+    막으려고 쓰인 코드인데 부분 env 가 그것을 무력화한 셈이다.
+    이제 서버가 권위이고 자기 env 는 **키 단위** 폴백이다 — docstring 이 원래
+    약속하던 순서 그대로.
     """
     global _SERVER_ENV_CACHE
     if _SERVER_ENV_CACHE is not None:
         return _SERVER_ENV_CACHE
-    env = {k: os.environ.get(k, '') for k in ('LAKATOS_SCRIPT_ROOTS', 'LAKATOS_RAW_ROOT')}
-    if not any(env.values()):
-        try:                                   # 로컬 서버 프로세스에서 직접
-            for pid in os.listdir('/proc'):
-                if not pid.isdigit():
-                    continue
-                try:
-                    with open(f'/proc/{pid}/environ', 'rb') as f:
-                        raw = f.read().decode('utf-8', 'replace')
-                except OSError:
-                    continue
-                if 'LAKATOS_SCRIPT_ROOTS=' not in raw:
-                    continue
-                for item in raw.split('\0'):
-                    k, _, v = item.partition('=')
-                    if k in env and v:
-                        env[k] = v
-                break
-        except OSError:
-            pass
+    env = dict.fromkeys(_ENV_KEYS, '')
+    env.update(_scan_server_process())         # 서버가 권위
+    for k in _ENV_KEYS:                        # 못 배운 키만 자기 env 로 강등
+        if not env[k]:
+            env[k] = os.environ.get(k, '')
     _SERVER_ENV_CACHE = env
     return env
 
@@ -126,9 +168,13 @@ def _preflight_paths(*paths, role: str = 'result'):
     bad = [p for p in paths if isinstance(p, str) and p.startswith('/')
            and not p.startswith(roots)]
     if bad:
-        return ('local-preflight: 동기화 루트 밖 경로 — Proxmox 서버가 파일을 읽을 수 없어 '
+        # 문구 정정(2026-08-05): 서버는 이 머신에서 돈다(127.0.0.1:55170). Proxmox 도
+        # bin/lakatotree-sync-now.sh 도 없어서, 없는 파일을 고치라는 안내를 하고 있었다.
+        # 실제로 고칠 대상은 서버의 LAKATOS_SCRIPT_ROOTS / LAKATOS_RAW_ROOT 다.
+        return (f'local-preflight: {role} 루트 밖 경로 — 서버가 파일을 읽을 수 없어 '
                 '파일앵커 게이트(F-CON-1/R2-NOVEL)가 막힌다: ' + ', '.join(bad)
-                + ' — 동기화 루트 밑으로 옮기거나 bin/lakatotree-sync-now.sh MAPPINGS 에 추가할 것')
+                + ' — 허용 루트: ' + ', '.join(roots[:4])
+                + ' (서버의 LAKATOS_SCRIPT_ROOTS/LAKATOS_RAW_ROOT 로 바꿀 수 있다)')
     return ''
 
 
