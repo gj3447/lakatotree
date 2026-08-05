@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import threading
 
 # When one test produces several phase reports (setup/call/teardown) we keep the
 # most severe outcome for the session tally.
@@ -72,6 +73,36 @@ def cloudevents_envelope(rec: dict, *, source: str | None = None) -> dict:
     if cid is not None:
         out["subject"] = str(cid)
     return out
+
+
+# ── ooptdd event-envelope wire contract ─────────────────────────────────────────
+# A versioned, machine-readable schema for the envelope EVERY shipped record carries — distinct
+# from CE_SPECVERSION (the CloudEvents floor above, which versions only the 4 CE context attrs).
+# Out-of-process emitters (p333's Rust, omd) previously re-implemented the envelope by imitation
+# and drifted; this is the single source of truth they validate against. Stamped into every
+# builder record as `spec_version`; the on-disk docs/schema/envelope.schema.json is a mirror kept
+# honest by tests/test_wire_contract.py (the package constant is authoritative — the JSON is not
+# vendored, so the CLI emits from here, never by reading the file).
+ENVELOPE_SPEC_VERSION = "1.0.0"
+ENVELOPE_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/gj3447/ooptdd/schema/envelope.schema.json",
+    "title": "ooptdd event envelope",
+    "type": "object",
+    "required": ["spec_version", "cid", "correlation_id", "cycle_id", "service", "level", "event"],
+    "properties": {
+        "spec_version": {"const": ENVELOPE_SPEC_VERSION},
+        "cid": {"type": "string"},
+        "correlation_id": {"type": "string"},
+        "cycle_id": {"type": "string"},
+        "service": {"type": "string"},
+        "level": {"type": "string", "enum": ["INFO", "ERROR"]},
+        "event": {"type": "string"},
+    },
+    # Records also carry event-specific payload (duration_s/error/total/sig/trace_id/…); the
+    # envelope contract pins the carrier, not the payload — so extra keys are allowed.
+    "additionalProperties": True,
+}
 
 
 def with_trace_context(rec: dict, trace_id: str, span_id: str | None = None) -> dict:
@@ -167,10 +198,26 @@ def sign_chain(records: list[dict], key: str, *, evolve: bool = False) -> list[d
     return out
 
 
-def verify_chain(records: list[dict], key: str, *, evolve: bool = False) -> dict:
+def verify_chain(records: list[dict], key: str, *, evolve: bool = False,
+                 expect_len: int | None = None, expect_head: str | None = None) -> dict:
     """Verify a hash chain. Returns ``{ok, broken_index, reason}`` — ``broken_index`` is the
     first record whose previous-link or MAC fails (``None`` if intact). A mismatch means an
-    edit, a deletion, or a reorder somewhere at or before that index."""
+    edit, an *interior* deletion, or a reorder somewhere at or before that index.
+
+    **Interior is not a hedge — it is the whole boundary.** Truncating the chain leaves a
+    prefix that verifies perfectly, because a chain cannot testify to its own length: run a
+    session, dislike the result, drop the trailing records, and every link still checks out
+    (measured both with and without ``evolve``). The same holds for a wholesale re-signing
+    by a key holder. These are not defects in the MAC; the information needed to refuse them
+    is not in the records.
+
+    ``expect_len`` / ``expect_head`` are how that information gets in, and they must come
+    from **outside** — the anchor the caller kept elsewhere (a receipt filed with a tree, a
+    commit, a peer's copy of the last MAC). This is the ``docs/ouroboros.md`` termination
+    result at the evidence layer: meta-layers relocate the trusted base, external anchors
+    are what retire it. An anchor the caller can decline to pass is not an anchor, so a
+    gate that means it should always pass these.
+    """
     prev, k = "", key
     for i, rec in enumerate(records):
         if rec.get("prev_sig") != prev:
@@ -184,7 +231,44 @@ def verify_chain(records: list[dict], key: str, *, evolve: bool = False) -> dict
         prev = str(rec.get("sig_chain", ""))
         if evolve:
             k = _evolve(k)
+    if expect_len is not None and len(records) < expect_len:
+        return {"ok": False, "broken_index": len(records),
+                "reason": "truncated_shorter_than_external_expectation"}
+    if expect_head is not None and not hmac.compare_digest(prev, expect_head):
+        return {"ok": False, "broken_index": max(len(records) - 1, 0),
+                "reason": "head_mismatch_vs_external_anchor"}
     return {"ok": True, "broken_index": None, "reason": None}
+
+
+def build_event(cid: str, event: str, *, service: str = "ooptdd.tests", **attrs) -> dict:
+    """The generic emit envelope (pure): one structured event under all three correlation aliases,
+    stamped with the wire ``spec_version``, plus a ``service`` and any event-specific ``attrs``.
+    This is what a consumer ships instead of hand-rolling a flat dict per verb — the same shape the
+    pytest builders produce, so one gate grammar reads them all."""
+    return {**correlation_keys(cid), "spec_version": ENVELOPE_SPEC_VERSION,
+            "service": service, "event": event, **attrs}
+
+
+class Emitter:
+    """A thin, thread-safe emit seam over an injected backend: ``emit(event, cid, **attrs)`` builds
+    one :func:`build_event` and ships it. ``backend`` is duck-typed (anything with ``ship(list)``)
+    so this stays a pure-domain leaf — it never imports ``ooptdd.backends``. The lock serializes
+    only the ``ship`` call (no re-entrancy/callback), so it cannot deadlock a backend that does its
+    own locking."""
+
+    def __init__(self, backend, service: str = "ooptdd.tests"):
+        self._backend = backend
+        self.service = service
+        self._lock = threading.Lock()
+
+    def build(self, event: str, cid: str, **attrs) -> dict:
+        return build_event(cid, event, service=self.service, **attrs)
+
+    def emit(self, event: str, cid: str, **attrs) -> dict:
+        rec = self.build(event, cid, **attrs)
+        with self._lock:
+            self._backend.ship([rec])
+        return rec
 
 
 def build_outcome_records(
@@ -211,6 +295,7 @@ def build_outcome_records(
         outcome = r["outcome"]
         rec = {
             **correlation_keys(cid),
+            "spec_version": ENVELOPE_SPEC_VERSION,
             "service": service,
             "level": "ERROR" if outcome == "failed" else "INFO",
             "event": "test_outcome",
@@ -233,6 +318,7 @@ def build_outcome_records(
     skipped = sum(1 for o in by_test.values() if o == "skipped")
     session = {
         **correlation_keys(cid),
+        "spec_version": ENVELOPE_SPEC_VERSION,
         "service": service,
         "level": "ERROR" if failed else "INFO",
         "event": "test_session",
@@ -264,6 +350,7 @@ def build_session_start(
     """
     rec = {
         **correlation_keys(cid),
+        "spec_version": ENVELOPE_SPEC_VERSION,
         "service": service,
         "level": "INFO",
         "event": "session_start",

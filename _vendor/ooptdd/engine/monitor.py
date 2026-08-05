@@ -28,6 +28,7 @@ primitives for backward compatibility.
 """
 from __future__ import annotations
 
+import math
 import operator
 from collections.abc import Callable
 
@@ -60,13 +61,73 @@ def _want(rule: dict):
     return rule.get("count", 1)
 
 
+def _num_target(rule: dict):
+    """Numeric count target, preserving int when integral. NOT ``int(...)`` — that truncated
+    ``1.9`` to ``1`` (a `>= 1.9` gate then passed on 1 event) and crashed on a string like
+    ``"1.5"`` (grill F10). A float threshold compares correctly against an integer count."""
+    v = _want(rule)
+    if isinstance(v, bool):
+        raise ValueError(f"count target must be numeric, got bool {v!r}")
+    try:
+        f = float(v)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"count target must be numeric, got {v!r}") from exc
+    if not math.isfinite(f):
+        # inf/nan targets: `>= inf` silently never-passes, `!= nan` silently always-passes
+        # (a vacuous gating check), and json.dumps emits bare Infinity/NaN that strict JSON
+        # parsers reject in `ooptdd gate --json`. Reject, mirroring the aggregate guard.
+        raise ValueError(f"count target must be finite, got {v!r}")
+    return int(f) if f.is_integer() else f
+
+
+_WHERE_EXTRA_OPS = ("contains", "not_contains")
+
+
+def _is_op_dict(v) -> bool:
+    """``{op: gte, value: 100}`` is a comparator; any other dict value is a literal
+    payload to compare by equality (events may carry nested dicts)."""
+    return isinstance(v, dict) and "op" in v and set(v) <= {"op", "value"}
+
+
+def _compare(op, actual, want) -> bool:
+    """One comparator step for an op-dict ``where`` value. Fail-safe by construction:
+    a missing field (``actual is None``) never matches — not even ``ne`` — and the
+    ordering ops require real numbers (bool excluded). An unknown op raises: a typo'd
+    operator silently matching nothing would fake-green the absent wing."""
+    if actual is None:
+        return False
+    sym = _norm_op(op)
+    if sym in _OPS:
+        if sym in (">=", ">", "<=", "<"):
+            if (isinstance(actual, bool) or not isinstance(actual, (int, float))
+                    or isinstance(want, bool) or not isinstance(want, (int, float))):
+                return False
+            return _OPS[sym](actual, want)
+        return _OPS[sym](actual, want)
+    if sym == "contains":
+        try:
+            return want in actual
+        except TypeError:
+            return False
+    if sym == "not_contains":
+        try:
+            return want not in actual
+        except TypeError:
+            return False
+    raise ValueError(f"unknown where op {op!r}; known: "
+                     f"{', '.join(sorted([*_OPS, *_OP_ALIASES, *_WHERE_EXTRA_OPS]))}")
+
+
 def _matches(ev: dict, event: str | None, where: dict) -> bool:
     """An event matches when its name equals ``event`` (if given) and every ``where``
-    field equals the event's value (partial-dict — unlisted keys ignored). ``event=None``
-    matches any name."""
+    field matches the event's value (partial-dict — unlisted keys ignored). A where
+    value that is an op-dict (``{op: gte, value: 100}``) compares via :func:`_compare`;
+    anything else is literal equality. ``event=None`` matches any name."""
     if event is not None and ev.get("event") != event:
         return False
-    return all(ev.get(k) == v for k, v in where.items())
+    return all(_compare(v["op"], ev.get(k), v.get("value")) if _is_op_dict(v)
+               else ev.get(k) == v
+               for k, v in where.items())
 
 
 def _resolve_matcher(m: dict, indicators: dict) -> tuple[str | None, dict]:
@@ -92,11 +153,12 @@ def _brief(ev: dict) -> dict:
 
 
 def stream_key(ev: dict):
-    """Sort key putting events without a store timestamp first, then by ``_timestamp``.
-    The kernel consumes events in this order so first-occurrence/sequencing checks see
-    the true arrival order."""
+    """Sort key putting events without a store timestamp first, then by ``_timestamp``, then by the
+    backend's per-event ``_seq`` — the tie-break that keeps same-batch events (which share one
+    wall-clock ``_timestamp``) in ship order. Events without ``_seq`` sort as 0 (concurrent)."""
     ts = ev.get("_timestamp")
-    return (ts is None, ts if ts is not None else 0)
+    seq = ev.get("_seq")
+    return (ts is None, ts if ts is not None else 0, seq if seq is not None else 0)
 
 
 # ── monitor automata ─────────────────────────────────────────────────────────── #
@@ -171,6 +233,16 @@ class CountMonitor(Monitor):
             "event": self.event, "where": self.where, "op": self.op,
             "want": self.want, "got": self.got,
             "passed": reachable and _OPS[self.op](self.got, self.want),
+            # A count `got` is always >= 0, so several op/target combos can NEVER fail — a
+            # failure-incapable check. Flagged so the gate excludes it from `gating` (a
+            # tautology must not make a gate assert-anything) and lint can warn at author time.
+            # `>= n` (n<=0), `> n` (n<0: got>=0 > any negative), `!= n` (n<0: a count is never
+            # negative). Grill F4: `>-1` and `!=-1` slipped through the `>=`-only check.
+            "tautological": (
+                (self.op == ">=" and self.want <= 0)
+                or (self.op == ">" and self.want < 0)
+                or (self.op == "!=" and self.want < 0)
+            ),
         })
 
 
@@ -225,24 +297,108 @@ class AbsentMonitor(Monitor):
         })
 
 
+class DurationMonitor(Monitor):
+    """``duration`` — a UNIVERSAL field threshold over matched events: every event
+    matching ``event``/``where`` must have numeric ``field`` satisfying ``op target``
+    (OpenSLO threshold shape, e.g. every checkout's ``elapsed_s <= 1.5``).
+
+    LTL₃ semantics (the verified correction): one violating event is irrevocable —
+    VIOL latches immediately; but a satisfying prefix proves nothing about the rest
+    of the stream, so satisfaction NEVER latches mid-stream — the monitor stays PEND
+    and collapses at end-of-stream. A matched event whose field is missing or
+    non-numeric fails closed (the check asserts about that field). Zero matched
+    events is ``no_evidence``, not a pass — mirroring the invariant monitor."""
+
+    def __init__(self, event, where, field, op, target):
+        super().__init__()
+        if not field:
+            raise ValueError("duration check requires field")
+        if target is None:
+            raise ValueError("duration check requires target")
+        if op not in _OPS:
+            raise ValueError(f"duration op must be one of {sorted(_OPS)}, got {op!r}")
+        self.event, self.where, self.field = event, where, field
+        self.op, self.target = op, float(target)
+        self.got = 0
+        self.offenders: list[dict] = []
+
+    def step(self, ev, idx):
+        if not _matches(ev, self.event, self.where):
+            return
+        self.got += 1
+        value = ev.get(self.field)
+        ok = (not isinstance(value, bool) and isinstance(value, (int, float))
+              and _OPS[self.op](value, self.target))
+        if not ok:
+            self.offenders.append(ev)
+            self._latch(VIOL, idx)
+
+    def collapse(self, reachable):
+        return self._stamp({
+            "duration": _matcher_label(self.event, self.where), "field": self.field,
+            "op": self.op, "target": self.target, "got": self.got,
+            "violations": len(self.offenders),
+            "offending": [_brief(o) for o in self.offenders[:5]],
+            "no_evidence": self.got == 0,
+            "passed": reachable and not self.offenders and self.got > 0,
+        })
+
+
 class OrderMonitor(Monitor):
     """``must_order`` sequencing: every name must occur and first-occurrence timestamps
     must be non-decreasing in the listed order. First-occurrence times never change once
     set, so a timestamp inversion (or an over-bound gap under MTL ``within_s``) is an
     inevitable VIOL, and once every name has fired in order it is an inevitable SAT."""
 
-    def __init__(self, seq, within_s=None):
+    def __init__(self, seq, within_s=None, tie_skew_ms=None):
         super().__init__()
         self.seq = list(seq)
+        # `firsts`/`_keys` are name-keyed dicts, so a repeated name silently collapses to one
+        # slot: `[a, a, b]` asserted only `a` before `b` and passed on a single `a` (grill F9).
+        # Multiplicity is not supported by first-occurrence sequencing, so a duplicate name is
+        # a loud spec error, not a silently-weakened gate.
+        dupes = [n for n in set(self.seq) if self.seq.count(n) > 1]
+        if dupes:
+            raise ValueError(
+                f"must_order/trajectory names must be distinct — {sorted(dupes)} repeated; "
+                "first-occurrence sequencing cannot express multiplicity")
         self.within_s = within_s
+        # Concurrency window (ms): cross-node wall clocks cannot prove order tighter
+        # than their skew, so a first-occurrence "inversion" whose timestamps sit
+        # within this window is CONCURRENT, not a violation. None = strict (default).
+        self.tie_skew_ms = tie_skew_ms
         self.firsts: dict = {name: None for name in self.seq}
+        # Emitter-authoritative order (`_emit_seq`, stamped at emission — memory/jsonl
+        # ship paths stamp it; SUTs on network stores stamp their own): when BOTH events
+        # of a pair carry it, it beats the server (ts, _seq) page order entirely.
+        self._emits: dict = {name: None for name in self.seq}
+        # Ordering is compared on a composite (ts, seq) key so same-batch events (identical ts) are
+        # ordered by the backend's per-event seq — not vacuously "concurrent". `firsts` stays plain
+        # ts (its reported shape is a contract); the seq only sharpens the *order* comparison.
+        self._keys: dict = {name: None for name in self.seq}
 
     def _firsts_list(self):
         return [(name, self.firsts[name]) for name in self.seq]
 
+    def _order_keys(self):
+        return [self._keys[name] for name in self.seq]
+
+    def _pair_ok(self, name_a, name_b) -> bool:
+        """Is the (a before b) claim satisfied for two OBSERVED first-occurrences?
+        Authority ladder: both `_emit_seq` -> compare those; else inside `tie_skew_ms`
+        -> concurrent (unprovable, never a false RED); else composite (ts, _seq)."""
+        ka, kb = self._keys[name_a], self._keys[name_b]
+        ea, eb = self._emits[name_a], self._emits[name_b]
+        if ea is not None and eb is not None:
+            return ea <= eb
+        if (self.tie_skew_ms is not None
+                and abs(ka[0] - kb[0]) <= self.tie_skew_ms * 1000):
+            return True
+        return ka <= kb
+
     def _ordered_so_far(self) -> bool:
-        known = [ts for _, ts in self._firsts_list() if ts is not None]
-        return all(known[i] <= known[i + 1] for i in range(len(known) - 1))
+        seen = [n for n in self.seq if self._keys[n] is not None]
+        return all(self._pair_ok(seen[i], seen[i + 1]) for i in range(len(seen) - 1))
 
     def _gaps_exceeded(self):
         out = []
@@ -263,6 +419,10 @@ class OrderMonitor(Monitor):
             return  # only timestamped, in-sequence events move the automaton
         if self.firsts[name] is None:
             self.firsts[name] = ts
+            s = ev.get("_seq")
+            self._keys[name] = (ts, s if s is not None else 0)
+            emit = ev.get("_emit_seq")
+            self._emits[name] = emit if isinstance(emit, int) else None
         # inevitable VIOL: a known first-occurrence is now out of order, or a bounded gap
         # has already been exceeded — neither can be undone by later events.
         if not self._ordered_so_far() or self._gaps_exceeded():
@@ -274,8 +434,9 @@ class OrderMonitor(Monitor):
     def collapse(self, reachable):
         fl = self._firsts_list()
         missing = [name for name, ts in fl if ts is None]
+        # same authority ladder as the streaming path (emit_seq > skew window > (ts,_seq))
         ordered = not missing and all(
-            fl[i][1] <= fl[i + 1][1] for i in range(len(fl) - 1)
+            self._pair_ok(self.seq[i], self.seq[i + 1]) for i in range(len(self.seq) - 1)
         )
         gaps = self._gaps_exceeded() if ordered else []
         chk = {
@@ -293,21 +454,40 @@ class HeartbeatMonitor(Monitor):
     """Liveness ``G[0,every_s] F event`` (MTL): the event must fire at least once and never
     go silent longer than ``every_s`` between beats. An over-long gap is an inevitable VIOL
     (the gap is fixed once both beats are seen); the property is never inevitably SAT over an
-    unbounded future, so it stays PEND until violated or the stream ends."""
+    unbounded future, so it stays PEND until violated or the stream ends.
 
-    def __init__(self, name, every_s):
+    By default only INTER-BEAT gaps are policed. Edge silence — from the window start to the
+    first beat, or from the last beat to the window end — is a genuine "did the heartbeat
+    stop?" signal, but the window can only be inferred from the stream's own span, and an
+    ``init``/``setup`` event before the first beat or a ``done``/``teardown`` marker after the
+    last are perfectly healthy patterns that a span-based edge check false-REDs (grill F3
+    over-correction, caught by adversarial verification). So edge silence is OPT-IN via
+    ``edge_silence: true`` on the heartbeat check, for cids the author has scoped to the
+    liveness phase (no init/teardown brackets); under it, leading AND trailing silence beyond
+    ``every_s`` RED the gate. Default OFF keeps the common shapes green."""
+
+    def __init__(self, name, every_s, edge_silence=False):
         super().__init__()
         self.name = name
         self.every_s = float(every_s)
+        self.edge_silence = bool(edge_silence)
         self.beats = 0
+        self.first_ts: int | None = None
         self.last_ts: int | None = None
         self.max_gap_us = 0
+        self.stream_min_ts: int | None = None
+        self.stream_max_ts: int | None = None
 
     def step(self, ev, idx):
-        if ev.get("event") != self.name or ev.get("_timestamp") is None:
+        ts = ev.get("_timestamp")
+        if ts is not None and self.edge_silence:
+            self.stream_min_ts = ts if self.stream_min_ts is None else min(self.stream_min_ts, ts)
+            self.stream_max_ts = ts if self.stream_max_ts is None else max(self.stream_max_ts, ts)
+        if ev.get("event") != self.name or ts is None:
             return
-        ts = ev["_timestamp"]
         self.beats += 1
+        if self.first_ts is None:
+            self.first_ts = ts
         if self.last_ts is not None:
             gap = ts - self.last_ts
             self.max_gap_us = max(self.max_gap_us, gap)
@@ -321,12 +501,27 @@ class HeartbeatMonitor(Monitor):
                 "heartbeat": self.name, "every_s": self.every_s, "beats": 0,
                 "max_gap_s": None, "passed": False, "reason": "no_beat",
             })
-        ok = self.max_gap_us <= self.every_s * 1_000_000
-        return self._stamp({
+        lead = trail = 0
+        if self.edge_silence:
+            # opt-in only: bound liveness by the stream's own span (beats>=1 ⇒ all set).
+            lead = (self.first_ts - self.stream_min_ts) if (
+                self.first_ts is not None and self.stream_min_ts is not None) else 0
+            trail = (self.stream_max_ts - self.last_ts) if (
+                self.stream_max_ts is not None and self.last_ts is not None) else 0
+        edge_gap = max(lead, trail)
+        effective = max(self.max_gap_us, edge_gap)
+        ok = effective <= self.every_s * 1_000_000
+        chk = {
             "heartbeat": self.name, "every_s": self.every_s, "beats": self.beats,
-            "max_gap_s": round(self.max_gap_us / 1_000_000, 6),
+            "max_gap_s": round(effective / 1_000_000, 6),
+            "inter_beat_max_gap_s": round(self.max_gap_us / 1_000_000, 6),
             "passed": reachable and ok,
-        })
+        }
+        if self.edge_silence:
+            chk["edge_silence_s"] = round(edge_gap / 1_000_000, 6)
+            if not ok and edge_gap > self.max_gap_us:
+                chk["reason"] = "leading_silence" if lead >= trail else "trailing_silence"
+        return self._stamp(chk)
 
 
 class RatioMonitor(Monitor):
@@ -354,6 +549,15 @@ class RatioMonitor(Monitor):
                 "ratio": "good/total", "good": self.good, "total": 0, "value": None,
                 "op": self.op, "want": self.want, "passed": False,
                 "reason": "ratio_total_zero",
+            })
+        if self.good > self.total:
+            # good must be a SUBSET of total; good>total means the good/total matchers
+            # overlap or are misconfigured, and the ratio (>1) is meaningless — never a clean
+            # pass, even if `>= 0.99` would accept it (grill F11).
+            return self._stamp({
+                "ratio": "good/total", "good": self.good, "total": self.total,
+                "value": self.good / self.total, "op": self.op, "want": self.want,
+                "passed": False, "reason": "ratio_good_exceeds_total",
             })
         value = self.good / self.total
         return self._stamp({
@@ -567,10 +771,12 @@ def compile_check(rule: dict, *, indicators: dict | None = None, ontology=None,
         matchers = raw if isinstance(raw, list) else [raw]
         return AbsentMonitor(matchers, indicators, allow=allow)
     if "heartbeat" in rule:
-        return HeartbeatMonitor(rule["heartbeat"], rule["every_s"])
+        return HeartbeatMonitor(rule["heartbeat"], rule["every_s"],
+                                edge_silence=rule.get("edge_silence", False))
     if "must_order" in rule or "trajectory" in rule:
         seq = rule.get("must_order") or rule.get("trajectory")
-        return OrderMonitor(seq, within_s=rule.get("within_s"))
+        return OrderMonitor(seq, within_s=rule.get("within_s"),
+                            tie_skew_ms=rule.get("tie_skew_ms"))
     if "present" in rule:
         return PresentMonitor(rule["present"], indicators)
     if "ratioMetric" in rule:
@@ -591,8 +797,14 @@ def compile_check(rule: dict, *, indicators: dict | None = None, ontology=None,
                                   "equal" if rel == "idempotent" else rel,
                                   spec.get("reduce", "sum"), spec.get("field"),
                                   spec.get("factor", 1.0), spec.get("tol", 0.0), indicators)
+    if "duration" in rule:
+        spec = rule["duration"]
+        event, where = _resolve_matcher(spec, indicators)
+        return DurationMonitor(event, where, spec.get("field"),
+                               _norm_op(spec.get("op", rule.get("op", "<="))),
+                               spec.get("target", rule.get("target")))
     event, where = _resolve_matcher(rule, indicators)
-    return CountMonitor(event, where, _norm_op(rule.get("op", ">=")), int(_want(rule)))
+    return CountMonitor(event, where, _norm_op(rule.get("op", ">=")), _num_target(rule))
 
 
 class LiveMonitorSet:

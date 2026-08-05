@@ -19,10 +19,16 @@ import json
 import os
 import urllib.request
 
-from .base import QueryResult, _raise_for_status
+from .base import BackendCaps, QueryResult, _raise_for_status, classify_http_error
 
 
 class OpenObserveBackend:
+    #: reads to completion across pages (the query loop below) over SQL — the
+    #: reference network store: an independent, queryable, complete-read judge.
+    #: Blind window: memtable/WAL persist path (ZO_MEM_PERSIST_INTERVAL default 5s) —
+    #: a just-ingested record may be invisible to /_search for up to that interval.
+    caps = BackendCaps(queryable=True, paginates=True, supports_where=True,
+                       query_visibility_delay_ms=5000)
     default_lookback_s = 3600
     default_future_buffer_s = 300  # +5 min: absorb receive-time / clock-skew race
     queryable = True  # SQL read side over /_search
@@ -86,11 +92,54 @@ class OpenObserveBackend:
             # caller as a warning), not a silent success.
             _raise_for_status(r)
 
+    def query_spec(self, spec) -> QueryResult:
+        """Typed read surface. Without ``limit``/``cursor`` this IS the live engine
+        path — it delegates to the read-to-completion :meth:`query` byte-identically.
+        With ``limit`` it serves ONE bounded page (opaque offset cursor in
+        ``next_cursor``; ``complete=False`` while more pages remain) — the opt-in
+        surface external consumers page with (see ``fetch_all_pages``)."""
+        if spec.limit is None and spec.cursor is None:
+            return self.query(spec.cid, since_us=spec.window.since_us,
+                              until_us=spec.window.until_us)
+        try:
+            base, org, auth = self._endpoint()
+        except ValueError as exc:
+            return QueryResult(reachable=False, error=f"{type(exc).__name__}: {exc}")
+        try:
+            offset = int(spec.cursor or 0)
+        except ValueError:
+            raise ValueError(f"openobserve cursor must be a decimal offset, "
+                             f"got {spec.cursor!r}") from None
+        size = int(spec.limit or self.page_size)
+        safe_cid = spec.cid.replace("'", "''")
+        sql = f"SELECT * FROM {self.stream} WHERE cycle_id = '{safe_cid}'"
+        body = json.dumps({"query": {
+            "sql": sql, "start_time": spec.window.since_us, "end_time": spec.window.until_us,
+            "from": offset, "size": size,
+        }}).encode()
+        req = urllib.request.Request(
+            f"{base}/api/{org}/_search", data=body, method="POST",
+            headers={"Authorization": auth, "Content-Type": "application/json"},
+        )
+        try:
+            with self._open(req, timeout=self.timeout) as r:
+                _raise_for_status(r)
+                hits = json.loads(r.read().decode()).get("hits", [])
+        except Exception as exc:
+            kind, retry_after = classify_http_error(exc)
+            return QueryResult(reachable=False, error=f"{type(exc).__name__}: {exc}",
+                               error_kind=kind, retry_after_s=retry_after)
+        for i, h in enumerate(hits):
+            h["_seq"] = offset + i  # GLOBAL position, so cross-page ordering keys stay total
+        next_cursor = str(offset + len(hits)) if len(hits) == size else None
+        return QueryResult(reachable=True, events=hits,
+                           complete=next_cursor is None, next_cursor=next_cursor)
+
     def query(self, cid: str, *, since_us: int, until_us: int) -> QueryResult:
         try:
             base, org, auth = self._endpoint()
-        except ValueError:
-            return QueryResult(reachable=False)
+        except ValueError as exc:
+            return QueryResult(reachable=False, error=f"{type(exc).__name__}: {exc}")
         # SELECT * so whole rows come back: arbitrary fields (verdict, level, …) for gate
         # `where:` filters and `_timestamp` for `must_order`. The cid is a single-quoted SQL
         # string literal, so it is escaped by doubling embedded quotes — it can never break
@@ -121,13 +170,19 @@ class OpenObserveBackend:
                     # `absent` (reachable=True, 0 events). Mirrors ship()'s _raise_for_status.
                     _raise_for_status(r)
                     hits = json.loads(r.read().decode()).get("hits", [])
-            except Exception:
+            except Exception as exc:
                 # A failure mid-paging means we don't have the complete set: if we already
                 # have some rows it's an incomplete read, else fully unreachable.
+                err = f"{type(exc).__name__}: {exc}"
+                kind, retry_after = classify_http_error(exc)
                 if offset == 0:
-                    return QueryResult(reachable=False)
-                return QueryResult(reachable=True, events=events, complete=False)
-            events.extend(hits)
+                    return QueryResult(reachable=False, error=err,
+                                       error_kind=kind, retry_after_s=retry_after)
+                return QueryResult(reachable=True, events=events, complete=False, error=err,
+                                   error_kind=kind, retry_after_s=retry_after)
+            for h in hits:
+                h["_seq"] = len(events)  # deterministic tie-break: preserve server return order
+                events.append(h)
             if len(hits) < self.page_size:
                 break  # short page → the result set is exhausted (complete read)
             offset += len(hits)

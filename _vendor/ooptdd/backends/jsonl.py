@@ -19,11 +19,17 @@ reachable/complete 정직:
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import time
 
 from .base import BackendCaps, QueryResult
+
+# process-global monotonic sequence per shipped event — breaks same-batch wall-clock ties (see
+# backends/memory.py). Survives across ships; a fresh process restarts at 0 (fine, ordering is
+# only compared within one query's events).
+_SEQ = itertools.count()
 
 
 class JsonlBackend:
@@ -33,7 +39,8 @@ class JsonlBackend:
     default_future_buffer_s = 0
     queryable = True
     # 전체 파일을 한 번에 읽어 Python 에서 필터 → 항상 complete (paging 없음), where 는 상위에서.
-    caps = BackendCaps(queryable=True, paginates=False, supports_where=True)
+    caps = BackendCaps(queryable=True, paginates=False, supports_where=True,
+                       independent=False)  # same-host author-writable file: not an external judge
 
     def __init__(
         self,
@@ -61,10 +68,13 @@ class JsonlBackend:
         parent = os.path.dirname(self.path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        # append-only: 한 줄 = {_stored_us, ev}. ensure_ascii=False 로 한글 보존.
+        # append-only: 한 줄 = {_stored_us, _stored_seq, ev}. ensure_ascii=False 로 한글 보존.
         with open(self.path, "a", encoding="utf-8") as f:
             for ev in events:
-                f.write(json.dumps({"_stored_us": now_us, "ev": ev}, ensure_ascii=False) + "\n")
+                seq = next(_SEQ)
+                stored = ev if "_emit_seq" in ev else {**ev, "_emit_seq": seq}
+                rec = {"_stored_us": now_us, "_stored_seq": seq, "ev": stored}
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     def query(self, cid: str, *, since_us: int, until_us: int) -> QueryResult:
         try:
@@ -84,9 +94,11 @@ class JsonlBackend:
             except json.JSONDecodeError:
                 continue  # 동시 append 의 부분 마지막 줄 등은 관대히 skip
             ts = rec.get("_stored_us", 0)
+            seq = rec.get("_stored_seq", 0)
             ev = rec.get("ev", {})
             ev_cid = ev.get("cid") or ev.get("correlation_id") or ev.get("cycle_id") or ""
             if ev_cid == cid and since_us <= ts <= until_us:
-                # store-receive time 을 _timestamp 로 스탬프 (must_order 통일, memory/OO 와 동일).
-                hits.append({**ev, "_timestamp": ts})
+                # store-receive time 을 _timestamp 로 스탬프 (must_order 통일, memory/OO 와 동일);
+                # _seq 로 같은-배치(동일 ts) 이벤트의 순서를 보존해 tie-blindness 를 깬다.
+                hits.append({**ev, "_timestamp": ts, "_seq": seq})
         return QueryResult(reachable=True, events=hits, complete=True)

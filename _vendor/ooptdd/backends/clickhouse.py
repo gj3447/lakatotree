@@ -35,10 +35,15 @@ import os
 import urllib.parse
 import urllib.request
 
-from .base import QueryResult, _raise_for_status
+from .base import BackendCaps, QueryResult, _raise_for_status, classify_http_error
 
 
 class ClickHouseBackend:
+    #: single bounded read (LIMIT max_rows+1 sentinel -> honest `complete`), no paging.
+    #: Blind window: async_insert buffering (async_insert_busy_timeout_ms band, 200-1000ms)
+    #: — a just-inserted row may not be SELECTable until the buffer flushes.
+    caps = BackendCaps(queryable=True, paginates=False, supports_where=True,
+                       query_visibility_delay_ms=1000)
     default_lookback_s = 3600
     default_future_buffer_s = 300  # +5 min: absorb receive-time / clock-skew race
 
@@ -107,11 +112,35 @@ class ClickHouseBackend:
         with self._post({"database": self.database}, body, headers) as r:
             _raise_for_status(r)  # a dropped INSERT must be a loud ship failure, not silent
 
+    def query_spec(self, spec) -> QueryResult:
+        """Typed read surface. Without ``limit``/``cursor`` this delegates to the
+        read-to-completion :meth:`query`. With ``limit`` it serves ONE bounded page:
+        ClickHouse has no cursor primitive, but ``LIMIT n OFFSET k`` over the driver's
+        fixed ordering is exact, so the cursor is an opaque decimal offset."""
+        if spec.limit is None and spec.cursor is None:
+            return self.query(spec.cid, since_us=spec.window.since_us,
+                              until_us=spec.window.until_us)
+        try:
+            offset = int(spec.cursor or 0)
+        except ValueError:
+            raise ValueError(f"clickhouse cursor must be a decimal offset, "
+                             f"got {spec.cursor!r}") from None
+        limit = int(spec.limit or self.max_rows)
+        return self._read(spec.cid, spec.window.since_us, spec.window.until_us,
+                          limit=limit, offset=offset)
+
     def query(self, cid: str, *, since_us: int, until_us: int) -> QueryResult:
+        """Read to completion (the legacy two-method contract, unchanged)."""
+        return self._read(cid, since_us, until_us)
+
+    def _read(self, cid: str, since_us: int, until_us: int, *,
+              limit: int | None = None, offset: int = 0) -> QueryResult:
+        paged = limit is not None
+        cap = limit if paged else self.max_rows
         try:
             base = self._base()  # noqa: F841 — validates config before the network call
-        except ValueError:
-            return QueryResult(reachable=False)
+        except ValueError as exc:
+            return QueryResult(reachable=False, error=f"{type(exc).__name__}: {exc}")
         # SELECT * (whole rows) with a *parameterized* cid — injection-safe. Time-window
         # bounding is store-receive-stamped; the cid is the real discriminator (one cid per
         # run), matching the OpenObserve driver. FORMAT JSON yields {"data":[...]}.
@@ -119,11 +148,16 @@ class ClickHouseBackend:
         # is incomplete (surfaced as complete=False) instead of unbounded-loading or silently
         # returning a subset. The cid stays a parameter (injection-safe).
         sql = (f"SELECT * FROM {self.table} WHERE cycle_id = {{cid:String}} "
-               f"LIMIT {self.max_rows + 1} FORMAT JSON")
+               f"AND _timestamp >= fromUnixTimestamp64Micro({{since:Int64}}) "
+               f"AND _timestamp <= fromUnixTimestamp64Micro({{until:Int64}}) "
+               f"LIMIT {cap if paged else self.max_rows + 1}"
+               f"{f' OFFSET {offset}' if paged else ''} FORMAT JSON")
         params = {
             "database": self.database,
             "query": sql,
             "param_cid": cid,
+            "param_since": since_us,
+            "param_until": until_us,
             "default_format": "JSON",
         }
         headers = {**self._headers(), "Content-Type": "text/plain; charset=utf-8"}
@@ -131,12 +165,14 @@ class ClickHouseBackend:
             with self._post(params, b"", headers) as r:
                 _raise_for_status(r)
                 payload = json.loads(r.read().decode())
-        except Exception:
-            return QueryResult(reachable=False)
+        except Exception as exc:
+            kind, retry_after = classify_http_error(exc)
+            return QueryResult(reachable=False, error=f"{type(exc).__name__}: {exc}",
+                               error_kind=kind, retry_after_s=retry_after)
         data = payload.get("data", [])
-        complete = len(data) <= self.max_rows
+        complete = len(data) <= cap
         events = []
-        for row in data[:self.max_rows]:
+        for row in data[:cap]:
             # rows carry the original envelope in `data`; unwrap it so `where`/counts see
             # the real fields. A row without `data` (custom schema) is passed through as-is.
             raw = row.get("data") if isinstance(row, dict) else None
@@ -148,5 +184,9 @@ class ClickHouseBackend:
             else:
                 ev = dict(row)
             ev.setdefault("_timestamp", row.get("_timestamp") if isinstance(row, dict) else None)
+            ev["_seq"] = offset + len(events)  # GLOBAL position: total across pages
             events.append(ev)
-        return QueryResult(reachable=True, events=events, complete=complete)
+        next_cursor = str(offset + len(events)) if paged and len(events) == cap else None
+        return QueryResult(reachable=True, events=events,
+                           complete=complete if not paged else next_cursor is None,
+                           next_cursor=next_cursor)

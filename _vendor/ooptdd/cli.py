@@ -1,9 +1,11 @@
 """``ooptdd`` command line — stateless, single-shot wrappers over the library.
 
     ooptdd verify <cid> [--gate spec.yaml] [--backend memory] [--expect-total N]
-    ooptdd gate <spec.yaml> [--backend memory]
+    ooptdd gate <spec.yaml> [--backend memory] [--report junit|md] [--report-out path]
     ooptdd can-i-deploy <spec.yaml> [<spec.yaml> ...] [--backend memory]
     ooptdd mutate <spec.yaml> --events events.json [--min-score X]
+    ooptdd audit-rank <spec.yaml> --events events.json --report report.json
+                      [--ranking ranking.json] [--min-ndcg X] [--lock lock.json]
     ooptdd ontology check <onto.yaml> --events events.json [--event-type T] [--closed-world]
     ooptdd ontology compat <old.yaml> <new.yaml> [--mode backward|forward|full]
     ooptdd backends list
@@ -34,7 +36,7 @@ import sys
 from . import __version__
 from .backends import default_registry, get_backend
 from .config import from_mapping, load_pyproject
-from .domain.model import signature_status, verify_chain
+from .domain.model import ENVELOPE_SCHEMA, signature_status, verify_chain
 from .domain.ontology import Ontology, check_conformance, ontology_compat
 from .domain.ports import backend_caps
 from .engine.gate import (
@@ -47,7 +49,12 @@ from .engine.gate import (
     strength_fingerprint,
 )
 from .engine.verify import verify_gate, verify_trace
-from .mutation import mutation_report
+from .mutation import (
+    mutation_report,
+    ranked_kills,
+    verify_audit_ranking,
+    verify_mutation_lock,
+)
 
 
 def _settings(args):
@@ -128,7 +135,21 @@ def _cmd_gate(args) -> int:
     backend = _backend(args)
     spec = load_gate(args.spec)
     res = evaluate(backend, spec, probe=_resolve_probe(spec))
-    print(json.dumps(res, ensure_ascii=False, indent=2))
+    if getattr(args, "report", None):
+        from .reports import RENDERERS, to_junit_xml
+        if args.report == "junit":
+            rendered = to_junit_xml(
+                res, inconclusive=getattr(args, "junit_inconclusive", "skipped"))
+        else:
+            rendered = RENDERERS[args.report](res)
+        if getattr(args, "report_out", None):
+            with open(args.report_out, "w", encoding="utf-8") as fh:
+                fh.write(rendered)
+            print(f"report ({args.report}) -> {args.report_out}", file=sys.stderr)
+        else:
+            print(rendered)
+    else:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
     if res.get("optional_failed"):
         print(f"WARN - optional checks failed (not gating): {res['optional_failed']}",
               file=sys.stderr)
@@ -204,14 +225,120 @@ def _cmd_can_i_deploy(args) -> int:
 def _cmd_mutate(args) -> int:
     spec = load_gate(args.spec)
     events = _load_json_file(args.events)
+    min_score = args.min_score
+    lock_info = None
+    if args.lock:
+        # Winner's-curse lock: validate BEFORE scoring, so a refused lock never even
+        # produces a number to be tempted by.
+        with open(args.spec, "rb") as f:
+            spec_bytes = f.read()
+        lock = _load_json_file(args.lock)
+        min_score, reason = verify_mutation_lock(spec_bytes, lock, args.min_score)
+        if reason is not None:
+            print(f"LOCK REFUSED - {reason}", file=sys.stderr)
+            return 2
+        lock_info = {"path": args.lock, "gate_spec_sha256": lock["gate_spec_sha256"],
+                     "min_score": min_score}
     report = mutation_report(events, spec)
+    if lock_info is not None:
+        report["lock"] = lock_info
     _emit(report, args,
-          f"mutation score={report['score']} survivors={report['survivors']} "
-          f"(baseline_green={report['baseline_green']})")
+          f"mutation score={report['score']} n={report['n']} "
+          f"survivors={report['survivors']} (baseline_green={report['baseline_green']})")
     if not report["baseline_green"]:
         return 2  # couldn't even establish a baseline — the score is meaningless
-    if args.min_score is not None and report["score"] < args.min_score:
+    if report.get("canary_survived"):
+        # the gate passed on an EMPTY stream: vacuous by MEASUREMENT — the score grades
+        # nothing. Same rung as the static vacuity findings: inconclusive, never a pass.
+        print("INCONCLUSIVE - the drop-all canary survived: the gate passes on an empty "
+              "stream (no gating positive expectation); fix the gate before scoring it",
+              file=sys.stderr)
+        return 2
+    if report["n"] == 0:
+        # No derivable mutants (e.g. a trajectory-only gate: tool_calls/forbidden_tools/
+        # aggregate are excluded from count mutation). score defaults to 1.0 — a VACUOUS
+        # perfect, not a measured one. Never let --min-score read that as "strong" (grill
+        # MEDIUM-6): it is inconclusive, exit 2, not a clean pass.
+        if min_score is not None:
+            print("INCONCLUSIVE - no mutants derivable for this gate's predicates; the "
+                  "score is vacuous (n=0), not a measured discriminating power",
+                  file=sys.stderr)
+            return 2
+        return 0
+    if min_score is not None and report["score"] < min_score:
         return 1  # gate too weak: it let mutants through
+    return 0
+
+
+def _cmd_audit_rank(args) -> int:
+    """nDCG gate over an audited kill ranking (front A4). The pipeline stance: refuse
+    unaudited rankings (exit 2, no number) BEFORE grading; grade only what the
+    id-sequence layer authenticated. nDCG itself cannot see equal-relevance permutations
+    — the authentication layer is the integrity defence, the number grades mixed-order
+    quality only."""
+    spec = load_gate(args.spec)
+    events = _load_json_file(args.events)
+    lock_info = None
+    if args.lock:
+        # A3's winner's-curse lock, reused as the spec pin: schema + gate sha must bind.
+        # The lock's min_score governs `mutate`; the nDCG threshold here is --min-ndcg
+        # (default 1.0 — maximal, so there is no headroom to re-pick it downward
+        # invisibly).
+        with open(args.spec, "rb") as f:
+            spec_bytes = f.read()
+        lock = _load_json_file(args.lock)
+        _, reason = verify_mutation_lock(spec_bytes, lock)
+        if reason is not None:
+            print(f"LOCK REFUSED - {reason}", file=sys.stderr)
+            return 2
+        lock_info = {"path": args.lock, "gate_spec_sha256": lock["gate_spec_sha256"]}
+    report = _load_json_file(args.report)
+    if not isinstance(report, dict):
+        print("RANKING REFUSED - report file is not a mutation report object", file=sys.stderr)
+        return 2
+    if args.min_ndcg is not None and args.min_ndcg != args.min_ndcg:  # NaN
+        # `x < nan` is always False, which would silently disable the RED rung.
+        print("RANKING REFUSED - --min-ndcg is NaN: the threshold grades nothing",
+              file=sys.stderr)
+        return 2
+    # Report-level rungs mirror `mutate`: a ranking over an audit that graded nothing is
+    # itself nothing. Every refusal exits 2 before an nDCG value exists.
+    if not report.get("baseline_green"):
+        print("RANKING REFUSED - baseline_green is false: the underlying audit had no valid "
+              "baseline, so its rows rank nothing", file=sys.stderr)
+        return 2
+    if report.get("canary_survived"):
+        print("RANKING REFUSED - the drop-all canary survived: the audited gate is vacuous "
+              "by measurement; its kill list is not evidence", file=sys.stderr)
+        return 2
+    if report.get("score_status") != "measured" or not report.get("mutations"):
+        print("RANKING REFUSED - the audit measured nothing (n=0 or score_status != "
+              "'measured'); there is no ranking to certify", file=sys.stderr)
+        return 2
+    published_ids = None
+    if args.ranking:
+        raw = _load_json_file(args.ranking)
+        if not isinstance(raw, list):
+            print("RANKING REFUSED - ranking file must be a JSON list of mutation_ids "
+                  "(or objects carrying mutation_id)", file=sys.stderr)
+            return 2
+        published_ids = [item.get("mutation_id") if isinstance(item, dict) else item
+                         for item in raw]
+    res = verify_audit_ranking(report, spec, events, published_ids)
+    if not res["ok"]:
+        print(f"RANKING REFUSED - {res['reason']}", file=sys.stderr)
+        return 2
+    payload = {"ndcg": res["ndcg"], "min_ndcg": args.min_ndcg, "n": res["n"],
+               "order_sensitive": res["order_sensitive"],
+               "ranking_source": "file" if args.ranking else "report-order",
+               "ranked": ranked_kills(report)}
+    if lock_info is not None:
+        payload["lock"] = lock_info
+    _emit(payload, args,
+          f"audit-rank ndcg={res['ndcg']} n={res['n']} "
+          f"order_sensitive={res['order_sensitive']} (min_ndcg={args.min_ndcg})")
+    if res["ndcg"] < args.min_ndcg:
+        return 1  # measured RED: an authenticated ranking demoted kills below survivors
     return 0
 
 
@@ -254,8 +381,12 @@ def _cmd_backends(args) -> int:
         return 0
     res = backend.query("__ooptdd_doctor_probe__", since_us=0, until_us=1)
     info["reachable"] = res.reachable
-    _emit(info, args, f"{'OK' if res.reachable else 'UNREACHABLE'} — {info['backend']} "
-          f"reachable={res.reachable}")
+    info["error"] = getattr(res, "error", None)  # WHY it failed (401 vs DNS vs unconfigured)
+    human = (f"{'OK' if res.reachable else 'UNREACHABLE'} — {info['backend']} "
+             f"reachable={res.reachable}")
+    if info["error"]:
+        human += f" ({info['error']})"
+    _emit(info, args, human)
     return 0 if res.reachable else 2
 
 
@@ -267,9 +398,9 @@ def _cmd_monitor(args) -> int:
     res = evaluate(backend, load_gate(args.spec))
     view = {"cid": res["cid"], "ok": res["ok"], "reachable": res["reachable"],
             "complete": res.get("complete", True),
-            "checks": [{"label": c.get("event") or next((k for k in
+            "checks": [{"label": c.get("label") or c.get("event") or next((k for k in
                         ("present", "absent", "must_order", "conforms", "heartbeat", "ratio",
-                         "invariant")
+                         "invariant", "tool_calls", "forbidden_tools", "aggregate")
                         if k in c), "check"),
                         "verdict": c.get("verdict"), "settled_at": c.get("settled_at"),
                         "passed": c["passed"]} for c in res["checks"]]}
@@ -303,10 +434,15 @@ _GATE_SCHEMA = """gate spec (gates/*.yaml) — keys:
   expect:                       # the list of checks
     - {event: NAME, op: ">="|">"|"=="|"!="|"<="|"<"|gte|gt|eq|ne|lte|lt, count|target: N}
     - {event: NAME, where: {field: value, ...}}      # partial-dict field filter
+    #   a where value may be an op-dict: {field: {op: gte|gt|eq|ne|lte|lt|contains|
+    #   not_contains, value: V}} — missing field never matches (fail-safe)
+    - {duration: {event: E, field: elapsed_s, op: lte, target: 1.5, where: {...}}}
+    #   UNIVERSAL threshold: every matched event's field must satisfy; 0 matches != pass
     - {present: [{event: A}, {event: B, where: {...}}]}   # subset, any order
     - {absent: {where: {level: ERROR}}}              # forbid wing (a.k.a. forbid:)
     - {must_order: [a, b, c], within_s: S}           # sequencing (a.k.a. trajectory:)
-    - {heartbeat: NAME, every_s: S}                  # liveness
+    - {heartbeat: NAME, every_s: S, edge_silence: false}  # liveness (inter-beat; opt-in
+                                                     #   edge_silence policies start/end silence)
     - {ratioMetric: {good: {...}, total: {...}}, op: gte, target: 0.99}
     - {invariant: {left: {reduce: sum, field: amount, event: A},   # cross-event conservation
                    right: {reduce: count|sum|min|max|last, field: F, event: B},
@@ -317,9 +453,19 @@ _GATE_SCHEMA = """gate spec (gates/*.yaml) — keys:
                                                      #   the trace) — needs evaluate(probe=...)
     - {conforms: EVENTTYPE, closed_world: true}      # ontology conformance
     - {indicatorRef: NAME}  with top-level indicators: {NAME: {event:.., where:..}}
+    - {tool_calls: {expected: [search, {name: t, args: {...}}],  # agent trajectory:
+                    match: subset|ordered|exact, compare: [name, args]}}  # arrived tool calls
+    - {forbidden_tools: [rm, delete_db]}             # arrival of a forbidden tool = RED
+    - {forbidden_tool_calls: [{name: shell, args: {command: {contains_any: [rm -rf]}}}]}
+                                                     # matching tool+args arrival = RED
+    - {aggregate: {fn: sum|max|min|avg, attr: F, target: N, event: E}}  # rollup budget
   optional: true / pending: true / weight: N    (per-check modifiers)
   cid: ... | cid_env: OOPTDD_CID | timeWindow: 1h | threshold: 0.9
   require_corroboration: true    # single-authority gate (no separate-source external:) -> RED
+  require_independent_store: true # green on a non-independent store (memory/jsonl) w/o
+                                 #   corroboration -> RED (see docs/THREAT_MODEL.md)
+  pin_service: NAME              # events must carry this service (provenance pin)
+  require_signature: true        # events must carry a valid HMAC chain (see verify-chain)
   forbid_errors: true | error_levels: [ERROR, CRITICAL] | allow_errors: [{event: ..}]
 """
 _ONTOLOGY_SCHEMA = """ontology file (yaml) — shape:
@@ -333,6 +479,9 @@ _ONTOLOGY_SCHEMA = """ontology file (yaml) — shape:
 
 
 def _cmd_schema(args) -> int:
+    if args.kind == "envelope":  # the machine-readable wire contract — emit the schema doc itself
+        print(json.dumps(ENVELOPE_SCHEMA, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
     text = _ONTOLOGY_SCHEMA if args.kind == "ontology" else _GATE_SCHEMA
     if getattr(args, "json", False):
         print(json.dumps({"kind": args.kind, "doc": text}, ensure_ascii=False, indent=2))
@@ -362,6 +511,13 @@ def main(argv=None) -> int:
     g = sub.add_parser("gate", help="evaluate a YAML gate spec")
     g.add_argument("spec")
     g.add_argument("--backend")
+    g.add_argument("--report", choices=["junit", "md"],
+                   help="render a CI report instead of raw JSON (junit XML / markdown)")
+    g.add_argument("--report-out", help="write the report to this path (default: stdout)")
+    g.add_argument("--junit-inconclusive", choices=["skipped", "error"], default="skipped",
+                   help="JUnit INFRA policy: skipped (default; ? never renders as red) or "
+                        "error (fail-closed <error type=ooptdd.inconclusive> for pipelines "
+                        "that must not let an unverified run scroll past)")
     g.set_defaults(func=_cmd_gate)
 
     ln = sub.add_parser("lint", help="static strength audit of a gate spec (catch vacuous gates)")
@@ -386,8 +542,27 @@ def main(argv=None) -> int:
     m.add_argument("spec")
     m.add_argument("--events", required=True, help="JSON file: the baseline event list")
     m.add_argument("--min-score", type=float, help="fail (exit 1) if the score is below this")
+    m.add_argument("--lock", help="winner's-curse lock JSON (ooptdd-mutation-lock/v1): binds "
+                   "the threshold to a pre-committed gate spec sha; a conflicting --min-score "
+                   "or a moved spec is refused (exit 2) instead of re-picked")
     _add_json(m)
     m.set_defaults(func=_cmd_mutate)
+
+    ar = sub.add_parser("audit-rank", help="authenticate + nDCG-grade a mutation-kill ranking "
+                        "(refuses unaudited rankings)")
+    ar.add_argument("spec")
+    ar.add_argument("--events", required=True, help="JSON file: the audit's baseline event list")
+    ar.add_argument("--report", required=True, help="JSON file: the `mutate --json` report "
+                    "whose ranking is under audit")
+    ar.add_argument("--ranking", help="JSON file: the published ranking (list of mutation_ids "
+                    "or {mutation_id: ...} objects); default = the report's own row order")
+    ar.add_argument("--min-ndcg", type=float, default=1.0,
+                    help="fail (exit 1) below this nDCG (default 1.0: kills may never rank "
+                         "below survivors)")
+    ar.add_argument("--lock", help="A3 lock JSON reused as the gate-spec sha pin (its "
+                    "min_score field governs `mutate`, not this gate)")
+    _add_json(ar)
+    ar.set_defaults(func=_cmd_audit_rank)
 
     o = sub.add_parser("ontology", help="event-ontology conformance / compatibility")
     osub = o.add_subparsers(dest="onto_cmd", required=True)
@@ -427,8 +602,8 @@ def main(argv=None) -> int:
     _add_json(vc)
     vc.set_defaults(func=_cmd_verify_chain)
 
-    sc = sub.add_parser("schema", help="print the gate or ontology spec cheat-sheet")
-    sc.add_argument("kind", nargs="?", choices=["gate", "ontology"], default="gate")
+    sc = sub.add_parser("schema", help="print the gate/ontology cheat-sheet or the envelope schema")
+    sc.add_argument("kind", nargs="?", choices=["gate", "ontology", "envelope"], default="gate")
     _add_json(sc)
     sc.set_defaults(func=_cmd_schema)
 

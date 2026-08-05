@@ -40,6 +40,12 @@ Spec format (``gates/*.yaml``)::
         op: ">="               #   but it IS surfaced (and an unreachable store is still
         count: 1               #   INFRA, reported via `reachable`, never a clean pass)
         optional: true
+      - tool_calls:            # agent-trajectory predicates (ooptdd.engine.trajectory):
+          expected: [search]   #   expected-vs-ARRIVED tool calls, match exact/subset/
+          match: subset        #   ordered, optional argument scoring + matchers
+      - forbidden_tools: [rm]  # arrival of a forbidden tool call = RED
+      - aggregate:             # numeric rollup budget (sum/max/min/avg of an attr)
+          {fn: sum, attr: gen_ai.usage.output_tokens, target: 50000}
     forbid_errors: true        # optional (spec-level): inject an implicit ERROR/CRITICAL
                                #   `absent` into the gate (default = env OOPTDD_FORBID_ERRORS;
                                #   set false here to opt a spec out). Levels via `error_levels:`.
@@ -51,7 +57,10 @@ backend-specific query language, so the same gate runs on memory, OpenObserve, o
 any future driver. ``where`` filters on arbitrary event fields (e.g. ``verdict``,
 ``level``) by partial-dict equality — only the listed keys must match, like
 ``pytest-structlog``'s ``log.has(evt, **ctx)``. ``must_order`` checks sequencing
-using each event's ``_timestamp`` (store-receive time); ``present`` asserts a
+using each event's ``_timestamp`` (store-receive time) — so an ordering verdict is only as
+trustworthy as the transport's order-preservation: out-of-order ingest can flip it (see
+METHODOLOGY.md "Ordering rests on store-receive time"; prefer ``invariant`` or ``external:``
+when the transport can reorder and the ordering itself is under test). ``present`` asserts a
 subset occurred in *any* order (``testfixtures.check_present(order_matters=False)``).
 
 The vocabulary (``op: gte``, ``target``, ``timeWindow``, ``indicators``/``indicatorRef``,
@@ -74,12 +83,14 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..domain.model import verify_chain
 from ..domain.ports import (
     Backend,
     Clock,
     QuerySpec,
     SystemClock,
     TimeWindow,
+    backend_caps,
     backend_identity,
     fetch,
 )
@@ -131,6 +142,13 @@ def check(*keys: str) -> Callable[[CheckFn], CheckFn]:
     return deco
 
 
+def unregister(key: str) -> CheckFn | None:
+    """Remove a check predicate (inverse of :func:`check`); returns the handler or None. Lets a
+    test drop a custom key it registered, and makes a built-in overridable (unregister then
+    re-register) — the duplicate-key guard in ``check`` otherwise forbids it."""
+    return CHECK_REGISTRY.pop(key, None)
+
+
 _UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
@@ -149,15 +167,35 @@ def duration_s(v) -> int | None:
     return int(s)  # bare numeric string -> seconds
 
 
-def load_gate(path: str) -> dict:
+def load_gate(path: str, *, cid: str | None = None) -> dict:
     import yaml  # PyYAML (declared dependency)
 
     with open(path) as fh:
-        return yaml.safe_load(fh) or {}
+        try:
+            spec = yaml.safe_load(fh) or {}
+        except yaml.YAMLError as exc:
+            # YAMLError is NOT a ValueError, so it would escape the CLI's clean-error handler as an
+            # uncaught traceback (exit 1) — re-raise as ValueError so a malformed spec is exit 2.
+            raise ValueError(f"malformed gate spec {path}: {exc}") from exc
+    if cid is not None:
+        spec["cid"] = cid  # explicit override of the file's cid/cid_env (no monkeypatch needed)
+    return spec
+
+
+def _join_matchers(v) -> str:
+    """Label helper total over BOTH shapes `_label` is fed: a RESULT's list of names
+    (strings) and a RULE's list of matcher dicts — `",".join` on the raw value raised
+    TypeError from `ooptdd lint` on any legitimate `present:[{event: a}, ...]` spec."""
+    items = v if isinstance(v, list) else [v]
+    return ",".join(
+        str(m.get("event") or m.get("where") or m) if isinstance(m, dict) else str(m)
+        for m in items)
 
 
 def _label(chk: dict) -> str:
     """Human handle for a check (used to surface optional failures)."""
+    if "label" in chk:  # a custom check/rule may name itself; honored for both result & rule dicts
+        return str(chk["label"])
     if "external" in chk:
         return "external:" + str(chk.get("external"))
     if "metamorphic" in chk:
@@ -172,9 +210,9 @@ def _label(chk: dict) -> str:
     if "must_order" in chk:
         return "must_order:" + ">".join(chk["must_order"])
     if "present" in chk:
-        return "present:" + ",".join(chk["present"])
+        return "present:" + _join_matchers(chk["present"])
     if "absent" in chk:
-        return "absent:" + ",".join(chk["absent"])
+        return "absent:" + _join_matchers(chk["absent"])
     if "ratio" in chk:
         return f"ratio:{chk['ratio']}{chk.get('op', '')}{chk.get('want', '')}"
     if chk.get("event"):
@@ -196,8 +234,13 @@ def _truthy(v) -> bool:
 
 
 def _run(rule: dict, events: list, ctx: CheckCtx) -> dict:
+    # allow_errors is scoped to the AUTO-injected forbid_errors wing ONLY (grill F2b): it is
+    # the known-benign allowlist for the implicit ERROR/CRITICAL absent, and must NOT bleed
+    # into a USER-authored `absent:` check — a user who forbids `zdf.drop@B` means it, and the
+    # spec-level allowlist (intended for the error wing) silently exempting it is a fail-open.
+    allow = ctx.allow_errors if rule.get("_auto") == "forbid_errors" else None
     monitor = compile_check(rule, indicators=ctx.indicators, ontology=ctx.ontology,
-                            allow=ctx.allow_errors)
+                            allow=allow)
     return run_monitor(monitor, events, ctx.reachable)
 
 
@@ -239,6 +282,11 @@ def _check_invariant(events: list, rule: dict, ctx: CheckCtx) -> dict:
 @check("metamorphic")
 def _check_metamorphic(events: list, rule: dict, ctx: CheckCtx) -> dict:
     return _run(rule, events, ctx)  # within-run: pure, two matched subsets of the one stream
+
+
+@check("duration")
+def _check_duration(events: list, rule: dict, ctx: CheckCtx) -> dict:
+    return _run(rule, events, ctx)  # universal field threshold (kernel DurationMonitor)
 
 
 @check("external")
@@ -292,6 +340,7 @@ _KEY_PROBES = (
     ("conforms", "conforms"),
     ("invariant", "invariant"),
     ("metamorphic", "metamorphic"),
+    ("duration", "duration"),
     ("external", "external"),
 )
 
@@ -318,7 +367,7 @@ def _detect_check_key(rule: dict) -> str | None:
 _STRENGTH_BY_KEY = {
     "absent": "forbid", "must_order": "ordered", "ratioMetric": "ratio",
     "heartbeat": "liveness", "conforms": "conformance", "invariant": "invariant",
-    "metamorphic": "metamorphic", "external": "external",
+    "metamorphic": "metamorphic", "external": "external", "duration": "threshold",
 }
 
 # Discriminating-power weight per strength class — basis of the scalar strength score that turns
@@ -335,6 +384,9 @@ def _strength(rule: dict) -> str:
     """Discriminating-power class of a check (pure, total over every registry key + the default
     count). Low→high: existence-only < bounded < value-pinned/ordered/forbid/threshold <
     ratio/liveness/conformance."""
+    d = rule.get("strength")  # a custom check may declare its own discriminating-power class
+    if isinstance(d, str) and d:
+        return d
     key = _detect_check_key(rule)
     if key in _STRENGTH_BY_KEY:
         return _STRENGTH_BY_KEY[key]
@@ -370,10 +422,26 @@ def _rule_event_names(rule: dict) -> set[str]:
             for side in sides:
                 if isinstance(c.get(side), dict):
                     names.add(c[side].get("event"))
+    if isinstance(rule.get("duration"), dict):
+        names.add(rule["duration"].get("event"))
     names.add(rule.get("heartbeat"))
     if isinstance(rule.get("conforms"), str):
         names.add(rule["conforms"])
+    # trajectory predicates (ooptdd.engine.trajectory): they assert on tool/attr events —
+    # without this, a trajectory-only gate reports stream_coverage=0.0 and lists the very
+    # events it scored as "arrived UNOBSERVED". Default literal mirrors trajectory._DEF_EVENT
+    # (no import: trajectory imports this module, and coverage is a best-effort signal).
+    if isinstance(rule.get("tool_calls"), dict):
+        names.add(rule["tool_calls"].get("event", "gen_ai.execute_tool"))
+    if "forbidden_tools" in rule:
+        names.add(rule.get("event", "gen_ai.execute_tool"))
+    if "forbidden_tool_calls" in rule:
+        names.add(rule.get("event", "gen_ai.execute_tool"))
+    if isinstance(rule.get("aggregate"), dict):
+        names.add(rule["aggregate"].get("event"))
     names.add(rule.get("event"))
+    for n in rule.get("events") or []:  # a custom check may declare the event names it asserts on
+        names.add(n if isinstance(n, str) else None)
     return {n for n in names if isinstance(n, str) and n}
 
 
@@ -381,6 +449,8 @@ def _check_charged(chk: dict) -> bool:
     """Did a check actually SEE matching evidence (positive confirmation), vs pass on absence /
     emptiness? The charge-ratio over gating checks measures how much of a green is backed by
     observed events rather than by nothing happening — distinct from stream-coverage."""
+    if "charged" in chk:  # a custom handler may report its own charge (present only if it set it;
+        return bool(chk["charged"])  # the engine's own chk['charged'] is assigned AFTER this call)
     if "got" in chk:
         return chk["got"] > 0
     if "present" in chk:
@@ -425,6 +495,7 @@ def evaluate(
     ontology=None,
     clock: Clock | None = None,
     probe=None,
+    cid: str | None = None,
 ) -> dict:
     """Run a gate spec once: read the backend, then judge the events.
 
@@ -444,7 +515,7 @@ def evaluate(
     This function owns the *read*; :func:`evaluate_events` owns the *judgement* and is the
     seam the arrival-poller (:func:`ooptdd.engine.verify.verify_gate`) reuses per poll.
     """
-    cid = _resolve_cid(spec)
+    cid = cid if cid is not None else _resolve_cid(spec)  # kwarg overrides spec cid/cid_env
     if ontology is None and spec.get("ontology"):
         from ..domain.ontology import Ontology  # file-first; offline, no KG dependency
         ontology = Ontology.from_file(spec["ontology"])
@@ -463,6 +534,12 @@ def evaluate(
         # emit provenance: WHO/WHERE these events came from — stamped into oracle{} (so a green
         # is never a SILENT self-agreement) and used to demote a probe that re-reads this endpoint.
         emit_backend=type(backend).__name__, emit_identity=backend_identity(backend),
+        # is the store an INDEPENDENT judge (not the SUT's own in-process/same-host writer)?
+        # Read from the driver's typed caps — this is what makes `require_independent_store` a
+        # real gate instead of dead data (grill A1: caps.independent was never consulted).
+        emit_independent=backend_caps(backend).independent,
+        # a sampled store cannot prove cross-event causal claims — evidence_tier caps on it
+        emit_sampled=backend_caps(backend).samples,
     )
 
 
@@ -477,6 +554,8 @@ def evaluate_events(
     probe=None,
     emit_backend: str | None = None,
     emit_identity: str | None = None,
+    emit_independent: bool | None = None,
+    emit_sampled: bool = False,
 ) -> dict:
     """Judge an already-fetched event set against a gate spec (no I/O).
 
@@ -497,6 +576,15 @@ def evaluate_events(
     # override with `forbid_errors: false` (opt out) or exempt known-benign ones via
     # `allow_errors:`. Without it, a cycle whose good events all arrived but which also
     # logged an error reads as green-and-noisy — the field-error blind spot.
+    # allow_errors entries exempt known-benign errors from the forbid wing — but an entry
+    # with neither `event` nor `where` matches EVERY event and silently disables the whole
+    # negative wing (grill F2a). That is never a legitimate allowlist; it is a fail-open, so
+    # it is a loud spec error, not a silent green.
+    for a in (spec.get("allow_errors") or []):
+        if not isinstance(a, dict) or not (a.get("event") or a.get("where")):
+            raise ValueError(
+                f"allow_errors entry {a!r} matches every event (no event/where) — it would "
+                "disable the entire negative wing; name the benign error explicitly")
     fe = spec.get("forbid_errors")
     if fe is None:
         fe = _truthy(os.getenv("OOPTDD_FORBID_ERRORS"))
@@ -504,6 +592,15 @@ def evaluate_events(
         levels = spec.get("error_levels") or ["ERROR", "CRITICAL"]
         rules.append({"absent": [{"where": {"level": lv}} for lv in levels],
                       "_auto": "forbid_errors"})
+    # pin_service (opt-in spec key): assert every counted event carries service==<value>, so a
+    # service-drifted or service-missing emitter reds the gate. Injected as a conservation
+    # invariant — count(all) == count(where service==pinned) — reusing the existing monitor.
+    ps = spec.get("pin_service")
+    if ps:
+        rules.append({"invariant": {"left": {"reduce": "count"},
+                                    "right": {"where": {"service": ps}, "reduce": "count"},
+                                    "op": "=="},
+                      "label": f"pin_service={ps}", "_auto": "pin_service"})
     # Dispatch each rule through the check-predicate registry (the extension seam):
     # detect the rule's predicate keyword, look up its handler (else the default count
     # check). A check passes only over a *clean* read — reachable AND complete; a truncated
@@ -517,6 +614,15 @@ def evaluate_events(
         key = _detect_check_key(rule)
         handler = CHECK_REGISTRY[key] if key is not None else _eval_count
         chk = handler(events, rule, ctx)
+        # Enforce the check-result contract at the seam (not as a deep KeyError three sites later):
+        # every handler must return a dict carrying a bool 'passed'. Names the handler + key so a
+        # custom-check author sees exactly what to fix.
+        if not isinstance(chk, dict) or "passed" not in chk:
+            raise ValueError(
+                f"check handler {getattr(handler, '__name__', repr(handler))!r} (key={key!r}) "
+                f"returned a result without the required 'passed' key; a check result must be a "
+                f"dict with a bool 'passed'. Got: {chk!r}"
+            )
         chk["optional"] = bool(rule.get("optional", False))
         # Pact "pending pacts": a `pending` expectation is verified and surfaced but does
         # NOT gate the build — for an event whose emitter isn't wired yet. Once it passes,
@@ -524,6 +630,9 @@ def evaluate_events(
         chk["pending"] = bool(rule.get("pending", False))
         chk["weight"] = float(rule.get("weight", 1.0))  # promptfoo per-assertion weight
         chk["strength"] = _strength(rule)  # discriminating-power class (signal, not an oracle)
+        chk["kind"] = key or "count"  # stable identity for programmatic RED diagnosis
+        if "label" in rule and "label" not in chk:
+            chk["label"] = rule["label"]  # a rule-declared label follows into the result
         # A declared `separate_source=True` is DEMOTED to derived-self when the probe's own
         # derived_identity equals the emit endpoint: it provably re-read the system's own store, so
         # the independence claim is false (relocation, not corroboration). Asymmetric on purpose — a
@@ -547,7 +656,11 @@ def evaluate_events(
         checks.append(chk)
     # A check gates only if it is neither optional (#10) nor pending (Pact). Optional/pending
     # misses are surfaced separately so a silently-degraded stream never reads as clean.
-    gating = [c for c in checks if not c["optional"] and not c["pending"]]
+    # `not c.get("tautological")` excludes a failure-incapable check (e.g. `count >= 0`): it is
+    # not optional/pending, but it can never fail, so counting it as gating would let a gate whose
+    # ONLY check is `count >= 0` read GREEN while asserting nothing. `scope.total` still counts it.
+    gating = [c for c in checks
+              if not c["optional"] and not c["pending"] and not c.get("tautological")]
     # A gate must assert something that can FAIL to be a clean pass. The old `bool(checks)` guard
     # only caught ZERO checks; a gate whose every check is optional/pending (gating==0) ALSO
     # asserts nothing that can fail and must equally not be GREEN — this is the agent-loop's free
@@ -599,18 +712,64 @@ def evaluate_events(
     # single_authority SIGNAL to a GATE — a gate whose every check is the system's own self-report
     # (zero separate-source corroboration) is not a clean pass. A fixable misconfiguration (RED),
     # not inconclusive: add a separate-source `external:` or accept self-consistency by leaving OFF.
+    # THREAT SCOPE (docs/THREAT_MODEL.md): `separate_source` is the probe's self-declaration — this
+    # defends against an honest single-authority gate, NOT a SUT that supplies a colluding probe.
     rc = spec.get("require_corroboration")
     if rc is None:
         rc = _truthy(os.getenv("OOPTDD_REQUIRE_CORROBORATION"))
     rc = bool(rc)
     uncorroborated = rc and asserts_anything and corroborated == 0
+    # require_signature (spec key or env OOPTDD_REQUIRE_SIGNATURE, default OFF): promote emit
+    # PROVENANCE to a GATE, mirroring require_corroboration above. When ON, the events for this cid
+    # must form an intact tamper-evident hash chain (domain.model.sign_chain) under the key in
+    # OOPTDD_SIGNING_KEY — an unsigned injected event breaks the prev-link and a post-sign edit
+    # breaks the MAC, so a forged GREEN (a positive check satisfied by an off-chain event) is no
+    # longer a clean pass. THREAT SCOPE (docs/THREAT_MODEL.md): this authenticates a WRITER — it
+    # defends against an out-of-band tamperer, NOT a SUT that holds the signing key in its own env.
+    # This closes the gap that require_signature was ONLY enforced on the
+    # pytest-summary path (engine.verify), never on the gate path every consumer counts domain
+    # events through. Strict like that path: required-but-unverifiable (no key) or an unsigned /
+    # broken stream is `unauthenticated`, never a silent green. Backend-stamped `_*` fields (e.g.
+    # `_timestamp`, added on read after signing) are excluded from the canonical form. Keyless/OFF
+    # is unchanged — opt-in. `authenticated` is True/False when enforced, None when not.
+    rs = spec.get("require_signature")
+    if rs is None:
+        rs = _truthy(os.getenv("OOPTDD_REQUIRE_SIGNATURE"))
+    rs = bool(rs)
+    authenticated = None
+    if rs and asserts_anything:
+        sig_key = os.getenv("OOPTDD_SIGNING_KEY")
+        if sig_key:
+            chain = [{k: v for k, v in e.items() if not k.startswith("_")} for e in events]
+            authenticated = bool(verify_chain(chain, sig_key)["ok"])
+        else:
+            authenticated = False  # required but unverifiable (no key) — never a clean pass
+    unauthenticated = rs and asserts_anything and authenticated is not True
+    # require_independent_store (spec key or env OOPTDD_REQUIRE_INDEPENDENT, default OFF): promote
+    # the emit-backend independence SIGNAL to a GATE. A non-independent store (in-process `memory`,
+    # same-host author-writable `jsonl`) is the SUT judging itself — arrival there proves gate
+    # mechanics, not that the evidence reached a store the SUT couldn't just write. When ON, such a
+    # green is only clean if at least one gating check is corroborated by a separate source; else
+    # `dependent_store` (a fixable misconfiguration → RED, not inconclusive). `emit_independent` is
+    # None when unknown (a duck-typed backend with no caps) — then this cannot fire (never invents a
+    # RED from missing metadata). This is the grill-A1 fix: caps.independent stops being dead data.
+    ri = spec.get("require_independent_store")
+    if ri is None:
+        ri = _truthy(os.getenv("OOPTDD_REQUIRE_INDEPENDENT"))
+    ri = bool(ri)
+    dependent_store = (ri and asserts_anything and emit_independent is False
+                       and corroborated == 0)
     result = {
-        "ok": reachable and complete and asserts_anything and required_ok and not uncorroborated,
+        "ok": reachable and complete and asserts_anything and required_ok
+        and not uncorroborated and not unauthenticated and not dependent_store,
         "reachable": reachable,
         "complete": complete,
         "probe_reachable": probe_reachable,
         "vacuous": vacuous,
         "uncorroborated": uncorroborated,
+        "unauthenticated": unauthenticated,
+        "dependent_store": dependent_store,
+        "authenticated": authenticated,
         "cid": cid,
         "checks": checks,
         "oracle": {
@@ -626,6 +785,11 @@ def evaluate_events(
             "emit_backend": emit_backend,
             "emit_identity": emit_identity,
             "relocated": sum(1 for c in gating if c.get("demoted_same_endpoint")),
+            "signature_enforced": rs,
+            # verdict provenance: was the negative wing (forbid ERROR/CRITICAL) enforced for this
+            # run? Stamped like `enforced`/`signature_enforced` so a judge reads the posture off the
+            # receipt instead of re-deriving it from the (env-dependent) spec.
+            "forbid_errors": bool(fe),
         },
         "scope": {
             "gating": len(gating),
@@ -649,7 +813,19 @@ def evaluate_events(
     if score is not None:
         result["score"] = score
         result["threshold"] = float(threshold)
+    if emit_sampled:
+        # honest flag: this verdict was read from a SAMPLED store (see BackendCaps.samples);
+        # evidence_tier caps store-derived rungs at `arrived` on it.
+        result["sampled"] = True
     return result
+
+
+def failed_checks(result: dict) -> list[dict]:
+    """The GATING checks that failed — the RED contributors, for programmatic diagnosis. Excludes
+    optional/pending checks (they never gate ``ok``). Each carries a stable ``kind`` so a consumer
+    keys off ``c["kind"]`` instead of string-matching the raw check shape."""
+    return [c for c in result.get("checks", [])
+            if not c.get("passed") and not c.get("optional") and not c.get("pending")]
 
 
 def green_banner(result: dict) -> str:
@@ -713,6 +889,19 @@ def lint_spec(spec: dict) -> list[dict]:
                                f"{(1 - float(t)) * 100:.0f}% of expectations every run; add a "
                                "`justification:` field if this quorum is intentional."})
     for i, r in enumerate(gating):
+        # read the `target:` alias too (grill F4: VAC4 only checked count/want, so a
+        # `target: 0` gate escaped with a mere medium finding), and match the FULL tautology
+        # set the monitor now flags: `>=`(n<=0), `>`(n<0), `!=`(n<0) — counts are non-negative.
+        _op = _norm_op(str(r.get("op", ">="))) if r.get("op") else None
+        _cnt = r.get("count", r.get("target", r.get("want", 1)))
+        _taut = isinstance(_cnt, (int, float)) and (
+            (_op == ">=" and _cnt <= 0) or (_op == ">" and _cnt < 0) or (_op == "!=" and _cnt < 0))
+        if _taut:
+            out.append({"code": "VAC4", "severity": "high", "label": _label(r),
+                        "message": f"check #{i} ({_label(r)}) is `count {_op} {_cnt}` — counts are "
+                                   "non-negative, so it is always satisfied and can never fail "
+                                   "(tautology). Use `>= 1`, a `where`, or a real threshold."})
+            continue
         if _strength(r) == "existence-only":
             out.append({"code": "VAC3", "severity": "medium", "label": _label(r),
                         "message": f"check #{i} ({_label(r)}) is existence-only — proves a token "
@@ -737,6 +926,17 @@ def strength_fingerprint(spec: dict) -> dict:
         "by_strength": dict(Counter(strengths)),
         "min_threshold": threshold,
         "score": round(raw * threshold, 4),
+        # Enforcement posture (spec-declared, pure): the negative/provenance wings that DON'T
+        # show up in `expect` strength. Disabling any of these — or WIDENING the allow_errors
+        # allowlist — weakens the gate without moving the strength score, so compare_strength
+        # must diff them; this closes the hole where an agent flips `require_signature: true`
+        # to false (or drops the key) for an unchanged fingerprint.
+        "enforcement": {
+            "require_signature": bool(spec.get("require_signature")),
+            "require_corroboration": bool(spec.get("require_corroboration")),
+            "forbid_errors": bool(spec.get("forbid_errors")),
+            "allow_errors": len(spec.get("allow_errors") or []),
+        },
     }
 
 
@@ -756,6 +956,18 @@ def compare_strength(baseline: dict, current: dict) -> dict:
                 "ordered", "forbid", "value-pinned"):
         if cb.get(cls, 0) < bb.get(cls, 0):
             regs.append(f"{cls} checks dropped {bb.get(cls, 0)} -> {cb.get(cls, 0)}")
+    # Enforcement-axis downgrade: disabling a required wing (signature / corroboration /
+    # forbid_errors) or WIDENING the allow_errors allowlist weakens the gate without touching
+    # the strength score. Guarded on both sides being present so a pre-enforcement baseline
+    # (an old fingerprint JSON without this key) never false-flags.
+    be, ce = baseline.get("enforcement"), current.get("enforcement")
+    if isinstance(be, dict) and isinstance(ce, dict):
+        for axis in ("require_signature", "require_corroboration", "forbid_errors"):
+            if be.get(axis) and not ce.get(axis):
+                regs.append(f"{axis} enforcement dropped {be.get(axis)} -> {ce.get(axis)}")
+        if ce.get("allow_errors", 0) > be.get("allow_errors", 0):
+            regs.append(f"allow_errors widened {be.get('allow_errors', 0)} "
+                        f"-> {ce.get('allow_errors', 0)}")
     return {"weakened": bool(regs), "regressions": regs,
             "baseline_score": baseline["score"], "current_score": current["score"]}
 
@@ -794,7 +1006,10 @@ def evidence_tier(result: dict) -> str:
         return "external_verdict"
     passing = {c.get("strength") for c in result.get("checks", []) if c.get("passed")}
     if passing & {"invariant", "metamorphic"}:
-        return "queryable_causal"
+        # a sampled store (BackendCaps.samples) cannot prove cross-event causal claims —
+        # the causal rung caps at `arrived`. external_verdict (above) is untouched: a
+        # passing separate-source external: check bypasses the sampled store entirely.
+        return "arrived" if result.get("sampled") else "queryable_causal"
     if (scope.get("charge_ratio") or 0) > 0:
         return "arrived"
     return "emitted"

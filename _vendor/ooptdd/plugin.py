@@ -24,9 +24,31 @@ from __future__ import annotations
 import os
 import uuid
 
-from .backends import get_backend
+import pytest
+
+from .backends import get_backend, memory_reset
 from .config import Settings, from_mapping, load_pyproject
 from .engine.verify import session_finish
+
+
+@pytest.fixture
+def ooptdd_memory_reset():
+    """Clear the process-global in-memory store around a test — the reset half of the setup
+    consumers used to hand-roll. Opt-in (request it); NOT autouse, so a consumer that manages its
+    own store lifecycle is never surprised by a hidden reset."""
+    memory_reset()
+    yield
+    memory_reset()
+
+
+@pytest.fixture
+def ooptdd_cid(monkeypatch, ooptdd_memory_reset):
+    """A unique correlation id for this test, also exported as ``OOPTDD_CID`` so a gate spec using
+    ``cid_env`` resolves to it — replaces the ``monkeypatch.setenv('OOPTDD_CID', …)`` + manual
+    store-reset dance. Depends on the reset fixture, so requesting a cid also isolates the store."""
+    cid = f"test-{uuid.uuid4().hex[:12]}"
+    monkeypatch.setenv("OOPTDD_CID", cid)
+    return cid
 
 
 def pytest_addoption(parser):
@@ -42,6 +64,7 @@ def pytest_addoption(parser):
         ("ooptdd_enabled", "auto|1|0"),
         ("ooptdd_cid_env", "env var holding the correlation id"),
         ("ooptdd_retries", "arrival-poll attempts (int, default 4)"),
+        ("ooptdd_confirm_rounds", "anti-flap confirm re-reads after a green (int, default 0)"),
         ("ooptdd_delay", "initial arrival-poll delay in seconds (float, default 1.0)"),
         ("ooptdd_backoff", "arrival-poll backoff multiplier (float, default 2.0)"),
     ]:
@@ -57,6 +80,7 @@ def _settings_from_config(config) -> Settings:
         ("ooptdd_enabled", "enabled"),
         ("ooptdd_cid_env", "cid_env"),
         ("ooptdd_retries", "retries"),
+        ("ooptdd_confirm_rounds", "confirm_rounds"),
         ("ooptdd_delay", "delay"),
         ("ooptdd_backoff", "backoff"),
     ]:
@@ -154,8 +178,10 @@ def pytest_collection_finish(session):
         backend.ship([build_session_start(
             config._ooptdd_cid, service=s.service, expected_total=len(session.items)
         )])
-    except Exception:  # noqa: BLE001 — heartbeat is best-effort, never gates collection
-        pass
+    except Exception as exc:  # noqa: BLE001 — heartbeat is best-effort, never gates collection
+        # Surface the swallow (it changes what a later 'summary lost' diagnosis can conclude) —
+        # but never re-raise into collection.
+        _emit(config, [f"ooptdd session_start heartbeat not shipped: {type(exc).__name__}: {exc}"])
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -184,6 +210,8 @@ def pytest_sessionfinish(session, exitstatus):
         retries=s.retries,
         delay=s.delay,
         backoff=s.backoff,
+        confirm_rounds=s.confirm_rounds,
+        confirm_delay_s=s.confirm_delay_s,
         signing_key=signing_key,
         # enforce-if-keyed: a configured key makes unsigned receipts a failure by default,
         # unless OOPTDD_REQUIRE_SIGNATURE explicitly opts out (and keyless stays lenient).

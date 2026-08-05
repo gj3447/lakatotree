@@ -31,7 +31,13 @@ Public API:
     assert_gate, assert_present   DeepEval-style in-test trace assertions
     Backend, QueryResult, MemoryBackend
 """
-from .assertions import TraceAssertionError, assert_gate, assert_present
+from .assertions import (
+    TraceAssertionError,
+    assert_gate,
+    assert_gate_red,
+    assert_present,
+    explain,
+)
 from .backends import (
     Backend,
     BackendCaps,
@@ -43,14 +49,36 @@ from .backends import (
     SystemClock,
     TimeWindow,
     get_backend,
+    memory_reset,
 )
 from .domain import (
     semconv as _semconv,  # noqa: F401  # registers the "gen_ai" builtin preset (Ontology.register_preset)
 )
-from .domain.model import build_outcome_records
+from .domain.model import (
+    Emitter,
+    build_event,
+    build_outcome_records,
+    correlation_keys,
+    sign_chain,
+    verify_chain,
+)
 from .domain.ontology import EventType, Ontology, check_conformance
 from .domain.ports import ExternalProbe, ProbeResult
-from .engine.gate import can_i_deploy, check, evaluate, evaluate_events
+from .engine.gate import (
+    EVIDENCE_TIERS,
+    can_i_deploy,
+    check,
+    compare_strength,
+    evaluate,
+    evaluate_events,
+    evidence_tier,
+    failed_checks,
+    green_banner,
+    lint_spec,
+    load_gate,
+    strength_fingerprint,
+    unregister,
+)
 from .engine.monitor import LiveMonitorSet, compile_check
 from .engine.verify import (
     poll_until_present,
@@ -63,21 +91,38 @@ from .probes import CallableProbe, ProbeRegistry, get_probe
 
 __all__ = [
     "build_outcome_records",
+    "build_event",
+    "Emitter",
+    "correlation_keys",
     "verify_trace",
     "verify_gate",
     "poll_until_present",
     "verify_policy",
     "session_finish",
     "get_backend",
+    "memory_reset",
     "BackendRegistry",
+    "load_gate",
     "evaluate",
     "evaluate_events",
+    "evidence_tier",
+    "EVIDENCE_TIERS",
+    "green_banner",
+    "lint_spec",
+    "strength_fingerprint",
+    "compare_strength",
+    "sign_chain",
+    "verify_chain",
     "can_i_deploy",
     "check",
+    "unregister",
+    "failed_checks",
     "compile_check",
     "LiveMonitorSet",
     "assert_gate",
+    "assert_gate_red",
     "assert_present",
+    "explain",
     "TraceAssertionError",
     "Backend",
     "QueryResult",
@@ -97,4 +142,4 @@ __all__ = [
     "get_probe",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

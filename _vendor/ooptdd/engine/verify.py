@@ -44,7 +44,7 @@ from ..domain.ports import (
     fetch,
 )
 from .gate import evaluate_events
-from .monitor import stream_key
+from .monitor import SAT, stream_key
 
 #: A prefix evaluator: given the events queried this poll (stream-ordered) plus the poll
 #: context, return a settled verdict body (a dict) to stop now, or None to keep polling.
@@ -64,6 +64,8 @@ def poll_until_present(
     max_delay: float = 30.0,
     lookback_s: int | None = None,
     future_buffer_s: int | None = None,
+    confirm_rounds: int = 0,
+    confirm_delay_s: float = 1.0,
     clock: Clock | None = None,
     sleeper: Sleeper | None = None,
 ) -> dict:
@@ -85,34 +87,92 @@ def poll_until_present(
     future_buffer_s = (
         backend.default_future_buffer_s if future_buffer_s is None else future_buffer_s
     )
+    # ── arrival policy (the category-killer fix): the backend declares its blind
+    # window; a flushable store gets one best-effort flush before the first read; and
+    # ABSENT is never concluded while the wait is still inside the window (below).
+    visibility_us = backend_caps(backend).query_visibility_delay_ms * 1000
+    flush = getattr(backend, "force_flush", None)
+    flushed = False
+    if callable(flush):
+        try:
+            flushed = bool(flush())
+        except Exception:
+            flushed = False  # best-effort: a broken flush endpoint must not gate anything
+    started_us = clock.now_us()
+
+    def _stamp_arrival(body: dict, *, extended: bool, confirms: int = 0) -> dict:
+        body["arrival"] = {
+            "visibility_delay_ms": visibility_us // 1000,
+            "waited_ms": max(0, (clock.now_us() - started_us) // 1000),
+            "flushed": flushed,
+            "extended_for_visibility": extended,
+            "confirm_rounds_run": confirms,
+        }
+        return body
+
     queried_ok = False  # did *any* query round-trip succeed? (⊥ vs ? discriminator)
     attempts = max(retries, 1)
     last_events: list[dict] = []
     last_reachable = False
     last_complete = True
-    for attempt in range(1, attempts + 1):
+    last_retry_after = None  # store-sent Retry-After (throttled): honored below
+
+    def _read(attempt: int, *, final: bool):
+        nonlocal queried_ok, last_events, last_reachable, last_complete, last_retry_after
         window = TimeWindow.around_now(clock, lookback_s, future_buffer_s)
         res = fetch(backend, QuerySpec(cid=cid, window=window))
         queried_ok = queried_ok or res.reachable
+        last_retry_after = getattr(res, "retry_after_s", None)
         events = sorted(res.events, key=stream_key)
         # getattr default keeps duck-typed/older result objects (no `complete` field) working.
         complete = getattr(res, "complete", True)
         last_events, last_reachable, last_complete = events, res.reachable, complete
-        body = evaluate_prefix(
+        return evaluate_prefix(
             events, reachable=res.reachable, complete=complete,
-            queried_ok=queried_ok, attempt=attempt, final=False,
+            queried_ok=queried_ok, attempt=attempt, final=final,
         )
+
+    for attempt in range(1, attempts + 1):
+        body = _read(attempt, final=False)
         if body is not None:
             body["attempts"] = attempt
-            return body
+            return _stamp_arrival(body, extended=False)
         if attempt < attempts:
-            sleeper(min(delay * backoff ** (attempt - 1), max_delay))
+            pause = min(delay * backoff ** (attempt - 1), max_delay)
+            if last_retry_after:
+                # The store TOLD us when to come back (429/503 Retry-After): honor it
+                # instead of burning the remaining attempts inside the throttle window.
+                pause = max(pause, float(last_retry_after))
+            sleeper(pause)
+    # Blind-window guard: the budget is spent, but if the store answered and the total
+    # wait has not yet covered the store's DECLARED visibility delay, a negative settle
+    # would be judging inside the blind window — the exact conflation (ingestion lag
+    # read as absence) that killed trace-based testing as a category. Extend once past
+    # the window (bounded by the declaration, not by hope) and re-read.
+    extended = False
+    remaining_us = visibility_us - (clock.now_us() - started_us)
+    if queried_ok and remaining_us > 0:
+        extended = True
+        sleeper(remaining_us / 1_000_000)
+        body = _read(attempts, final=False)
+        if body is not None:
+            body["attempts"] = attempts
+            return _stamp_arrival(body, extended=True)
     body = evaluate_prefix(
         last_events, reachable=last_reachable, complete=last_complete,
         queried_ok=queried_ok, attempt=attempts, final=True,
     )
+    # Anti-flap confirm: a FINAL-path green passed on the last-read prefix but was
+    # not irrevocable (else it would have early-settled above) — a late offender can
+    # land right after that read. Re-read confirm_rounds extra times; any round that
+    # is no longer green WINS. RED/inconclusive terminals need no re-proof.
+    confirms_run = 0
+    while body.get("ok") and confirms_run < max(confirm_rounds, 0):
+        sleeper(confirm_delay_s)
+        confirms_run += 1
+        body = _read(attempts, final=True)
     body["attempts"] = attempts
-    return body
+    return _stamp_arrival(body, extended=extended, confirms=confirms_run)
 
 
 def verify_trace(
@@ -126,6 +186,8 @@ def verify_trace(
     max_delay: float = 30.0,
     lookback_s: int | None = None,
     future_buffer_s: int | None = None,
+    confirm_rounds: int = 0,
+    confirm_delay_s: float = 1.0,
     signing_key: str | None = None,
     require_signature: bool = False,
     clock: Clock | None = None,
@@ -141,37 +203,38 @@ def verify_trace(
     state = {"saw_start": False}
 
     def evaluate_prefix(events, *, reachable, complete, queried_ok, attempt, final):
-        if not final:
-            if not state["saw_start"] and any(
-                h.get("event") == "session_start" for h in events
-            ):
-                state["saw_start"] = True  # heartbeat seen (partial-vs-total-loss discriminator)
-            if not complete:
-                # A truncated read is incomplete evidence — it may have undercounted the
-                # outcomes, so it is never a confident verdict. Don't settle on it; keep
-                # polling (a later read may be complete). If every read stays truncated the
-                # final branch returns `inconclusive`: incomplete evidence is `?`, never `⊥`,
-                # so it must not fail strict — the same rule the gate path already applies
-                # (evaluate_events / verify_gate). Conflating a truncated read with a real
-                # miss is exactly how an infra hiccup becomes a flaky strict failure.
-                return None
-            sessions = [h for h in events if h.get("event") == "test_session"]
-            if not sessions:
-                return None  # not yet — keep polling
+        if not state["saw_start"] and any(
+            h.get("event") == "session_start" for h in events
+        ):
+            state["saw_start"] = True  # heartbeat seen (partial-vs-total-loss discriminator)
+        # A confident summary verdict needs a COMPLETE read (a truncated read may have
+        # undercounted the outcomes). This branch runs on final AND non-final so a summary
+        # that only lands on the last poll is still judged — not dropped to the absent path.
+        sessions = [h for h in events if h.get("event") == "test_session"] if complete else []
+        if sessions:
             s = sessions[0]
             outcomes = sum(1 for h in events if h.get("event") == "test_outcome")
-            reasons = []
-            # Cross-check the observed per-test outcomes against the session's own `total`
-            # (a SIGNED field — see model._SIGNED_FIELDS). On a complete read each test emits
-            # ≥1 outcome, so outcomes < total means receipts were lost in flight (partial
-            # loss). This holds even when the caller passes no expect_total, closing the
-            # "direct caller gets no partial-loss check" hole.
             declared = s.get("total")
-            if isinstance(declared, int) and outcomes < declared:
-                reasons.append(f"outcomes={outcomes}<session_total{declared}_partial_loss")
-            if expect_total is not None and declared != expect_total:
-                reasons.append(f"total={declared}!=expect{expect_total}")
+            partial = isinstance(declared, int) and outcomes < declared
             sig_status = signature_status(s, signing_key)
+            # DEFINITIVE problems — a forged signature or an expect_total mismatch is not
+            # transient and must settle NOW, never be given keep-polling grace. Computed
+            # before the partial short-circuit: `total` is attacker-controlled, so a forger
+            # could otherwise inflate it to force the partial branch and then rely on a store
+            # flap to downgrade a detected sig_invalid to inconclusive/absent (grill F6
+            # over-correction, caught in pre-commit verification).
+            mismatch = expect_total is not None and declared != expect_total
+            sig_bad = sig_status == "invalid" or (require_signature and sig_status != "valid")
+            # partial loss on a NON-final poll may be transient — the summary can be indexed
+            # before its outcomes (they arrive a poll later). Keep polling ONLY when partial
+            # is the sole, transient issue; a definitive problem above settles immediately.
+            if partial and not final and not mismatch and not sig_bad:
+                return None
+            reasons = []
+            if partial:
+                reasons.append(f"outcomes={outcomes}<session_total{declared}_partial_loss")
+            if mismatch:
+                reasons.append(f"total={declared}!=expect{expect_total}")
             if sig_status == "invalid":
                 reasons.append("sig_invalid_possible_forgery")
             elif require_signature and sig_status != "valid":
@@ -190,13 +253,18 @@ def verify_trace(
                 },
                 "reasons": reasons,
             }
+        if not final:
+            return None  # no confident summary yet — keep polling
         # final: no confident (complete) session summary ever arrived. Order matters —
-        # unreachable and truncated are both `inconclusive` (?), only a clean reachable+
-        # complete read with no summary is a real `absent` (⊥) that may fail strict.
+        # a ⊥ absent requires the LAST read to be reachable AND complete: judging a stale
+        # empty prefix from an earlier reachable poll while the last read was unreachable
+        # is exactly how a premature empty read forged a strict ⊥ (grill F5). Unreachable /
+        # truncated are both `inconclusive` (?); only a clean reachable+complete read that
+        # still shows no summary is a real `absent` (⊥) that may fail strict.
         if not queried_ok:
             verdict, reason = "inconclusive", "backend_unreachable_all_queries_failed"
-        elif not complete:
-            verdict, reason = "inconclusive", "readback_truncated_incomplete_evidence"
+        elif not reachable or not complete:
+            verdict, reason = "inconclusive", "last_read_unreachable_or_truncated_no_evidence"
         elif state["saw_start"]:
             # heartbeat arrived but the summary didn't — partial loss, distinct RCA path
             verdict, reason = "absent", "session_started_but_summary_lost"
@@ -215,7 +283,49 @@ def verify_trace(
     return poll_until_present(
         backend, cid, evaluate_prefix, retries=retries, delay=delay, backoff=backoff,
         max_delay=max_delay, lookback_s=lookback_s, future_buffer_s=future_buffer_s,
+        confirm_rounds=confirm_rounds, confirm_delay_s=confirm_delay_s,
         clock=clock, sleeper=sleeper,
+    )
+
+
+def _settled_green(result: dict) -> bool:
+    """Is this GREEN gate result *irrevocable* over the prefix — i.e. safe to settle
+    'present' on a NON-final poll?
+
+    A non-final poll sees only a prefix of the trace. A gate that is ``ok`` over that
+    prefix can still be flipped by later-arriving events whenever it carries an
+    anti-monotone check: ``absent``/``forbid`` (incl. the injected ``forbid_errors``
+    wing), an exact/upper-bound count (``==``/``<=``/``<``/``!=``), ``heartbeat``,
+    ``ratioMetric``, ``invariant``, ``metamorphic``, ``conforms`` — all of which pass
+    vacuously/provisionally on a violation-free-so-far prefix. Settling early there is
+    the forgery path the 2026-07-08 audit named (residual #1): the late violation never
+    reaches the verdict.
+
+    The kernel already answers monotonicity per check: LTL₃ ``SAT`` means "no extension
+    of this prefix can falsify" (:data:`ooptdd.engine.monitor.SAT`), and only the
+    monotone-positive automata (``>=``/``>`` counts, ``present``) ever latch it. So a
+    prefix green is settled iff every gating check reports ``verdict == SAT``. A check
+    without a kernel verdict (``external:``, custom ``@check`` predicates) is
+    conservatively treated as revocable — fail-closed. Signature enforcement
+    (``require_signature``) verifies the WHOLE hash chain, which a later off-chain event
+    still breaks, so it forbids early settle as well.
+
+    ⚠ ``must_order``/``trajectory`` (OrderMonitor) latch SAT too, but their SAT is only
+    valid for extensions appended in TIMESTAMP order — and the poller feeds prefixes in
+    INGEST order. A later-ingested event carrying an EARLIER timestamp rewrites the
+    first-occurrence map and can flip an ordered SAT to VIOL (grill F1: a real early-settle
+    forgery). So an order check is treated as revocable-by-reorder here regardless of its
+    within-prefix SAT — a gate with any gating order check must poll to the final window.
+    (The within-call batch verdict is unaffected: there the stream is timestamp-sorted.)
+    """
+    if not result["ok"]:
+        return False
+    if (result.get("oracle") or {}).get("signature_enforced"):
+        return False
+    return all(
+        c.get("verdict") == SAT and "must_order" not in c  # order SAT is not reorder-stable
+        for c in result["checks"]
+        if not c.get("optional") and not c.get("pending") and not c.get("tautological")
     )
 
 
@@ -230,6 +340,8 @@ def verify_gate(
     max_delay: float = 30.0,
     lookback_s: int | None = None,
     future_buffer_s: int | None = None,
+    confirm_rounds: int = 0,
+    confirm_delay_s: float = 1.0,
     ontology=None,
     clock: Clock | None = None,
     sleeper: Sleeper | None = None,
@@ -240,21 +352,31 @@ def verify_gate(
 
     Each poll re-judges the freshly-queried prefix with the very same monitor dispatch the
     one-shot gate uses (:func:`ooptdd.engine.gate.evaluate_events`), so a verified arrival and
-    a gate evaluation can never diverge. Returns ``{ok, verdict, gate, reasons, attempts}``
-    where ``verdict`` is present (gate GREEN), absent (reachable+complete but RED), or
-    inconclusive (never reachable, or every read truncated).
+    a gate evaluation can never diverge. A non-final poll settles GREEN only when the green is
+    *irrevocable* (every gating check latched LTL₃ SAT — see :func:`_settled_green`); a gate
+    carrying any anti-monotone check (forbid/absent, exact counts, ...) waits for the final
+    poll so a late-arriving violation still flips the verdict. Returns
+    ``{ok, verdict, gate, reasons, attempts}`` where ``verdict`` is present (gate GREEN),
+    absent (reachable+complete but RED), or inconclusive (never reachable, or every read
+    truncated).
     """
     emit_backend = type(backend).__name__
     emit_identity = backend_identity(backend)
+    emit_caps = backend_caps(backend)
 
     def evaluate_prefix(events, *, reachable, complete, queried_ok, attempt, final):
         result = evaluate_events(
             spec, events, reachable=reachable, complete=complete, ontology=ontology, cid=cid,
             probe=probe, emit_backend=emit_backend, emit_identity=emit_identity,
+            emit_independent=emit_caps.independent, emit_sampled=emit_caps.samples,
         )
         if not final:
+            # Early settle ONLY on an irrevocable green: every gating check latched LTL₃
+            # SAT (monotone-positive — no later event can falsify). A green that merely
+            # has no violation YET (an anti-monotone check passing on the prefix) keeps
+            # polling to the final attempt, so a late-arriving offender still flips it.
             return {"ok": True, "verdict": "present", "gate": result, "reasons": []} \
-                if result["ok"] else None
+                if _settled_green(result) else None
         if result["ok"]:
             verdict = "present"
         elif (not result["reachable"] or not result.get("complete", True)
@@ -273,6 +395,7 @@ def verify_gate(
     return poll_until_present(
         backend, cid, evaluate_prefix, retries=retries, delay=delay, backoff=backoff,
         max_delay=max_delay, lookback_s=lookback_s, future_buffer_s=future_buffer_s,
+        confirm_rounds=confirm_rounds, confirm_delay_s=confirm_delay_s,
         clock=clock, sleeper=sleeper,
     )
 
@@ -343,6 +466,8 @@ def session_finish(
     retries: int = 4,
     delay: float = 1.0,
     backoff: float = 2.0,
+    confirm_rounds: int = 0,
+    confirm_delay_s: float = 1.0,
     meta: dict | None = None,
     signing_key: str | None = None,
     require_signature: bool = False,
@@ -398,6 +523,7 @@ def session_finish(
     try:
         v = verify_trace(
             backend, cid, expect_total=n_total, retries=retries, delay=delay,
+            confirm_rounds=confirm_rounds, confirm_delay_s=confirm_delay_s,
             backoff=backoff, signing_key=signing_key, require_signature=require_signature,
             clock=clock, sleeper=sleeper,
         )

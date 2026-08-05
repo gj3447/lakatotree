@@ -51,7 +51,7 @@ _NUMBER = (int, float)
 # is closed (`additional_properties: false`) these are never counted as "unexpected"
 # attributes — closed-world polices the *payload* you declared, not the carrier.
 ENVELOPE_KEYS = frozenset({
-    "cid", "correlation_id", "cycle_id", "service", "level", "event",
+    "cid", "correlation_id", "cycle_id", "spec_version", "service", "level", "event",
     "_timestamp", "sig", "sig_alg", "sig_chain", "prev_sig",
     # W3C trace context (model.with_trace_context)
     "trace_id", "span_id",
@@ -250,6 +250,13 @@ def check_conformance(
     for i, ev in enumerate(events):
         name = ev.get("event")
         if not scope_all and name != event_type:
+            continue
+        # ooptdd.* framework meta-events (e.g. ooptdd.verdict from emit_verdict_event) are not
+        # part of any SUT's domain vocabulary — a closed-world DOMAIN ontology must not flag them
+        # as drift, or shipping a verdict annotation into a cid would RED a conforms gate over it.
+        # A domain ontology that deliberately declares an ooptdd.* type still validates it (get()
+        # hits below); this only exempts the UNDECLARED case.
+        if isinstance(name, str) and name.startswith("ooptdd.") and ontology.get(name) is None:
             continue
         et = ontology.get(name)
         if et is None:

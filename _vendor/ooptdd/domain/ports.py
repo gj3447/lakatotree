@@ -32,7 +32,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol, runtime_checkable
 
 
@@ -46,11 +46,24 @@ class QueryResult:
     complete:  True iff the backend returned *every* matching row for the window. False iff a
                paging/row cap was hit and the set is partial — incomplete evidence, which the
                verdict layer must not treat as a clean pass. A full read leaves this True.
+    error:     None on a clean round-trip; else a short "TypeError: msg" attribution of WHY the
+               query failed (a 401 vs a DNS failure vs an unconfigured store), so a reachable=False
+               is diagnosable instead of an anonymous outage. Never gates the verdict — advisory.
     """
 
     reachable: bool
     events: list[dict] = field(default_factory=list)
     complete: bool = True
+    error: str | None = None
+    #: typed diagnosis of WHY the query failed: rate_limited (429/503) / auth (401/403)
+    #: / timeout (408, socket timeouts) / other. Advisory, like ``error``.
+    error_kind: str | None = None
+    #: parsed ``Retry-After`` seconds when the store throttled us — the poller honors it
+    #: instead of burning retry attempts inside the throttle window.
+    retry_after_s: float | None = None
+    #: opaque continuation token from a BOUNDED ``query_spec`` page (``limit`` set and
+    #: filled): pass it back as ``QuerySpec.cursor`` for the next page. None = exhausted.
+    next_cursor: str | None = None
 
 
 # ── time: an injectable Clock port + a typed query window ───────────────────────
@@ -121,12 +134,27 @@ class BackendCaps:
     paginates:     reads to completion across pages (so ``complete`` is meaningful).
     supports_where: can filter server-side (informational; ooptdd filters in Python anyway).
     write_only:    convenience inverse of ``queryable`` for call sites that read positively.
+    independent:   the read side is a separate store the process under test cannot rewrite
+                   in-memory — the "external judge" positioning claim, as data. memory (same
+                   process) and jsonl (same-host, author-writable file) are NOT independent:
+                   they prove gate mechanics, not arrival.
+    samples:       the store (or its ingest pipeline) SAMPLES — head/tail sampling, a
+                   dropping BatchSpanProcessor, etc. A sampled store can prove SOME events
+                   arrived but not cross-event causal claims: the evidence-tier ladder caps
+                   store-derived rungs at ``arrived`` (external corroboration is untouched).
+    query_visibility_delay_ms: the store's OFFICIALLY documented ingest-to-queryable lag
+                   (its blind window). The poller never concludes ABSENT while the total
+                   wait is still inside this window — the arrival-policy guard that keeps
+                   ingestion lag from masquerading as a RED. 0 = immediately visible.
     """
 
     queryable: bool = True
     paginates: bool = False
     supports_where: bool = False
     write_only: bool = False
+    independent: bool = True
+    query_visibility_delay_ms: int = 0
+    samples: bool = False
 
 
 DEFAULT_CAPS = BackendCaps()
@@ -196,6 +224,35 @@ def backend_identity(backend) -> str:
         if url:
             return url.rstrip("/")
     return type(backend).__name__
+
+
+def fetch_all_pages(backend, spec: QuerySpec, *, max_rows: int | None = None) -> QueryResult:
+    """Walk a ``query_spec`` backend's bounded pages (``spec.limit`` per page) to
+    completion by following ``next_cursor``, concatenating events. ``max_rows`` is the
+    runaway guard: hitting it returns ``complete=False`` with the unconsumed cursor —
+    surfaced, never silent (the same honesty law as the drivers' internal caps).
+    Requires a driver that implements ``query_spec`` (raises TypeError otherwise) —
+    the legacy two-method contract has no paging to walk."""
+    query_spec = getattr(backend, "query_spec", None)
+    if not callable(query_spec):
+        raise TypeError(f"{type(backend).__name__} does not implement query_spec — "
+                        "fetch_all_pages needs the paged read surface")
+    events: list[dict] = []
+    cursor = spec.cursor
+    while True:
+        page = query_spec(replace(spec, cursor=cursor))
+        if not page.reachable:
+            return QueryResult(reachable=False, events=events, complete=False,
+                               error=page.error, error_kind=page.error_kind,
+                               retry_after_s=page.retry_after_s)
+        events.extend(page.events)
+        cursor = page.next_cursor
+        if cursor is None:
+            return QueryResult(reachable=True, events=events,
+                               complete=page.complete, error=page.error)
+        if max_rows is not None and len(events) >= max_rows:
+            return QueryResult(reachable=True, events=events[:max_rows], complete=False,
+                               next_cursor=cursor)
 
 
 def fetch(backend, spec: QuerySpec, clock: Clock | None = None) -> QueryResult:
