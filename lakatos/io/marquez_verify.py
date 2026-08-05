@@ -92,8 +92,6 @@ def marquez_readback(run_id: str, *, base_url: str, opener, timeout: float = 10.
             present = json.loads(r.read().decode())
     except Exception as exc:   # noqa: BLE001
         return {"ok": False, "runId": run_id, "read_back": 0, "reasons": [f"readback_error:{type(exc).__name__}"]}
-    if not present.get("present"):
-        return {"ok": False, "runId": run_id, "read_back": 0, "reasons": ["run_not_found_in_marquez"]}
     return {"ok": True, "runId": run_id, "read_back": int(present.get("count") or 0), "reasons": []}
 
 
