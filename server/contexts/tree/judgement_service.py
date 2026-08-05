@@ -242,7 +242,7 @@ class JudgementService:
                   WITH t, cur
                   OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
                   WHERE old.tag <> $tag
-                  SET old.verdict='former_canonical', old.verdict_source='engine',
+                  SET old.verdict='former_canonical',
                       old.current_best_pointer=false
                   SET cur.verdict='CANONICAL', cur.verdict_source='admin',
                       cur.current_best_pointer=true,
