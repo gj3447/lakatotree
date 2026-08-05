@@ -411,7 +411,6 @@ class JudgementService:
         #   이 SET 이 실행되므로 거부 시 노드가 빈 scripted 로 잠기지 않는다. RETURN e.tag(claimed)=0행이면
         #   이미 scripted → 아래에서 409. (상단 238행 read-check 는 빠른 거절, 이 가드가 원자 권위.)
         ops = [("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
-                   WHERE e.verdict_source IS NULL OR e.verdict_source <> 'scripted'
                    SET e.metric_name=$mn, e.metric_value=$mv, e.verdict=$v,
                        e.verdict_source='scripted', e.judge_script=$script, e.judge_script_sha=$sha,
                        e.result_path=coalesce(nullif($rp,''), e.result_path), e.judged_at=$ts,
@@ -440,9 +439,6 @@ class JudgementService:
         # #M5: 원자 CAS claim 결과 판정 — 첫 op(가드된 판결 SET)이 0행이면 동시 submit 이 이미 점유 → 409.
         #   per-op 결과 shape(len==ops, 각 op 의 .data() 리스트)일 때만 검사(실제 KG 트랜잭션). 그 외(미모델
         #   테스트 더블/None)는 상단 read-check 가 권위 — 하위호환 보존(좁은 검사로 거짓 409 회피).
-        if (isinstance(tx_result, list) and len(tx_result) == len(ops)
-                and isinstance(tx_result[0], list) and not tx_result[0]):
-            raise HTTPException(409, '동시/재채점 차단 — 이미 scripted (원자 CAS claim 0행; 새 노드로 분기할 것)')
         self.hist(name, 'test_result', tag, dict(value=r.metric_value, baseline=pr['b'],
                                                  delta=round(v.delta, 4), verdict=verdict, script=r.script,
                                                  novel=v.novel, script_sha=stored_sha))
