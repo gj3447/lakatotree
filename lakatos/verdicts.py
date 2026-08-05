@@ -85,9 +85,9 @@ NONPROGRESSIVE_VERDICTS = frozenset({
 # 묻는다 — 미확증을 적중으로 세면 degenerating 가지가 무기한 살고(폐기 면제) reward 가 오염된다.
 # ∴ fertility.py:22 의 novel_confirmed 게이트 정신을 그대로 — confirmed 'progressive' 만 적중.
 # (progressive_conditional/former_canonical 은 PROGRESS_VERDICTS 의 다른 용처에 그대로 남는다.)
-CONFIRMED_NOVEL_PROGRESS = frozenset({
-    "progressive",
-})
+# M3 REVERT (isolated): restore pre-fix behavior — count the broad progress axis,
+# i.e. unconfirmed progressive_conditional & former_canonical count as prediction hits again.
+CONFIRMED_NOVEL_PROGRESS = PROGRESS_VERDICTS
 
 
 def is_progress_verdict(verdict: str) -> bool:
