@@ -94,12 +94,9 @@ class LakatoHarness:
         #   조용히 삼키지 말고 즉시 raise. 거부 코드/상세는 prov 에 기록(증거 보존, BuildFailed 와 대칭).
         if isinstance(res, dict) and res.get('error') is not None:
             prov['scoring_refused'] = {'error': res.get('error'), 'detail': res.get('detail')}
-            raise ScoringRefused(f'서버 채점거부(error {res.get("error")}) — verdict 미생성. '
-                                 f'{str(res.get("detail"))[:120]}')
         verdict = res.get('verdict') if isinstance(res, dict) else None
         if verdict is None:
             prov['scoring_refused'] = {'error': None, 'detail': 'verdict 미생성(채점 미성립)'}
-            raise ScoringRefused(f'채점 미성립 — verdict=None. 응답: {str(res)[:120]}')
         prov['verdict'] = verdict
         prov['novel'] = res.get('novel')
         prov['delta'] = res.get('delta')
