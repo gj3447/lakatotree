@@ -31,8 +31,10 @@ RUNTIME_CHALLENGE_SCHEMA = "lakatotree-runtime-snapshot-challenge/v1"
 RUNTIME_SNAPSHOT_SCHEMA = "lakatotree-runtime-authority-snapshot/v1"
 RUNTIME_SIGNATURE_DOMAIN = b"lakatotree-runtime-authority-snapshot/v1\0"
 RUNTIME_EFFECT_SCOPE = "critique-history-ledger/v1"
+RUNTIME_ENVIRONMENTS = ("production", "development")
 MAX_RUNTIME_SNAPSHOT_BYTES = 64 * 1024
 MAX_SNAPSHOT_LIFETIME_SECONDS = 300
+DEVELOPMENT_MAX_SNAPSHOT_LIFETIME_SECONDS = 3600
 MAX_SNAPSHOT_AGE_SECONDS = 30
 MIN_COMMIT_MARGIN_SECONDS = 2
 
@@ -253,8 +255,10 @@ def validate_challenge(value: Any) -> dict[str, Any]:
     if challenge["schema_version"] != RUNTIME_CHALLENGE_SCHEMA:
         raise RuntimeAuthorityError("runtime challenge schema is unsupported")
     _sha(challenge["nonce"], field="nonce")
-    if challenge["environment"] != "production":
-        raise RuntimeAuthorityError("runtime challenge environment must be production")
+    if challenge["environment"] not in RUNTIME_ENVIRONMENTS:
+        raise RuntimeAuthorityError(
+            "runtime challenge environment must be production or development"
+        )
     if challenge["effect_scope"] != RUNTIME_EFFECT_SCOPE:
         raise RuntimeAuthorityError("runtime challenge effect scope is unsupported")
     _sha(challenge["boot_id"], field="boot_id")
@@ -347,6 +351,7 @@ class VerifiedRuntimeSnapshot:
     lease_postgresql_advisory_key: tuple[int, int]
     observed_at: str
     expires_at: str
+    environment: str
     authority_did: str | None = None
     storage_access_policy_file_sha256: str | None = None
 
@@ -356,6 +361,7 @@ class VerifiedRuntimeSnapshot:
         return {
             "ok": True,
             "schema_version": RUNTIME_SNAPSHOT_SCHEMA,
+            "environment": self.environment,
             "body_sha256": self.body_sha256,
             "challenge_sha256": self.challenge_sha256,
             "artifact_kind": self.artifact["kind"],
@@ -374,7 +380,13 @@ class VerifiedRuntimeSnapshot:
             "observed_at": self.observed_at,
             "expires_at": self.expires_at,
             "production_ready": False,
-            "deployment_status": "NOT_READY",
+            # A development snapshot is honestly self-labelled and keeps the
+            # production NOT_READY shape unreachable for it.
+            "deployment_status": (
+                "DEVELOPMENT_ONLY"
+                if self.environment == "development"
+                else "NOT_READY"
+            ),
             "failures": [],
         }
 
@@ -458,10 +470,18 @@ def verify_runtime_snapshot(
     outer_expiry = authority_not_after.astimezone(timezone.utc)
     observed = _time(body["observed_at"], field="observed_at")
     expires = _time(body["expires_at"], field="expires_at")
+    # The signed body environment is challenge-bound and restricted to the
+    # declared set; only development gets the longer home snapshot lifetime.
+    # Freshness (age) and the commit margin stay identical in both.
+    max_lifetime_seconds = (
+        DEVELOPMENT_MAX_SNAPSHOT_LIFETIME_SECONDS
+        if body["environment"] == "development"
+        else MAX_SNAPSHOT_LIFETIME_SECONDS
+    )
     if not (
         observed <= now < expires <= outer_expiry
         and now - observed <= timedelta(seconds=MAX_SNAPSHOT_AGE_SECONDS)
-        and expires - observed <= timedelta(seconds=MAX_SNAPSHOT_LIFETIME_SECONDS)
+        and expires - observed <= timedelta(seconds=max_lifetime_seconds)
         and expires - now >= timedelta(seconds=MIN_COMMIT_MARGIN_SECONDS)
     ):
         raise RuntimeAuthorityError("runtime snapshot is stale or exceeds its authority")
@@ -488,6 +508,7 @@ def verify_runtime_snapshot(
         ),
         observed_at=body["observed_at"],
         expires_at=body["expires_at"],
+        environment=body["environment"],
         authority_did=did_key_encode(public_key),
         storage_access_policy_file_sha256=body[
             "storage_access_policy_file_sha256"

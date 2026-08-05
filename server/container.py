@@ -30,6 +30,9 @@ from psycopg2 import DataError as PgDataError
 from psycopg2 import InterfaceError as PgInterfaceError
 from psycopg2 import IntegrityError as PgIntegrityError
 from psycopg2 import OperationalError as PgOperationalError
+from psycopg2.errors import InvalidSchemaName as PgInvalidSchemaName
+from psycopg2.errors import UndefinedColumn as PgUndefinedColumn
+from psycopg2.errors import UndefinedTable as PgUndefinedTable
 from psycopg2.pool import PoolError as PgPoolError
 
 from lakatos.io.reconcile import (
@@ -1450,7 +1453,10 @@ class AppContainer:
         except HistoryEventConflict:
             self._signal_history_divergence("runtime.history_projection.conflict")
             raise
-        except (PgOperationalError, PgInterfaceError, PgPoolError) as e:
+        # 스키마 미적용/드리프트(UndefinedTable 등)는 프로비전 미완료 — connection-down 과 동일하게
+        # OutboxEntry fail-soft (커밋 후 500 거짓실패 차단, 2026-08-03 UndefinedTable 사건)
+        except (PgOperationalError, PgInterfaceError, PgPoolError,
+                PgUndefinedTable, PgUndefinedColumn, PgInvalidSchemaName) as e:
             ts = datetime.now(timezone.utc).isoformat()
             oid = effective_event_id
             try:
@@ -2379,7 +2385,8 @@ class AppContainer:
                 )
                 if isinstance(causal_group, str):
                     blocked_causal_groups.add(causal_group)
-            except (PgOperationalError, PgInterfaceError, PgPoolError):
+            except (PgOperationalError, PgInterfaceError, PgPoolError,
+                    PgUndefinedTable, PgUndefinedColumn, PgInvalidSchemaName):
                 pg_down = True
                 break   # PG 여전히 다운 — 나머지 pending 유지(다음 sweep 재시도)
         final_rows = self.kg(

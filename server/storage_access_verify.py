@@ -236,11 +236,18 @@ def verify_pinned_storage_access(
             "ok": ok,
             "status": proof.status if ok else "NOT_READY",
             "production_ready": False,
-            "deployment_status": "NOT_READY",
+            # A verified development pair reports DEVELOPMENT_ONLY here so no
+            # consumer expecting the production NOT_READY shape accepts it.
+            "deployment_status": (
+                getattr(proof, "deployment_status", "NOT_READY")
+                if ok
+                else "NOT_READY"
+            ),
             "failures": [] if ok else list(proof.failures),
             "valid_until": valid_until,
             **(
                 {
+                    "environment": getattr(proof, "environment", None),
                     "policy_file_sha256": settings.storage_access_policy_sha256,
                     "predeploy_receipt_file_sha256": (
                         settings.storage_predeploy_receipt_sha256

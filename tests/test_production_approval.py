@@ -111,6 +111,7 @@ def _components(*, temporal_l3: bool = True):
         lease_postgresql_advisory_key=(1279349588, 20260802),
         observed_at=(NOW - timedelta(seconds=1)).isoformat(),
         expires_at=(NOW + timedelta(minutes=2)).isoformat(),
+        environment="production",
         authority_did=_DIDS["runtime"],
         storage_access_policy_file_sha256=policy_file,
     )
@@ -335,3 +336,47 @@ def test_verifier_cli_without_receipt_returns_sanitized_not_ready(
     assert report["approval_applied"] is False
     assert "signature" not in report
     assert "approver_did" not in report
+
+
+def test_development_only_storage_pair_cannot_enter_live_review():
+    storage, runtime, temporal = _components()
+    for development_storage in (
+        replace(
+            storage,
+            deployment_status="DEVELOPMENT_ONLY",
+            environment="development",
+        ),
+        replace(storage, deployment_status="DEVELOPMENT_ONLY"),
+        replace(storage, environment="development"),
+    ):
+        try:
+            build_live_review(
+                storage=development_storage,
+                runtime=runtime,
+                temporal=temporal,
+                evaluated_at=NOW,
+            )
+        except ValueError as exc:
+            assert "storage.not_verified" in str(exc)
+        else:
+            raise AssertionError(
+                "development-only storage proof entered a live review"
+            )
+
+
+def test_development_runtime_snapshot_cannot_enter_live_review():
+    storage, runtime, temporal = _components()
+    development_runtime = replace(runtime, environment="development")
+    try:
+        build_live_review(
+            storage=storage,
+            runtime=development_runtime,
+            temporal=temporal,
+            evaluated_at=NOW,
+        )
+    except ValueError as exc:
+        assert "runtime.environment_not_production" in str(exc)
+    else:
+        raise AssertionError(
+            "development runtime snapshot entered a live review"
+        )

@@ -17,17 +17,17 @@ NEO_DID = did_key_encode(ed25519_public_key(NEO_SECRET))
 EVALUATED_AT = datetime(2026, 8, 2, 0, 1, tzinfo=timezone.utc)
 
 
-def _policy():
+def _policy(*, environment="production"):
     return {
         "schema_version": access.ACCESS_POLICY_SCHEMA,
-        "environment": "production",
+        "environment": environment,
         "attestors": {"postgresql": PG_DID, "neo4j": NEO_DID},
         "predeploy_authority": {
             "fence_verifier_sha256": "f" * 64,
             "fence_public_key_hex": ed25519_public_key(FENCE_SECRET).hex(),
         },
         "postgresql": {
-            "host": "127.0.0.1",
+            "host": "192.168.0.25" if environment == "development" else "127.0.0.1",
             "port": 5432,
             "database": "lakatos",
             "owner_role": "lakatos_owner",
@@ -55,15 +55,16 @@ def _policy():
     }
 
 
-def _target_details():
+def _target_details(*, environment="production"):
+    pg_host = "192.168.0.25" if environment == "development" else "127.0.0.1"
     return {
         "postgresql": {
-            "configured_host": "127.0.0.1",
+            "configured_host": pg_host,
             "configured_port": 5432,
             "configured_database": "lakatos",
             "database": "lakatos",
             "database_oid": "16384",
-            "server_address": "127.0.0.1",
+            "server_address": pg_host,
             "server_port": 5432,
             "server_version_num": "170000",
             "system_identifier": "123456789",
@@ -77,8 +78,8 @@ def _target_details():
     }
 
 
-def _expected(*, phase="predeploy"):
-    details = _target_details()
+def _expected(*, phase="predeploy", environment="production"):
+    details = _target_details(environment=environment)
     return {
         "request_nonce": ("1" if phase == "predeploy" else "a") * 64,
         "request_sha256": "2" * 64,
@@ -356,9 +357,9 @@ def _neo_observation(*, nonce="1" * 64):
 def _signed(
     store: str, position: str, *, phase="predeploy", observation=None,
     expected=None, observed_at="2026-08-02T00:00:00+00:00",
-    expires_at="2026-08-02T00:05:00+00:00",
+    expires_at="2026-08-02T00:05:00+00:00", environment="production",
 ):
-    expected = expected or _expected(phase=phase)
+    expected = expected or _expected(phase=phase, environment=environment)
     signer_did, secret = (PG_DID, PG_SECRET) if store == "postgresql" else (NEO_DID, NEO_SECRET)
     observation = observation or (
         _pg_observation(nonce=expected["request_nonce"])
@@ -367,7 +368,7 @@ def _signed(
     )
     body = access.build_attestation_body(
         store=store, phase=phase, position=position, expected=expected,
-        environment="production", observation=observation,
+        environment=environment, observation=observation,
         target_binding=expected["target_details"][store], observed_at=observed_at,
         expires_at=expires_at, evidence_refs=[f"audit://{store}/{position}"],
         signer_did=signer_did,
@@ -519,9 +520,18 @@ def test_policy_rejects_looser_membership_and_builtin_neo_role():
         access.validate_access_policy(policy)
 
     policy = _policy()
-    policy["neo4j"]["uri"] = "bolt+s://db.example:7687"
+    policy["neo4j"]["uri"] = "bolt+s://Db.example.com:7687"
     with pytest.raises(access.StorageAccessError, match="literal IP"):
         access.validate_access_policy(policy)
+
+    policy = _policy()
+    policy["neo4j"]["uri"] = "bolt+s://dbhost:7687"
+    with pytest.raises(access.StorageAccessError, match="literal IP"):
+        access.validate_access_policy(policy)
+
+    policy = _policy()
+    policy["neo4j"]["uri"] = "bolt+s://neo4j.metahumotonic.com:7687"
+    access.validate_access_policy(policy)
 
     policy = _policy()
     policy["postgresql"]["host"] = "192.0.2.10"
@@ -759,7 +769,10 @@ def test_seal_refuses_signer_did_key_mismatch():
         access.seal_datastore_attestation(body, PG_SECRET)
 
 
-def _bundle(phase: str, expected, *, changed_store=None, expiry_overrides=None):
+def _bundle(
+    phase: str, expected, *, changed_store=None, expiry_overrides=None,
+    environment="production", observations=None,
+):
     if phase == "predeploy":
         before_at = "2026-08-02T00:00:00+00:00"
         after_at = "2026-08-02T00:00:01+00:00"
@@ -768,7 +781,7 @@ def _bundle(phase: str, expected, *, changed_store=None, expiry_overrides=None):
         before_at = "2026-08-02T00:02:00+00:00"
         after_at = "2026-08-02T00:02:01+00:00"
         expires_at = "2026-08-02T00:07:00+00:00"
-    observations = {
+    observations = observations or {
         "postgresql": _pg_observation(nonce=expected["request_nonce"]),
         "neo4j": _neo_observation(nonce=expected["request_nonce"]),
     }
@@ -787,11 +800,13 @@ def _bundle(phase: str, expected, *, changed_store=None, expiry_overrides=None):
                 store, "before", phase=phase, expected=expected,
                 observation=observations[store], observed_at=before_at,
                 expires_at=expiry_overrides.get((store, "before"), expires_at),
+                environment=environment,
             ),
             "after": _signed(
                 store, "after", phase=phase, expected=expected,
                 observation=observations[store], observed_at=after_at,
                 expires_at=expiry_overrides.get((store, "after"), expires_at),
+                environment=environment,
             ),
         }
     return access.build_storage_audit_bundle(
@@ -927,3 +942,361 @@ def test_phase_handoff_uses_earliest_expiry_of_all_predeploy_attestations():
     )
     assert result.status == "NOT_READY"
     assert "phase_handoff_window_invalid" in result.failures
+
+
+def _community_auth_settings():
+    # Community has no pluggable auth-provider settings at all; the live
+    # SHOW SETTINGS readback contains only the enabled native-auth flag.
+    return [{
+        "name": "dbms.security.auth_enabled",
+        "value": "true",
+        "startup_value": "true",
+    }]
+
+
+def _community_observation(*, nonce="1" * 64):
+    neo = _policy(environment="development")["neo4j"]
+    user_hashes = {
+        label: access.sha256_bytes(neo[f"{label}_user"].encode())
+        for label in ("audit", "migrator", "runtime")
+    }
+    empty_sha = access.sha256_bytes(access.canonical_json([]))
+    auth_settings = _community_auth_settings()
+    return {
+        "status": "OBSERVED", "failure_codes": [],
+        "facts": {
+            "database": "neo4j",
+            "challenge_nonce_sha256": access.sha256_bytes(nonce.encode()),
+            "database_name_matches": True,
+            "database_direct_local": True,
+            "database_alias_count": 0,
+            "database_alias_sha256": empty_sha,
+            "database_catalog_sha256": access.sha256_bytes(access.canonical_json([{
+                "name_sha256": access.sha256_bytes(b"neo4j"),
+                "type": "standard", "current_status": "online",
+            }])),
+            "database_id_sha256": access.sha256_bytes(b"neo4j-db-id"),
+            "edition": "community", "version": "2026.02.0",
+            "enterprise": False,
+            "community_semantics": True,
+            "rbac_available": False,
+            "current_actor_sha256": user_hashes["audit"],
+            "named_user_sha256": dict(user_hashes),
+            "named_user_suspended": {label: False for label in user_hashes},
+            "auth_settings": auth_settings,
+            "auth_settings_sha256": access.sha256_bytes(
+                access.canonical_json(auth_settings)
+            ),
+            "native_only_auth": True,
+            "system_database_id_sha256": access.sha256_bytes(b"system-db-id"),
+            "authorization_snapshot_sha256": access.sha256_bytes(
+                b"auth-projection"
+            ),
+            "authorization_snapshot_stable": True,
+            "read_query_count": access._NEO_COMMUNITY_READ_QUERY_COUNT,
+        },
+    }
+
+
+def _tamper_auth_provider_row(facts):
+    """A provider setting appearing on 'community' must fail even if the
+    self-reported digest is consistently recomputed."""
+    facts["auth_settings"].append({
+        "name": "dbms.security.authentication_providers",
+        "value": "ldap",
+        "startup_value": "ldap",
+    })
+    facts["auth_settings_sha256"] = access.sha256_bytes(
+        access.canonical_json(facts["auth_settings"])
+    )
+
+
+def test_development_policy_accepts_one_lan_literal_ip_only():
+    policy = _policy(environment="development")
+    assert access.validate_access_policy(policy)["environment"] == "development"
+
+    policy = _policy(environment="development")
+    policy["postgresql"]["host"] = "pg.internal"
+    with pytest.raises(access.StorageAccessError, match="literal IP"):
+        access.validate_access_policy(policy)
+
+    policy = _policy(environment="development")
+    policy["postgresql"]["host"] = "192.168.0.25/24"
+    with pytest.raises(access.StorageAccessError, match="literal IP"):
+        access.validate_access_policy(policy)
+
+    with pytest.raises(access.StorageAccessError, match="must be production"):
+        access.validate_access_policy(_policy(environment="staging"))
+
+    policy = _policy()
+    policy["postgresql"]["host"] = "192.168.0.25"
+    with pytest.raises(access.StorageAccessError, match="loopback"):
+        access.validate_access_policy(policy)
+
+
+def test_development_community_projection_verifies_exactly():
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="development",
+            observation=_community_observation(),
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is True
+    assert result.failures == ()
+
+
+def test_development_still_verifies_enterprise_shaped_facts_fully():
+    observation = _neo_observation()
+    accepted = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="development",
+            observation=observation,
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert accepted.ok is True
+
+    observation = _neo_observation()
+    observation["facts"]["enterprise"] = False
+    tampered = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="development",
+            observation=observation,
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert tampered.ok is False
+    assert "neo4j.enterprise" in tampered.failures
+
+
+@pytest.mark.parametrize(
+    ("mutate", "failure"),
+    (
+        (
+            lambda facts: facts.update(edition="enterprise"),
+            "neo4j.community.edition",
+        ),
+        (
+            lambda facts: facts.update(enterprise=True),
+            "neo4j.community.edition",
+        ),
+        (
+            lambda facts: facts.update(rbac_available=True),
+            "neo4j.community.rbac_available",
+        ),
+        (
+            lambda facts: facts.update(
+                challenge_nonce_sha256=access.sha256_bytes(b"0" * 64)
+            ),
+            "neo4j.challenge_binding",
+        ),
+        (
+            lambda facts: facts["named_user_sha256"].update(migrator=None),
+            "neo4j.community.named_users",
+        ),
+        (
+            lambda facts: facts["named_user_suspended"].update(runtime=True),
+            "neo4j.community.named_user_suspended",
+        ),
+        (
+            lambda facts: facts.update(read_query_count=11),
+            "neo4j.community.read_query_count",
+        ),
+        (
+            _tamper_auth_provider_row,
+            "neo4j.native_only_auth_settings",
+        ),
+        (
+            lambda facts: facts.update(authorization_snapshot_sha256="0"),
+            "neo4j.community.authorization_snapshot_digest",
+        ),
+        (
+            lambda facts: facts.update(database_alias_count=1),
+            "neo4j.database_alias",
+        ),
+        (
+            lambda facts: facts.update(version="2026.07.0"),
+            "neo4j.community.version",
+        ),
+        (
+            lambda facts: facts.update(auth_settings_sha256="0" * 64),
+            "neo4j.auth_settings_digest",
+        ),
+        (
+            lambda facts: facts.update(authorization_snapshot_stable=False),
+            "neo4j.authorization_snapshot",
+        ),
+    ),
+)
+def test_community_projection_tampering_fails_with_specific_code(mutate, failure):
+    observation = _community_observation()
+    mutate(observation["facts"])
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="development",
+            observation=observation,
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is False
+    assert failure in result.failures
+
+
+def test_community_schema_without_declared_semantics_falls_back_closed():
+    observation = _community_observation()
+    observation["facts"]["community_semantics"] = False
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="development",
+            observation=observation,
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is False
+    assert "neo4j.fact_schema" in result.failures
+
+
+def test_production_policy_never_accepts_the_community_schema():
+    result = access.verify_datastore_attestation(
+        _signed("neo4j", "before", observation=_community_observation()),
+        policy=_policy(), expected=_expected(), expected_store="neo4j",
+        expected_phase="predeploy", expected_position="before",
+        expected_signer_did=NEO_DID, evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is False
+    assert "neo4j.fact_schema" in result.failures
+
+
+def test_development_pair_is_development_only_and_never_production_ready():
+    def observations(expected):
+        return {
+            "postgresql": _pg_observation(nonce=expected["request_nonce"]),
+            "neo4j": _community_observation(nonce=expected["request_nonce"]),
+        }
+
+    predeploy_expected = _expected(phase="predeploy", environment="development")
+    predeploy_bundle = _bundle(
+        "predeploy", predeploy_expected, environment="development",
+        observations=observations(predeploy_expected),
+    )
+    predeploy_sha = access.sha256_bytes(access.canonical_json(predeploy_bundle))
+    startup_expected = _expected(phase="startup", environment="development")
+    startup_expected["previous_phase_bundle_file_sha256"] = predeploy_sha
+    result = access.verify_access_attestation_pair(
+        predeploy_bundle,
+        _bundle(
+            "startup", startup_expected, environment="development",
+            observations=observations(startup_expected),
+        ),
+        predeploy_bundle_file_sha256=predeploy_sha,
+        policy=_policy(environment="development"),
+        expected_predeploy=predeploy_expected,
+        expected_startup=startup_expected,
+        signer_dids={"postgresql": PG_DID, "neo4j": NEO_DID},
+        evaluated_at=datetime(2026, 8, 2, 0, 3, tzinfo=timezone.utc),
+    )
+    assert result.status == "ACCESS_PAIR_VERIFIED"
+    assert result.production_ready is False
+    assert result.deployment_status == "DEVELOPMENT_ONLY"
+    assert result.failures == ()
+
+
+def test_failing_development_pair_stays_not_ready_not_development_only():
+    predeploy_expected = _expected(phase="predeploy", environment="development")
+    predeploy_bundle = _bundle(
+        "predeploy", predeploy_expected, environment="development",
+    )
+    startup_expected = _expected(phase="startup", environment="development")
+    startup_expected["previous_phase_bundle_file_sha256"] = "a" * 64
+    result = access.verify_access_attestation_pair(
+        predeploy_bundle,
+        _bundle("startup", startup_expected, environment="development"),
+        predeploy_bundle_file_sha256=access.sha256_bytes(
+            access.canonical_json(predeploy_bundle)
+        ),
+        policy=_policy(environment="development"),
+        expected_predeploy=predeploy_expected,
+        expected_startup=startup_expected,
+        signer_dids={"postgresql": PG_DID, "neo4j": NEO_DID},
+        evaluated_at=datetime(2026, 8, 2, 0, 3, tzinfo=timezone.utc),
+    )
+    assert result.status == "NOT_READY"
+    assert result.production_ready is False
+    assert result.deployment_status == "NOT_READY"
+
+
+@pytest.mark.parametrize(
+    ("environment", "expires_at", "accepted"),
+    (
+        # development: exactly the declared 6h window is the inclusive bound
+        ("development", "2026-08-02T06:00:00+00:00", True),
+        ("development", "2026-08-02T06:00:01+00:00", False),
+        # production: exactly 300s stays the inclusive bound, 301s fails
+        ("production", "2026-08-02T00:05:00+00:00", True),
+        ("production", "2026-08-02T00:05:01+00:00", False),
+        # production can never borrow the development window
+        ("production", "2026-08-02T06:00:00+00:00", False),
+    ),
+)
+def test_attestation_validity_window_is_environment_bound(
+    environment, expires_at, accepted
+):
+    observation = (
+        _community_observation()
+        if environment == "development"
+        else _neo_observation()
+    )
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment=environment,
+            observation=observation,
+            observed_at="2026-08-02T00:00:00+00:00",
+            expires_at=expires_at,
+        ),
+        policy=_policy(environment=environment),
+        expected=_expected(environment=environment),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is accepted
+    if not accepted:
+        assert "freshness_invalid" in result.failures
+
+
+def test_attestation_environment_must_match_the_development_policy():
+    result = access.verify_datastore_attestation(
+        _signed(
+            "neo4j", "before", environment="production",
+            expected=_expected(environment="development"),
+            observation=_community_observation(),
+        ),
+        policy=_policy(environment="development"),
+        expected=_expected(environment="development"),
+        expected_store="neo4j", expected_phase="predeploy",
+        expected_position="before", expected_signer_did=NEO_DID,
+        evaluated_at=EVALUATED_AT,
+    )
+    assert result.ok is False
+    assert "environment_mismatch" in result.failures

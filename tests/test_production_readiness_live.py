@@ -808,15 +808,40 @@ def test_postgresql_endpoint_is_single_pinned_and_timer_cancel_is_silent(capsys,
     assert "driver-secret" not in capsys.readouterr().err
 
 
+def test_pg_endpoint_loopback_pin_relaxes_only_for_development():
+    import psycopg2
+
+    dsn = (
+        "host=192.168.0.25 hostaddr=192.168.0.25 port=5433 dbname=lakatos"
+        " user=a password=b sslmode=verify-full sslrootcert=system"
+    )
+    with pytest.raises(live._PortUnavailable, match="v2 pinned target"):
+        live._validated_pg_endpoint(
+            psycopg2, dsn, "lakatos",
+            expected_host="192.168.0.25", expected_port=5433,
+        )
+    host, port, _params = live._validated_pg_endpoint(
+        psycopg2, dsn, "lakatos",
+        expected_host="192.168.0.25", expected_port=5433,
+        allow_non_loopback_expected=True,
+    )
+    assert (host, port) == ("192.168.0.25", 5433)
+
+
 def test_neo4j_endpoint_requires_literal_system_trusted_tls():
     assert live._validated_neo_uri("bolt+s://127.0.0.1:7687") == (
         "bolt+s://127.0.0.1:7687"
+    )
+    assert live._validated_neo_uri("bolt+s://neo4j.metahumotonic.com:7687") == (
+        "bolt+s://neo4j.metahumotonic.com:7687"
     )
     for uri in (
         "bolt://127.0.0.1:7687",
         "bolt+s://localhost:7687",
         "neo4j+s://127.0.0.1:7687",
-        "bolt+s://db.example:7687",
+        "bolt+s://dbhost:7687",
+        "bolt+s://-bad.example.com:7687",
+        "bolt+s://neo4j..example.com:7687",
     ):
         with pytest.raises(live._PortUnavailable):
             live._validated_neo_uri(uri)

@@ -19,6 +19,7 @@ import stat
 import subprocess
 import tempfile
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -1644,7 +1645,7 @@ def _bounded_pg_migration(
     connection: Any,
     expires_at: str,
     source: bytes,
-) -> None:
+) -> str:
     deadline = _parse_time(expires_at, "expires_at")
     remaining = (deadline - datetime.now(timezone.utc)).total_seconds() - 5
     if remaining < 5:
@@ -1750,6 +1751,31 @@ def _bounded_pg_migration(
             raise RuntimeError(
                 "PostgreSQL migration failed and role cleanup also failed"
             ) from cleanup_error
+    return owner_role
+
+
+@contextmanager
+def _owner_readback_scope(connection: Any, owner_role: str):
+    """Read owner-owned catalog/sequence state through the SET-only membership.
+
+    The migrator principal deliberately holds no object privileges, so the
+    exact post-migration readback must observe as the NOLOGIN owner and must
+    always drop that authority again, even on failure.
+    """
+
+    quoted_owner = '"' + owner_role.replace('"', '""') + '"'
+    with connection.cursor() as cursor:
+        cursor.execute(f"SET ROLE {quoted_owner}")
+        cursor.execute("SELECT current_user::text")
+        row = cursor.fetchone()
+        if not isinstance(row, tuple) or row[0] != owner_role:
+            cursor.execute("RESET ROLE")
+            raise RuntimeError("PostgreSQL readback SET ROLE readback failed")
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET ROLE")
 
 
 def _bounded_neo_migration(driver: Any, expires_at: str, source: bytes) -> None:
@@ -2058,7 +2084,7 @@ def _apply_after_receipt_reservation(
             fence_public_key_hex,
         )
         receipt_reservation.verify(expect_empty=True)
-        _bounded_pg_migration(
+        pg_owner_role = _bounded_pg_migration(
             connection,
             drain["live_fence"]["expires_at"],
             resources[PG_RESOURCE],
@@ -2068,10 +2094,13 @@ def _apply_after_receipt_reservation(
             drain["sha256"], fence_verifier, fence_verifier_sha256,
             fence_public_key_hex,
         )
-        pg_report = inspect_pg_history_contract(connection)
-        if pg_report.get("ok") is not True:
-            raise RuntimeError("PostgreSQL exact readback failed after migration")
-        projections = pg_projection_rows(connection)
+        with _owner_readback_scope(connection, pg_owner_role):
+            pg_report = inspect_pg_history_contract(connection)
+            if pg_report.get("ok") is not True:
+                raise RuntimeError(
+                    "PostgreSQL exact readback failed after migration"
+                )
+            projections = pg_projection_rows(connection)
 
         for neo_resource in NEO_RESOURCES:
             drain = _revalidate_drain(

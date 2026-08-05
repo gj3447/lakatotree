@@ -302,6 +302,8 @@ def build_live_review(
         raise ProductionApprovalError("temporal.not_l3")
     if not runtime.authority_did or not runtime.storage_access_policy_file_sha256:
         raise ProductionApprovalError("runtime.authority_identity_missing")
+    if getattr(runtime, "environment", None) != "production":
+        raise ProductionApprovalError("runtime.environment_not_production")
     runtime_authority_did, _public = _did(
         runtime.authority_did, path="runtime.authority_did"
     )

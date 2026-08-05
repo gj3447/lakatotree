@@ -14,6 +14,8 @@ import os
 import shlex
 import stat
 import sys
+import time
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -23,10 +25,14 @@ from lakatos.write_cert import did_key_encode, ed25519_public_key
 from server import production_readiness_live as live
 from server.storage_access import (
     ACCESS_POLICY_SCHEMA,
+    DEVELOPMENT_MAX_VALIDITY_SECONDS,
+    MAX_VALIDITY_SECONDS,
     PHASES,
     STORAGE_AUDIT_BUNDLE_SCHEMA,
     STORES,
     StorageAccessError,
+    _NEO_COMMUNITY_READ_QUERY_COUNT,
+    _neo_community_native_auth_settings_exact,
     build_attestation_body,
     build_storage_audit_bundle,
     canonical_json,
@@ -104,8 +110,10 @@ def validate_request(value: Any) -> Mapping[str, Any]:
     phase = _text(value["phase"], path="request.phase")
     if phase not in PHASES:
         raise StorageAuditCollectionError("request phase is unsupported")
-    if value["environment"] != "production":
-        raise StorageAuditCollectionError("request.environment must be production")
+    if value["environment"] not in ("production", "development"):
+        raise StorageAuditCollectionError(
+            "request.environment must be production or development"
+        )
     _sha(value["target_sha256"], path="request.target_sha256")
     _sha(value["operation_sha256"], path="request.operation_sha256")
     _file_ref(value["access_policy"], path="request.access_policy")
@@ -222,11 +230,401 @@ def _normalized_observation(
         raise StorageAuditCollectionError(f"{store} audit collection failed") from exc
     if normalized["status"] != "OBSERVED":
         raise StorageAuditCollectionError(f"{store} audit observation is incomplete")
-    if normalized["facts"].get("audit_principal_read_only") is not True:
+    facts = normalized["facts"]
+    if (
+        store == "neo4j"
+        and config.get("environment") == "development"
+        and facts.get("community_semantics") is True
+    ):
+        # Community cannot attest a read-only audit principal; the declared
+        # development substitute facts must be present and exact instead.
+        if not (
+            facts.get("rbac_available") is False
+            and facts.get("enterprise") is False
+        ):
+            raise StorageAuditCollectionError(
+                "neo4j community audit projection is invalid"
+            )
+    elif facts.get("audit_principal_read_only") is not True:
         raise StorageAuditCollectionError(f"{store} audit principal is not read-only")
     if not isinstance(result.binding_material, Mapping):
         raise StorageAuditCollectionError(f"{store} target binding is unavailable")
     return normalized, dict(result.binding_material)
+
+
+def _neo4j_server_edition(
+    config: Mapping[str, Any], timeout: float, environ: Mapping[str, str]
+) -> str:
+    """Read the live server edition with the same audited endpoint pins."""
+
+    uri = environ.get(live.NEO4J_URI_ENV)
+    user = environ.get(live.NEO4J_USER_ENV)
+    password = environ.get(live.NEO4J_PASSWORD_ENV)
+    if not uri or not user or not password:
+        raise StorageAuditCollectionError("neo4j audit auth material is unavailable")
+    configured_uri = live._validated_neo_uri(uri)
+    from neo4j import READ_ACCESS, GraphDatabase
+
+    driver = GraphDatabase.driver(
+        configured_uri,
+        auth=(user, password),
+        connection_timeout=float(timeout),
+        connection_acquisition_timeout=float(timeout),
+    )
+    try:
+        driver.verify_connectivity()
+        with driver.session(
+            database=str(config["database"]), default_access_mode=READ_ACCESS
+        ) as session:
+            rows = live._neo_rows(
+                session,
+                "CALL dbms.components() YIELD edition RETURN edition",
+                float(timeout),
+            )
+    finally:
+        driver.close()
+    editions = {
+        str(row["edition"]).lower()
+        for row in rows
+        if isinstance(row.get("edition"), str) and row.get("edition")
+    }
+    if len(editions) != 1:
+        raise StorageAuditCollectionError("neo4j edition readback was ambiguous")
+    return editions.pop()
+
+
+def _neo_community_authorization_projection(
+    session: Any, config: Mapping[str, Any], remaining: Any
+) -> dict[str, Any]:
+    """Read the auth-relevant Community projection once, in a fixed order.
+
+    Community leaves the system ``lastCommittedTxn``/``writer`` columns NULL,
+    so authorization stability is attested by exact digest equality of this
+    projection before and after the audit reads instead of a transaction
+    counter.
+    """
+
+    system_rows = live._neo_rows(
+        session,
+        "SHOW DATABASE system "
+        "YIELD name, type, databaseID, currentStatus "
+        "RETURN name, type, databaseID AS database_id, "
+        "currentStatus AS current_status",
+        remaining(),
+        maximum=2,
+    )
+    system_database_id = None
+    if len(system_rows) == 1:
+        row = system_rows[0]
+        database_id = row.get("database_id")
+        if (
+            row.get("name") == "system"
+            and row.get("type") == "system"
+            and row.get("current_status") == "online"
+            and isinstance(database_id, str)
+            and bool(database_id)
+        ):
+            system_database_id = database_id
+    # SHOW ALIASES FOR DATABASE is an Enterprise-only administration command;
+    # Community exposes the same alias facts through the SHOW DATABASES
+    # ``aliases`` column.
+    catalog_rows = live._neo_rows(
+        session,
+        "SHOW DATABASES YIELD name, type, aliases, currentStatus "
+        "WHERE name = $database "
+        "RETURN name, type, aliases, currentStatus AS current_status "
+        "ORDER BY name",
+        remaining(),
+        database=str(config["database"]),
+    )
+    setting_rows = live._neo_rows(
+        session,
+        "SHOW SETTINGS $setting_names "
+        "YIELD name, value, startupValue "
+        "RETURN name, value, startupValue AS startup_value ORDER BY name",
+        remaining(),
+        setting_names=list(live._NEO_AUTH_SETTING_NAMES),
+    )
+    user_rows = live._neo_rows(
+        session,
+        "SHOW USERS YIELD user, suspended "
+        "RETURN user, suspended ORDER BY user",
+        remaining(),
+    )
+    return {
+        "system_database_id": system_database_id,
+        "database_catalog": catalog_rows,
+        "auth_settings": setting_rows,
+        "users": user_rows,
+    }
+
+
+def _collect_neo4j_community_impl(
+    config: Mapping[str, Any],
+    timeout: float,
+    environ: Mapping[str, str],
+    *,
+    injected_driver: Any | None = None,
+    injected_uri: str | None = None,
+) -> live.AdapterResult:
+    """Collect the development-only Community fact set with live read queries.
+
+    Community has no RBAC, so no ``audit_principal_read_only`` claim is made;
+    the projection records ``community_semantics``/``rbac_available`` facts
+    instead and binds the challenge nonce exactly like the Enterprise path.
+    """
+
+    owns_driver = injected_driver is None
+    driver = injected_driver
+    user = password = None
+    if owns_driver:
+        uri = environ.get(live.NEO4J_URI_ENV)
+        user = environ.get(live.NEO4J_USER_ENV)
+        password = environ.get(live.NEO4J_PASSWORD_ENV)
+        if not uri or not user or not password:
+            return live.AdapterResult(
+                "UNAVAILABLE", {}, ("neo4j.auth_material_unavailable",)
+            )
+        configured_uri = live._validated_neo_uri(uri)
+    else:
+        if not isinstance(injected_uri, str) or not injected_uri:
+            raise live._PortUnavailable("injected Neo4j test endpoint is invalid")
+        configured_uri = injected_uri
+    try:
+        from neo4j import READ_ACCESS, GraphDatabase
+    except ModuleNotFoundError:
+        return live.AdapterResult(
+            "UNAVAILABLE", {}, ("neo4j.dependency_unavailable",)
+        )
+
+    failures: list[str] = []
+    deadline = time.monotonic() + timeout
+    challenge_nonce = config.get("challenge_nonce")
+    challenge_bound = challenge_nonce is not None
+    if challenge_bound and not live._exact_sha256(challenge_nonce):
+        raise live._PortUnavailable("Neo4j audit challenge nonce is invalid")
+
+    def remaining() -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise live._PortUnavailable("Neo4j collection deadline exhausted")
+        return value
+
+    try:
+        if owns_driver:
+            driver = GraphDatabase.driver(
+                configured_uri,
+                auth=(user, password),
+                connection_timeout=float(timeout),
+                connection_acquisition_timeout=float(timeout),
+            )
+            driver.verify_connectivity()
+        with driver.session(
+            database=str(config["database"]), default_access_mode=READ_ACCESS
+        ) as session:
+            if challenge_bound:
+                challenge_rows = live._neo_rows(
+                    session,
+                    "RETURN $challenge_nonce AS challenge_nonce",
+                    remaining(),
+                    challenge_nonce=challenge_nonce,
+                )
+                if challenge_rows != [{"challenge_nonce": challenge_nonce}]:
+                    raise live._PortUnavailable("Neo4j audit challenge was not echoed")
+            components = live._neo_rows(
+                session,
+                "CALL dbms.components() YIELD versions, edition "
+                "RETURN versions[0] AS version, edition",
+                remaining(),
+            )
+            database_rows = live._neo_rows(
+                session,
+                "CALL db.info() YIELD id, name RETURN id, name",
+                remaining(),
+            )
+        component_candidates = [
+            row
+            for row in components
+            if isinstance(row.get("edition"), str)
+            and bool(row.get("edition"))
+            and isinstance(row.get("version"), str)
+            and bool(row.get("version"))
+        ]
+        if len(component_candidates) != 1:
+            raise live._PortUnavailable("Neo4j component readback was ambiguous")
+        component = component_candidates[0]
+        if len(database_rows) != 1:
+            raise live._PortUnavailable("Neo4j database identity readback was ambiguous")
+        database_identity = database_rows[0]
+        with driver.session(
+            database="system", default_access_mode=READ_ACCESS
+        ) as session:
+            snapshot_before = _neo_community_authorization_projection(
+                session, config, remaining
+            )
+            user_rows = live._neo_rows(
+                session,
+                "SHOW CURRENT USER YIELD user RETURN user",
+                remaining(),
+            )
+            snapshot_after = _neo_community_authorization_projection(
+                session, config, remaining
+            )
+    except live._PortUnavailable:
+        raise
+    except Exception as exc:
+        raise live._PortUnavailable("Neo4j readback failed") from exc
+    finally:
+        if owns_driver and driver is not None:
+            driver.close()
+
+    edition = live._optional_text(component.get("edition"), maximum=64)
+    version = live._optional_text(component.get("version"), maximum=64)
+    if not isinstance(edition, str) or edition.lower() != "community":
+        raise live._PortUnavailable("Neo4j server is not a community edition")
+    if len(user_rows) != 1 or not isinstance(user_rows[0].get("user"), str):
+        raise live._PortUnavailable("Neo4j current user readback was ambiguous")
+    current_user = str(user_rows[0]["user"])
+    system_database_id = snapshot_before["system_database_id"]
+    database_catalog_rows = snapshot_before["database_catalog"]
+    auth_setting_rows = snapshot_before["auth_settings"]
+    named_user_rows = snapshot_before["users"]
+    authorization_snapshot_sha256 = live._sha256(live._canonical(snapshot_before))
+    authorization_snapshot_stable = bool(
+        system_database_id is not None
+        and authorization_snapshot_sha256
+        == live._sha256(live._canonical(snapshot_after))
+    )
+    if not authorization_snapshot_stable:
+        failures.append("neo4j.authorization_snapshot.unstable")
+    alias_names: list[str] = []
+    for row in database_catalog_rows:
+        aliases = row.get("aliases")
+        if not (
+            isinstance(aliases, list)
+            and all(isinstance(alias, str) for alias in aliases)
+        ):
+            raise live._PortUnavailable("Neo4j alias readback was ambiguous")
+        alias_names.extend(aliases)
+    # Same meaning as the Enterprise alias facts: the count of aliases
+    # targeting the application database and a digest of the canonical list.
+    database_alias_projection = [
+        {"name_sha256": live._sha256(alias.encode("utf-8"))}
+        for alias in sorted(alias_names)
+    ]
+    database_catalog_projection = [
+        {
+            "name_sha256": live._sha256(str(row.get("name")).encode("utf-8")),
+            "type": row.get("type"),
+            "current_status": row.get("current_status"),
+        }
+        for row in database_catalog_rows
+    ]
+    database_direct_local = bool(
+        database_alias_projection == []
+        and database_catalog_projection == [{
+            "name_sha256": live._sha256(
+                str(config["database"]).encode("utf-8")
+            ),
+            "type": "standard",
+            "current_status": "online",
+        }]
+    )
+    auth_settings = [
+        {
+            "name": row.get("name"),
+            "value": row.get("value"),
+            "startup_value": row.get("startup_value"),
+        }
+        for row in auth_setting_rows
+    ]
+    users_by_name = {
+        str(row["user"]): row.get("suspended")
+        for row in named_user_rows
+        if isinstance(row.get("user"), str)
+    }
+    named_user_sha256: dict[str, str | None] = {}
+    named_user_suspended: dict[str, bool | None] = {}
+    for label in ("audit", "migrator", "runtime"):
+        name = str(config[f"{label}_user"])
+        if name in users_by_name:
+            named_user_sha256[label] = live._sha256(name.encode("utf-8"))
+            # Community reports suspended as null; only True means suspended.
+            named_user_suspended[label] = users_by_name[name] is True
+        else:
+            named_user_sha256[label] = None
+            named_user_suspended[label] = None
+    facts = {
+        "database": str(config["database"]),
+        "challenge_nonce_sha256": (
+            live._sha256(str(challenge_nonce).encode("ascii"))
+            if challenge_bound else None
+        ),
+        "database_name_matches": database_identity.get("name") == config["database"],
+        "database_direct_local": database_direct_local,
+        "database_alias_count": len(database_alias_projection),
+        "database_alias_sha256": live._sha256(
+            live._canonical(database_alias_projection)
+        ),
+        "database_catalog_sha256": live._sha256(
+            live._canonical(database_catalog_projection)
+        ),
+        "database_id_sha256": (
+            live._sha256(str(database_identity["id"]).encode("utf-8"))
+            if database_identity.get("id") is not None
+            else None
+        ),
+        "edition": edition,
+        "version": version,
+        "enterprise": False,
+        "community_semantics": True,
+        "rbac_available": False,
+        "current_actor_sha256": live._sha256(current_user.encode("utf-8")),
+        "named_user_sha256": named_user_sha256,
+        "named_user_suspended": named_user_suspended,
+        "auth_settings": auth_settings,
+        "auth_settings_sha256": live._sha256(live._canonical(auth_settings)),
+        "native_only_auth": _neo_community_native_auth_settings_exact(
+            auth_settings
+        ),
+        "system_database_id_sha256": (
+            live._sha256(system_database_id.encode("utf-8"))
+            if system_database_id is not None else None
+        ),
+        "authorization_snapshot_sha256": authorization_snapshot_sha256,
+        "authorization_snapshot_stable": authorization_snapshot_stable,
+        "read_query_count": (
+            (_NEO_COMMUNITY_READ_QUERY_COUNT - 1) + int(challenge_bound)
+        ),
+    }
+    return live.AdapterResult(
+        "OBSERVED" if not failures else "PARTIAL",
+        facts,
+        tuple(sorted(set(failures))),
+        {
+            "configured_uri": configured_uri,
+            "configured_database": str(config["database"]),
+            "database_id": database_identity.get("id"),
+            "database_name": database_identity.get("name"),
+        },
+    )
+
+
+def _collect_neo4j_access(
+    config: Mapping[str, Any], timeout: float, environ: Mapping[str, str]
+) -> live.AdapterResult:
+    """Route the default Neo4j audit port by declared policy environment.
+
+    Production keeps the Enterprise collector unconditionally (fail-closed on
+    Community); development uses the Community projection only when the live
+    server actually reports a community edition.
+    """
+
+    if config.get("environment") != "development":
+        return live.collect_neo4j(config, timeout, environ)
+    if _neo4j_server_edition(config, timeout, environ) == "community":
+        return _collect_neo4j_community_impl(config, timeout, environ)
+    return live.collect_neo4j(config, timeout, environ)
 
 
 def collect_signed_storage_audit(
@@ -240,7 +638,8 @@ def collect_signed_storage_audit(
 ) -> dict[str, Any]:
     request = validate_request(request)
     request_file_sha256 = _sha(request_file_sha256, path="request_file_sha256")
-    ports = ports or live.default_ports()
+    if ports is None:
+        ports = replace(live.default_ports(), neo4j=_collect_neo4j_access)
     environ = dict(os.environ if environ is None else environ)
     now = now or (lambda: datetime.now(timezone.utc))
 
@@ -265,6 +664,7 @@ def collect_signed_storage_audit(
 
     configs = {
         "postgresql": {
+            "environment": policy["environment"],
             "host": policy["postgresql"]["host"],
             "port": policy["postgresql"]["port"],
             "database": policy["postgresql"]["database"],
@@ -275,6 +675,7 @@ def collect_signed_storage_audit(
             "challenge_nonce": request["request_nonce"],
         },
         "neo4j": {
+            "environment": policy["environment"],
             "database": policy["neo4j"]["database"],
             "audit_user": policy["neo4j"]["audit_user"],
             "audit_role": policy["neo4j"]["audit_role"],
@@ -389,6 +790,13 @@ def collect_signed_storage_audit(
         "previous_phase_bundle_file_sha256": previous_file_sha,
     }
     signed: dict[str, dict[str, Mapping[str, Any]]] = {store: {} for store in STORES}
+    # Production keeps the 5-minute attestation window; only a declared
+    # development request signs the longer 6-hour home window.
+    validity_seconds = (
+        DEVELOPMENT_MAX_VALIDITY_SECONDS
+        if request["environment"] == "development"
+        else MAX_VALIDITY_SECONDS
+    )
     for store in STORES:
         for position in ("before", "after"):
             observed_at = observed_times[store][position]
@@ -401,7 +809,9 @@ def collect_signed_storage_audit(
                 observation=observations[store][position],
                 target_binding=bindings[store][position],
                 observed_at=observed_at.isoformat(),
-                expires_at=(observed_at + timedelta(seconds=300)).isoformat(),
+                expires_at=(
+                    observed_at + timedelta(seconds=validity_seconds)
+                ).isoformat(),
                 evidence_refs=[
                     f"request-sha256:{request_file_sha256}",
                     f"policy-sha256:{expected['access_policy_file_sha256']}",

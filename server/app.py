@@ -461,6 +461,15 @@ def _runtime_snapshot_readback(
             not isinstance(value, str) for value in required_sha_values
         ):
             return failure, None
+        # The runtime challenge environment originates from the verified
+        # predeploy receipt and must match the verified access-pair policy
+        # environment exactly; any drift or unknown value fails closed.
+        environment = predeploy.get("environment")
+        if (
+            environment not in ("production", "development")
+            or access.get("environment") != environment
+        ):
+            return failure, None
         lease = _container.writer_lease_public_projection()
         if lease is None:
             return failure, None
@@ -474,7 +483,7 @@ def _runtime_snapshot_readback(
             executable=executable,
             expected_executable_sha256=verifier_sha,
             public_key_hex=public_key,
-            environment=predeploy.get("environment"),
+            environment=environment,
             boot_id=_RUNTIME_BOOT_ID,
             artifact=artifact,
             operation_sha256=predeploy["operation_sha256"],
@@ -707,16 +716,38 @@ def _reconciliation_authorized(report: dict) -> bool:
             )
         )
     )
-    access_exact = (
+    access_verified = (
         access.get("contract_id") == CONTRACT_ID
         and access.get("ok") is True
         and access.get("status") == "ACCESS_PAIR_VERIFIED"
         and access.get("failures") == []
         and access.get("production_ready") is False
-        and access.get("deployment_status") == "NOT_READY"
         and _access_valid_until_is_current(access.get("valid_until"))
     )
-    return pg_exact and neo_exact and receipt_exact and access_exact
+    # Production recovery keeps the exact historical shape: a verified
+    # production pair reports the deployment-neutral NOT_READY status.
+    production_exact = (
+        access_verified and access.get("deployment_status") == "NOT_READY"
+    )
+    # A declared development deployment authorizes ledger *recovery* only.
+    # The verified pair, the pinned predeploy receipt, and the runtime
+    # settings must all agree on the development environment exactly (the
+    # same cross-check _runtime_snapshot_readback performs); any drift
+    # fails closed.  Production approval and readiness consumers still
+    # reject the DEVELOPMENT_ONLY shape — this widens no approval path.
+    development_exact = (
+        access_verified
+        and access.get("deployment_status") == "DEVELOPMENT_ONLY"
+        and access.get("environment") == "development"
+        and receipt.get("environment") == "development"
+        and SETTINGS.storage_environment == "development"
+    )
+    return (
+        pg_exact
+        and neo_exact
+        and receipt_exact
+        and (production_exact or development_exact)
+    )
 
 
 def _require_reconciliation_authority() -> dict:
