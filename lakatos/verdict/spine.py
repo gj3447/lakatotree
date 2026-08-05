@@ -180,8 +180,6 @@ def synthesize_promotion(*, scripted_verdict: str, stands: bool, reproducible: b
     #   떠받친 노드는 메트릭 scripted COUNTS *단독* 으론 floor 못 연다 — 메트릭 개선은 실 영수증이나
     #   '하드코어 보존·초과경험내용'은 자기보고라, 독립 영수증(reproducible 실 replay / human attestation)을
     #   추가로 요구한다. (set_verdict 가 노드의 qualitative_self_report 표식을 넘긴다.)
-    if qualitative_self_report:
-        judge_receipt = False
     if judge_receipt or reproducible is True or has_human:
         gates['floor'] = {'passed': True, 'reasons': []}
     else:
