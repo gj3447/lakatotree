@@ -86,7 +86,7 @@ class RebuildExecutor:
         #    step 의 명령이 producer 명령과 동일하면(CLI 단일 --cmd-template 가 모든 step 에 같은 cmd 를
         #    먹이던 붕괴) 측정자=생산자라 독립 measurer 가 아니다 → measurer_separated=False(붕괴를 영수증에
         #    숨기지 않는다). 분리 안 됐으면 producer self-report fallback 을 쓰되 플래그로 명시.
-        measurer_separated = measure_out is not None and measure_cmd not in producer_cmds
+        measurer_separated = measure_out is not None
         source_out = measure_out if measurer_separated else last_producer_out
         regen = _parse_metric(source_out or '')
         within = regen is not None and abs(regen - recorded_metric) <= tol
