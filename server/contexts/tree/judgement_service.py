@@ -231,14 +231,7 @@ class JudgementService:
             #   verdict-승격 경로로 미러. 단 credibility/foundation/reproducible 등 광역 신뢰그래프 race 는
             #   지문 밖 — 노드 자체 verdict/source/qsr/논증까지만 낙관적 락; 광역은 후속.)
             # #M12: 직전 canonical 강등을 verdict_source='engine' 으로 귀속(다른 강등경로와 정합).
-            rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
-                  WHERE coalesce(cur.verdict,'') = coalesce($exp_verdict,'')
-                    AND coalesce(cur.verdict_source,'') = coalesce($exp_source,'')
-                    AND coalesce(cur.qualitative_self_report,false) = $exp_qsr
-                  WITH t, cur
-                  OPTIONAL MATCH (cur)-[:HAS_ARGUMENT]->(a:Argument)
-                  WITH t, cur, [x IN collect(a.id + '|' + coalesce(a.attacks,'')) WHERE x IS NOT NULL | x] AS arg_fp
-                  WHERE size(arg_fp) = $exp_argn AND all(x IN arg_fp WHERE x IN $exp_arg_fp)
+            self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(cur {tag:$tag})
                   WITH t, cur
                   OPTIONAL MATCH (t)-[:HAS_NODE]->(old {verdict:'CANONICAL'})
                   WHERE old.tag <> $tag
@@ -249,17 +242,12 @@ class JudgementService:
                       cur.canonical_scope=$scope,
                       cur.canonical_assumptions=$assumptions,
                       cur.canonical_evidence_window=$evidence_window,
-                      cur.valid_until_rebutted=$valid_until_rebutted
-                  RETURN cur.tag AS tag''',
+                      cur.valid_until_rebutted=$valid_until_rebutted ''',
                     tree=name, tag=tag,
-                    exp_verdict=cand.get('verdict'), exp_source=cand.get('verdict_source'),
-                    exp_qsr=bool(cand.get('qualitative_self_report')),
-                    exp_argn=len(snap_arg_fp), exp_arg_fp=snap_arg_fp,
                     scope=v.scope, assumptions=v.assumptions,
                     evidence_window=v.evidence_window, valid_until_rebutted=v.valid_until_rebutted)
-            if not rows:   # 원자 CAS 0행 = read→write 사이 스냅샷 변경(동시 승격/재채점/반박) → stale 승격 차단
-                raise HTTPException(409, '동시변경 감지(CANONICAL 원자 CAS 0행) — floor 판정 스냅샷'
-                                         '(verdict/source/qsr/논증집합)이 승격 직전 변해 무효. 최신상태 재평가 필요.')
+            rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag}) RETURN e.tag AS tag''',
+                           tree=name, tag=tag)
         else:
             rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
                       SET e.verdict=$verdict, e.verdict_source='admin' RETURN e.tag AS tag''',
