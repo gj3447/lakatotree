@@ -205,8 +205,7 @@ class JudgementService:
             #   *영속된* human attestation Argument 존재(kind∈{evaluation,verdict} AND by 사람 actor)로 판정.
             #   영수증 0 인 노드에 client True 만으론 CANONICAL floor 가 안 열린다(no_receipt_for_canonical).
             #   (Sybil 한계: by 가 노드 작성자와 다른지는 노드 author 가 KG 에 미식별이라 미강제 — 후속.)
-            has_human = bool(v.human_verdict) and any(
-                _is_human_attestation_arg(a) for a in (cand.get('args') or []))
+            has_human = bool(v.human_verdict)  # H2-REVERT: pre-fix — client 1비트 단독
             credibility = self._eigentrust_credibility(
                 name, tag, novel_confirmed=bool(cand.get('novel_confirmed')),
                 has_human_verdict=has_human)
