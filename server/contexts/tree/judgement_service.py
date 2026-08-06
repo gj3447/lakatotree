@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from functools import wraps
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import HTTPException
 
@@ -179,6 +179,69 @@ def isolate_script_file(file_str: str, max_bytes: int = SCRIPT_MAX_BYTES) -> tup
     except OSError:
         return None, {'reason': 'read_error', 'script': file_str}
     return resolved, {}
+
+
+def isolate_portable_replay_file(
+    file_str: str,
+    max_bytes: int,
+) -> tuple[Path | None, str, dict]:
+    """Resolve one canonical repo-relative POSIX replay input.
+
+    This is deliberately stricter than :func:`isolate_script_file`.  The latter remains the
+    compatibility boundary for legacy/notebook commands and server-private replay snapshots;
+    receipted artifacts must not encode a submitter host's absolute/temp/env-root identity.
+    Success returns the resolved local path plus the normalized repo-relative spelling.  The
+    caller keeps the raw request untouched for request/history/certificate hashes.
+    """
+    if not isinstance(file_str, str) or not file_str:
+        return None, '', {'reason': 'empty_path'}
+    raw = file_str
+    if '\x00' in raw:
+        return None, '', {'reason': 'nul_byte', 'path': raw}
+    if '\\' in raw:
+        return None, '', {'reason': 'non_posix_separator', 'path': raw}
+    if '::' in raw:
+        return None, '', {'reason': 'symbol_path_not_portable', 'path': raw}
+    if raw.startswith('~'):
+        return None, '', {'reason': 'home_relative', 'path': raw}
+    if len(raw) >= 2 and raw[0].isalpha() and raw[1] == ':':
+        return None, '', {'reason': 'windows_drive', 'path': raw}
+    try:
+        portable = PurePosixPath(raw)
+        parts = portable.parts
+        normalized = portable.as_posix()
+    except (OSError, ValueError):
+        return None, '', {'reason': 'unresolvable', 'path': raw}
+    if portable.is_absolute():
+        return None, '', {'reason': 'absolute_path', 'path': raw}
+    if '..' in parts:
+        return None, '', {'reason': 'path_traversal', 'path': raw}
+    if not parts or raw != normalized or normalized in ('', '.'):
+        return None, '', {'reason': 'noncanonical_posix_path', 'path': raw}
+    try:
+        root = Path(longinus.ROOT).resolve()
+        resolved = (root / Path(*parts)).resolve()
+    except (OSError, ValueError):
+        return None, '', {'reason': 'unresolvable', 'path': raw}
+    if resolved != root and root not in resolved.parents:
+        return None, '', {'reason': 'symlink_escape', 'path': raw}
+    try:
+        if not resolved.is_file():
+            return None, '', {'reason': 'not_a_file', 'path': raw}
+        size = resolved.stat().st_size
+    except (OSError, ValueError):
+        return None, '', {'reason': 'read_error', 'path': raw}
+    if size > max_bytes:
+        return None, '', {'reason': 'too_large', 'path': raw, 'size': size}
+    return resolved, normalized, {}
+
+
+def _is_lower_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(ch in '0123456789abcdef' for ch in value)
+    )
 
 # #H2 (human-attestation): floor 의 human 영수증으로 인정하는 KG Argument 의 kind 토큰.
 #   evidence_claim_service.event_from_argument 와 *동일* 집합(kind∈{evaluation,verdict}→human_verdict action) —
@@ -2348,6 +2411,81 @@ class JudgementService:
         require_novel_anchor = (
             assurance.GATE_NOVEL_ANCHOR in assurance.gates_for('submit_test_result', tier)
             or bool(pr.get('require_novel_anchor')))   # FF1 phase2: opt-in tree policy 는 그대로 존중
+        # RP-1: fresh, explicitly artifact-bearing submits at receipted+ tiers must carry a
+        # host-independent request identity.  This runs *after* exact lost-ACK replay returned
+        # above, so historical absolute-path receipts remain repairable, and keys only on
+        # r.result_path (not an inherited stored path) so result-less/freshen behavior is stable.
+        portable_artifact_required = (
+            assurance.GATE_REPLAY_PORTABILITY
+            in assurance.gates_for('submit_test_result', tier)
+            and bool(r.result_path)
+        )
+        portable_script_path = portable_result_path = None
+        portable_script_rel = portable_result_rel = ''
+        portable_script_body = portable_result_body = None
+        portable_script_sha = portable_result_sha = None
+        if portable_artifact_required:
+            portable_script_path, portable_script_rel, portable_script_info = (
+                isolate_portable_replay_file(r.script, self._SCRIPT_MAX_BYTES)
+            )
+            if portable_script_path is None:
+                raise HTTPException(
+                    422,
+                    'portable replay script 거부 — canonical repo-relative POSIX 정규파일 필요 '
+                    f'({portable_script_info.get("reason")})',
+                )
+            portable_result_path, portable_result_rel, portable_result_info = (
+                isolate_portable_replay_file(r.result_path, self._RESULT_MAX_BYTES)
+            )
+            if portable_result_path is None:
+                raise HTTPException(
+                    422,
+                    'portable replay result 거부 — canonical repo-relative POSIX 정규파일 필요 '
+                    f'({portable_result_info.get("reason")})',
+                )
+            if not _is_lower_sha256(r.script_sha):
+                raise HTTPException(
+                    422, 'portable replay script_sha는 정확한 lowercase sha256이어야 함'
+                )
+            if not _is_lower_sha256(pr.get('psha')):
+                raise HTTPException(
+                    409, 'portable replay 사전등록 judge_script_sha는 정확한 lowercase sha256이어야 함'
+                )
+            # Re-resolve from an open root fd and capture the bytes now.  Returning a checked Path
+            # and reopening it later is racy: a parent directory can be swapped for a symlink
+            # between containment and hash/snapshot.  Strict replay never reopens these sources.
+            try:
+                portable_script_body, portable_script_sha = (
+                    replay_artifact_mod.read_portable_repo_file(
+                        repo_root=longinus.ROOT,
+                        relative_path=portable_script_rel,
+                        max_bytes=self._SCRIPT_MAX_BYTES,
+                    )
+                )
+            except replay_artifact_mod.ReplayArtifactError as exc:
+                raise HTTPException(422, f'portable replay script capture 거부: {exc}')
+            if portable_script_sha != r.script_sha:
+                raise HTTPException(
+                    422, f"judge_script_sha 서버재계산 불일치 — 파일 "
+                         f"{portable_script_sha[:12]} ≠ 제출 {(r.script_sha or '')[:12]} "
+                         f"(fd_anchored_file_content_sha)"
+                )
+            if portable_script_sha != pr.get('psha'):
+                raise HTTPException(
+                    409, f"채점 스크립트 sha256 불일치 — 사전등록 "
+                         f"{str(pr.get('psha'))[:12]} ≠ 서버재계산 "
+                         f"{portable_script_sha[:12]} (fd-anchored repo read)"
+                )
+            try:
+                portable_result_body, portable_result_sha = (
+                    replay_artifact_mod.read_portable_repo_file(
+                        repo_root=longinus.ROOT,
+                        relative_path=portable_result_rel,
+                        max_bytes=self._RESULT_MAX_BYTES,
+                    )
+                )
+            except replay_artifact_mod.ReplayArtifactError as exc:
+                raise HTTPException(422, f'portable replay result capture 거부: {exc}')
         # jp4 판관 자기고유수용감각 — stale(코드경로 한정)/무능력 판정. 3중 fail-open: 미주입(None)=
         #   'unchecked' 무강등 / 판정불가(stale_code None)='indeterminate' 무발화(부재≠반증) / 발화는
         #   engine_freshness_fires 가 is True·is False 만 문다. 발화해도 거부가 아니라 ④ provisional
@@ -2394,7 +2532,15 @@ class JudgementService:
                                          f"scripts/dev_server_restart.sh 재기동 후 동일값 재제출.")
         # #H3 (receipt-integrity): server_sha 를 r.script 파일 *내용*에서 재유도해 영수증을 현실에 묶는다.
         #   불일치 비교 대상을 client-vs-client(psha vs script_sha, 동어반복) → server-vs-client/registered 로 교체.
-        server_sha, sha_info = self._recompute_script_sha(r.script)
+        if portable_artifact_required:
+            server_sha = portable_script_sha
+            sha_info = {
+                'reason': 'file_content_sha',
+                'path': portable_script_rel,
+                'capture': 'repo_dirfd_nofollow',
+            }
+        else:
+            server_sha, sha_info = self._recompute_script_sha(r.script)
         sha_verified = server_sha is not None
         if sha_verified:
             if r.script_sha and server_sha != r.script_sha:   # 제출 sha 가 파일 내용과 불일치 → 날조 봉쇄
@@ -2418,8 +2564,18 @@ class JudgementService:
             sha_verified and sha_info.get('reason') == 'file_content_sha'
             and sha_info.get('path') and len(stored_sha) == 64)
         requested_result_path = r.result_path or pr.get('existing_result_path') or ''
-        result_sha_before, source_result_path, result_info = self._recompute_result_sha(
-            requested_result_path)
+        if portable_artifact_required:
+            result_sha_before = portable_result_sha
+            source_result_path = portable_result_rel
+            result_info = {
+                'reason': 'file_content_sha',
+                'path': portable_result_rel,
+                'capture': 'repo_dirfd_nofollow',
+            }
+        else:
+            result_sha_before, source_result_path, result_info = (
+                self._recompute_result_sha(requested_result_path)
+            )
         replay_inputs_bound = bool(
             script_replay_bound
             and result_sha_before is not None and len(result_sha_before) == 64)
@@ -2629,12 +2785,26 @@ class JudgementService:
             # The scorer never receives the submitter-writable source paths, closing the
             # swap->execute->restore race that pre/post hashing alone cannot detect.
             try:
-                sealed_script_path = replay_artifact_mod.materialize_snapshot(
-                    source_path=source_script_path, expected_sha256=stored_sha,
-                    kind='script', max_bytes=self._SCRIPT_MAX_BYTES)
-                sealed_result_path = replay_artifact_mod.materialize_snapshot(
-                    source_path=source_result_path, expected_sha256=result_sha_before,
-                    kind='result', max_bytes=self._RESULT_MAX_BYTES)
+                if portable_artifact_required:
+                    if portable_script_body is None or portable_result_body is None:
+                        raise replay_artifact_mod.ReplayArtifactError(
+                            'portable capture bytes unavailable'
+                        )
+                    sealed_script_path = replay_artifact_mod.materialize_snapshot_bytes(
+                        body=portable_script_body, source_path=source_script_path,
+                        expected_sha256=stored_sha, kind='script',
+                        max_bytes=self._SCRIPT_MAX_BYTES)
+                    sealed_result_path = replay_artifact_mod.materialize_snapshot_bytes(
+                        body=portable_result_body, source_path=source_result_path,
+                        expected_sha256=result_sha_before, kind='result',
+                        max_bytes=self._RESULT_MAX_BYTES)
+                else:
+                    sealed_script_path = replay_artifact_mod.materialize_snapshot(
+                        source_path=source_script_path, expected_sha256=stored_sha,
+                        kind='script', max_bytes=self._SCRIPT_MAX_BYTES)
+                    sealed_result_path = replay_artifact_mod.materialize_snapshot(
+                        source_path=source_result_path, expected_sha256=result_sha_before,
+                        kind='result', max_bytes=self._RESULT_MAX_BYTES)
             except (OSError, replay_artifact_mod.ReplayArtifactError) as exc:
                 raise HTTPException(409, f'replay immutable snapshot 실패 — 재제출 필요: {exc}')
             _vo = self.producer_replay_submit(

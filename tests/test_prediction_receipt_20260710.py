@@ -621,6 +621,40 @@ def test_direct_submit_history_crash_retries_without_second_verdict():
     assert test_calls[0][1]['event_id'] == test_calls[1][1]['event_id']
 
 
+def test_historical_absolute_artifact_exact_retry_precedes_portability_gate(
+    tmp_path, monkeypatch
+):
+    """A committed historical request repairs its history before new path policy runs."""
+    calls = []
+
+    def crash_test_history_once(*args, **kwargs):
+        calls.append((args, kwargs))
+        if args[1] == 'test_result' and sum(
+            call[0][1] == 'test_result' for call in calls
+        ) == 1:
+            raise RuntimeError('test history projection crash')
+
+    result, producer = _verified_progressive_result(tmp_path)
+    svc, kg = _svc(hist=crash_test_history_once, producer=producer)
+    svc.register_prediction('T', 'seam', _pred())
+    with pytest.raises(RuntimeError, match='test history projection crash'):
+        svc.submit_test_result('T', 'seam', result)
+    committed_receipts = list(kg.receipts)
+
+    def path_policy_must_not_run(*_args, **_kwargs):
+        raise AssertionError('exact replay crossed the fresh portability boundary')
+
+    monkeypatch.setattr(
+        judgement_module,
+        'isolate_portable_replay_file',
+        path_policy_must_not_run,
+        raising=False,
+    )
+    replayed = svc.submit_test_result('T', 'seam', result)
+    assert replayed['ok'] is True and replayed['idempotent'] is True
+    assert kg.receipts == committed_receipts
+
+
 def test_question_close_history_crash_replays_causal_intents_without_rejudge(
     tmp_path,
 ):

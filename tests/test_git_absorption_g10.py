@@ -23,6 +23,7 @@ from fastapi import HTTPException
 
 from lakatos import write_cert as W
 from server.file_hashing import file_sha
+import server.contexts.tree.judgement_service as judgement_module
 from server.contexts.tree.judgement_service import JudgementService
 from server.contexts.tree.schemas import CertCommandIn, TestResultIn as Result, WriteCertIn
 
@@ -62,9 +63,9 @@ class _SubmitKg:
         return [[{'claimed': params.get('tag')}] for _q, params in ops]
 
 
-def _svc(tree_props: dict):
+def _svc(tree_props: dict, *, psha: str | None = None):
     pred = {'m': 'seam', 'd': 'lower', 'b': 10.0, 'nb': 0.0, 'scale': 'ratio', 'novel': '',
-            'vsrc': None, 'nmet': None, 'ndir': None, 'nthr': None, 'psha': None, 'closes': 'q-x',
+            'vsrc': None, 'nmet': None, 'ndir': None, 'nthr': None, 'psha': psha, 'closes': 'q-x',
             'n_opened': 0, 'pred_registered_at': '2026-07-02', 'node_state': 'PREDICTED',
             'judged_at': None, 'existing_metric_value': None, 'hard_core': '',
             'require_novel_anchor': False, **tree_props}
@@ -79,7 +80,8 @@ def _cert(sk: bytes, did: str, *, tag='seam', metric_value=1.0, script_sha='',
           payload_overrides=None) -> WriteCertIn:
     request = Result(
         metric_value=metric_value, script=(script_path or 'inline'),
-        result_path=(result_path or ''), **(payload_overrides or {}))
+        script_sha=(script_sha or None), result_path=(result_path or ''),
+        **(payload_overrides or {}))
     command = dict(tree='T', tag=tag, prev_receipt_sha=prev,
                    metric_value=metric_value, script_sha=script_sha,
                    verb='submit_test_result', command_version='v4',
@@ -100,6 +102,18 @@ def _submit(svc, cert=None):
 
 
 _ANCHORED = {'assurance_tier': 'anchored', 'attestor_dids': [_DID_A]}
+
+
+def _portable_artifacts(tmp_path, monkeypatch):
+    root = tmp_path / 'repo'
+    artifacts = root / 'artifacts'
+    artifacts.mkdir(parents=True)
+    script = artifacts / 'score.py'
+    result = artifacts / 'result.json'
+    script.write_text('print(1.0)\n', encoding='utf-8')
+    result.write_text('{"metric":1.0}\n', encoding='utf-8')
+    monkeypatch.setattr(judgement_module.longinus, 'ROOT', root)
+    return script, result, 'artifacts/score.py', 'artifacts/result.json'
 
 
 # ── guard_defect (개선축, 음성 오라클): 위조/무서명 actor 의 판결 쓰기가 죽었다 ─────────────
@@ -177,67 +191,67 @@ def test_author_derived_from_signature_not_client_string():
     assert 'attested_by_did' in kg.captured[0][0][0], '스탬프가 #M5 원자 op 밖'
 
 
-def test_v4_submit_cert_binds_full_request_and_immutable_execution_content(tmp_path):
-    script = tmp_path / 'score.py'
-    result = tmp_path / 'result.json'
-    script.write_text('print(1.0)\n', encoding='utf-8')
-    result.write_text('{"metric":1.0}\n', encoding='utf-8')
-    script_path, result_path = str(script.resolve()), str(result.resolve())
-    script_sha, result_sha = file_sha(script_path), file_sha(result_path)
+def test_v4_submit_cert_binds_full_request_and_immutable_execution_content(
+        tmp_path, monkeypatch):
+    script, result, script_path, result_path = _portable_artifacts(
+        tmp_path, monkeypatch)
+    script_sha, result_sha = file_sha(str(script)), file_sha(str(result))
 
-    svc, kg = _svc(_ANCHORED)
+    svc, kg = _svc(_ANCHORED, psha=script_sha)
     cert = _cert(_SK_A, _DID_A, script_sha=script_sha, script_path=script_path,
                  result_path=result_path, result_sha256=result_sha)
     out = svc.submit_test_result('T', 'seam', Result(
-        metric_value=1.0, script=script_path, result_path=result_path, write_cert=cert))
+        metric_value=1.0, script=script_path, script_sha=script_sha,
+        result_path=result_path, write_cert=cert))
     assert out['attested_by'] == _DID_A
     assert out['result_sha256'] == result_sha and out['measurement_lock_sha']
 
     # A v1 signature cannot authorize a supplied artifact.
-    svc_v1, kg_v1 = _svc(_ANCHORED)
+    svc_v1, kg_v1 = _svc(_ANCHORED, psha=script_sha)
     with pytest.raises(HTTPException) as v1_exc:
         svc_v1.submit_test_result('T', 'seam', Result(
-            metric_value=1.0, script=script_path, result_path=result_path,
+            metric_value=1.0, script=script_path, script_sha=script_sha,
+            result_path=result_path,
             write_cert=_cert(_SK_A, _DID_A, script_sha=script_sha)))
     assert v1_exc.value.status_code == 422 and kg_v1.captured == []
 
     # Changing bytes after signing changes the server-derived expected command.
     result.write_text('{"metric":9.0}\n', encoding='utf-8')
-    svc_tampered, kg_tampered = _svc(_ANCHORED)
+    svc_tampered, kg_tampered = _svc(_ANCHORED, psha=script_sha)
     with pytest.raises(HTTPException) as tampered_exc:
         svc_tampered.submit_test_result('T', 'seam', Result(
-            metric_value=1.0, script=script_path, result_path=result_path, write_cert=cert))
+            metric_value=1.0, script=script_path, script_sha=script_sha,
+            result_path=result_path, write_cert=cert))
     assert tampered_exc.value.status_code == 422 and kg_tampered.captured == []
 
     # Same bytes at another allowed source path cannot reuse the certificate: source identity is
     # signed even though execution itself always happens from the private content-addressed copy.
-    copied_script = tmp_path / 'copy.py'
+    copied_script = script.parent / 'copy.py'
     copied_script.write_bytes(script.read_bytes())
     result.write_text('{"metric":1.0}\n', encoding='utf-8')
-    svc_moved, kg_moved = _svc(_ANCHORED)
+    svc_moved, kg_moved = _svc(_ANCHORED, psha=script_sha)
     with pytest.raises(HTTPException) as moved_exc:
         svc_moved.submit_test_result('T', 'seam', Result(
-            metric_value=1.0, script=str(copied_script), result_path=result_path,
+            metric_value=1.0, script='artifacts/copy.py', script_sha=script_sha,
+            result_path=result_path,
             write_cert=cert))
     assert moved_exc.value.status_code == 422 and kg_moved.captured == []
 
     # All verdict-affecting fields are covered, not just metric/artifact identity.
-    svc_payload, kg_payload = _svc(_ANCHORED)
+    svc_payload, kg_payload = _svc(_ANCHORED, psha=script_sha)
     with pytest.raises(HTTPException) as payload_exc:
         svc_payload.submit_test_result('T', 'seam', Result(
-            metric_value=1.0, script=script_path, result_path=result_path,
+            metric_value=1.0, script=script_path, script_sha=script_sha,
+            result_path=result_path,
             touched_assumptions=['unsigned-change'], write_cert=cert))
     assert payload_exc.value.status_code == 422 and kg_payload.captured == []
 
 
 def test_v4_artifact_cert_is_independent_of_client_and_server_cache_roots(
         tmp_path, monkeypatch):
-    script = tmp_path / 'score.py'
-    result = tmp_path / 'result.json'
-    script.write_text('print(1.0)\n', encoding='utf-8')
-    result.write_text('{"metric":1.0}\n', encoding='utf-8')
-    script_path, result_path = str(script.resolve()), str(result.resolve())
-    script_sha, result_sha = file_sha(script_path), file_sha(result_path)
+    script, result, script_path, result_path = _portable_artifacts(
+        tmp_path, monkeypatch)
+    script_sha, result_sha = file_sha(str(script)), file_sha(str(result))
 
     monkeypatch.setenv('LAKATOS_REPLAY_CACHE_ROOT', str(tmp_path / 'client-cache'))
     cert = _cert(_SK_A, _DID_A, script_sha=script_sha, script_path=script_path,
@@ -245,9 +259,10 @@ def test_v4_artifact_cert_is_independent_of_client_and_server_cache_roots(
     assert cert.command.judge_script_path is None and cert.command.result_path is None
 
     monkeypatch.setenv('LAKATOS_REPLAY_CACHE_ROOT', str(tmp_path / 'server-cache'))
-    svc, _kg = _svc(_ANCHORED)
+    svc, _kg = _svc(_ANCHORED, psha=script_sha)
     out = svc.submit_test_result('T', 'seam', Result(
-        metric_value=1.0, script=script_path, result_path=result_path, write_cert=cert))
+        metric_value=1.0, script=script_path, script_sha=script_sha,
+        result_path=result_path, write_cert=cert))
     assert out['attested_by'] == _DID_A
     assert str(tmp_path / 'server-cache') in out['judge_script_path']
     assert str(tmp_path / 'server-cache') in out['result_path']

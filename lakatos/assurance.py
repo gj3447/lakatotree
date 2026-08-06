@@ -39,6 +39,9 @@ GATE_REPRODUCIBILITY_CEILING = "reproducibility_ceiling"   # AG4/R-SOV V2(측정
                                        #   dangling/비-source root)된 노드를 submit 에서 progressive 밖
                                        #   partial 로 천장(하드 409 아님, 값 보존). ★불가 None(증명불가)은
                                        #   천장 안 함(부재≠반증, dead-σ) — 라이브 무회귀의 뿌리.
+GATE_REPLAY_PORTABILITY = "replay_portability"  # artifact-bearing submit → repo-relative POSIX
+                                       #   경로 + client/preregistered/server SHA 3자 일치. 영수증의
+                                       #   실행 입력을 호출 호스트의 절대경로/심볼 문자열에서 분리한다.
 
 # 구조 코어 — G1 receipt CAS · prereg 409 · writer first-write-wins. *의도적으로* 위 게이트 어휘와
 # 분리된 집합: TIER_GATES/VERB_GATES 에 이 토큰이 등장할 수 없어(가드 테스트가 교집합 ∅ 강제),
@@ -47,16 +50,17 @@ STRUCTURAL_CORE: frozenset[str] = frozenset({"receipt_cas", "prereg_409", "first
 
 # verb → 이 verb 에 적용될 수 있는 tier 게이트 비트(적용 여부는 tier 가 결정 — 아래 TIER_GATES 와 AND).
 VERB_GATES: dict[str, frozenset[str]] = {
-    "submit_test_result": frozenset({GATE_NOVEL_ANCHOR, GATE_WRITE_CERT, GATE_REPRODUCIBILITY_CEILING}),
+    "submit_test_result": frozenset({GATE_NOVEL_ANCHOR, GATE_WRITE_CERT,
+                                      GATE_REPRODUCIBILITY_CEILING, GATE_REPLAY_PORTABILITY}),
     "set_verdict_canonical": frozenset({GATE_REPLAY_FLOOR, GATE_WRITE_CERT}),   # AG5-IDENT: 비가역 승격 서명강제
 }
 
 # tier → 무장된 게이트 비트. 서열에 단조증가(상위 ⊇ 하위 — 가드 테스트가 강제).
 TIER_GATES: dict[str, frozenset[str]] = {
     "notebook": frozenset(),
-    "receipted": frozenset({GATE_NOVEL_ANCHOR}),
+    "receipted": frozenset({GATE_NOVEL_ANCHOR, GATE_REPLAY_PORTABILITY}),
     "anchored": frozenset({GATE_NOVEL_ANCHOR, GATE_REPLAY_FLOOR, GATE_WRITE_CERT,
-                           GATE_REPRODUCIBILITY_CEILING}),
+                           GATE_REPRODUCIBILITY_CEILING, GATE_REPLAY_PORTABILITY}),
     LEGACY: frozenset(),   # legacy 는 tier 게이트 없음 — opt-in 플래그로만(거동 불변)
 }
 

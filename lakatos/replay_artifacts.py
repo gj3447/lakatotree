@@ -11,8 +11,9 @@ import hashlib
 import os
 import re
 import stat
+import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 class ReplayArtifactError(RuntimeError):
@@ -78,6 +79,98 @@ def _read_exact(source: Path, expected_sha256: str, max_bytes: int) -> bytes:
     return body
 
 
+def read_portable_repo_file(
+    *,
+    repo_root: str | Path,
+    relative_path: str,
+    max_bytes: int,
+) -> tuple[bytes, str]:
+    """Read one repo-relative file without following any submitter-controlled symlink.
+
+    A prior ``Path.resolve`` containment check is not sufficient: an attacker can replace a
+    checked parent directory before the later source open.  This routine anchors traversal at an
+    open repository directory and opens every component with ``O_NOFOLLOW``.  The returned bytes
+    are the only bytes callers may publish into the private replay cache.
+    """
+    if not isinstance(relative_path, str) or not relative_path:
+        raise ReplayArtifactError("portable source path is empty")
+    if ('\x00' in relative_path or '\\' in relative_path or '::' in relative_path
+            or relative_path.startswith('~')):
+        raise ReplayArtifactError("portable source path has a forbidden spelling")
+    if (len(relative_path) >= 2 and relative_path[0].isalpha()
+            and relative_path[1] == ':'):
+        raise ReplayArtifactError("portable source path has a drive prefix")
+    try:
+        portable = PurePosixPath(relative_path)
+        parts = portable.parts
+    except (OSError, ValueError) as exc:
+        raise ReplayArtifactError("portable source path is invalid") from exc
+    if (portable.is_absolute() or not parts or '..' in parts
+            or portable.as_posix() != relative_path or relative_path == '.'):
+        raise ReplayArtifactError("portable source path is not canonical repo-relative POSIX")
+
+    nofollow = getattr(os, 'O_NOFOLLOW', None)
+    directory = getattr(os, 'O_DIRECTORY', None)
+    if nofollow is None or directory is None:
+        raise ReplayArtifactError("fd-anchored portable reads are unavailable on this platform")
+    cloexec = getattr(os, 'O_CLOEXEC', 0)
+    directory_flags = os.O_RDONLY | directory | nofollow | cloexec
+    file_flags = os.O_RDONLY | nofollow | cloexec
+    opened: list[int] = []
+    file_fd = -1
+    try:
+        root = Path(repo_root).resolve(strict=True)
+        directory_fd = os.open(root, directory_flags)
+        opened.append(directory_fd)
+        for component in parts[:-1]:
+            directory_fd = os.open(
+                component, directory_flags, dir_fd=directory_fd
+            )
+            opened.append(directory_fd)
+        file_fd = os.open(parts[-1], file_flags, dir_fd=directory_fd)
+        st = os.fstat(file_fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ReplayArtifactError("portable source is not a regular file")
+        if st.st_size > max_bytes:
+            raise ReplayArtifactError(
+                f"portable source exceeds {max_bytes} bytes"
+            )
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining:
+            chunk = os.read(file_fd, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        body = b''.join(chunks)
+        if len(body) > max_bytes:
+            raise ReplayArtifactError(
+                f"portable source exceeds {max_bytes} bytes"
+            )
+    except ReplayArtifactError:
+        raise
+    except (NotImplementedError, OSError, TypeError, ValueError) as exc:
+        raise ReplayArtifactError("fd-anchored portable source read failed") from exc
+    finally:
+        active_error = sys.exc_info()[0] is not None
+        close_error = None
+        if file_fd >= 0:
+            try:
+                os.close(file_fd)
+            except OSError as exc:
+                close_error = exc
+        for directory_fd in reversed(opened):
+            try:
+                os.close(directory_fd)
+            except OSError as exc:
+                if close_error is None:
+                    close_error = exc
+        if close_error is not None and not active_error:
+            raise ReplayArtifactError("portable source fd close failed") from close_error
+    return body, hashlib.sha256(body).hexdigest()
+
+
 def _valid_existing(path: Path, expected_sha256: str, max_bytes: int) -> bool:
     try:
         st = path.lstat()
@@ -93,16 +186,25 @@ def _valid_existing(path: Path, expected_sha256: str, max_bytes: int) -> bool:
         return False
 
 
-def materialize_snapshot(*, source_path: str, expected_sha256: str,
-                         kind: str, max_bytes: int) -> str:
-    """Atomically copy an exact input into the private content-addressed cache.
-
-    The returned file is owner-readable and not writable.  Existing cache entries
-    are reused only after type, owner, mode, size, and content verification.
-    """
-    source = Path(source_path).resolve(strict=True)
-    body = _read_exact(source, expected_sha256, max_bytes)
-    destination = snapshot_path(kind=kind, sha256=expected_sha256, source_path=str(source))
+def materialize_snapshot_bytes(
+    *,
+    body: bytes,
+    expected_sha256: str,
+    kind: str,
+    source_path: str,
+    max_bytes: int,
+) -> str:
+    """Publish already captured bytes without reopening their submitter-owned source."""
+    if not isinstance(body, bytes) or len(body) > max_bytes:
+        raise ReplayArtifactError(f"snapshot source exceeds {max_bytes} bytes")
+    actual = hashlib.sha256(body).hexdigest()
+    if actual != expected_sha256:
+        raise ReplayArtifactError(
+            f"snapshot bytes mismatch: expected {expected_sha256}, got {actual}"
+        )
+    destination = snapshot_path(
+        kind=kind, sha256=expected_sha256, source_path=source_path
+    )
     _ensure_private_dir(replay_cache_root())
     _ensure_private_dir(destination.parent)
     if _valid_existing(destination, expected_sha256, max_bytes):
@@ -130,3 +232,21 @@ def materialize_snapshot(*, source_path: str, expected_sha256: str,
     if not _valid_existing(destination, expected_sha256, max_bytes):
         raise ReplayArtifactError(f"snapshot verification failed: {destination}")
     return str(destination)
+
+
+def materialize_snapshot(*, source_path: str, expected_sha256: str,
+                         kind: str, max_bytes: int) -> str:
+    """Atomically copy an exact input into the private content-addressed cache.
+
+    The returned file is owner-readable and not writable.  Existing cache entries
+    are reused only after type, owner, mode, size, and content verification.
+    """
+    source = Path(source_path).resolve(strict=True)
+    body = _read_exact(source, expected_sha256, max_bytes)
+    return materialize_snapshot_bytes(
+        body=body,
+        expected_sha256=expected_sha256,
+        kind=kind,
+        source_path=str(source),
+        max_bytes=max_bytes,
+    )

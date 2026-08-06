@@ -1,0 +1,29 @@
+# Locked 2026-08-06 before implementation. Hermetic: network/KG zero; the real
+# submit boundary runs through capture ports and a load-bearing gate ablation.
+name: lakatotree-replay-portability
+target:
+  mode: in_process
+  callable: replay_portability_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: RP-1
+    description: Receipted artifact submissions require canonical repo-relative paths and matching client, preregistration, and server script identities before any producer or ledger write.
+    gate:
+      - {event: portable_artifact_boundary_verified, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:REPLAY_PORTABILITY:portable_artifact_boundary_verified
+      source: replay_portability_receipt.py
+      symbol: verify
+      must_emit: portable_artifact_boundary_verified
+
+  - id: RP-2
+    description: Removing only the replay-portability tier gate makes the same absolute-path attack reach the ledger capture port.
+    gate:
+      - {event: portability_gate_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:REPLAY_PORTABILITY:portability_gate_load_bearing
+      source: replay_portability_receipt.py
+      symbol: verify
+      must_emit: portability_gate_load_bearing
