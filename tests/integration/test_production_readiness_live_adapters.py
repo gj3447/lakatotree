@@ -22,6 +22,7 @@ pytestmark = pytest.mark.integration
 def _pg_dsn(pg_kw) -> str:
     values = dict(pg_kw)
     values["host"] = socket.gethostbyname(str(values["host"]))
+    values["options"] = "-c search_path=pg_catalog"
     return psycopg2.extensions.make_dsn(**values)
 
 
@@ -98,6 +99,8 @@ def test_postgresql_live_adapter_executes_catalog_acl_and_column_projection(pg_k
         assert result.binding_material["system_identifier"]
         assert live._normalize_result("postgresql", result)["status"] == "OBSERVED"
     finally:
+        connection.rollback()
+        connection.set_session(readonly=False, autocommit=False)
         with connection, connection.cursor() as cursor:
             cursor.execute("REVOKE UPDATE (tree) ON public.history FROM PUBLIC")
             cursor.execute(f'REVOKE SELECT (tree) ON public.history FROM "{inherited}"')
@@ -169,13 +172,15 @@ def test_postgresql_strict_access_topology_is_realizable_and_exact(pg_kw):
                 "CREATE FUNCTION pg_catalog.lo_probe() RETURNS integer "
                 "LANGUAGE SQL AS 'SELECT 1'"
             )
+            public_with_probe = _public_large_object_execute_count(cursor)
+            assert public_with_probe == public_before + 1
             with pytest.raises(psycopg2.Error, match="inventory differs"):
                 cursor.execute(_resource(
                     "server.storage_provisioning",
                     "postgresql_large_object_acl_v1.sql",
                 ))
             cursor.execute("ROLLBACK")
-            assert _public_large_object_execute_count(cursor) == public_before
+            assert _public_large_object_execute_count(cursor) == public_with_probe
             cursor.execute("DROP FUNCTION pg_catalog.lo_probe()")
 
             cursor.execute(_resource(

@@ -74,7 +74,6 @@ jobs:
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-harness" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-readiness-collect" --help
-          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-storage-audit" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-storage-access-verify" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-runtime-authority-verify" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-production-approval-verify" --help
@@ -98,23 +97,14 @@ jobs:
           assert report["l3_assurance"] == "UNAVAILABLE"
           PY
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - <<'PY'
-          import importlib.resources
           from server.production_readiness import evaluate_readiness
           from server.production_readiness_live import (
               NEO4J_PASSWORD_ENV, NEO4J_URI_ENV, NEO4J_USER_ENV,
               POSTGRESQL_DSN_ENV, collect_live_evidence, collect_neo4j,
               collect_postgresql,
           )
-          from server.storage_predeploy import _artifact_identity, operation_identity
           assert callable(evaluate_readiness)
           assert callable(collect_live_evidence)
-          provisioning = importlib.resources.files(
-              "server.storage_provisioning"
-          ).joinpath("postgresql_large_object_acl_v1.sql").read_text()
-          assert "requires a direct superuser session" in provisioning
-          artifact = _artifact_identity()
-          assert artifact["kind"] == "wheel-record"
-          assert operation_identity(artifact)["artifact"] == artifact
           pg = collect_postgresql(
               {"database": "lakatos", "owner_role": "owner",
                "migrator_role": "migrator", "runtime_role": "runtime"},
@@ -137,11 +127,16 @@ jobs:
               RUNTIME_SNAPSHOT_SCHEMA, build_runtime_challenge, canonical_json,
               challenge_sha256, signing_bytes,
           )
-          from server.storage_predeploy import _artifact_identity
           now = datetime.now(timezone.utc)
           secret = bytes([29]) * 32
           public = ed25519_public_key(secret).hex()
-          artifact = _artifact_identity()
+          artifact = {
+              "kind": "wheel-record",
+              "version": "0.1.0",
+              "installed_manifest_sha256": "a" * 64,
+              "record_verified_files": 32,
+              "stable_files": 64,
+          }
           boot = "e" * 64
           challenge = build_runtime_challenge(
               nonce="d" * 64, environment="production", boot_id=boot,
@@ -231,17 +226,26 @@ jobs:
           assert callable(default_ports)
           PY
           "$RUNNER_TEMP/storage-wheel-venv-a/bin/lakatotree-storage-predeploy" --help
+          "$RUNNER_TEMP/storage-wheel-venv-a/bin/lakatotree-storage-audit" --help
           for suffix in a b; do
             "$RUNNER_TEMP/storage-wheel-venv-$suffix/bin/python" - \
               > "$RUNNER_TEMP/storage-identity-$suffix.json" <<'PY'
-          import json, psycopg2, neo4j
-          from server.storage_predeploy import _artifact_identity, migration_sources
+          import importlib.resources, json, psycopg2, neo4j
+          from server.storage_predeploy import (
+              _artifact_identity, migration_sources, operation_identity,
+          )
           assert set(migration_sources()) == {
-              "critique_history_v1.sql", "outbox_identity_v1.cypher"
+              "critique_history_v1.sql", "outbox_identity_v1.cypher",
+              "temporal_proof_identity_v1.cypher",
           }
+          provisioning = importlib.resources.files(
+              "server.storage_provisioning"
+          ).joinpath("postgresql_large_object_acl_v1.sql").read_text()
+          assert "requires a direct superuser session" in provisioning
           identity = _artifact_identity()
           assert identity["kind"] == "wheel-record"
           assert identity["record_verified_files"] > 0
+          assert operation_identity(identity)["artifact"] == identity
           print(json.dumps(identity, sort_keys=True))
           PY
           done

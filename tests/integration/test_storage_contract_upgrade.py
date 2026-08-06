@@ -1009,7 +1009,9 @@ def test_predeploy_and_runtime_receipt_round_trip_real_stores(
         lambda: (psycopg2, lambda **_kwargs: _BorrowedDriver(neo4j_driver)),
     )
     settings = ServerSettings.from_env()
-    connection = psycopg2.connect(**pg_kw)
+    connection = psycopg2.connect(
+        **pg_kw, options="-c search_path=pg_catalog"
+    )
     borrowed = _BorrowedDriver(neo4j_driver)
     try:
         connection.autocommit = True
