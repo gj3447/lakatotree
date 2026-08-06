@@ -1,0 +1,50 @@
+# Locked after the RED import failure and before the durable journal implementation.
+# Hermetic: real local files only; no network, provider, KG, or ambient clock.  The
+# negative oracle mutates commit ordering in an isolated temporary source copy.
+name: lakatotree-dual-resource-durable-journal
+target:
+  mode: in_process
+  callable: durable_resource_journal_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: DRJ-1
+    description: A response lost after the atomic SQLite commit is recovered by an exact command retry that returns the original receipt without a second transition.
+    gate:
+      - {event: response_loss_exact_replay_durable, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_DURABLE_JOURNAL:response_loss_exact_replay_durable
+      source: durable_resource_journal_receipt.py
+      symbol: verify
+      must_emit: response_loss_exact_replay_durable
+
+  - id: DRJ-2
+    description: Two independent SQLite connections racing for the final compute and token slot serialize to one accepted grant and one durable capacity rejection without oversubscription.
+    gate:
+      - {event: concurrent_last_slot_serialized, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_DURABLE_JOURNAL:concurrent_last_slot_serialized
+      source: durable_resource_journal_receipt.py
+      symbol: verify
+      must_emit: concurrent_last_slot_serialized
+
+  - id: DRJ-3
+    description: An independently read signed checkpoint chain detects replacement of the local database with an older but internally valid copy and fails closed.
+    gate:
+      - {event: external_checkpoint_detects_rollback, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_DURABLE_JOURNAL:external_checkpoint_detects_rollback
+      source: durable_resource_journal_receipt.py
+      symbol: verify
+      must_emit: external_checkpoint_detects_rollback
+
+  - id: DRJ-4
+    description: Replacing only the fresh-command SQLite commit with rollback in an isolated source copy loses the response-lost command and triggers the preregistered RED.
+    gate:
+      - {event: commit_before_response_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_DURABLE_JOURNAL:commit_before_response_load_bearing
+      source: durable_resource_journal_receipt.py
+      symbol: verify
+      must_emit: commit_before_response_load_bearing

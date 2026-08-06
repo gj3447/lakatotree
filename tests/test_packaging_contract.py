@@ -14,11 +14,12 @@ import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# core library modules an external author imports — must not pull third-party packages
+# core library modules external consumers import — must not pull third-party packages
 _CORE_MODULES = [
     "lakatos/programme/authoring.py",
     "lakatos/programme/evidence.py",
     "lakatos/programme/record_judge.py",
+    "lakatos/io/resource_journal.py",
 ]
 _THIRD_PARTY = {"fastapi", "starlette", "uvicorn", "httpx", "pydantic", "mcp",
                 "psycopg2", "pymongo", "neo4j", "prov", "lxml", "rdflib", "numpy", "scipy"}
@@ -40,8 +41,8 @@ def test_base_install_has_no_third_party_deps():
     )
 
 
-def test_core_authoring_modules_import_no_third_party():
-    """Static guard: the public authoring modules import only stdlib or lakatos.* — never a heavy dep."""
+def test_core_library_modules_import_no_third_party():
+    """Static guard: public core modules import only stdlib or lakatos.* — never a heavy dep."""
     offenders = {}
     for rel in _CORE_MODULES:
         tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))

@@ -1,8 +1,8 @@
 # Dual-resource coordination (v1)
 
-- Status: **executable kernel; persistence and live metering not yet wired**
+- Status: **executable kernel plus durable single-host journal; live metering and harness wiring not yet implemented**
 - Schema: `lakatotree.resource/v1`
-- Code: `lakatos/resource_coordination.py`
+- Code: `lakatos/resource_coordination.py`, `lakatos/io/resource_journal.py`
 
 ## Why this is separate from `cycle_budget`
 
@@ -48,6 +48,13 @@ a progressive result does not refund or enlarge a resource budget.
   CPU and memory controllers, while wall deadlines and provider token ceilings need
   their own mechanisms. See the
   [Linux kernel cgroup v2 documentation](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html).
+- The durable adapter uses a local SQLite rollback journal with `BEGIN IMMEDIATE`,
+  `synchronous=FULL`, uniqueness, and revision/hash compare-and-swap. SQLite permits
+  concurrent readers but only one writer at a time; its documented commit protocol
+  makes a transaction appear all-or-nothing under its stated filesystem assumptions.
+  See the official [transaction](https://sqlite.org/lang_transaction.html),
+  [atomic commit](https://sqlite.org/atomiccommit.html), and
+  [uniqueness/upsert](https://sqlite.org/lang_upsert.html) documentation.
 
 ## v1 boundary
 
@@ -66,6 +73,36 @@ The pure kernel owns:
 
 It does not own cap selection, prices, model/provider choice, GPU placement, tenant
 fairness, retry policy, autoscaling, scientific verdicts, or automatic budget raises.
+
+The state-plane adapter owns a stricter I/O boundary:
+
+- canonical UTF-8 JSON codecs for budgets, commands, transitions, receipts, and
+  checkpoints;
+- full semantic replay on every load or write, plus a cumulative journal head that
+  binds even state-convergent rejected histories;
+- one SQLite transaction for `(scope, command_id)` deduplication, the transition,
+  revision/hash CAS, cached head, and immutable anchor outbox intent;
+- response-loss recovery in which an exact retry is checked before a stale expected
+  revision and returns the original receipt without a second transition;
+- post-commit reconciliation against an externally stored signed checkpoint chain.
+
+`SignedAppendOnlyFileAnchor` is a reference authority, not magic trust. Its directory
+must be independently administered or genuinely append-only relative to the SQLite
+writer; placing it beside the database under the same deletion-capable principal does
+not detect wholesale rollback. A remote predecessor-CAS authority can implement the
+same port. An accepted kernel decision alone is not an execution permit: this slice
+deliberately exposes no operation-agnostic `executable` boolean. A future harness
+adapter must persist an effect intent and mint/revalidate a permit bound to the current
+anchor head, operation, grant, fence, workload, expiry, and effect id immediately
+before dispatch.
+
+Reconciliation in this slice is synchronous and caller-driven. The outbox has only
+`PENDING` and `CONFIRMED` states, and the journal does not yet stop a caller from
+adding later revisions while an earlier checkpoint remains unconfirmed. Consequently,
+an anchor outage can accumulate a local-only branch; none of that branch authorizes
+an external effect. The harness milestone must add a bounded retry/deadline state
+machine, halt fresh branch advancement while the trusted head is unresolved, and
+revalidate an operation-specific permit against the confirmed head at dispatch time.
 
 The initial dimensions are intentionally small and enforceable:
 
@@ -94,9 +131,10 @@ has no new transition and projects the already-stored receipt.
 The kernel reads no wall clock, network, database, environment variable, model, or
 process. Commands carry canonical RFC3339 UTC observations and measurement
 identities; the kernel compares those observations to estimate and grant deadlines.
-A storage adapter must commit command deduplication, transitions, revised state,
-receipt, and any outbox intent in one revision-checked transaction before executing
-the effect. External event names are an emit-adapter concern, not kernel vocabulary.
+The durable storage adapter commits command deduplication, transitions, revised state,
+receipt, and the anchor outbox intent in one revision-checked transaction before any
+response or anchor publication. External event names remain an emit-adapter concern,
+not kernel vocabulary.
 
 ### State machine
 
@@ -170,18 +208,25 @@ Implemented now:
 - an OOPTDD receipt that drives the real kernel and, only in temporary subprocess
   copies, separately removes compute, input-token, output-token, causal-time,
   receipt-derived decision, and journal-semantic-replay guards to prove all six are
-  load-bearing without exposing a production bypass.
+  load-bearing without exposing a production bypass;
+- a dependency-free SQLite journal with `(scope, command_id)` uniqueness, full replay,
+  revision-and-hash CAS, atomic checkpoint outbox, and strict schema/version readback;
+- a signed append-only checkpoint-chain reference adapter with independent exact
+  readback, rollback/fork detection, and idempotent crash-window reconciliation;
+- real-file response-loss, stale-retry, two-connection last-slot, rollback,
+  same-revision replacement, and signed-record tamper integration guards;
+- an additional OOPTDD receipt that ablates commit-before-response in an isolated
+  source copy and proves the durable ordering is load-bearing.
 
 Still required before claiming live dual-resource enforcement:
 
-1. a durable CAS/event-journal adapter with `(scope, command_id)` uniqueness;
-2. commit-before-response-loss and concurrent last-slot integration tests;
-3. a harness preflight that receives an injected `ResourceEstimate`;
-4. a real compute meter/limiter and an LLM provider usage adapter;
-5. settlement/reconciliation workers, expiry observation, and an idempotent
+1. a harness preflight that receives an injected `ResourceEstimate`;
+2. a real compute meter/limiter and an LLM provider usage adapter;
+3. settlement/reconciliation workers, expiry observation, and an idempotent
    `StopWork` outbox effect for in-use cancel/deadline transitions;
-6. only then, a versioned fair-queue or quality-per-cost routing policy.
+4. only then, a versioned fair-queue or quality-per-cost routing policy.
 
 Until those gates land, legacy harness calls remain uninstrumented. The repository can
-claim an executable deterministic coordination kernel—not durable or fleet-wide
+claim a deterministic coordination kernel and a durable local journal with an
+external-checkpoint protocol—not live-metered, effect-fenced, or fleet-wide
 enforcement.

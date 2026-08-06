@@ -158,7 +158,8 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | `lakatos/verdict/` | deterministic judgement and dialectical composition |
 | `lakatos/quant/` | credence, problem-solving, calibration, multiplicity, programme-series diagnostics |
 | `lakatos/programme/` | branching, lifecycle, comparison, public authoring |
-| `lakatos/resource_coordination.py` | deterministic compute/token reservation and settlement kernel (live adapter pending) |
+| `lakatos/resource_coordination.py` | deterministic compute/token reservation and settlement kernel |
+| `lakatos/io/resource_journal.py` | single-host SQLite revision-CAS journal and signed external-checkpoint adapter |
 | `lakatos/io/` | receipts, lineage, replay, persistence adapters |
 | `formal/` | machine-checked kernel model |
 | `server/` | optional HTTP/MCP surface and stores |
@@ -182,7 +183,7 @@ This compact roster is machine-checked against the package. See the architecture
 `kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge` `multi_run`
 
 ### `io/`
-`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify`
+`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify` `resource_journal`
 
 ## Develop and verify
 

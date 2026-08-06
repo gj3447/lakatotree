@@ -88,9 +88,17 @@ distribution.
   from the authoritative transition, makes accepted and rejected exact command replay
   a no-op, and reconstructs retained journals from an empty genesis through the same
   deterministic decision function. It retains unknown in-use consumption for
-  reconciliation and freezes after measured overrun. This remains separate from the
-  scored-node `cycle_budget`; durable CAS storage, stop-work effects, and live
-  compute/provider metering are explicit follow-up gates.
+  reconciliation and freezes after measured overrun. A dependency-free SQLite adapter
+  now persists commands, transitions, receipts, revision/hash CAS state, and anchor
+  intents atomically; exact response-loss retries, concurrent last-slot claims, and
+  signed external checkpoint reconciliation are real-file guarded. The bundled file
+  anchor is a reference trust boundary and must live on independently administered or
+  append-only storage. Its reconciliation is currently synchronous and caller-driven;
+  it neither bounds retry work nor fences later local revisions behind an unconfirmed
+  head, and it deliberately mints no execution permit. This remains separate from the
+  scored-node `cycle_budget`; harness preflight, a bounded anchor-outbox state machine,
+  operation-bound effect permits, stop-work effects, and live compute/provider
+  metering are explicit follow-up gates.
 - A dependency-free production/L3 readiness case evaluator now reverifies exact
   storage bindings, a signed writer fence, least-privilege role projections, runtime
   state, and a policy-bound two-ended signed receipt-time component. Arbitrary cases

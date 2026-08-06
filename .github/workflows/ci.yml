@@ -37,6 +37,7 @@ jobs:
           with zipfile.ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
               required = {
+                  "lakatos/io/resource_journal.py",
                   "server/schema.sql",
                   "server/storage_migrations/critique_history_v1.sql",
                   "server/storage_migrations/outbox_identity_v1.cypher",
@@ -77,6 +78,22 @@ jobs:
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-storage-access-verify" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-runtime-authority-verify" --help
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/lakatotree-production-approval-verify" --help
+          "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - <<'PY'
+          import pathlib, tempfile
+          from lakatos.io.resource_journal import AnchorStatus, SQLiteResourceJournal
+          from lakatos.resource_coordination import ResourceState, ResourceVector
+
+          with tempfile.TemporaryDirectory() as raw:
+              root = pathlib.Path(raw)
+              journal = SQLiteResourceJournal(root / "resource.sqlite3")
+              created = journal.initialize(ResourceState.create(
+                  budget_id="wheel-budget", scope="tree:wheel", epoch=1,
+                  hard_caps=ResourceVector(1, 1, 1),
+              ))
+              loaded = journal.load("tree:wheel")
+              assert created.state == loaded.state
+              assert loaded.anchor_status is AnchorStatus.PENDING
+          PY
           "$RUNNER_TEMP/readiness-base-wheel-venv/bin/python" - \
             "$GITHUB_WORKSPACE/ooptdd_receipts/PRODUCTION_L3_READINESS/harness.json" \
             "$GITHUB_WORKSPACE/ooptdd_receipts/PRODUCTION_L3_READINESS/fixture.v1.json" \
