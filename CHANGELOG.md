@@ -81,6 +81,16 @@ distribution.
 
 ### Added
 
+- A dependency-free dual-resource coordination kernel now models componentwise,
+  all-or-nothing reservations across compute wall time and LLM input/output tokens.
+  It produces receipt- and state-chain-bound semantic transitions, enforces causal
+  UTC lifecycle ordering as well as validity/expiry, derives public decision metadata
+  from the authoritative transition, makes accepted and rejected exact command replay
+  a no-op, and reconstructs retained journals from an empty genesis through the same
+  deterministic decision function. It retains unknown in-use consumption for
+  reconciliation and freezes after measured overrun. This remains separate from the
+  scored-node `cycle_budget`; durable CAS storage, stop-work effects, and live
+  compute/provider metering are explicit follow-up gates.
 - A dependency-free production/L3 readiness case evaluator now reverifies exact
   storage bindings, a signed writer fence, least-privilege role projections, runtime
   state, and a policy-bound two-ended signed receipt-time component. Arbitrary cases

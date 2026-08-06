@@ -158,18 +158,19 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | `lakatos/verdict/` | deterministic judgement and dialectical composition |
 | `lakatos/quant/` | credence, problem-solving, calibration, multiplicity, programme-series diagnostics |
 | `lakatos/programme/` | branching, lifecycle, comparison, public authoring |
+| `lakatos/resource_coordination.py` | deterministic compute/token reservation and settlement kernel (live adapter pending) |
 | `lakatos/io/` | receipts, lineage, replay, persistence adapters |
 | `formal/` | machine-checked kernel model |
 | `server/` | optional HTTP/MCP surface and stores |
 
-Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual model](docs/PIDNA.md), the [HSWM agent-network design contract](docs/HSWM_AGENT_NETWORK.md), [quantitative grounding](docs/QUANTITATIVE_GROUNDING.md), and the prose rationale [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md).
+Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual model](docs/PIDNA.md), the [dual-resource coordination contract](docs/DUAL_RESOURCE_COORDINATION.md), the [HSWM agent-network design contract](docs/HSWM_AGENT_NETWORK.md), [quantitative grounding](docs/QUANTITATIVE_GROUNDING.md), and the prose rationale [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md).
 
 ## Module map
 
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
+`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `resource_coordination` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`
@@ -198,6 +199,7 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 
 - **Start integrating:** [Consuming LakatoTree](docs/CONSUMING_LAKATOTREE.md)
 - **Understand the design:** [THEORY.md](THEORY.md) and [PIDNA](docs/PIDNA.md)
+- **Coordinate compute and token budgets:** [dual-resource coordination](docs/DUAL_RESOURCE_COORDINATION.md)
 - **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)
 - **Evaluate, continue, or prune it:** [HSWM research programme](docs/HSWM_RESEARCH_PROGRAMME.md)
 - **Audit the progress judge scientifically:** [backtest protocol](docs/BACKTEST_PROTOCOL_2026-07-24.md)

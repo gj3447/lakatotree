@@ -1,0 +1,91 @@
+# Locked after RED-first import failure and before the resource kernel implementation.
+# Hermetic: no network, provider, database, or clock access.  The adapter drives the
+# real decide/evolve path and ablates load-bearing guards in isolated temporary
+# source copies and subprocesses.  The canonical module is untouched.
+name: lakatotree-dual-resource-coordination
+target:
+  mode: in_process
+  callable: dual_resource_coordination_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: DRC-1
+    description: A request exceeding any compute or LLM-token hard cap is rejected atomically, with no partial reservation on the other resource axis.
+    gate:
+      - {event: dual_vector_admission_rejected, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:dual_vector_admission_rejected
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: dual_vector_admission_rejected
+
+  - id: DRC-2
+    description: Exact command replay returns the original receipt and never reserves capacity twice.
+    gate:
+      - {event: reservation_replay_idempotent, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:reservation_replay_idempotent
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: reservation_replay_idempotent
+
+  - id: DRC-3
+    description: Removing only the LLM input-token admission guard makes the identical over-cap command survive admission in an isolated mutant and therefore fail the preregistered probe.
+    gate:
+      - {event: input_token_guard_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:input_token_guard_load_bearing
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: input_token_guard_load_bearing
+
+  - id: DRC-4
+    description: Removing only the LLM output-token admission guard makes the identical over-cap command survive admission in an isolated mutant and therefore fail the preregistered probe.
+    gate:
+      - {event: output_token_guard_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:output_token_guard_load_bearing
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: output_token_guard_load_bearing
+
+  - id: DRC-5
+    description: Removing only the compute wall-time admission guard makes the identical over-cap command survive admission in an isolated mutant and therefore fail the preregistered probe.
+    gate:
+      - {event: compute_guard_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:compute_guard_load_bearing
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: compute_guard_load_bearing
+
+  - id: DRC-6
+    description: Removing the causal lifecycle-time guard makes a start observed before its reservation survive in an isolated mutant and therefore fail the preregistered probe.
+    gate:
+      - {event: causal_time_guard_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:causal_time_guard_load_bearing
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: causal_time_guard_load_bearing
+
+  - id: DRC-7
+    description: Inverting the receipt-derived Decision acceptance projection makes a rejected transition appear accepted in an isolated mutant and therefore fail the preregistered probe.
+    gate:
+      - {event: decision_binding_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:decision_binding_load_bearing
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: decision_binding_load_bearing
+
+  - id: DRC-8
+    description: Removing deterministic semantic replay lets a locally rehashed rejected journal record invert exact-replay acceptance in an isolated mutant and therefore fail the preregistered probe.
+    gate:
+      - {event: journal_semantics_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_COORDINATION:journal_semantics_load_bearing
+      source: dual_resource_coordination_receipt.py
+      symbol: verify
+      must_emit: journal_semantics_load_bearing
