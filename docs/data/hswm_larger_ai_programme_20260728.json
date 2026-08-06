@@ -28,7 +28,7 @@
     {"reference": "repo:docs/FRONTIER_QUESTION_FSM.md", "sha256": "e3c09697ab3751b4a67d18765384595ee6d4d1a7b412ec9337113e5b983c8d40"},
     {"reference": "repo:docs/HSWM_AGENT_NETWORK.md", "sha256": "f1337519695f69c998cf4d9dbe9e1f18d8fa023646247460fe24847cc74a5fd6"},
     {"reference": "repo:docs/HSWM_RESEARCH_PROGRAMME.md", "sha256": "2df75c86432badd7083af76606580b6d0042e6327694487506c4873b1fbc9883"},
-    {"reference": "repo:server/contexts/tree/judgement_service.py", "sha256": "e105e963752417950adabead6730330184f8ad68e53c3116e3323b7c48decc87"}
+    {"reference": "repo:server/contexts/tree/judgement_service.py", "sha256": "5013c1bdd6ef5a5168a65e79a28dfc3833b01bf743386518be4fc9ef8bc431d1"}
   ],
   "fragment_bindings": [
     {"reference": "repo://HSWM/research/HSWM_RESEARCH_LEDGER.v1.json#/hypotheses/0", "target_sha256": "30183ba06bb26e4ab130ceac89249f6e774a0c671cdd0cf3e0339f6b983499e5"},
@@ -44,7 +44,7 @@
   ],
   "tree": {
     "manifest_owner": "codex-research-2026-07-28",
-    "manifest_digest": "c3dc9312747fb281f2515b5de7549082560b1f981ba1c9a28a5cb3d4f19f7738",
+    "manifest_digest": "30e56c947360a4cde4b93ea0116d3f1d1f5207c2b4d165e2156617f1cbbb0270",
     "title": "HSWM Larger AI — receipt-gated dense research programme",
     "hard_core": "사용자 정전: HSWM은 합의(合意)를 포함하는 더 큰 범위의 AI이며 OM family #8/CHU 축에 놓인다. 그 기질은 함수가 LLM에 의해 실행되는 의미론적 하이퍼그래프 신경망이고, 구조는 열려 있고 자기유사적이며 조합 가능하고 가소적이다. 성능·전이·기억 효능은 hard core가 아니며 영수증 기반 실험으로만 판정한다.",
     "frontier_rule": "A frontier question closes only through a preregistered target and an atomic server verdict receipt; progressive answers positively and rejected answers negatively. Partial, unverified, conditional, off-axis, or manually asserted outcomes remain open.",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -127,6 +128,7 @@ def test_both_launchers_reject_uvicorn_listener_env_before_dependencies(name, va
 def test_internal_launcher_revalidates_env_file_listener_override(tmp_path):
     env_file = tmp_path / "server.env"
     env_file.write_text(
+        f"LAKATOS_PYTHON={shlex.quote(sys.executable)}\n"
         "NEO4J_URI=bolt://example.invalid\n"
         "NEO4J_DATABASE=neo4j\n"
         "NEO4J_USER=neo4j\n"
@@ -151,6 +153,7 @@ def test_internal_launcher_revalidates_env_file_listener_override(tmp_path):
 def test_internal_launcher_revalidates_token_after_env_file(tmp_path):
     env_file = tmp_path / "server.env"
     env_file.write_text(
+        f"LAKATOS_PYTHON={shlex.quote(sys.executable)}\n"
         "NEO4J_URI=bolt://example.invalid\n"
         "NEO4J_DATABASE=neo4j\n"
         "NEO4J_USER=neo4j\n"
@@ -276,6 +279,7 @@ def test_runtime_launchers_reject_one_shot_credentials(
 ):
     env_file = tmp_path / "server.env"
     env_file.write_text(
+        f"LAKATOS_PYTHON={shlex.quote(sys.executable)}\n"
         "NEO4J_URI=bolt://example.invalid\n"
         "NEO4J_DATABASE=neo4j\n"
         "NEO4J_USER=runtime\n"
