@@ -17,7 +17,7 @@ requirements:
       must_emit: exact_policy_and_signer_separation_enforced
 
   - id: SAA-2
-    description: The exact raw policy, v5 receipt, predeploy bundle, and startup bundle verify as one source/target-bound chain without granting deployment approval.
+    description: The exact raw policy, v5 receipt, predeploy bundle, and startup bundle verify as one source/target-bound chain without granting deployment approval, including a proxy/NAT target whose configured client endpoint differs from its observed backend endpoint while both remain content-bound.
     gate:
       - {event: signed_phase_pair_verified_claim_bounded, op: "==", count: 1}
     longinus:
@@ -37,7 +37,7 @@ requirements:
       must_emit: crypto_schema_cross_phase_nonce_attacks_rejected
 
   - id: SAA-4
-    description: PostgreSQL and Neo4j missing or excess authority, immutable grants, unsupported semantics, unstable authorization snapshots, target/principal splices, within-phase drift, cross-store or cross-phase drift, and expired handoff fail closed under an exact executed-control manifest.
+    description: PostgreSQL and Neo4j missing or excess authority, immutable grants, unsupported semantics, unstable authorization snapshots, independently anchored target/principal splices, within-phase drift, cross-store or cross-phase drift, and expired handoff fail closed under an exact executed-control manifest.
     gate:
       - {event: authority_and_drift_attacks_rejected, op: "==", count: 1}
     longinus:

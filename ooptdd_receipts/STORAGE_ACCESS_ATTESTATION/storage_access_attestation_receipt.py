@@ -69,7 +69,7 @@ def _policy() -> dict:
         },
         "postgresql": {
             "host": "127.0.0.1",
-            "port": 5432,
+            "port": 15432,
             "database": "lakatos",
             "owner_role": "lakatos_owner",
             "migrator_role": "lakatos_migrator",
@@ -100,11 +100,11 @@ def _target_details() -> dict:
     return {
         "postgresql": {
             "configured_host": "127.0.0.1",
-            "configured_port": 5432,
+            "configured_port": 15432,
             "configured_database": "lakatos",
             "database": "lakatos",
             "database_oid": "16384",
-            "server_address": "127.0.0.1",
+            "server_address": "172.18.0.2",
             "server_port": 5432,
             "server_version_num": "170000",
             "system_identifier": "123456789",
@@ -807,7 +807,25 @@ def verify(backend, cid):
             "raw.complete_positive_chain",
             positive.status == "ACCESS_PAIR_VERIFIED"
             and positive.production_ready is False
-            and positive.deployment_status == "NOT_READY",
+            and positive.deployment_status == "NOT_READY"
+            and policy["postgresql"]["host"]
+                == docs["pre_expected"]["target_details"]["postgresql"][
+                    "configured_host"
+                ]
+            and policy["postgresql"]["port"]
+                == docs["pre_expected"]["target_details"]["postgresql"][
+                    "configured_port"
+                ]
+            and docs["pre_expected"]["target_details"]["postgresql"][
+                "configured_host"
+            ] != docs["pre_expected"]["target_details"]["postgresql"][
+                "server_address"
+            ]
+            and docs["pre_expected"]["target_details"]["postgresql"][
+                "configured_port"
+            ] != docs["pre_expected"]["target_details"]["postgresql"][
+                "server_port"
+            ],
             positive.failures,
         )
         control(
@@ -1221,19 +1239,49 @@ def verify(backend, cid):
 
     target_splice = copy.deepcopy(docs["pre_expected"])
     target_splice["target_details"]["postgresql"]["server_address"] = "192.0.2.50"
+    target_splice["target_details"]["postgresql"]["system_identifier"] = (
+        "987654321"
+    )
     target_splice["target_sha256"] = access.sha256_bytes(
         access.canonical_json(target_splice["target_details"])
     )
+    structurally_valid = (
+        access.validate_expected(target_splice, policy) is target_splice
+    )
     try:
-        access.validate_expected(target_splice, policy)
-    except access.StorageAccessError:
-        target_rejected = True
+        predeploy.verify_predeploy_receipt_document(
+            docs["receipt"],
+            file_sha256=_sha(docs["receipt_raw"]),
+            expected_file_sha256=_sha(docs["receipt_raw"]),
+            expected_environment="production",
+            expected_fence_verifier_sha256="f" * 64,
+            expected_fence_public_key_hex=ed25519_public_key(
+                FENCE_SECRET
+            ).hex(),
+            artifact=ARTIFACT,
+            operation=predeploy.operation_identity(ARTIFACT),
+            target={
+                "sha256": target_splice["target_sha256"],
+                "details": target_splice["target_details"],
+            },
+            evaluated_at=EVALUATED_AT,
+            expected_principals=predeploy.principal_bindings(
+                postgresql_migrator="lakatos_migrator",
+                postgresql_runtime="lakatos_runtime",
+                neo4j_migrator="lakatos_migrator_user",
+                neo4j_runtime="lakatos_runtime_user",
+            ),
+        )
+    except ValueError as exc:
+        target_rejected = str(exc) == (
+            "predeploy receipt is artifact-, operation-, or target-mismatched"
+        )
     else:
         target_rejected = False
     control(
         "binding.live_target",
-        target_rejected,
-        "different live target accepted",
+        structurally_valid and target_rejected,
+        "independent predeploy fence accepted a backend identity splice",
     )
 
     attacked_receipt = copy.deepcopy(docs["receipt"])

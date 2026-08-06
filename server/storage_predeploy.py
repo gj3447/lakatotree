@@ -419,23 +419,24 @@ def target_identity(
         pg = dict(zip(names, cursor.fetchone(), strict=True))
     if pg.pop("search_path", None) != "pg_catalog":
         raise RuntimeError("PostgreSQL migration search_path differs from pg_catalog")
-    if pg["server_port"] != settings.pg_port:
-        raise RuntimeError("PostgreSQL server port differs from the configured target")
+    # The configured host/port identify the authenticated client transport;
+    # ``inet_server_addr/port`` identify the server-side listener.  NAT, a
+    # container port map, or a database proxy may legitimately make both
+    # coordinates different.  Both remain bound into the target digest below,
+    # so a route change or backend-identity change still changes the target.
+    if not isinstance(pg["server_address"], str):
+        raise RuntimeError("PostgreSQL server address is invalid")
     try:
-        configured_pg_ip = ipaddress.ip_address(settings.pg_host)
-    except ValueError:
-        configured_pg_ip = None
-    if configured_pg_ip is not None:
-        try:
-            observed_pg_ip = ipaddress.ip_address(str(pg["server_address"]))
-        except ValueError as exc:
-            raise RuntimeError(
-                "PostgreSQL server address is not a literal IP"
-            ) from exc
-        if observed_pg_ip != configured_pg_ip:
-            raise RuntimeError(
-                "PostgreSQL server address differs from the configured target"
-            )
+        observed_pg_ip = ipaddress.ip_address(pg["server_address"])
+    except ValueError as exc:
+        raise RuntimeError("PostgreSQL server address is invalid") from exc
+    if str(observed_pg_ip) != pg["server_address"]:
+        raise RuntimeError("PostgreSQL server address is invalid")
+    if (
+        type(pg["server_port"]) is not int
+        or not 1 <= pg["server_port"] <= 65535
+    ):
+        raise RuntimeError("PostgreSQL server endpoint is invalid")
     neo_rows = _neo_query(
         driver,
         "CALL db.info() YIELD id, name RETURN id, name",

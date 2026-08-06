@@ -502,9 +502,6 @@ def _validate_target_details(value: Any, policy: Mapping[str, Any]) -> Mapping[s
     )
     try:
         observed_server_ip = ipaddress.ip_address(str(pg["server_address"]))
-        policy_server_ip = ipaddress.ip_address(
-            str(policy["postgresql"]["host"])
-        )
     except ValueError as exc:
         raise StorageAccessError(
             "PostgreSQL target binding must use one literal server IP"
@@ -514,9 +511,9 @@ def _validate_target_details(value: Any, policy: Mapping[str, Any]) -> Mapping[s
         and pg["configured_port"] == policy["postgresql"]["port"]
         and pg["configured_database"] == policy["postgresql"]["database"]
         and pg["database"] == policy["postgresql"]["database"]
-        and observed_server_ip == policy_server_ip
+        and str(observed_server_ip) == pg["server_address"]
         and type(pg["server_port"]) is int
-        and pg["server_port"] == policy["postgresql"]["port"]
+        and 1 <= pg["server_port"] <= 65535
     ):
         raise StorageAccessError("PostgreSQL target binding differs from policy")
     for field in (

@@ -828,6 +828,23 @@ def test_pg_endpoint_loopback_pin_relaxes_only_for_development():
     assert (host, port) == ("192.168.0.25", 5433)
 
 
+def test_postgresql_observed_backend_endpoint_is_distinct_but_canonical():
+    assert live._validated_observed_pg_endpoint("172.18.0.2", 5432) == (
+        "172.18.0.2",
+        5432,
+    )
+    for address, port in (
+        ("postgres.internal", 5432),
+        ("2001:0db8::1", 5432),
+        ("172.18.0.2", True),
+        ("172.18.0.2", "5432"),
+        ("172.18.0.2", 0),
+        ("172.18.0.2", 65536),
+    ):
+        with pytest.raises(live._PortUnavailable, match="backend endpoint"):
+            live._validated_observed_pg_endpoint(address, port)
+
+
 def test_neo4j_endpoint_requires_literal_system_trusted_tls():
     assert live._validated_neo_uri("bolt+s://127.0.0.1:7687") == (
         "bolt+s://127.0.0.1:7687"

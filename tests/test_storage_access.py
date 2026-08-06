@@ -751,14 +751,50 @@ def test_neo_immutable_privilege_and_unstable_authority_snapshot_are_rejected():
     assert "neo4j.authorization_snapshot" in unstable.failures
 
 
-def test_pg_target_binding_rejects_a_different_live_server_address():
+def test_pg_target_binding_accepts_distinct_configured_and_observed_endpoints():
     expected = _expected()
-    expected["target_details"]["postgresql"]["server_address"] = "192.0.2.50"
+    policy = _policy()
+    policy["postgresql"]["port"] = 15432
+    target = expected["target_details"]["postgresql"]
+    target["configured_port"] = 15432
+    target["server_address"] = "172.18.0.2"
+    target["server_port"] = 5432
+    expected["target_sha256"] = access.sha256_bytes(
+        access.canonical_json(expected["target_details"])
+    )
+    assert access.validate_expected(expected, policy) is expected
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("configured_host", "127.0.0.2"),
+        ("configured_port", 15433),
+        ("server_address", "postgres.internal"),
+        ("server_address", "2001:0db8::1"),
+        ("server_port", True),
+        ("server_port", "5432"),
+        ("server_port", 0),
+        ("server_port", 65536),
+    ),
+)
+def test_pg_target_binding_rejects_route_splices_and_invalid_backend_endpoint(
+    field,
+    value,
+):
+    expected = _expected()
+    policy = _policy()
+    policy["postgresql"]["port"] = 15432
+    target = expected["target_details"]["postgresql"]
+    target["configured_port"] = 15432
+    target["server_address"] = "172.18.0.2"
+    target["server_port"] = 5432
+    target[field] = value
     expected["target_sha256"] = access.sha256_bytes(
         access.canonical_json(expected["target_details"])
     )
     with pytest.raises(access.StorageAccessError, match="target binding"):
-        access.validate_expected(expected, _policy())
+        access.validate_expected(expected, policy)
 
 
 def test_seal_refuses_signer_did_key_mismatch():

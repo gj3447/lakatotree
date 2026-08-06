@@ -1069,6 +1069,33 @@ def _validated_pg_endpoint(
     return host, port, parameters
 
 
+def _validated_observed_pg_endpoint(
+    server_address: Any,
+    server_port: Any,
+) -> tuple[str, int]:
+    """Validate the backend coordinate without conflating it with the client route."""
+
+    if not isinstance(server_address, str):
+        raise _PortUnavailable(
+            "PostgreSQL observed backend endpoint is invalid"
+        )
+    try:
+        parsed_address = ipaddress.ip_address(server_address)
+    except ValueError as exc:
+        raise _PortUnavailable(
+            "PostgreSQL observed backend endpoint is invalid"
+        ) from exc
+    if (
+        str(parsed_address) != server_address
+        or type(server_port) is not int
+        or not 1 <= server_port <= 65535
+    ):
+        raise _PortUnavailable(
+            "PostgreSQL observed backend endpoint is invalid"
+        )
+    return server_address, server_port
+
+
 def _acl_principal(value: Any, roles: Mapping[str, str]) -> str:
     if value == "PUBLIC":
         return "public"
@@ -1121,6 +1148,13 @@ def _collect_postgresql_impl(
         ):
             raise _PortUnavailable("injected PostgreSQL test endpoint is invalid")
         configured_host, configured_port = injected_endpoint
+        if "host" in config and not (
+            configured_host == str(config["host"])
+            and configured_port == config.get("port")
+        ):
+            raise _PortUnavailable(
+                "injected PostgreSQL test endpoint differs from the configured route"
+            )
     roles = {
         "owner": str(config["owner_role"]),
         "migrator": str(config["migrator_role"]),
@@ -1188,6 +1222,10 @@ def _collect_postgresql_impl(
                 "pg_catalog.current_setting('server_version_num')"
             )
             server_address, server_port, server_version_num = cursor.fetchone()
+            server_address, server_port = _validated_observed_pg_endpoint(
+                server_address,
+                server_port,
+            )
             try:
                 server_version_int = int(server_version_num)
             except (TypeError, ValueError) as exc:
@@ -1199,22 +1237,6 @@ def _collect_postgresql_impl(
             ]
             if server_version_int >= 170000:
                 table_mutation_privileges.append("MAINTAIN")
-            if "host" in config:
-                try:
-                    observed_server_ip = ipaddress.ip_address(str(server_address))
-                    expected_server_ip = ipaddress.ip_address(str(config["host"]))
-                except ValueError as exc:
-                    raise _PortUnavailable(
-                        "PostgreSQL live server address is not a pinned IP"
-                    ) from exc
-                if not (
-                    observed_server_ip == expected_server_ip
-                    and type(server_port) is int
-                    and server_port == config["port"]
-                ):
-                    raise _PortUnavailable(
-                        "PostgreSQL live server endpoint differs from the pinned target"
-                    )
             cursor.execute(
                 "SELECT oid::text FROM pg_catalog.pg_database "
                 "WHERE datname=pg_catalog.current_database()"

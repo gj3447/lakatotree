@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import psycopg2
 import pytest
 
 from server.settings import ServerSettings
+from server import storage_predeploy
 from server.storage_predeploy import _migration_pg_connect_parameters
 
 
@@ -55,6 +57,139 @@ def test_pg_migration_profile_is_explicit_tls_scram_single_target():
     assert parameters["require_auth"] == "scram-sha-256"
     assert parameters["target_session_attrs"] == "read-write"
     assert parameters["application_name"] == "lakatotree-storage-predeploy"
+
+
+class _TargetIdentityCursor:
+    def __init__(self, *, server_address="192.0.2.10", server_port=5432):
+        self.server_address = server_address
+        self.server_port = server_port
+        self.description = ()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, _query):
+        self.description = tuple(
+            SimpleNamespace(name=name)
+            for name in (
+                "database", "database_oid", "server_address", "server_port",
+                "server_version_num", "system_identifier", "search_path",
+            )
+        )
+
+    def fetchone(self):
+        return (
+            "lakatos", "16384", self.server_address, self.server_port,
+            "170000", "7643905132200235000", "pg_catalog",
+        )
+
+
+class _TargetIdentityConnection:
+    def __init__(self, **cursor_kwargs):
+        self.cursor_value = _TargetIdentityCursor(**cursor_kwargs)
+
+    def cursor(self):
+        return self.cursor_value
+
+
+def _target_identity(monkeypatch, settings, **cursor_kwargs):
+    monkeypatch.setattr(
+        storage_predeploy,
+        "_neo_query",
+        lambda *_args, **_kwargs: [{"id": "neo4j-db-id", "name": "neo4j"}],
+    )
+    return storage_predeploy.target_identity(
+        settings,
+        _TargetIdentityConnection(**cursor_kwargs),
+        object(),
+    )
+
+
+def test_target_identity_binds_proxy_endpoint_and_internal_server_port(
+    monkeypatch,
+):
+    target = _target_identity(
+        monkeypatch,
+        _settings(pg_host="pg.example", pg_port=35432),
+        server_port=5432,
+    )
+    pg = target["details"]["postgresql"]
+    assert pg["configured_port"] == 35432
+    assert pg["server_port"] == 5432
+
+
+def test_target_identity_digest_keeps_configured_endpoint_authoritative(
+    monkeypatch,
+):
+    first = _target_identity(
+        monkeypatch,
+        _settings(pg_host="pg.example", pg_port=35432),
+        server_port=5432,
+    )
+    second = _target_identity(
+        monkeypatch,
+        _settings(pg_host="pg.example", pg_port=35433),
+        server_port=5432,
+    )
+    assert first["sha256"] != second["sha256"]
+
+
+def test_target_identity_digest_binds_observed_backend_endpoint(
+    monkeypatch,
+):
+    first = _target_identity(
+        monkeypatch,
+        _settings(pg_host="127.0.0.1", pg_port=35432),
+        server_address="172.18.0.2",
+        server_port=5432,
+    )
+    second = _target_identity(
+        monkeypatch,
+        _settings(pg_host="127.0.0.1", pg_port=35432),
+        server_address="172.18.0.3",
+        server_port=5432,
+    )
+    third = _target_identity(
+        monkeypatch,
+        _settings(pg_host="127.0.0.1", pg_port=35432),
+        server_address="172.18.0.2",
+        server_port=5433,
+    )
+    assert first["sha256"] != second["sha256"]
+    assert first["sha256"] != third["sha256"]
+
+
+@pytest.mark.parametrize(
+    "server_address",
+    (None, "postgres.internal", "2001:0db8::1"),
+)
+def test_target_identity_rejects_invalid_observed_server_address(
+    monkeypatch,
+    server_address,
+):
+    with pytest.raises(RuntimeError, match="server address is invalid"):
+        _target_identity(
+            monkeypatch,
+            _settings(pg_host="pg.example", pg_port=35432),
+            server_address=server_address,
+            server_port=5432,
+        )
+
+
+@pytest.mark.parametrize("server_port", (None, True, "5432", 0, 65536))
+def test_target_identity_rejects_invalid_observed_server_port(
+    monkeypatch,
+    server_port,
+):
+    with pytest.raises(RuntimeError, match="server endpoint is invalid"):
+        _target_identity(
+            monkeypatch,
+            _settings(pg_host="pg.example", pg_port=35432),
+            server_port=server_port,
+        )
 
 
 def test_pg_migration_profile_rejects_ambient_libpq_authority(monkeypatch):

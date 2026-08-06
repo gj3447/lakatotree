@@ -71,6 +71,8 @@ def test_postgresql_live_adapter_executes_catalog_acl_and_column_projection(pg_k
                 "owner_role": owner,
                 "migrator_role": migrator,
                 "runtime_role": runtime,
+                "host": parsed_dsn["host"],
+                "port": int(parsed_dsn["port"]),
             },
             10,
             {},
@@ -97,7 +99,16 @@ def test_postgresql_live_adapter_executes_catalog_acl_and_column_projection(pg_k
         assert live._sha256(inherited.encode()) in result.facts["runtime_effective_role_sha256"]
         assert before == after
         assert result.binding_material["system_identifier"]
-        assert live._normalize_result("postgresql", result)["status"] == "OBSERVED"
+        assert result.binding_material["configured_host"] == parsed_dsn["host"]
+        assert result.binding_material["configured_port"] == int(
+            parsed_dsn["port"]
+        )
+        assert live._normalize_result(
+            "postgresql",
+            result,
+            max_fact_items=live.MAX_RBAC_FACT_ITEMS,
+            max_list_items=512,
+        )["status"] == "OBSERVED"
     finally:
         connection.rollback()
         connection.set_session(readonly=False, autocommit=False)
@@ -258,6 +269,8 @@ def test_postgresql_strict_access_topology_is_realizable_and_exact(pg_kw):
                 "runtime_role": roles["runtime"],
                 "audit_role": roles["audit"],
                 "challenge_nonce": nonce,
+                "host": socket.gethostbyname(parsed_dsn["host"]),
+                "port": int(parsed_dsn["port"]),
             },
             10,
             {},
@@ -310,9 +323,18 @@ def test_postgresql_strict_access_topology_is_realizable_and_exact(pg_kw):
                 int(parsed_dsn["port"]),
             ),
         )
-        assert compromised.status == "PARTIAL"
+        assert compromised.status == "OBSERVED"
+        assert compromised.failure_codes == ()
         assert compromised.facts["audit_principal_read_only"] is False
         assert compromised.facts["authority_boundary_deviation_count"] > 0
+        compromised_failures = storage_access._postgresql_projection_failures(
+            compromised.facts, policy, nonce
+        )
+        assert "postgresql.audit_read_only" in compromised_failures
+        assert (
+            "postgresql.authority_boundary_deviation"
+            in compromised_failures
+        )
         with target_admin.cursor() as cursor:
             cursor.execute(_resource(
                 "server.storage_provisioning",
