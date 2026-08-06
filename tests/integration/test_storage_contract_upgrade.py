@@ -88,6 +88,77 @@ def _drop_database(pg_kw: dict, name: str) -> None:
         connection.close()
 
 
+@pytest.fixture
+def pg_predeploy_topology(pg_kw):
+    """Real disposable owner/migrator/runtime topology for predeploy apply."""
+
+    suffix = uuid4().hex[:12]
+    database = f"lkt_predeploy_{suffix}"
+    roles = {
+        "owner": f"lkt_owner_{suffix}",
+        "migrator": f"lkt_migrator_{suffix}",
+        "runtime": f"lkt_runtime_{suffix}",
+    }
+    passwords = {
+        label: uuid4().hex for label in ("migrator", "runtime")
+    }
+    admin = psycopg2.connect(**pg_kw)
+    admin.autocommit = True
+    try:
+        with admin.cursor() as cursor:
+            cursor.execute(sql.SQL(
+                "CREATE ROLE {} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                "NOINHERIT NOREPLICATION NOBYPASSRLS"
+            ).format(sql.Identifier(roles["owner"])))
+            for label in ("migrator", "runtime"):
+                cursor.execute(sql.SQL(
+                    "CREATE ROLE {} LOGIN PASSWORD %s NOSUPERUSER NOCREATEDB "
+                    "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
+                ).format(sql.Identifier(roles[label])), (passwords[label],))
+            cursor.execute(sql.SQL(
+                "GRANT {} TO {} WITH ADMIN FALSE, INHERIT FALSE, SET TRUE"
+            ).format(
+                sql.Identifier(roles["owner"]),
+                sql.Identifier(roles["migrator"]),
+            ))
+            cursor.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                sql.Identifier(database), sql.Identifier(roles["owner"])
+            ))
+
+        target = {**pg_kw, "dbname": database}
+        yield {
+            "target": target,
+            "migrator": {
+                **target,
+                "user": roles["migrator"],
+                "password": passwords["migrator"],
+            },
+            "runtime": {
+                **target,
+                "user": roles["runtime"],
+                "password": passwords["runtime"],
+            },
+            "roles": roles,
+        }
+    finally:
+        try:
+            with admin.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname=%s AND pid<>pg_backend_pid()",
+                    (database,),
+                )
+                cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(
+                    sql.Identifier(database)
+                ))
+                for label in ("migrator", "runtime", "owner"):
+                    cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(
+                        sql.Identifier(roles[label])
+                    ))
+        finally:
+            admin.close()
+
+
 def test_postgresql_legacy_upgrade_is_idempotent_and_fail_closed(pg_kw):
     database = f"lkt_migration_{uuid4().hex}"
     isolated_kw = _create_database(pg_kw, database)
@@ -983,9 +1054,14 @@ class _BorrowedDriver:
 
 
 def test_predeploy_and_runtime_receipt_round_trip_real_stores(
-    neo4j_driver, pg_kw, tmp_path, monkeypatch
+    neo4j_driver, pg_predeploy_topology, tmp_path, monkeypatch
 ):
     """Blocking CI proves the coordinator and runtime receipt share real identities."""
+
+    target_pg_kw = pg_predeploy_topology["target"]
+    migrator_pg_kw = pg_predeploy_topology["migrator"]
+    runtime_pg_kw = pg_predeploy_topology["runtime"]
+    pg_roles = pg_predeploy_topology["roles"]
 
     with neo4j_driver.session() as session:
         session.run("DROP CONSTRAINT lkt_outbox_id_unique IF EXISTS").consume()
@@ -995,11 +1071,26 @@ def test_predeploy_and_runtime_receipt_round_trip_real_stores(
     monkeypatch.setenv("NEO4J_DATABASE", "neo4j")
     monkeypatch.setenv("NEO4J_USER", "neo4j")
     monkeypatch.setenv("NEO4J_PASSWORD", "fixture")
-    monkeypatch.setenv("LAKATOS_PG_HOST", str(pg_kw["host"]))
-    monkeypatch.setenv("LAKATOS_PG_PORT", str(pg_kw["port"]))
-    monkeypatch.setenv("LAKATOS_PG_USER", str(pg_kw["user"]))
-    monkeypatch.setenv("LAKATOS_PG_PASSWORD", str(pg_kw["password"]))
-    monkeypatch.setenv("LAKATOS_PG_DB", str(pg_kw["dbname"]))
+    monkeypatch.setenv(
+        "LAKATOS_STORAGE_NEO4J_MIGRATION_URI", "bolt://fixture.invalid:7687"
+    )
+    monkeypatch.setenv("LAKATOS_STORAGE_NEO4J_MIGRATION_USER", "neo4j-migrator")
+    monkeypatch.setenv("LAKATOS_STORAGE_NEO4J_MIGRATION_PASSWORD", "fixture")
+    monkeypatch.setenv("LAKATOS_PG_HOST", str(target_pg_kw["host"]))
+    monkeypatch.setenv("LAKATOS_PG_PORT", str(target_pg_kw["port"]))
+    monkeypatch.setenv("LAKATOS_PG_USER", str(runtime_pg_kw["user"]))
+    monkeypatch.setenv("LAKATOS_PG_PASSWORD", str(runtime_pg_kw["password"]))
+    monkeypatch.setenv("LAKATOS_PG_DB", str(target_pg_kw["dbname"]))
+    monkeypatch.setenv(
+        "LAKATOS_STORAGE_PG_MIGRATION_DSN",
+        psycopg2.extensions.make_dsn(**migrator_pg_kw),
+    )
+    monkeypatch.setenv(
+        "LAKATOS_STORAGE_PG_MIGRATION_USER", str(migrator_pg_kw["user"])
+    )
+    monkeypatch.setenv(
+        "LAKATOS_STORAGE_PG_MIGRATION_PASSWORD", str(migrator_pg_kw["password"])
+    )
     monkeypatch.setenv("LAKATOS_STORAGE_ENVIRONMENT", "ci-integration")
     artifact = {"kind": "git", "source_commit": "c" * 40}
     monkeypatch.setattr(storage_predeploy, "_artifact_identity", lambda: artifact)
@@ -1008,9 +1099,33 @@ def test_predeploy_and_runtime_receipt_round_trip_real_stores(
         "_database_clients",
         lambda: (psycopg2, lambda **_kwargs: _BorrowedDriver(neo4j_driver)),
     )
+
+    def _testcontainer_pg_connect_parameters(settings, _psycopg2):
+        """Keep this receipt round trip on its isolated real-DB concern.
+
+        The production migration-profile boundary is exercised separately by
+        ``test_storage_migration_profiles.py``.  A stock testcontainers image
+        intentionally has no production CA/TLS profile, so inject only the
+        already-pinned ephemeral endpoint while preserving the migration
+        session's catalog-only search path.
+        """
+
+        assert _psycopg2 is psycopg2
+        assert settings.pg_host == str(target_pg_kw["host"])
+        assert settings.pg_port == int(target_pg_kw["port"])
+        assert settings.pg_db == str(target_pg_kw["dbname"])
+        assert settings.pg_migration_user == pg_roles["migrator"]
+        assert settings.pg_user == pg_roles["runtime"]
+        return {**migrator_pg_kw, "options": "-c search_path=pg_catalog"}
+
+    monkeypatch.setattr(
+        storage_predeploy,
+        "_migration_pg_connect_parameters",
+        _testcontainer_pg_connect_parameters,
+    )
     settings = ServerSettings.from_env()
     connection = psycopg2.connect(
-        **pg_kw, options="-c search_path=pg_catalog"
+        **migrator_pg_kw, options="-c search_path=pg_catalog"
     )
     borrowed = _BorrowedDriver(neo4j_driver)
     try:
@@ -1194,7 +1309,9 @@ with urllib.request.urlopen(call, timeout=3) as response:
     assert receipt["receipt_file_sha256"] == hashlib.sha256(
         receipt_path.read_bytes()
     ).hexdigest()
-    connection = psycopg2.connect(**pg_kw)
+    connection = psycopg2.connect(
+        **runtime_pg_kw, options="-c search_path=pg_catalog"
+    )
     try:
         connection.autocommit = True
         runtime = storage_predeploy.verify_predeploy_receipt(
