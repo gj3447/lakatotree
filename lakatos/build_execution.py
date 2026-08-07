@@ -21,13 +21,55 @@ from typing import Mapping
 from lakatos.resource_coordination import ResourceUsage, ResourceVector
 
 
-BUILD_EXECUTION_SCHEMA_VERSION = "lakatotree.build-execution/v1"
+BUILD_EXECUTION_SCHEMA_VERSION = "lakatotree.build-execution/v2"
+_LEGACY_BUILD_EXECUTION_SCHEMA_VERSION = "lakatotree.build-execution/v1"
 LOCAL_BUILD_ADAPTER = "lakatotree.local-subprocess-build"
 LOCAL_BUILD_ADAPTER_VERSION = "1"
-_WORKLOAD_DOMAIN = b"lakatotree-local-build-workload\x00v1\n"
+DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION = "2"
+_WORKLOAD_DOMAIN = b"lakatotree-local-build-workload\x00v2\n"
 _EVIDENCE_DOMAIN = b"lakatotree-local-build-evidence\x00v1\n"
 _MEASUREMENT_DOMAIN = b"lakatotree-local-build-measurement\x00v1\n"
 _ENVIRONMENT_DOMAIN = b"lakatotree-local-build-environment\x00v1\n"
+_EXECUTION_POLICY_DOMAIN = b"lakatotree-build-execution-policy\x00v1\n"
+_ADMISSION_POLICY_DOMAIN = b"lakatotree-build-admission-policy\x00v1\n"
+SPLIT_STREAM_CAPTURE_STRATEGY = "stdout-ceil-stderr-floor-no-borrow/v1"
+HARDENED_BUILD_ENVIRONMENT_ALLOWLIST = (
+    "ARCHFLAGS",
+    "CC",
+    "CFLAGS",
+    "CI",
+    "CMAKE_BUILD_PARALLEL_LEVEL",
+    "CMAKE_PREFIX_PATH",
+    "CONDA_PREFIX",
+    "CPPFLAGS",
+    "CXX",
+    "CXXFLAGS",
+    "FORCE_COLOR",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_AUTHOR_NAME",
+    "GIT_COMMITTER_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GOFLAGS",
+    "GOMODCACHE",
+    "GOPATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LDFLAGS",
+    "MACOSX_DEPLOYMENT_TARGET",
+    "MAKEFLAGS",
+    "NODE_PATH",
+    "NO_COLOR",
+    "PATH",
+    "PKG_CONFIG_PATH",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "RUSTFLAGS",
+    "SDKROOT",
+    "TERM",
+    "TMPDIR",
+    "VIRTUAL_ENV",
+)
 _RFC3339_UTC = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
 )
@@ -76,7 +118,7 @@ def _require_utc(value: str, label: str) -> datetime:
 
 
 def environment_sha256(environment: Mapping[str, str]) -> str:
-    """Hash a closed child environment without persisting its plaintext values."""
+    """Hash the selected child environment without persisting plaintext values."""
 
     if not isinstance(environment, Mapping):
         raise TypeError("environment must be a string mapping")
@@ -95,6 +137,270 @@ def environment_sha256(environment: Mapping[str, str]) -> str:
     return _sha256_bytes(_ENVIRONMENT_DOMAIN + _canonical_bytes(canonical))
 
 
+def _bounded_integer(
+    value: int,
+    label: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not minimum <= value <= maximum
+    ):
+        raise ValueError(f"{label} must be between {minimum} and {maximum}")
+
+
+@dataclass(frozen=True, slots=True)
+class BuildExecutionPolicy:
+    """Immutable physical subprocess policy whose identity is workload-bound.
+
+    Only values that can change subprocess evidence belong here.  Admission,
+    persistence, manifest, and scheduling knobs live in ``BuildAdmissionPolicy``
+    so tuning a TTL or SQLite wait cannot manufacture a new physical effect id.
+    """
+
+    shell: str = "/bin/sh"
+    output_tail_bytes: int = 65_536
+    max_output_bytes: int = 16_777_216
+    process_cleanup_grace_ms: int = 1_000
+    stream_capture_strategy: str = SPLIT_STREAM_CAPTURE_STRATEGY
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.shell, str) or not PurePath(self.shell).is_absolute():
+            raise ValueError("shell must be an absolute path")
+        if "\0" in self.shell:
+            raise ValueError("shell cannot contain NUL")
+        _bounded_integer(
+            self.output_tail_bytes,
+            "output_tail_bytes",
+            minimum=1,
+            maximum=1_048_576,
+        )
+        _bounded_integer(
+            self.max_output_bytes,
+            "max_output_bytes",
+            minimum=1,
+            maximum=1_073_741_824,
+        )
+        if self.output_tail_bytes > self.max_output_bytes:
+            raise ValueError("output_tail_bytes cannot exceed max_output_bytes")
+        _bounded_integer(
+            self.process_cleanup_grace_ms,
+            "process_cleanup_grace_ms",
+            minimum=1,
+            maximum=60_000,
+        )
+        if self.stream_capture_strategy != SPLIT_STREAM_CAPTURE_STRATEGY:
+            raise ValueError("unsupported stream_capture_strategy")
+
+    def to_dict(self) -> dict:
+        return {
+            "shell": self.shell,
+            "output_tail_bytes": self.output_tail_bytes,
+            "max_output_bytes": self.max_output_bytes,
+            "process_cleanup_grace_ms": self.process_cleanup_grace_ms,
+            "stream_capture_strategy": self.stream_capture_strategy,
+        }
+
+    @property
+    def policy_sha256(self) -> str:
+        return _sha256_bytes(
+            _EXECUTION_POLICY_DOMAIN + _canonical_bytes(self.to_dict())
+        )
+
+    def reserved_compute_wall_ms(self, timeout_seconds: int) -> int:
+        _bounded_integer(
+            timeout_seconds,
+            "timeout_seconds",
+            minimum=1,
+            maximum=604_800,
+        )
+        return timeout_seconds * 1_000 + self.process_cleanup_grace_ms
+
+    def make_spec(
+        self,
+        *,
+        command: str,
+        cwd: str,
+        timeout_seconds: int,
+        environment_sha256: str,
+        input_manifest_sha256: str,
+        isolation_adapter: str,
+        isolation_version: str,
+        isolation_policy_sha256: str,
+        adapter: str = LOCAL_BUILD_ADAPTER,
+        adapter_version: str = LOCAL_BUILD_ADAPTER_VERSION,
+    ) -> "BuildExecutionSpec":
+        """Construct the only physical spec shape admitted by this policy."""
+
+        return BuildExecutionSpec(
+            command=command,
+            cwd=cwd,
+            shell=self.shell,
+            timeout_seconds=timeout_seconds,
+            environment_sha256=environment_sha256,
+            input_manifest_sha256=input_manifest_sha256,
+            isolation_adapter=isolation_adapter,
+            isolation_version=isolation_version,
+            isolation_policy_sha256=isolation_policy_sha256,
+            adapter=adapter,
+            adapter_version=adapter_version,
+            execution_policy_sha256=self.policy_sha256,
+            process_cleanup_grace_ms=self.process_cleanup_grace_ms,
+            stream_capture_strategy=self.stream_capture_strategy,
+            output_tail_bytes=self.output_tail_bytes,
+            max_output_bytes=self.max_output_bytes,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BuildAdmissionPolicy:
+    """Operational and input-shaping limits applied before effect admission.
+
+    TTL and persistence tuning stay outside physical workload identity. Manifest
+    and environment selection constrain inputs; the selected manifest and child
+    environment cross ``BuildExecutionSpec`` through their content hashes.
+    """
+
+    maximum_timeout_seconds: int = 86_400
+    minimum_grant_ttl_seconds: int = 300
+    grant_ttl_slack_seconds: int = 60
+    target_sqlite_timeout_ms: int = 10_000
+    permit_ttl_seconds: int = 30
+    environment_allowlist: tuple[str, ...] | None = None
+    maximum_manifest_json_bytes: int = 8_388_608
+    maximum_manifest_entries: int = 50_000
+    maximum_input_file_bytes: int = 1_073_741_824
+    maximum_input_bytes: int = 4_294_967_296
+
+    def __post_init__(self) -> None:
+        _bounded_integer(
+            self.maximum_timeout_seconds,
+            "maximum_timeout_seconds",
+            minimum=1,
+            maximum=604_800,
+        )
+        _bounded_integer(
+            self.minimum_grant_ttl_seconds,
+            "minimum_grant_ttl_seconds",
+            minimum=1,
+            maximum=1_209_600,
+        )
+        _bounded_integer(
+            self.grant_ttl_slack_seconds,
+            "grant_ttl_slack_seconds",
+            minimum=0,
+            maximum=604_800,
+        )
+        _bounded_integer(
+            self.target_sqlite_timeout_ms,
+            "target_sqlite_timeout_ms",
+            minimum=1,
+            maximum=300_000,
+        )
+        _bounded_integer(
+            self.permit_ttl_seconds,
+            "permit_ttl_seconds",
+            minimum=1,
+            maximum=300,
+        )
+        allowlist = self.environment_allowlist
+        if allowlist is not None:
+            if not isinstance(allowlist, tuple):
+                raise ValueError("environment_allowlist must be a tuple or None")
+            for key in allowlist:
+                if (
+                    not isinstance(key, str)
+                    or not key
+                    or "=" in key
+                    or "\0" in key
+                ):
+                    raise ValueError("environment_allowlist contains an invalid key")
+            if tuple(sorted(set(allowlist))) != allowlist:
+                raise ValueError("environment_allowlist must be sorted and unique")
+        _bounded_integer(
+            self.maximum_manifest_json_bytes,
+            "maximum_manifest_json_bytes",
+            minimum=128,
+            maximum=67_108_864,
+        )
+        _bounded_integer(
+            self.maximum_manifest_entries,
+            "maximum_manifest_entries",
+            minimum=1,
+            maximum=1_000_000,
+        )
+        _bounded_integer(
+            self.maximum_input_file_bytes,
+            "maximum_input_file_bytes",
+            minimum=1,
+            maximum=1_099_511_627_776,
+        )
+        _bounded_integer(
+            self.maximum_input_bytes,
+            "maximum_input_bytes",
+            minimum=1,
+            maximum=17_592_186_044_416,
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "maximum_timeout_seconds": self.maximum_timeout_seconds,
+            "minimum_grant_ttl_seconds": self.minimum_grant_ttl_seconds,
+            "grant_ttl_slack_seconds": self.grant_ttl_slack_seconds,
+            "target_sqlite_timeout_ms": self.target_sqlite_timeout_ms,
+            "permit_ttl_seconds": self.permit_ttl_seconds,
+            "environment_allowlist": self.environment_allowlist,
+            "maximum_manifest_json_bytes": self.maximum_manifest_json_bytes,
+            "maximum_manifest_entries": self.maximum_manifest_entries,
+            "maximum_input_file_bytes": self.maximum_input_file_bytes,
+            "maximum_input_bytes": self.maximum_input_bytes,
+        }
+
+    @property
+    def policy_sha256(self) -> str:
+        return _sha256_bytes(
+            _ADMISSION_POLICY_DOMAIN + _canonical_bytes(self.to_dict())
+        )
+
+    def validate_timeout(self, timeout_seconds: int) -> int:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, int)
+            or not 1 <= timeout_seconds <= self.maximum_timeout_seconds
+        ):
+            raise ValueError(
+                "timeout_seconds must be positive and no greater than "
+                f"maximum_timeout_seconds={self.maximum_timeout_seconds}"
+            )
+        return timeout_seconds
+
+    def grant_ttl_seconds(
+        self,
+        timeout_seconds: int,
+        *,
+        cleanup_grace_ms: int,
+    ) -> int:
+        timeout = self.validate_timeout(timeout_seconds)
+        _bounded_integer(
+            cleanup_grace_ms,
+            "cleanup_grace_ms",
+            minimum=1,
+            maximum=60_000,
+        )
+        cleanup_seconds = (cleanup_grace_ms + 999) // 1_000
+        return max(
+            self.minimum_grant_ttl_seconds,
+            timeout + cleanup_seconds + self.grant_ttl_slack_seconds,
+        )
+
+
+DEFAULT_BUILD_EXECUTION_POLICY = BuildExecutionPolicy()
+DEFAULT_BUILD_ADMISSION_POLICY = BuildAdmissionPolicy()
+
+
 @dataclass(frozen=True, slots=True)
 class BuildExecutionSpec:
     """Closed execution input for one provider-free shell build attempt."""
@@ -108,8 +414,15 @@ class BuildExecutionSpec:
     isolation_adapter: str
     isolation_version: str
     isolation_policy_sha256: str
-    output_tail_bytes: int = 65_536
-    max_output_bytes: int = 16_777_216
+    execution_policy_sha256: str = DEFAULT_BUILD_EXECUTION_POLICY.policy_sha256
+    process_cleanup_grace_ms: int = (
+        DEFAULT_BUILD_EXECUTION_POLICY.process_cleanup_grace_ms
+    )
+    stream_capture_strategy: str = (
+        DEFAULT_BUILD_EXECUTION_POLICY.stream_capture_strategy
+    )
+    output_tail_bytes: int = DEFAULT_BUILD_EXECUTION_POLICY.output_tail_bytes
+    max_output_bytes: int = DEFAULT_BUILD_EXECUTION_POLICY.max_output_bytes
     provider_calls: str = "forbidden"
     schema_version: str = BUILD_EXECUTION_SCHEMA_VERSION
     adapter: str = LOCAL_BUILD_ADAPTER
@@ -127,12 +440,12 @@ class BuildExecutionSpec:
                 raise ValueError(f"{label} must be an absolute path")
             if "\0" in value:
                 raise ValueError(f"{label} cannot contain NUL")
-        if (
-            isinstance(self.timeout_seconds, bool)
-            or not isinstance(self.timeout_seconds, int)
-            or self.timeout_seconds <= 0
-        ):
-            raise ValueError("timeout_seconds must be a positive integer")
+        _bounded_integer(
+            self.timeout_seconds,
+            "timeout_seconds",
+            minimum=1,
+            maximum=604_800,
+        )
         if (
             isinstance(self.output_tail_bytes, bool)
             or not isinstance(self.output_tail_bytes, int)
@@ -152,6 +465,15 @@ class BuildExecutionSpec:
         _require_identifier(self.isolation_adapter, "isolation_adapter")
         _require_identifier(self.isolation_version, "isolation_version")
         _require_sha256(self.isolation_policy_sha256, "isolation_policy_sha256")
+        _require_sha256(self.execution_policy_sha256, "execution_policy_sha256")
+        _bounded_integer(
+            self.process_cleanup_grace_ms,
+            "process_cleanup_grace_ms",
+            minimum=1,
+            maximum=60_000,
+        )
+        if self.stream_capture_strategy != SPLIT_STREAM_CAPTURE_STRATEGY:
+            raise ValueError("unsupported stream_capture_strategy")
         _require_identifier(self.adapter, "adapter")
         _require_identifier(self.adapter_version, "adapter_version")
         if self.provider_calls != "forbidden":
@@ -173,6 +495,9 @@ class BuildExecutionSpec:
             "isolation_adapter": self.isolation_adapter,
             "isolation_version": self.isolation_version,
             "isolation_policy_sha256": self.isolation_policy_sha256,
+            "execution_policy_sha256": self.execution_policy_sha256,
+            "process_cleanup_grace_ms": self.process_cleanup_grace_ms,
+            "stream_capture_strategy": self.stream_capture_strategy,
             "output_tail_bytes": self.output_tail_bytes,
             "max_output_bytes": self.max_output_bytes,
             "provider_calls": self.provider_calls,
@@ -183,11 +508,35 @@ class BuildExecutionSpec:
         return _sha256_bytes(_WORKLOAD_DOMAIN + _canonical_bytes(self.to_dict()))
 
 
+def reserved_compute_wall_ms(spec: BuildExecutionSpec) -> int:
+    """Return the exact compute reservation bound carried by ``spec``."""
+
+    if not isinstance(spec, BuildExecutionSpec):
+        raise TypeError("reserved compute requires a BuildExecutionSpec")
+    return (
+        spec.timeout_seconds * 1_000
+        + spec.process_cleanup_grace_ms
+    )
+
+
+def split_stream_budget(total_bytes: int) -> tuple[int, int]:
+    """Deterministically split a no-borrow byte budget across stdout/stderr."""
+
+    _bounded_integer(
+        total_bytes,
+        "total_bytes",
+        minimum=0,
+        maximum=1_073_741_824,
+    )
+    return ((total_bytes + 1) // 2, total_bytes // 2)
+
+
 class BuildTerminalStatus(str, Enum):
     EXITED = "EXITED"
     TIMED_OUT = "TIMED_OUT"
     OUTPUT_LIMIT_EXCEEDED = "OUTPUT_LIMIT_EXCEEDED"
     SPAWN_FAILED = "SPAWN_FAILED"
+    INPUT_REJECTED = "INPUT_REJECTED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +562,10 @@ class BuildExecutionResult:
     measurement_method: str = "subprocess.monotonic_elapsed.ceil_ms/v1"
 
     def __post_init__(self) -> None:
-        if self.schema_version != BUILD_EXECUTION_SCHEMA_VERSION:
+        if self.schema_version not in {
+            BUILD_EXECUTION_SCHEMA_VERSION,
+            _LEGACY_BUILD_EXECUTION_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported build execution result schema")
         _require_identifier(self.effect_id, "effect_id")
         _require_sha256(self.workload_sha256, "workload_sha256")
@@ -226,6 +578,11 @@ class BuildExecutionResult:
             raise ValueError("fence_token must be an integer >= 1")
         if not isinstance(self.status, BuildTerminalStatus):
             raise ValueError("status must be a BuildTerminalStatus")
+        if (
+            self.schema_version == _LEGACY_BUILD_EXECUTION_SCHEMA_VERSION
+            and self.status is BuildTerminalStatus.INPUT_REJECTED
+        ):
+            raise ValueError("INPUT_REJECTED is available only in the v2 schema")
         if self.status in {
             BuildTerminalStatus.TIMED_OUT,
             BuildTerminalStatus.OUTPUT_LIMIT_EXCEEDED,
@@ -402,15 +759,24 @@ class ResourceBuildOverrun(ResourceBuildError):
 
 __all__ = [
     "BUILD_EXECUTION_SCHEMA_VERSION",
+    "BuildAdmissionPolicy",
+    "BuildExecutionPolicy",
     "BuildExecutionResult",
     "BuildExecutionSpec",
     "BuildRun",
     "BuildTerminalStatus",
+    "DEFAULT_BUILD_ADMISSION_POLICY",
+    "DEFAULT_BUILD_EXECUTION_POLICY",
+    "DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION",
+    "HARDENED_BUILD_ENVIRONMENT_ALLOWLIST",
     "LOCAL_BUILD_ADAPTER",
     "LOCAL_BUILD_ADAPTER_VERSION",
     "ResourceBuildConfigError",
     "ResourceBuildError",
     "ResourceBuildOutcomeUnknown",
     "ResourceBuildOverrun",
+    "SPLIT_STREAM_CAPTURE_STRATEGY",
     "environment_sha256",
+    "reserved_compute_wall_ms",
+    "split_stream_budget",
 ]

@@ -214,36 +214,72 @@ closed unless all of these values are valid:
 | variable | purpose |
 |---|---|
 | `LAKATOTREE_RESOURCE_BUILD_DIR` | dedicated durable SQLite, lock, and signed-anchor root |
+| `LAKATOTREE_RESOURCE_BUILD_POLICY` | explicit deployment-policy selector; omitted means built-in `darwin-sandbox-exec/v1` |
 | `LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX` | exactly 32 bytes for checkpoint authentication |
 | `LAKATOTREE_RESOURCE_PERMIT_KEY_HEX` | at least 32 bytes for permit authentication and derivation of a distinct target-evidence HMAC key |
 | `LAKATOTREE_RESOURCE_COMPUTE_CAP_MS` | immutable per-tree wall-time hard-cap declaration |
 | `LAKATOTREE_BUILD_INPUT_MANIFEST` | path to a canonical v1 file manifest rooted at the current working directory |
 
-The pure `BuildExecutionSpec` binds the shell command, canonical working directory,
-shell, timeout, a hash of the closed child environment, the declared input-manifest
-hash, isolation adapter/version/policy hash, retained-tail and total-output byte caps,
-adapter version, and the provider-free declaration. The manifest has this closed shape and must contain a
+The pure v2 `BuildExecutionSpec` binds the shell command, canonical working directory,
+shell, timeout, a hash of the selected child environment, the declared input-manifest
+hash, isolation adapter/version/policy hash, the complete immutable execution-policy
+hash, cleanup grace, deterministic stream-capture strategy, retained-tail and
+total-output byte caps, adapter version, and the provider-free declaration.
+`BuildExecutionPolicy.make_spec` is the canonical constructor for those physical
+subprocess facts. A separate immutable `BuildAdmissionPolicy` owns maximum timeout,
+grant/permit TTL, SQLite wait, manifest bounds, and the optional environment allowlist;
+non-input operational changes such as TTL or SQLite wait do not manufacture a new
+physical effect identity. Environment selection is deliberately different: changing
+the allowlist can change the selected child environment, and that exact result changes
+the workload through `environment_sha256`. The two policy field sets are disjoint, but
+input-shaping admission decisions are never claimed to be identity-neutral. The
+manifest has this closed shape and must contain a
 non-empty, lexically sorted, duplicate-free list of normalized relative regular files:
 
 ```json
 {"schema_version":"lakatotree.build-input-manifest/v1","files":[{"path":"src/a.py","sha256":"<64 lowercase hex>"}]}
 ```
 
-Each listed file is content-verified when the composition is built, before every
-replay, and again after the target claim immediately before launch. Missing, changed,
-out-of-root, or final-component symlink inputs fail closed. Changing any bound input or
-regenerating a manifest for changed content produces another workload/effect identity.
+The default admission policy bounds the manifest at 8 MiB of JSON, 50,000 entries,
+1 GiB per file, and 4 GiB total input; an injected policy may choose tighter bounds.
+JSON size and entry count are checked at load. Per-file and aggregate byte bounds are
+rechecked every time. Each listed file is verified when the composition is built,
+before every replay, and again after the target claim immediately before launch.
+Verification walks every path component through no-follow directory descriptors, opens
+the final component with `O_NONBLOCK` before requiring a regular-file `fstat`, reads no
+more than the pre-read size, probes EOF for growth, and compares stable metadata after
+hashing. This prevents a regular-file-to-FIFO swap from blocking before a deadline
+check. Missing, changed, grown, out-of-root, symlinked, or unsafe I/O inputs fail through
+one typed boundary. The production `DeadlineBoundSQLiteFencedBuildEffect` accepts only
+the `DeadlineBoundBuildInputVerifierPort.verify_until` contract and has no post-claim
+fallback to an unbounded preflight verifier.
+Changing any bound input or regenerating a
+manifest for changed content produces another workload/effect identity.
 Conversely, the same tree, tag, and workload identity is an idempotency key: restart
 returns retained evidence instead of treating it as a request to run again. Operators
 must include every build-relevant file; v1 assumes a trusted local workspace does not
 mutate after the final verification read.
 
+The pre-existing public `BuildInputVerifierPort` (`manifest_sha256` plus `verify`) and
+`SQLiteFencedBuildEffect` remain as an explicitly deprecated v1 compatibility boundary.
+That legacy effect retains its original unbounded post-claim verification semantics and
+is not selected by the environment factory. The deadline-bound effect uses adapter
+version 2 and `build-target-v2.sqlite3`, while the legacy effect remains version 1 and
+retains `build-target.sqlite3`. This leaves an existing v1 database byte-for-byte
+untouched, separates the derived lock-file namespaces, and prevents legacy terminal
+evidence from being replayed as evidence from the bounded production path. New callers
+must use the v2 port and effect; no thread, subprocess, or silent fallback pretends an
+arbitrary legacy verifier has bounded completion.
+
 The target adapter allocates monotonically increasing fences per tree scope, holds a
 POSIX scope lock through launch and terminal commit, and checks exact replay before
 freshness. Its separate SQLite target registry uses rollback journaling,
 `synchronous=FULL`, exact schema/metadata readback, a schema hash receipt, and one
-transaction for terminal result plus dispatch receipt. A terminal response lost after
-commit is recovered by lookup and is not launched twice. A crash after the durable
+transaction for terminal result plus dispatch receipt. A typed input refusal discovered
+after `CLAIMED` but before the process port is known not to have launched: it is
+committed as `INPUT_REJECTED` (legacy return code 126) and settled instead of leaving a
+false unknown. A terminal response lost after commit is recovered by lookup and is not
+launched twice. A crash after the durable
 `CLAIMED` row but before terminal evidence is deliberately left unknown and will not
 be relaunched. Thus the adapter claims durable exact-retry deduplication and at-most-one
 launch attempt for a stable effect—not generic exactly-once execution. The configured
@@ -260,8 +296,10 @@ group/other permissions. The production child cannot read or write it, and resou
 keys are absent from its environment, so a build cannot manufacture authoritative
 target evidence merely by editing the SQLite file.
 
-Subprocess elapsed time is measured with a monotonic clock from immediately before
-spawn through reap and rounded upward to milliseconds. A monotonic completion floor
+Compute time is measured with a monotonic clock from immediately after the durable
+claim, through authoritative input verification, process launch, and reap, then rounded
+upward to milliseconds. Verification shares the absolute execution deadline and only
+its remainder reaches the subprocess port. A monotonic completion floor
 prevents a backward UTC clock step from making terminal evidence predate its start;
 settlement likewise chooses the latest of lifecycle and measurement times. Exit zero,
 nonzero exit, timeout after process-group kill/reap, and a known spawn failure are
@@ -269,13 +307,19 @@ terminal resource outcomes and are settled before the harness applies its scient
 `BuildFailed` or `BashTimeout` boundary. Ordinary background descendants in the build
 process group are killed before the result is committed. Stdout and stderr are hashed,
 counted, and tail-retained incrementally through pipes while the process is still inside
-the measured interval. Their combined admitted evidence is capped at 16 MiB by default
-(the pure spec permits an explicit workload-bound value); excess output kills the group
-and becomes the settled `OUTPUT_LIMIT_EXCEEDED` terminal (`BuildRun.returncode=125`).
-Only the admitted prefix and the final workload-bound tail are retained as evidence or
+the measured interval. The 16 MiB default total is split deterministically with no
+borrowing: stdout receives the ceiling half and stderr the floor half. Tail retention
+uses the same split, so selector readiness cannot change either stream's admitted
+maximum and odd totals remain exact. Crossing either stream quota kills the group and
+becomes the settled `OUTPUT_LIMIT_EXCEEDED` terminal (`BuildRun.returncode=125`). Only
+the admitted prefix and the final workload-bound tail are retained as evidence or
 persisted; transient pipe reads are capped at 64 KiB. Per-stream bounded tails are
-combined and final-truncated to 64 KiB by default. Replacement decoding of invalid UTF-8
-is byte-trimmed again so persisted text cannot expand past that bound.
+combined and final-truncated to 64 KiB by default. Replacement decoding of invalid
+UTF-8 is byte-trimmed again so persisted text cannot expand past that bound.
+Known prelaunch refusals and spawn-failure diagnostics use the same stderr quota rather
+than bypassing it. The quotas and retained maxima are deterministic; bytes produced by
+the peer pipe before an overflow-triggered process kill can still vary with OS process
+scheduling and are not claimed to be replay-identical.
 Evidence binds result classification, timing, output evidence and limits,
 workload/intent/fence, and adapter method.
 
@@ -290,14 +334,25 @@ failures are permanent configuration/integrity terminals. The adapter translates
 at connection, transaction, readback, and commit boundaries, so raw `sqlite3.Error`
 values do not escape through the typed CLI.
 
-This v1 subprocess adapter records zero LLM tokens only under its explicit
+This provider-free subprocess adapter records zero LLM tokens only under its explicit
 `provider_calls=forbidden` workload contract. The built-in production composition is
-currently macOS-only and invokes `/usr/bin/sandbox-exec` with network access and the
-resource-authority root denied. Resource configuration and credential-like environment
-names are removed before the remaining closed environment is hashed and passed to the
-child. If that sandbox is unavailable—or on a non-macOS host—opt-in composition fails
-closed. Model-calling commands require a provider usage adapter and must not be routed
-through this zero-token adapter.
+currently macOS-only and is selected through the built-in deployment-policy resolver.
+It invokes `/usr/bin/sandbox-exec` with network access and the resource-authority root
+denied. Alternative hosts must inject a `BuildDeploymentPolicyPort`; there is no
+unconfined fallback. Resolution occurs before resource-root creation, so an unknown
+enabled selector fails without filesystem effects; disabled legacy mode does not
+resolve a policy. The port supplies both physical execution policy and operational
+admission policy, as well as isolation construction. For compatibility, the default
+admission policy preserves inherited variables except exact LakatoTree resource
+configuration names and recognized credential-name patterns. Ambient capability or
+location variables that do not match those patterns may remain in compatibility mode;
+it is filtered, not a generally closed environment. A deployment that needs a closed
+environment must inject an exact allowlist (the module exports a hardened preset); the
+credential/config filter still applies after that intersection. The resulting child
+environment is hashed before crossing the effect port. If the selected sandbox is
+unavailable, composition fails closed.
+Model-calling commands require a provider usage adapter and must not be routed through
+this zero-token adapter.
 
 The sandbox is a provider-denial boundary, not a general confidential-filesystem
 sandbox: its current profile allows ordinary host file reads outside the protected
@@ -306,12 +361,31 @@ used to process secrets merely because credential-shaped environment names were
 removed. A future untrusted-command adapter needs a closed filesystem allowlist or
 container identity in addition to provider metering.
 
+The scheduler reservation is derived from the same workload-bound values used by the
+process supervisor: `timeout + one absolute cleanup_grace` (one second by default).
+There is no second hidden reservation margin or fresh cleanup window. Output bounds and
+cleanup grace live in the physical execution policy. Grant TTL, permit TTL, SQLite wait,
+maximum timeout, environment selection, and manifest bounds live in the separate
+admission policy rather than as composition-function literals.
+This reservation is an admission estimate, not a hard-real-time host guarantee. OS
+scheduling or a stalled syscall can make measured wall time exceed it; the resource
+state machine then quarantines the overrun instead of relabeling it as a compliant
+bounded attempt.
+
 The wall deadline and process-group cleanup are not CPU, memory, GPU, cgroup, or
-fleet isolation. V1 accepts only trusted build/TDD commands that do not deliberately
+fleet isolation. This slice accepts only trusted build/TDD commands that do not deliberately
 detach into a new process session; a deliberately daemonizing command can escape the
 ordinary process-group boundary and is outside this adapter's contract. A stronger
 deployment must inject an OS/container scheduler adapter that provides descendant-wide
 containment and metering before untrusted commands are admitted.
+
+The current workload identity still does not snapshot compiler binaries, all host
+files, the OS build, or other mutable toolchain state reachable outside the declared
+manifest. Descriptor verification closes pathname and in-read races, but the shell
+reopens its inputs after verification; a hostile concurrent workspace writer can still
+replace a file in that interval. Reproducible or adversarial builds therefore still need
+an immutable filesystem/toolchain receipt and a sealed input-snapshot port (for example,
+a read-only content-addressed mount) passed to the process adapter.
 
 Reconciliation in this slice is synchronous and caller-driven. The outbox has only
 `PENDING` and `CONFIRMED` states, and the journal does not yet stop a caller from
@@ -446,19 +520,22 @@ Implemented now:
 - RED-first stale-head, cancellation, expiry, adapter/payload drift, remint/replay,
   response-loss recovery, forged authorization, and receipt-mismatch guards, plus
   OOPTDD mutants that remove immediate revalidation or permit authentication only in
-  isolated source copies and then perform the forbidden physical effect.
+  isolated source copies and then perform the forbidden physical effect;
+- an opt-in target-fenced local harness build adapter with monotonic wall metering,
+  policy-bound reservations, bounded input/output evidence, injected isolation policy,
+  terminal settlement, and restart-safe exact readback.
 
 Still required before claiming live dual-resource enforcement:
 
-1. implement a durable build adapter that atomically enforces the fence, then wire one
-   harness build effect through preflight with an injected `ResourceEstimate` and the
-   operation-specific gate;
-2. a real compute meter/limiter and an LLM provider usage adapter;
+1. an LLM provider usage adapter with authoritative input/output-token settlement;
+2. an OS/container compute scheduler for CPU, memory, and GPU enforcement plus an
+   immutable filesystem/toolchain receipt for reproducible untrusted builds;
 3. settlement/reconciliation workers, expiry observation, and an idempotent
    `StopWork` outbox effect for in-use cancel/deadline transitions;
 4. only then, a versioned fair-queue or quality-per-cost routing policy.
 
-Until those gates land, legacy harness calls remain uninstrumented. The repository can
-claim a deterministic coordination kernel, a durable local journal with an
-external-checkpoint protocol, and a tested workload-dispatch authority primitive—not
-live target-fenced, metered, harness-wide, or fleet-wide enforcement.
+Unless the opt-in composition is enabled, legacy harness calls remain uninstrumented.
+The repository can claim a deterministic coordination kernel, a durable local journal
+with an external-checkpoint protocol, a tested workload-dispatch authority primitive,
+and one target-fenced wall-metered local build slice—not token-metered, harness-wide,
+or fleet-wide enforcement.

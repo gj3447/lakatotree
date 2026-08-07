@@ -4,6 +4,7 @@
 spec.json = CycleSpec 필드. internet_sources 는 [[url, trust], ...] (parent 가 미리 read).
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
       LAKATOTREE_BASH_TIMEOUT (기본 600) — build/judge 서브프로세스 *벽시계* 예산(초, 양의 정수).
+      LAKATOTREE_RESOURCE_BUILD_POLICY — opt-in build 배포정책 선택자(기본 Darwin 정책).
 # KG: span_lakatotree_harness
 """
 import json, os, subprocess, sys
@@ -14,6 +15,7 @@ from lakatos.build_execution import (ResourceBuildConfigError,
 from lakatos.harness import (LakatoHarness, CycleSpec, BashConfigError, BashTimeout,
                              BuildFailed, ScoringRefused)
 from lakatos.io.local_build_execution import (
+    BuildDeploymentPolicyResolverPort,
     BuildTargetError,
     BuildTargetOutcomeUnknown,
     resource_gated_build_runner_from_environment,
@@ -102,7 +104,12 @@ def _git_sha():
         return None
 
 
-def main(path, *, run_build=None):
+def main(
+    path,
+    *,
+    run_build=None,
+    deployment_policy_resolver: BuildDeploymentPolicyResolverPort | None = None,
+):
     spec = CycleSpec(**json.loads(open(path).read()))
     selected_build = run_build
     if selected_build is None and spec.build_cmd:
@@ -111,6 +118,7 @@ def main(path, *, run_build=None):
             tag=spec.tag,
             command=spec.build_cmd,
             timeout_seconds=_bash_timeout(),
+            deployment_policy_resolver=deployment_policy_resolver,
         )
     # 상계는 read-only — 인터넷 fetch 는 parent(상위 agent)가 미리 채워 internet_sources 에 (url,trust) 로 주입.
     # 하네스는 그 신뢰가중만 결합 (실 WebFetch 는 agent 도구, 하네스 안에서 호출 안 함 = 권한 경계 존중).

@@ -50,3 +50,31 @@ def test_harness_run_build_fail_gate(tmp_path, monkeypatch):
     spec = _spec(tmp_path, build_cmd='make')
     with pytest.raises(BuildFailed):
         harness_run.main(spec)                               # 빌드 실패면 채점·판결 중단
+
+
+def test_harness_run_explicit_build_port_suppresses_policy_resolution(
+    tmp_path,
+    monkeypatch,
+):
+    _wire(monkeypatch)
+    build_calls = []
+
+    def run_build(command):
+        build_calls.append(command)
+        return ('build-ok', 0)
+
+    def forbidden_factory(**_kwargs):
+        raise AssertionError('explicit run_build was replaced by environment policy')
+
+    monkeypatch.setattr(
+        harness_run,
+        'resource_gated_build_runner_from_environment',
+        forbidden_factory,
+    )
+
+    harness_run.main(
+        _spec(tmp_path, build_cmd='make'),
+        run_build=run_build,
+    )
+
+    assert build_calls == ['make']

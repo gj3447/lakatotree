@@ -70,7 +70,7 @@ requirements:
       must_emit: harness_build_port_wiring_load_bearing
 
   - id: HBRG-7
-    description: Removing closed-environment identity from the pure workload hash in an isolated source copy makes distinct execution contexts collide and the mutant RED.
+    description: Removing selected-environment identity from the pure workload hash in an isolated source copy makes distinct execution contexts collide and the mutant RED.
     gate:
       - {event: workload_environment_binding_load_bearing, op: "==", count: 1}
     longinus:
@@ -160,7 +160,7 @@ requirements:
       must_emit: bounded_output_overflow_settles_terminally
 
   - id: HBRG-16
-    description: Closed child-environment composition removes resource authority and credential-shaped keys while retaining ordinary variables, and a filter-removal source mutant turns RED on every platform.
+    description: Compatibility-filtered child-environment composition removes exact LakatoTree resource configuration and recognized credential-shaped names while retaining other inherited variables; an optional exact allowlist provides the closed deployment mode, and a filter-removal source mutant turns RED on every platform.
     gate:
       - {event: closed_environment_secret_filter_is_load_bearing, op: "==", count: 1}
     longinus:
@@ -208,3 +208,135 @@ requirements:
       source: harness_build_resource_gate_receipt.py
       symbol: verify
       must_emit: target_sqlite_failures_are_typed
+
+  - id: HBRG-21
+    description: Every adjustable physical subprocess field has one immutable policy identity; shell, output and cleanup changes alter the digest and workload, while scheduler reservation derives from the exact cleanup value carried by that workload.
+    guard_defect: Cleanup grace and output behavior were duplicated literals, so policy-field omission could make physically different executions share an identity or reservation.
+    guard_mechanism: BuildExecutionPolicy is frozen and canonically hashed field by field; isolated omission mutants collide and turn RED, policy.make_spec binds the physical values, and reserved_compute_wall_ms derives the scheduler bound from that exact spec.
+    gate:
+      - {event: execution_policy_is_identity_bound, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:execution_policy_is_identity_bound
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: execution_policy_is_identity_bound
+
+  - id: HBRG-22
+    description: Production composition resolves an injected structural deployment-policy port before side effects, uses its isolation and limits, and rejects an unknown enabled selector before creating the authority root.
+    guard_defect: The environment factory constructed Darwin sandbox-exec and shell policy internally, preventing safe host adapters and allowing configuration discovery to drift into I/O.
+    guard_mechanism: An explicit resolver selects BuildDeploymentPolicyPort; disabled mode bypasses resolution, known policies own isolation construction, unknown names fail before resource-root preparation, and a Darwin-construction source mutant turns RED.
+    gate:
+      - {event: deployment_policy_is_injected_and_preflighted, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:deployment_policy_is_injected_and_preflighted
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: deployment_policy_is_injected_and_preflighted
+
+  - id: HBRG-23
+    description: Manifest JSON and entry count are bounded at load, per-file and total bytes are bounded on every verification, and an optional exact non-sensitive environment allowlist can harden deployment without breaking legacy ordinary variables by default.
+    guard_defect: An unbounded manifest could monopolize prelaunch work, while making a new allowlist the default would silently remove build variables from existing callers.
+    guard_mechanism: VerifiedBuildInputManifest enforces immutable admission limits with JSON and per-file removal mutants; closed_build_environment always denies exact LakatoTree resource configuration and recognized credential-name patterns, then intersects an exact allowlist only when policy explicitly supplies one.
+    gate:
+      - {event: bounded_manifest_and_allowlisted_environment, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:bounded_manifest_and_allowlisted_environment
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: bounded_manifest_and_allowlisted_environment
+
+  - id: HBRG-24
+    description: A declared-input change detected after the durable claim but before process launch commits INPUT_REJECTED evidence, launches nothing, and settles the resource grant.
+    guard_defect: Post-claim verification failure previously left a known-unlaunched CLAIMED row permanently outcome-unknown.
+    guard_mechanism: The target adapter converts only the typed bounded input refusal into a measured terminal result before the process port; genuinely ambiguous post-launch failures remain unknown.
+    gate:
+      - {event: postclaim_input_refusal_terminalizes, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:postclaim_input_refusal_terminalizes
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: postclaim_input_refusal_terminalizes
+
+  - id: HBRG-25
+    description: Non-input operational admission tuning has its own immutable identity without manufacturing a physical workload, while environment selection is input-shaping and changes workload identity through the selected environment hash.
+    guard_defect: TTL and SQLite tuning were mixed into physical execution identity, while the environment allowlist was incorrectly claimed never to affect the selected workload input.
+    guard_mechanism: Frozen BuildExecutionPolicy and BuildAdmissionPolicy values own disjoint fields and hashes; operational tuning stays outside BuildExecutionSpec, while the actual post-filter environment always crosses the spec as environment_sha256.
+    gate:
+      - {event: operational_admission_and_environment_identity_are_separate, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:operational_admission_and_environment_identity_are_separate
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: operational_admission_and_environment_identity_are_separate
+
+  - id: HBRG-26
+    description: Declared files are opened beneath the bound root through no-follow descriptors, the final open is non-blocking before regular-file validation, hashing stops at the pre-read size, EOF and metadata are rechecked, and descriptor failures remain typed.
+    guard_defect: Path validation followed by a fresh pathname read allowed symlink and growth races; a regular file replaced by a FIFO could also block forever after durable claim before deadline checks.
+    guard_mechanism: Descriptor-relative component walking, O_NONBLOCK on the final descriptor, regular-file fstat, bounded chunking, one-byte growth detection, metadata readback, and typed OSError translation form one bounded verification snapshot; a blocking-open source mutant turns RED.
+    gate:
+      - {event: descriptor_snapshot_rejects_input_growth, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:descriptor_snapshot_rejects_input_growth
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: descriptor_snapshot_rejects_input_growth
+
+  - id: HBRG-27
+    description: Authoritative post-claim input verification starts inside the same timeout and monotonic compute measurement as process execution; a slow rejection is terminal, measured, and launches nothing.
+    guard_defect: Input verification after durable authority could consume unmetered time outside both the reservation deadline and terminal usage evidence.
+    guard_mechanism: The target starts its monotonic interval and absolute deadline immediately after claim, passes the deadline into descriptor verification, and gives only the remainder to the process port.
+    gate:
+      - {event: postclaim_verification_time_is_metered, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:postclaim_verification_time_is_metered
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: postclaim_verification_time_is_metered
+
+  - id: HBRG-28
+    description: The workload-bound output cap is deterministically split into stdout-ceil and stderr-floor quotas with no borrowing, including odd totals; subprocess and synthetic terminal stderr obey the same split, and scheduling order cannot change each stream's admitted maximum.
+    guard_defect: A shared stdout/stderr byte pool made persisted evidence depend on selector readiness order and a naive per-stream cap could double the declared total.
+    guard_mechanism: split_stream_budget is a pure closed strategy bound into BuildExecutionSpec; actual overflow evidence and a shared-budget source mutant prove the split is load-bearing.
+    gate:
+      - {event: stream_capture_budget_is_deterministically_split, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:stream_capture_budget_is_deterministically_split
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: stream_capture_budget_is_deterministically_split
+
+  - id: HBRG-29
+    description: An explicitly injected harness_run build callable remains authoritative and suppresses resource-policy resolution, preserving the public test and embedding seam.
+    guard_defect: Composition-root refactoring could overwrite an explicit run_build injection whenever build_cmd was present.
+    guard_mechanism: Factory resolution occurs only when run_build is absent; an isolated conditional mutant invokes a forbidden factory and turns RED.
+    gate:
+      - {event: explicit_run_build_override_is_preserved, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:explicit_run_build_override_is_preserved
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: explicit_run_build_override_is_preserved
+
+  - id: HBRG-30
+    description: The production v2 durable effect accepts only a deadline-bound input verifier and invokes that port directly after claim; a preflight-only verifier is rejected before target I/O.
+    guard_defect: A structural fallback to unbounded verify could hold a durable claim and scope lock forever when an injected verifier failed to return.
+    guard_mechanism: DeadlineBoundBuildInputVerifierPort requires verify_until, DeadlineBoundSQLiteFencedBuildEffect validates the method before schema bootstrap, post-claim dispatch has no compatibility fallback, and a constructor-guard source mutant turns RED.
+    gate:
+      - {event: deadline_aware_verifier_port_is_required, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:deadline_aware_verifier_port_is_required
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: deadline_aware_verifier_port_is_required
+
+  - id: HBRG-31
+    description: Existing verify-only BuildInputVerifierPort callers remain accepted by the explicitly legacy SQLiteFencedBuildEffect, while production selects a separately versioned DeadlineBoundSQLiteFencedBuildEffect whose workload, target-store, and lock identities cannot replay or collide with legacy evidence.
+    guard_defect: Strengthening an already public verifier protocol in place broke injected implementations; sharing an adapter version would mislabel legacy evidence, while sharing the v1 SQLite filename would make existing installations fail every v2 restart on target metadata drift.
+    guard_mechanism: The v1 protocol, effect, and build-target.sqlite3 remain unchanged; the v2 protocol and effect carry a distinct adapter version and build-target-v2.sqlite3 namespace; the factory selects only v2 without modifying v1 bytes; adapter-version and target-filename collision mutants turn RED.
+    gate:
+      - {event: versioned_effect_boundary_preserves_legacy_verifier_compatibility, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:versioned_effect_boundary_preserves_legacy_verifier_compatibility
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: versioned_effect_boundary_preserves_legacy_verifier_compatibility

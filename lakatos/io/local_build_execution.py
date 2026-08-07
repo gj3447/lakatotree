@@ -25,7 +25,7 @@ import stat
 import subprocess
 import sys
 import time
-from typing import Callable, Iterator, Mapping, Protocol
+from typing import Callable, Iterator, Mapping, Protocol, runtime_checkable
 
 try:
     import fcntl
@@ -33,16 +33,23 @@ except ImportError:  # pragma: no cover - production/test deployment is POSIX.
     fcntl = None
 
 from lakatos.build_execution import (
+    BuildAdmissionPolicy,
+    BuildExecutionPolicy,
     BuildExecutionResult,
     BuildExecutionSpec,
     BuildRun,
     BuildTerminalStatus,
+    DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION,
+    DEFAULT_BUILD_ADMISSION_POLICY,
+    DEFAULT_BUILD_EXECUTION_POLICY,
     LOCAL_BUILD_ADAPTER,
     LOCAL_BUILD_ADAPTER_VERSION,
     ResourceBuildConfigError,
     ResourceBuildOutcomeUnknown,
     ResourceBuildOverrun,
     environment_sha256,
+    reserved_compute_wall_ms,
+    split_stream_budget,
 )
 from lakatos.io._resource_journal_contracts import (
     AnchorStatus,
@@ -93,7 +100,11 @@ _INPUT_MANIFEST_DOMAIN = b"lakatotree-build-input-manifest\x00v1\n"
 _TRANSIENT_SQLITE_PRIMARY_CODES = frozenset({5, 6, 8, 9, 10, 13, 14, 15})
 _DARWIN_SANDBOX_ADAPTER = "lakatotree.darwin-sandbox-exec"
 _DARWIN_SANDBOX_VERSION = "1"
-_PROCESS_CLEANUP_GRACE_SECONDS = 1.0
+_DEFAULT_RESOURCE_BUILD_POLICY_NAME = "darwin-sandbox-exec/v1"
+_LEGACY_BUILD_TARGET_DATABASE_FILENAME = "build-target.sqlite3"
+_DEADLINE_BOUND_BUILD_TARGET_DATABASE_FILENAME = (
+    f"build-target-v{DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION}.sqlite3"
+)
 _MAX_RESULT_BLOB_BYTES = 8 * 1024 * 1024
 _MAX_RECEIPT_BLOB_BYTES = 64 * 1024
 _BOUNDED_EFFECT_ROW_SQL = """
@@ -222,14 +233,49 @@ def _canonical_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+@contextmanager
+def _open_file_beneath(root: Path, relative: str) -> Iterator[int]:
+    """Open a normalized relative file through no-follow directory descriptors."""
+
+    required_flags = ("O_CLOEXEC", "O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    if any(not hasattr(os, name) for name in required_flags):
+        raise OSError("platform lacks descriptor-relative no-follow file opening")
+    directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    # The final component can race from a regular file to a FIFO after manifest
+    # load. A blocking open would strand the durable post-claim verifier before
+    # its deadline checks; fstat below rejects every non-regular descriptor.
+    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+    descriptors: list[int] = []
+    try:
+        current = os.open(root, directory_flags)
+        descriptors.append(current)
+        parts = relative.split("/")
+        for component in parts[:-1]:
+            current = os.open(component, directory_flags, dir_fd=current)
+            descriptors.append(current)
+        descriptor = os.open(parts[-1], file_flags, dir_fd=current)
+        descriptors.append(descriptor)
+        yield descriptor
+    finally:
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
+def _stable_file_metadata(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+@runtime_checkable
 class BuildExecutionIsolationPort(Protocol):
     """Trusted process boundary used by the local build effect."""
 
@@ -243,12 +289,41 @@ class BuildExecutionIsolationPort(Protocol):
         ...
 
 
+@runtime_checkable
+class BuildDeploymentPolicyPort(Protocol):
+    """Composition-root policy selecting execution limits and isolation I/O."""
+
+    name: str
+    execution_policy: BuildExecutionPolicy
+    admission_policy: BuildAdmissionPolicy
+
+    def create_isolation(
+        self,
+        protected_root: str | os.PathLike[str],
+    ) -> BuildExecutionIsolationPort:
+        ...
+
+
+class BuildDeploymentPolicyResolverPort(Protocol):
+    """Resolve one explicit deployment policy name without ambient discovery."""
+
+    def resolve(self, name: str) -> BuildDeploymentPolicyPort:
+        ...
+
+
 class BuildInputVerifierPort(Protocol):
-    """Exact-read verifier for the files declared as workload inputs."""
+    """Legacy exact-read verifier retained as the public v1 compatibility port."""
 
     manifest_sha256: str
 
     def verify(self) -> None:
+        ...
+
+
+class DeadlineBoundBuildInputVerifierPort(BuildInputVerifierPort, Protocol):
+    """Verifier whose authoritative read must finish before a monotonic deadline."""
+
+    def verify_until(self, deadline_monotonic_ns: int) -> None:
         ...
 
 
@@ -285,6 +360,8 @@ class VerifiedBuildInputManifest:
     root: Path
     entries: tuple[tuple[str, str], ...]
     manifest_sha256: str
+    maximum_input_file_bytes: int
+    maximum_input_bytes: int
 
     @classmethod
     def load(
@@ -292,11 +369,22 @@ class VerifiedBuildInputManifest:
         manifest_path: str | os.PathLike[str],
         *,
         root: str | os.PathLike[str],
+        policy: BuildAdmissionPolicy = DEFAULT_BUILD_ADMISSION_POLICY,
     ) -> "VerifiedBuildInputManifest":
+        if not isinstance(policy, BuildAdmissionPolicy):
+            raise TypeError("manifest policy must be a BuildAdmissionPolicy")
         bound_root = Path(root).resolve()
         path = Path(manifest_path).expanduser().resolve()
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            with path.open("rb") as stream:
+                raw = stream.read(policy.maximum_manifest_json_bytes + 1)
+            if len(raw) > policy.maximum_manifest_json_bytes:
+                raise BuildInputManifestError(
+                    "build input manifest exceeds the JSON byte limit"
+                )
+            payload = json.loads(raw.decode("utf-8"))
+        except BuildInputManifestError:
+            raise
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise BuildInputManifestError("build input manifest is unreadable") from exc
         if not isinstance(payload, dict) or set(payload) != {"schema_version", "files"}:
@@ -306,6 +394,10 @@ class VerifiedBuildInputManifest:
         files = payload["files"]
         if not isinstance(files, list) or not files:
             raise BuildInputManifestError("build input manifest requires at least one file")
+        if len(files) > policy.maximum_manifest_entries:
+            raise BuildInputManifestError(
+                "build input manifest exceeds the entry limit"
+            )
         entries: list[tuple[str, str]] = []
         for entry in files:
             if not isinstance(entry, dict) or set(entry) != {"path", "sha256"}:
@@ -354,27 +446,75 @@ class VerifiedBuildInputManifest:
             manifest_sha256=hashlib.sha256(
                 _INPUT_MANIFEST_DOMAIN + _canonical_bytes(canonical)
             ).hexdigest(),
+            maximum_input_file_bytes=policy.maximum_input_file_bytes,
+            maximum_input_bytes=policy.maximum_input_bytes,
         )
         instance.verify()
         return instance
 
     def verify(self) -> None:
+        self._verify(deadline_monotonic_ns=None)
+
+    def verify_until(self, deadline_monotonic_ns: int) -> None:
+        self._verify(deadline_monotonic_ns=deadline_monotonic_ns)
+
+    def _verify(self, *, deadline_monotonic_ns: int | None) -> None:
+        total_bytes = 0
         for relative, expected_sha256 in self.entries:
-            candidate = self.root.joinpath(*relative.split("/"))
             try:
-                resolved = candidate.resolve(strict=True)
-                resolved.relative_to(self.root)
-                metadata = candidate.lstat()
-            except (OSError, ValueError) as exc:
+                with _open_file_beneath(self.root, relative) as descriptor:
+                    before = os.fstat(descriptor)
+                    if not stat.S_ISREG(before.st_mode):
+                        raise BuildInputManifestError(
+                            "declared build input must be a regular non-symlink "
+                            f"file: {relative}"
+                        )
+                    if before.st_size > self.maximum_input_file_bytes:
+                        raise BuildInputManifestError(
+                            "declared build input exceeds the per-file byte limit: "
+                            f"{relative}"
+                        )
+                    total_bytes += before.st_size
+                    if total_bytes > self.maximum_input_bytes:
+                        raise BuildInputManifestError(
+                            "declared build inputs exceed the declared byte limit"
+                        )
+                    digest = hashlib.sha256()
+                    remaining = before.st_size
+                    while remaining:
+                        if (
+                            deadline_monotonic_ns is not None
+                            and time.monotonic_ns() >= deadline_monotonic_ns
+                        ):
+                            raise BuildInputManifestError(
+                                "build input verification exceeded execution deadline"
+                            )
+                        chunk = os.read(descriptor, min(1_048_576, remaining))
+                        if not chunk:
+                            raise BuildInputManifestError(
+                                f"declared build input changed while reading: {relative}"
+                            )
+                        digest.update(chunk)
+                        remaining -= len(chunk)
+                    if os.read(descriptor, 1):
+                        raise BuildInputManifestError(
+                            f"declared build input grew while reading: {relative}"
+                        )
+                    after = os.fstat(descriptor)
+                    if _stable_file_metadata(after) != _stable_file_metadata(before):
+                        raise BuildInputManifestError(
+                            f"declared build input changed while reading: {relative}"
+                        )
+                    if digest.hexdigest() != expected_sha256:
+                        raise BuildInputManifestError(
+                            f"declared build input changed: {relative}"
+                        )
+            except BuildInputManifestError:
+                raise
+            except OSError as exc:
                 raise BuildInputManifestError(
-                    f"declared build input is missing or outside root: {relative}"
+                    f"declared build input could not be read safely: {relative}"
                 ) from exc
-            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(resolved.stat().st_mode):
-                raise BuildInputManifestError(
-                    f"declared build input must be a regular non-symlink file: {relative}"
-                )
-            if _sha256_file(resolved) != expected_sha256:
-                raise BuildInputManifestError(f"declared build input changed: {relative}")
 
 
 def darwin_sandbox_profile(protected_root: str | os.PathLike[str]) -> str:
@@ -436,6 +576,39 @@ class DarwinSandboxExecIsolation:
         return darwin_sandbox_argv(self._profile, spec)
 
 
+class DarwinBuildDeploymentPolicy:
+    """Built-in macOS composition; alternative hosts inject a sibling policy."""
+
+    name = _DEFAULT_RESOURCE_BUILD_POLICY_NAME
+    execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+    admission_policy = DEFAULT_BUILD_ADMISSION_POLICY
+
+    @staticmethod
+    def create_isolation(
+        protected_root: str | os.PathLike[str],
+    ) -> BuildExecutionIsolationPort:
+        return DarwinSandboxExecIsolation(protected_root)
+
+
+class BuiltinBuildDeploymentPolicyResolver:
+    """Closed resolver for built-in policies; unknown selectors fail closed."""
+
+    def __init__(self) -> None:
+        darwin = DarwinBuildDeploymentPolicy()
+        self._policies = {darwin.name: darwin}
+
+    def resolve(self, name: str) -> BuildDeploymentPolicyPort:
+        try:
+            return self._policies[name]
+        except (KeyError, TypeError) as exc:
+            raise ResourceBuildConfigError(
+                f"unknown resource build policy: {name!r}"
+            ) from exc
+
+
+_BUILTIN_DEPLOYMENT_POLICY_RESOLVER = BuiltinBuildDeploymentPolicyResolver()
+
+
 def _utc_now() -> str:
     return (
         datetime.now(timezone.utc)
@@ -476,7 +649,11 @@ class _BoundedStreamEvidence:
         admitted = chunk[:remaining_bytes]
         self._digest.update(admitted)
         self.byte_count += len(admitted)
-        self._tail = (self._tail + admitted)[-self._tail_bytes :]
+        self._tail = (
+            (self._tail + admitted)[-self._tail_bytes :]
+            if self._tail_bytes
+            else b""
+        )
         return len(admitted) != len(chunk)
 
     @property
@@ -572,11 +749,12 @@ def _rollback_preserving_failure(connection: sqlite3.Connection) -> None:
         pass
 
 
-class SQLiteFencedBuildEffect:
-    """SQLite target registry plus serialized provider-free subprocess effect."""
+class _SQLiteFencedBuildEffectCore:
+    """Shared target registry for explicitly versioned local build effects."""
 
-    adapter = LOCAL_BUILD_ADAPTER
-    adapter_version = LOCAL_BUILD_ADAPTER_VERSION
+    adapter: str
+    adapter_version: str
+    _requires_deadline_bound_verifier: bool
 
     def __init__(
         self,
@@ -596,9 +774,14 @@ class SQLiteFencedBuildEffect:
         timeout_seconds: float = 10.0,
     ) -> None:
         if fcntl is None:
-            raise OSError("SQLiteFencedBuildEffect requires POSIX file locking")
+            raise OSError(f"{type(self).__name__} requires POSIX file locking")
         if not isinstance(spec, BuildExecutionSpec):
             raise TypeError("spec must be a BuildExecutionSpec")
+        if (spec.adapter, spec.adapter_version) != (
+            self.adapter,
+            self.adapter_version,
+        ):
+            raise ValueError("build effect identity diverges from BuildExecutionSpec")
         self._path = Path(database_path)
         if str(database_path) == ":memory:" or not self._path.parent.exists():
             raise ValueError("build target requires a durable file in an existing directory")
@@ -608,7 +791,7 @@ class SQLiteFencedBuildEffect:
         self._spec = spec
         self._environment = dict(environment)
         if environment_sha256(self._environment) != spec.environment_sha256:
-            raise ValueError("closed child environment diverges from BuildExecutionSpec")
+            raise ValueError("selected child environment diverges from BuildExecutionSpec")
         isolation_binding = (
             getattr(isolation, "adapter", None),
             getattr(isolation, "adapter_version", None),
@@ -629,6 +812,12 @@ class SQLiteFencedBuildEffect:
             )
         if getattr(input_verifier, "manifest_sha256", None) != spec.input_manifest_sha256:
             raise ValueError("input verifier diverges from BuildExecutionSpec")
+        if self._requires_deadline_bound_verifier and not callable(
+            getattr(input_verifier, "verify_until", None)
+        ):
+            raise ValueError(
+                "input verifier must provide deadline-aware verify_until"
+            )
         if not isinstance(authentication_key, bytes) or len(authentication_key) < 32:
             raise ValueError("target authentication_key must contain at least 32 bytes")
         self._isolation = isolation
@@ -992,6 +1181,7 @@ class SQLiteFencedBuildEffect:
             raise BuildTargetError("terminal target authentication failed")
         # Only authenticated bounded bytes cross the JSON/schema boundary.
         result = self._decode_result(row, result_blob)
+        self._validate_result_bounds(result)
         receipt = self._decode_receipt(row, receipt_blob)
         expected = (
             row["effect_id"],
@@ -1094,18 +1284,89 @@ class SQLiteFencedBuildEffect:
             connection.commit()
             return None
 
-    def _run_subprocess(self, permit: WorkloadDispatchPermit) -> BuildExecutionResult:
-        started_at = self._utc_now()
-        started_ns = self._monotonic_ns()
-        control_deadline = time.monotonic() + self._spec.timeout_seconds
+    def _prelaunch_rejection_result(
+        self,
+        permit: WorkloadDispatchPermit,
+        error: BuildInputManifestError,
+        *,
+        started_at: str,
+        started_ns: int,
+    ) -> BuildExecutionResult:
+        """Close a known-unlaunched claim with bounded, measured evidence."""
+
+        _stdout_limit, stderr_limit = split_stream_budget(
+            self._spec.max_output_bytes
+        )
+        stdout_tail_limit, stderr_tail_limit = split_stream_budget(
+            self._spec.output_tail_bytes
+        )
+        stdout_evidence = _BoundedStreamEvidence(tail_bytes=stdout_tail_limit)
+        stderr_evidence = _BoundedStreamEvidence(tail_bytes=stderr_tail_limit)
+        message = f"{type(error).__name__}: {error}".encode(
+            "utf-8", errors="replace"
+        )
+        stderr_evidence.append(
+            message,
+            remaining_bytes=stderr_limit,
+        )
+        output_tail = _decode_bounded_output_tail(
+            stderr_evidence.tail,
+            max_bytes=self._spec.output_tail_bytes,
+        )
+        completed_ns = self._monotonic_ns()
+        elapsed_ns = max(completed_ns - started_ns, 0)
+        completed_at = _logical_completed_at(
+            started_at=started_at,
+            elapsed_monotonic_ns=elapsed_ns,
+            observed_at=self._utc_now(),
+        )
+        return BuildExecutionResult(
+            effect_id=permit.effect_id,
+            workload_sha256=permit.workload_sha256,
+            intent_sha256=permit.intent_sha256,
+            fence_token=permit.fence_token,
+            status=BuildTerminalStatus.INPUT_REJECTED,
+            returncode=126,
+            started_at=started_at,
+            completed_at=completed_at,
+            elapsed_monotonic_ns=elapsed_ns,
+            compute_wall_ms=(elapsed_ns + 999_999) // 1_000_000,
+            stdout_sha256=stdout_evidence.sha256,
+            stderr_sha256=stderr_evidence.sha256,
+            stdout_bytes=stdout_evidence.byte_count,
+            stderr_bytes=stderr_evidence.byte_count,
+            output_tail=output_tail,
+            measurement_method="prelaunch.monotonic_elapsed.ceil_ms/v1",
+        )
+
+    def _run_subprocess(
+        self,
+        permit: WorkloadDispatchPermit,
+        *,
+        started_at: str,
+        started_ns: int,
+        remaining_timeout_ns: int,
+    ) -> BuildExecutionResult:
+        control_deadline = time.monotonic() + max(remaining_timeout_ns, 0) / 1e9
+        cleanup_grace_seconds = self._spec.process_cleanup_grace_ms / 1_000
         status = BuildTerminalStatus.EXITED
         returncode: int | None = None
+        stdout_limit, stderr_limit = split_stream_budget(
+            self._spec.max_output_bytes
+        )
+        stdout_tail_limit, stderr_tail_limit = split_stream_budget(
+            self._spec.output_tail_bytes
+        )
         stdout_evidence = _BoundedStreamEvidence(
-            tail_bytes=self._spec.output_tail_bytes
+            tail_bytes=stdout_tail_limit
         )
         stderr_evidence = _BoundedStreamEvidence(
-            tail_bytes=self._spec.output_tail_bytes
+            tail_bytes=stderr_tail_limit
         )
+        stream_limits = {
+            "stdout": stdout_limit,
+            "stderr": stderr_limit,
+        }
         process: subprocess.Popen[bytes] | None = None
         selector = selectors.DefaultSelector()
         cleanup_deadline: float | None = None
@@ -1128,7 +1389,7 @@ class SQLiteFencedBuildEffect:
                 )
                 stderr_evidence.append(
                     message,
-                    remaining_bytes=self._spec.max_output_bytes,
+                    remaining_bytes=stderr_limit,
                 )
             else:
                 assert process.stdout is not None and process.stderr is not None
@@ -1151,7 +1412,7 @@ class SQLiteFencedBuildEffect:
                         # The admitted unit is the complete process group. Close
                         # ordinary background descendants before settlement.
                         _kill_process_group(process.pid)
-                        cleanup_deadline = now + _PROCESS_CLEANUP_GRACE_SECONDS
+                        cleanup_deadline = now + cleanup_grace_seconds
                     elif (
                         status is BuildTerminalStatus.EXITED
                         and leader_returncode is None
@@ -1160,7 +1421,7 @@ class SQLiteFencedBuildEffect:
                         status = BuildTerminalStatus.TIMED_OUT
                         returncode = None
                         _kill_process_group(process.pid)
-                        cleanup_deadline = now + _PROCESS_CLEANUP_GRACE_SECONDS
+                        cleanup_deadline = now + cleanup_grace_seconds
 
                     if cleanup_deadline is not None and now >= cleanup_deadline:
                         break
@@ -1186,14 +1447,14 @@ class SQLiteFencedBuildEffect:
                             selector.unregister(stream)
                             stream.close()
                             continue
-                        admitted = (
-                            stdout_evidence.byte_count + stderr_evidence.byte_count
-                        )
-                        remaining = max(self._spec.max_output_bytes - admitted, 0)
                         evidence = (
                             stdout_evidence
                             if key.data == "stdout"
                             else stderr_evidence
+                        )
+                        remaining = max(
+                            stream_limits[key.data] - evidence.byte_count,
+                            0,
                         )
                         refused = evidence.append(
                             chunk,
@@ -1204,7 +1465,7 @@ class SQLiteFencedBuildEffect:
                             returncode = None
                             _kill_process_group(process.pid)
                             cleanup_deadline = (
-                                time.monotonic() + _PROCESS_CLEANUP_GRACE_SECONDS
+                                time.monotonic() + cleanup_grace_seconds
                             )
 
                 if status in {
@@ -1222,7 +1483,13 @@ class SQLiteFencedBuildEffect:
                             "forced-stop build leader could not be reaped"
                         ) from exc
                 elif returncode is None:
-                    returncode = process.wait(timeout=_PROCESS_CLEANUP_GRACE_SECONDS)
+                    cleanup_deadline = (
+                        cleanup_deadline
+                        or time.monotonic() + cleanup_grace_seconds
+                    )
+                    returncode = process.wait(
+                        timeout=max(0.0, cleanup_deadline - time.monotonic())
+                    )
         finally:
             active_exception = sys.exc_info()[0] is not None
             cleanup_error: Exception | None = None
@@ -1244,9 +1511,17 @@ class SQLiteFencedBuildEffect:
                 try:
                     if process.poll() is None:
                         _kill_process_group(process.pid)
+                        cleanup_deadline = (
+                            cleanup_deadline
+                            or time.monotonic() + cleanup_grace_seconds
+                        )
                     # Always wait after the last possible kill. This both reaps the
-                    # leader and makes exceptional stream cleanup non-leaking.
-                    process.wait(timeout=_PROCESS_CLEANUP_GRACE_SECONDS)
+                    # leader and shares one absolute cleanup deadline with every
+                    # prior reap attempt instead of silently adding another grace.
+                    process.wait(timeout=max(
+                        0.0,
+                        (cleanup_deadline or time.monotonic()) - time.monotonic(),
+                    ))
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     cleanup_error = cleanup_error or exc
             if cleanup_error is not None and not active_exception:
@@ -1286,12 +1561,28 @@ class SQLiteFencedBuildEffect:
             output_tail=output_tail,
         )
 
+    def _validate_result_bounds(self, result: BuildExecutionResult) -> None:
+        """Reject terminal evidence outside this workload's split stream spec."""
+
+        stdout_limit, stderr_limit = split_stream_budget(
+            self._spec.max_output_bytes
+        )
+        if result.stdout_bytes > stdout_limit or result.stderr_bytes > stderr_limit:
+            raise BuildTargetError(
+                "terminal output evidence exceeds the workload stream quota"
+            )
+        if len(result.output_tail.encode("utf-8")) > self._spec.output_tail_bytes:
+            raise BuildTargetError(
+                "terminal output tail exceeds the workload evidence limit"
+            )
+
     def _commit_terminal(
         self,
         permit: WorkloadDispatchPermit,
         result: BuildExecutionResult,
         receipt: WorkloadDispatchReceipt,
     ) -> None:
+        self._validate_result_bounds(result)
         result_blob = _canonical_bytes(result.to_dict())
         receipt_blob = _canonical_bytes(receipt.to_dict())
         target_mac = self._target_mac(
@@ -1342,18 +1633,96 @@ class SQLiteFencedBuildEffect:
             raise BuildTargetIdentityConflict(
                 "permit workload does not bind the registered build execution spec"
             )
+        if not self._requires_deadline_bound_verifier:
+            return self._dispatch_legacy(permit)
+        return self._dispatch_deadline_bound(permit)
+
+    def _dispatch_legacy(
+        self,
+        permit: WorkloadDispatchPermit,
+    ) -> WorkloadDispatchReceipt:
+        """Preserve the v1 verify-only effect contract without a bounded claim."""
+
         self._input_verifier.verify()
         with self._scope_lock(permit.scope):
             existing = self._claim(permit)
             if existing is not None:
                 _result, receipt = self._terminal_values(existing)
                 return receipt
-            # Close the composition-to-launch race as far as a trusted local workspace
-            # permits. A concurrent mutation after this read is outside the v1 contract.
+            # This deliberately retains the v1 unbounded post-claim verification
+            # semantics. Production composition never instantiates this legacy effect.
             self._input_verifier.verify()
+            started_at = self._utc_now()
+            started_ns = self._monotonic_ns()
             if self._failure_inject_after_claim is not None:
                 self._failure_inject_after_claim(permit.effect_id)
-            result = self._run_subprocess(permit)
+            result = self._run_subprocess(
+                permit,
+                started_at=started_at,
+                started_ns=started_ns,
+                remaining_timeout_ns=self._spec.timeout_seconds * 1_000_000_000,
+            )
+            receipt = WorkloadDispatchReceipt(
+                operation=permit.operation,
+                effect_id=permit.effect_id,
+                workload_sha256=permit.workload_sha256,
+                fence_token=permit.fence_token,
+                intent_sha256=permit.intent_sha256,
+                completed_at=result.completed_at,
+                evidence_sha256=result.evidence_sha256,
+            )
+            self._commit_terminal(permit, result, receipt)
+        if self._failure_inject_after_terminal_commit is not None:
+            self._failure_inject_after_terminal_commit(result)
+        return receipt
+
+    def _dispatch_deadline_bound(
+        self,
+        permit: WorkloadDispatchPermit,
+    ) -> WorkloadDispatchReceipt:
+        with self._scope_lock(permit.scope):
+            existing = self._claim(permit)
+            if existing is not None:
+                _result, receipt = self._terminal_values(existing)
+                return receipt
+            started_at = self._utc_now()
+            started_ns = self._monotonic_ns()
+            deadline_ns = (
+                started_ns + self._spec.timeout_seconds * 1_000_000_000
+            )
+            # Close the composition-to-launch race as far as a trusted local workspace
+            # permits. A concurrent mutation after this read is outside the v2 contract.
+            try:
+                self._input_verifier.verify_until(deadline_ns)
+            except BuildInputManifestError as exc:
+                # The durable claim is known not to have crossed the process port.
+                # Terminalize and settle it instead of manufacturing an unknown.
+                result = self._prelaunch_rejection_result(
+                    permit,
+                    exc,
+                    started_at=started_at,
+                    started_ns=started_ns,
+                )
+            else:
+                remaining_timeout_ns = deadline_ns - self._monotonic_ns()
+                if remaining_timeout_ns <= 0:
+                    result = self._prelaunch_rejection_result(
+                        permit,
+                        BuildInputManifestError(
+                            "build input verification exceeded execution deadline"
+                        ),
+                        started_at=started_at,
+                        started_ns=started_ns,
+                    )
+                else:
+                    if self._failure_inject_after_claim is not None:
+                        self._failure_inject_after_claim(permit.effect_id)
+                    result = self._run_subprocess(
+                        permit,
+                        started_at=started_at,
+                        started_ns=started_ns,
+                        remaining_timeout_ns=remaining_timeout_ns,
+                    )
             receipt = WorkloadDispatchReceipt(
                 operation=permit.operation,
                 effect_id=permit.effect_id,
@@ -1405,6 +1774,29 @@ class SQLiteFencedBuildEffect:
 
     def verify_inputs(self) -> None:
         self._input_verifier.verify()
+
+
+class SQLiteFencedBuildEffect(_SQLiteFencedBuildEffectCore):
+    """Deprecated v1 effect retained for verify-only input-verifier callers.
+
+    This compatibility boundary retains the original unbounded post-claim
+    ``verify()`` behavior. New composition must use
+    :class:`DeadlineBoundSQLiteFencedBuildEffect`.
+    """
+
+    adapter = LOCAL_BUILD_ADAPTER
+    adapter_version = LOCAL_BUILD_ADAPTER_VERSION
+    target_database_filename = _LEGACY_BUILD_TARGET_DATABASE_FILENAME
+    _requires_deadline_bound_verifier = False
+
+
+class DeadlineBoundSQLiteFencedBuildEffect(_SQLiteFencedBuildEffectCore):
+    """V2 effect with deadline-bound post-claim verification and metering."""
+
+    adapter = LOCAL_BUILD_ADAPTER
+    adapter_version = DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION
+    target_database_filename = _DEADLINE_BOUND_BUILD_TARGET_DATABASE_FILENAME
+    _requires_deadline_bound_verifier = True
 
 
 def _settlement_receipt_sha256(state, grant_id: str) -> str:
@@ -1606,6 +1998,7 @@ class ResourceGatedBuildRunner:
 
 _RESOURCE_CONFIGURATION_KEYS = frozenset({
     "LAKATOTREE_RESOURCE_BUILD_DIR",
+    "LAKATOTREE_RESOURCE_BUILD_POLICY",
     "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX",
     "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX",
     "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS",
@@ -1630,13 +2023,19 @@ def _is_sensitive_child_environment_key(name: str) -> bool:
     ))
 
 
-def closed_build_environment(environment: Mapping[str, str]) -> dict[str, str]:
-    """Return the only environment mapping allowed across the build effect port."""
+def closed_build_environment(
+    environment: Mapping[str, str],
+    *,
+    allowed_keys: tuple[str, ...] | None = None,
+) -> dict[str, str]:
+    """Apply the compatibility credential/config filter and optional allowlist."""
 
+    admitted = None if allowed_keys is None else frozenset(allowed_keys)
     return {
         key: value
         for key, value in environment.items()
-        if key not in _RESOURCE_CONFIGURATION_KEYS
+        if (admitted is None or key in admitted)
+        and key not in _RESOURCE_CONFIGURATION_KEYS
         and not _is_sensitive_child_environment_key(key)
     }
 
@@ -1755,6 +2154,7 @@ def resource_gated_build_runner_from_environment(
     command: str,
     timeout_seconds: int,
     environment: Mapping[str, str] | None = None,
+    deployment_policy_resolver: BuildDeploymentPolicyResolverPort | None = None,
 ) -> ResourceGatedBuildRunner | None:
     """Build the opt-in production composition, or return ``None`` for legacy mode.
 
@@ -1767,6 +2167,54 @@ def resource_gated_build_runner_from_environment(
     raw_root = source_environment.get("LAKATOTREE_RESOURCE_BUILD_DIR")
     if raw_root is None or raw_root == "":
         return None
+    if not isinstance(raw_root, str):
+        raise ResourceBuildConfigError(
+            "LAKATOTREE_RESOURCE_BUILD_DIR must be a filesystem path"
+        )
+    policy_name = source_environment.get(
+        "LAKATOTREE_RESOURCE_BUILD_POLICY",
+        _DEFAULT_RESOURCE_BUILD_POLICY_NAME,
+    )
+    if not isinstance(policy_name, str) or not policy_name:
+        raise ResourceBuildConfigError(
+            "LAKATOTREE_RESOURCE_BUILD_POLICY must be a non-empty policy name"
+        )
+    resolver = (
+        _BUILTIN_DEPLOYMENT_POLICY_RESOLVER
+        if deployment_policy_resolver is None
+        else deployment_policy_resolver
+    )
+    resolve_policy = getattr(resolver, "resolve", None)
+    if not callable(resolve_policy):
+        raise ResourceBuildConfigError(
+            "resource build policy resolver has no callable resolve port"
+        )
+    try:
+        deployment_policy = resolve_policy(policy_name)
+    except ResourceBuildConfigError:
+        raise
+    except (LookupError, OSError, TypeError, ValueError) as exc:
+        raise ResourceBuildConfigError(
+            f"unknown resource build policy: {policy_name!r}"
+        ) from exc
+    if not isinstance(deployment_policy, BuildDeploymentPolicyPort):
+        raise ResourceBuildConfigError(
+            "resource build policy resolver returned an invalid policy"
+        )
+    if deployment_policy.name != policy_name:
+        raise ResourceBuildConfigError(
+            "resource build policy resolver returned a different policy name"
+        )
+    execution_policy = deployment_policy.execution_policy
+    admission_policy = deployment_policy.admission_policy
+    if not isinstance(execution_policy, BuildExecutionPolicy):
+        raise ResourceBuildConfigError(
+            "resource build policy has no immutable execution policy"
+        )
+    if not isinstance(admission_policy, BuildAdmissionPolicy):
+        raise ResourceBuildConfigError(
+            "resource build policy has no immutable admission policy"
+        )
     if not isinstance(tree, str) or not tree or not isinstance(tag, str) or not tag:
         raise ResourceBuildConfigError("tree and tag are required for build identity")
     anchor_key = _configuration_key(
@@ -1783,49 +2231,70 @@ def resource_gated_build_runner_from_environment(
         source_environment,
         "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS",
     )
-    if (
-        isinstance(timeout_seconds, bool)
-        or not isinstance(timeout_seconds, int)
-        or timeout_seconds <= 0
-    ):
-        raise ResourceBuildConfigError("build timeout must be a positive integer")
-    reservation_ms = timeout_seconds * 1000 + 1000
+    try:
+        admission_policy.validate_timeout(timeout_seconds)
+    except ValueError as exc:
+        raise ResourceBuildConfigError(str(exc)) from exc
+    reservation_ms = execution_policy.reserved_compute_wall_ms(timeout_seconds)
     if reservation_ms > cap_ms:
         raise ResourceBuildConfigError(
-            "build timeout reservation plus 1000ms reap margin exceeds compute cap"
+            "build timeout and cleanup grace exceed compute cap"
         )
     cwd = Path.cwd().resolve()
-    root = _prepare_resource_root(raw_root, cwd=cwd)
     manifest_path = source_environment.get("LAKATOTREE_BUILD_INPUT_MANIFEST")
     if not isinstance(manifest_path, str) or not manifest_path:
         raise ResourceBuildConfigError(
             "LAKATOTREE_BUILD_INPUT_MANIFEST is required when resource build is enabled"
         )
+    root = _prepare_resource_root(raw_root, cwd=cwd)
     try:
-        input_manifest = VerifiedBuildInputManifest.load(manifest_path, root=cwd)
+        input_manifest = VerifiedBuildInputManifest.load(
+            manifest_path,
+            root=cwd,
+            policy=admission_policy,
+        )
     except BuildInputManifestError as exc:
         raise ResourceBuildConfigError(str(exc)) from exc
-    isolation = DarwinSandboxExecIsolation(root)
-    child_environment = closed_build_environment(source_environment)
-    spec = BuildExecutionSpec(
+    try:
+        isolation = deployment_policy.create_isolation(root)
+    except ResourceBuildConfigError:
+        raise
+    except (OSError, TypeError, ValueError) as exc:
+        raise ResourceBuildConfigError(
+            "resource build isolation could not be created"
+        ) from exc
+    if not isinstance(isolation, BuildExecutionIsolationPort):
+        raise ResourceBuildConfigError(
+            "resource build policy returned an invalid isolation port"
+        )
+    child_environment = closed_build_environment(
+        source_environment,
+        allowed_keys=admission_policy.environment_allowlist,
+    )
+    spec = execution_policy.make_spec(
         command=command,
         cwd=str(cwd),
-        shell="/bin/sh",
         timeout_seconds=timeout_seconds,
         environment_sha256=environment_sha256(child_environment),
         input_manifest_sha256=input_manifest.manifest_sha256,
         isolation_adapter=isolation.adapter,
         isolation_version=isolation.adapter_version,
         isolation_policy_sha256=isolation.policy_sha256,
+        adapter=DeadlineBoundSQLiteFencedBuildEffect.adapter,
+        adapter_version=DeadlineBoundSQLiteFencedBuildEffect.adapter_version,
     )
+    if reserved_compute_wall_ms(spec) != reservation_ms:
+        raise ResourceBuildConfigError(
+            "resource reservation diverges from the admitted execution policy"
+        )
     identity = hashlib.sha256(
         f"{tree}\0{tag}\0{spec.workload_sha256}".encode("utf-8")
     ).hexdigest()
     scope = f"harness-build:{hashlib.sha256(tree.encode('utf-8')).hexdigest()}"
     effect_id = f"build:{identity}"
     grant_id = f"grant:{identity}"
-    effect = SQLiteFencedBuildEffect(
-        root / "build-target.sqlite3",
+    effect = DeadlineBoundSQLiteFencedBuildEffect(
+        root / DeadlineBoundSQLiteFencedBuildEffect.target_database_filename,
         spec=spec,
         environment=child_environment,
         isolation=isolation,
@@ -1835,6 +2304,7 @@ def resource_gated_build_runner_from_environment(
             b"lakatotree-local-build-target-key\x00v1\n",
             hashlib.sha256,
         ).digest(),
+        timeout_seconds=admission_policy.target_sqlite_timeout_ms / 1_000,
     )
     fence_token = effect.allocate_fence(scope=scope, effect_id=effect_id)
     try:
@@ -1864,7 +2334,12 @@ def resource_gated_build_runner_from_environment(
         )
 
     observed = datetime.now(timezone.utc)
-    expires = observed + timedelta(seconds=max(300, timeout_seconds + 60))
+    expires = observed + timedelta(
+        seconds=admission_policy.grant_ttl_seconds(
+            timeout_seconds,
+            cleanup_grace_ms=execution_policy.process_cleanup_grace_ms,
+        )
+    )
     observed_at = observed.isoformat(timespec="microseconds").replace("+00:00", "Z")
     expires_at = expires.isoformat(timespec="microseconds").replace("+00:00", "Z")
     fresh_request = RequestGrant(
@@ -1959,6 +2434,7 @@ def resource_gated_build_runner_from_environment(
             issuer=f"lakatotree:harness-build:{identity[:24]}",
         ),
         settlement_effect=effect,
+        permit_ttl_seconds=admission_policy.permit_ttl_seconds,
     )
     return ResourceGatedBuildRunner(
         scope=scope,
@@ -1972,9 +2448,13 @@ def resource_gated_build_runner_from_environment(
 
 __all__ = [
     "BuildEffectPort",
+    "BuildDeploymentPolicyPort",
+    "BuildDeploymentPolicyResolverPort",
     "BuildExecutionIsolationPort",
     "BuildInputManifestError",
     "BuildInputVerifierPort",
+    "DeadlineBoundBuildInputVerifierPort",
+    "DeadlineBoundSQLiteFencedBuildEffect",
     "BuildTargetError",
     "BuildTargetIdentityConflict",
     "BuildTargetOutcomeUnknown",
@@ -1983,6 +2463,8 @@ __all__ = [
     "StaleBuildFence",
     "VerifiedBuildInputManifest",
     "closed_build_environment",
+    "BuiltinBuildDeploymentPolicyResolver",
+    "DarwinBuildDeploymentPolicy",
     "DarwinSandboxExecIsolation",
     "darwin_sandbox_argv",
     "darwin_sandbox_profile",

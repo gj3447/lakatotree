@@ -18,19 +18,29 @@ import pytest
 from lakatos import harness_run
 from lakatos.io import local_build_execution
 from lakatos.build_execution import (
+    BuildAdmissionPolicy,
+    BuildExecutionPolicy,
     BuildExecutionResult,
     BuildExecutionSpec,
     BuildRun,
     BuildTerminalStatus,
+    DEFAULT_BUILD_ADMISSION_POLICY,
+    DEFAULT_BUILD_EXECUTION_POLICY,
     ResourceBuildConfigError,
     ResourceBuildOutcomeUnknown,
     environment_sha256,
+    reserved_compute_wall_ms,
+    split_stream_budget,
 )
 from lakatos.harness import BuildFailed, CycleSpec, LakatoHarness
 from lakatos.io.local_build_execution import (
+    BuildInputVerifierPort,
     BuildInputManifestError,
     BuildTargetError,
     BuildTargetOutcomeUnknown,
+    BuildDeploymentPolicyPort,
+    DeadlineBoundBuildInputVerifierPort,
+    DeadlineBoundSQLiteFencedBuildEffect,
     ResourceGatedBuildRunner,
     SQLiteFencedBuildEffect,
     VerifiedBuildInputManifest,
@@ -81,6 +91,9 @@ class _StaticInputVerifier:
 
     def verify(self) -> None:
         return None
+
+    def verify_until(self, _deadline_monotonic_ns: int) -> None:
+        self.verify()
 
 
 class _RollbackAfterDispatchClock:
@@ -145,7 +158,12 @@ def _runtime(
     target_timeout_seconds: float = 10.0,
     output_tail_bytes: int = 65_536,
     max_output_bytes: int = 16_777_216,
-) -> tuple[ResourceGatedBuildRunner, SQLiteResourceJournal, SQLiteFencedBuildEffect]:
+    effect_type=DeadlineBoundSQLiteFencedBuildEffect,
+) -> tuple[
+    ResourceGatedBuildRunner,
+    SQLiteResourceJournal,
+    DeadlineBoundSQLiteFencedBuildEffect | SQLiteFencedBuildEffect,
+]:
     scope = "harness-build:test-tree"
     child_environment = {"PATH": os.environ.get("PATH", "")}
     isolation = _TestIsolation()
@@ -163,6 +181,8 @@ def _runtime(
         isolation_adapter=isolation.adapter,
         isolation_version=isolation.adapter_version,
         isolation_policy_sha256=isolation.policy_sha256,
+        adapter=effect_type.adapter,
+        adapter_version=effect_type.adapter_version,
         output_tail_bytes=output_tail_bytes,
         max_output_bytes=max_output_bytes,
     )
@@ -172,7 +192,7 @@ def _runtime(
     )
     if monotonic_ns is not None:
         effect_options["monotonic_ns"] = monotonic_ns
-    effect = SQLiteFencedBuildEffect(
+    effect = effect_type(
         tmp_path / "build-target.sqlite3",
         spec=spec,
         environment=child_environment,
@@ -217,7 +237,7 @@ def _runtime(
             adapter=effect.adapter,
             adapter_version=effect.adapter_version,
             upper_bound=ResourceVector(
-                compute_wall_ms=timeout_seconds * 1000 + 1000
+                compute_wall_ms=reserved_compute_wall_ms(spec)
             ),
             valid_until="2026-08-07T12:10:00Z",
         ),
@@ -432,6 +452,8 @@ def test_workload_identity_binds_every_declared_execution_input(tmp_path):
         {**base, "isolation_adapter": "test.other-isolation"},
         {**base, "isolation_version": "2"},
         {**base, "isolation_policy_sha256": _sha("other-policy")},
+        {**base, "execution_policy_sha256": _sha("other-execution-policy")},
+        {**base, "process_cleanup_grace_ms": 750},
         {**base, "output_tail_bytes": 32_768},
         {**base, "max_output_bytes": 32_000_000},
     )
@@ -448,7 +470,7 @@ def test_target_adapter_rejects_exact_live_schema_drift(tmp_path):
         )
 
     with pytest.raises(BuildTargetError, match="live schema diverged"):
-        SQLiteFencedBuildEffect(
+        DeadlineBoundSQLiteFencedBuildEffect(
             tmp_path / "build-target.sqlite3",
             spec=effect.spec,
             environment={"PATH": os.environ.get("PATH", "")},
@@ -660,11 +682,45 @@ def test_output_limit_is_terminal_metered_and_settled(tmp_path):
     assert run.timed_out is False
     assert terminal.status is BuildTerminalStatus.OUTPUT_LIMIT_EXCEEDED
     assert terminal.returncode is None
-    assert terminal.stdout_bytes + terminal.stderr_bytes == 4096
+    stdout_limit, _stderr_limit = split_stream_budget(4096)
+    assert terminal.stdout_bytes == stdout_limit
+    assert terminal.stderr_bytes == 0
     assert len(run.output.encode("utf-8")) <= 1024
     assert journal.load("harness-build:test-tree").state.grant(
         "grant:effect:build:1"
     ).status is GrantStatus.SETTLED
+
+
+def test_split_stream_budget_is_odd_safe_and_interleaving_invariant():
+    assert split_stream_budget(0) == (0, 0)
+    assert split_stream_budget(1) == (1, 0)
+    assert split_stream_budget(5) == (3, 2)
+
+    def capture(order):
+        limits = dict(zip(("stdout", "stderr"), split_stream_budget(5)))
+        evidence = {
+            name: local_build_execution._BoundedStreamEvidence(tail_bytes=limit)
+            for name, limit in limits.items()
+        }
+        refused = []
+        for name, chunk in order:
+            stream = evidence[name]
+            refused.append(stream.append(
+                chunk,
+                remaining_bytes=max(limits[name] - stream.byte_count, 0),
+            ))
+        return {
+            name: (stream.sha256, stream.byte_count, stream.tail)
+            for name, stream in evidence.items()
+        }, tuple(refused)
+
+    first, first_refused = capture((("stdout", b"abcd"), ("stderr", b"xyz")))
+    second, second_refused = capture((("stderr", b"xyz"), ("stdout", b"abcd")))
+
+    assert first == second
+    assert first["stdout"][1:] == (3, b"abc")
+    assert first["stderr"][1:] == (2, b"xy")
+    assert first_refused == second_refused == (True, True)
 
 
 def test_invalid_utf8_tail_stays_within_persisted_byte_contract(tmp_path):
@@ -674,7 +730,7 @@ def test_invalid_utf8_tail_stays_within_persisted_byte_contract(tmp_path):
         tmp_path,
         command=command,
         output_tail_bytes=400_000,
-        max_output_bytes=500_000,
+        max_output_bytes=800_000,
     )
 
     run = runner(command)
@@ -782,7 +838,7 @@ def test_normal_background_descendant_is_killed_before_terminal_result(tmp_path)
 
 def test_clock_rollback_still_terminalizes_and_settles_at_monotonic_floor(tmp_path):
     utc_values = iter(("2026-08-07T12:00:03Z", "2026-08-07T11:59:58Z"))
-    monotonic_values = iter((1_000_000_000, 2_250_000_000))
+    monotonic_values = iter((1_000_000_000, 1_000_000_000, 2_250_000_000))
     marker = tmp_path / "marker"
     command = _command(marker)
     runner, journal, effect = _runtime(
@@ -823,10 +879,12 @@ def test_isolation_capabilities_are_mandatory_before_target_creation(tmp_path):
         isolation_adapter=isolation.adapter,
         isolation_version=isolation.adapter_version,
         isolation_policy_sha256=isolation.policy_sha256,
+        adapter=DeadlineBoundSQLiteFencedBuildEffect.adapter,
+        adapter_version=DeadlineBoundSQLiteFencedBuildEffect.adapter_version,
     )
 
     with pytest.raises(ValueError, match="deny provider network"):
-        SQLiteFencedBuildEffect(
+        DeadlineBoundSQLiteFencedBuildEffect(
             tmp_path / "target.sqlite3",
             spec=spec,
             environment={"PATH": "/bin"},
@@ -1001,7 +1059,10 @@ def test_harness_run_opt_in_composes_gated_build_and_replays_terminal_result(
     assert first["build"]["resource"] == second["build"]["resource"]
     assert first["build"]["resource"]["effect_id"].startswith("build:")
     assert (resource_root / "resource.sqlite3").is_file()
-    assert (resource_root / "build-target.sqlite3").is_file()
+    assert (
+        resource_root
+        / DeadlineBoundSQLiteFencedBuildEffect.target_database_filename
+    ).is_file()
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="production isolation is macOS-only")
@@ -1146,3 +1207,703 @@ def test_runner_translates_journal_failures_at_service_boundary(
 
     with pytest.raises(expected_type, match=str(failure)):
         runner(command)
+
+
+def test_execution_policy_identity_and_reservation_have_one_source_of_truth(tmp_path):
+    base = DEFAULT_BUILD_EXECUTION_POLICY
+    changed = BuildExecutionPolicy(
+        **{
+            **base.to_dict(),
+            "process_cleanup_grace_ms": base.process_cleanup_grace_ms + 250,
+        }
+    )
+    isolation = _TestIsolation()
+
+    def spec(policy: BuildExecutionPolicy) -> BuildExecutionSpec:
+        return policy.make_spec(
+            command="true",
+            cwd=str(tmp_path.resolve()),
+            timeout_seconds=7,
+            environment_sha256=environment_sha256({"PATH": "/bin"}),
+            input_manifest_sha256=_sha("inputs"),
+            isolation_adapter=isolation.adapter,
+            isolation_version=isolation.adapter_version,
+            isolation_policy_sha256=isolation.policy_sha256,
+        )
+
+    original_spec = spec(base)
+    changed_spec = spec(changed)
+
+    assert changed.policy_sha256 != base.policy_sha256
+    assert changed_spec.workload_sha256 != original_spec.workload_sha256
+    physical_variants = (
+        {**base.to_dict(), "shell": "/usr/bin/sh"},
+        {**base.to_dict(), "output_tail_bytes": base.output_tail_bytes // 2},
+        {**base.to_dict(), "max_output_bytes": base.max_output_bytes + 1},
+        {
+            **base.to_dict(),
+            "process_cleanup_grace_ms": base.process_cleanup_grace_ms + 1,
+        },
+    )
+    assert all(
+        BuildExecutionPolicy(**variant).policy_sha256 != base.policy_sha256
+        for variant in physical_variants
+    )
+    assert reserved_compute_wall_ms(changed_spec) == (
+        7_000
+        + changed.process_cleanup_grace_ms
+    )
+    admission = DEFAULT_BUILD_ADMISSION_POLICY
+    with pytest.raises(ValueError, match="maximum_timeout_seconds"):
+        admission.validate_timeout(admission.maximum_timeout_seconds + 1)
+
+    operationally_tuned = BuildAdmissionPolicy(
+        **{
+            **admission.to_dict(),
+            "target_sqlite_timeout_ms": admission.target_sqlite_timeout_ms + 1,
+        }
+    )
+    assert operationally_tuned.policy_sha256 != admission.policy_sha256
+    assert set(admission.to_dict()).isdisjoint(base.to_dict())
+    assert spec(base).workload_sha256 == original_spec.workload_sha256
+
+    inherited = {"PATH": "/bin", "ORDINARY_BUILD_FLAG": "enabled"}
+    selected_default = closed_build_environment(inherited)
+    selected_allowlist = closed_build_environment(
+        inherited,
+        allowed_keys=("PATH",),
+    )
+
+    def spec_for_environment(selected_environment):
+        return base.make_spec(
+            command="true",
+            cwd=str(tmp_path.resolve()),
+            timeout_seconds=7,
+            environment_sha256=environment_sha256(selected_environment),
+            input_manifest_sha256=_sha("inputs"),
+            isolation_adapter=isolation.adapter,
+            isolation_version=isolation.adapter_version,
+            isolation_policy_sha256=isolation.policy_sha256,
+        )
+
+    default_environment_spec = spec_for_environment(selected_default)
+    allowlisted_environment_spec = spec_for_environment(selected_allowlist)
+    assert default_environment_spec.workload_sha256 != (
+        allowlisted_environment_spec.workload_sha256
+    )
+
+
+def test_legacy_v1_result_rejects_v2_only_input_rejected_status():
+    payload = {
+        "schema_version": "lakatotree.build-execution/v1",
+        "effect_id": "effect:v1",
+        "workload_sha256": _sha("workload"),
+        "intent_sha256": _sha("intent"),
+        "fence_token": 1,
+        "status": BuildTerminalStatus.INPUT_REJECTED.value,
+        "returncode": 126,
+        "started_at": "2026-08-07T12:00:00Z",
+        "completed_at": "2026-08-07T12:00:00Z",
+        "elapsed_monotonic_ns": 0,
+        "compute_wall_ms": 0,
+        "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+        "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+        "stdout_bytes": 0,
+        "stderr_bytes": 0,
+        "output_tail": "",
+        "measurement_method": "subprocess.monotonic_elapsed.ceil_ms/v1",
+    }
+
+    with pytest.raises(ValueError, match="only in the v2 schema"):
+        BuildExecutionResult.from_dict(payload)
+
+
+def test_injected_deployment_policy_drives_composition_without_darwin_hardcoding(
+    tmp_path,
+    monkeypatch,
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "input.txt").write_text("v1")
+    manifest = _write_manifest(source, "input.txt")
+    resource_root = tmp_path / "resource"
+    policy = BuildExecutionPolicy(
+        **{
+            **DEFAULT_BUILD_EXECUTION_POLICY.to_dict(),
+            "shell": "/bin/sh",
+            "output_tail_bytes": 4_096,
+            "max_output_bytes": 32_768,
+            "process_cleanup_grace_ms": 275,
+        }
+    )
+    selected_admission_policy = BuildAdmissionPolicy(
+        **{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "environment_allowlist": ("PATH",),
+        }
+    )
+
+    class PortableDeploymentPolicy:
+        name = "test-portable/v7"
+        execution_policy = policy
+        admission_policy = selected_admission_policy
+
+        def __init__(self):
+            self.calls = 0
+
+        def create_isolation(self, protected_root):
+            self.calls += 1
+            return _TestIsolation()
+
+    class Resolver:
+        def __init__(self, selected):
+            self.selected = selected
+            self.names = []
+
+        def resolve(self, name):
+            self.names.append(name)
+            return self.selected
+
+    selected = PortableDeploymentPolicy()
+    resolver = Resolver(selected)
+    monkeypatch.chdir(source)
+    monkeypatch.setattr(
+        local_build_execution,
+        "DarwinSandboxExecIsolation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("composition bypassed injected isolation policy")
+        ),
+    )
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "LAKATOTREE_RESOURCE_BUILD_DIR": str(resource_root),
+        "LAKATOTREE_RESOURCE_BUILD_POLICY": selected.name,
+        "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+        "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+        "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+        "LAKATOTREE_BUILD_INPUT_MANIFEST": str(manifest),
+    }
+
+    runner = resource_gated_build_runner_from_environment(
+        tree="T",
+        tag="v1",
+        command="true",
+        timeout_seconds=1,
+        environment=environment,
+        deployment_policy_resolver=resolver,
+    )
+
+    assert isinstance(selected, BuildDeploymentPolicyPort)
+    assert runner is not None
+    assert isinstance(runner._effect, DeadlineBoundSQLiteFencedBuildEffect)
+    assert resolver.names == [selected.name]
+    assert selected.calls == 1
+    assert runner._effect.spec.execution_policy_sha256 == policy.policy_sha256
+    assert runner._effect.spec.shell == policy.shell
+    assert runner._effect.spec.output_tail_bytes == policy.output_tail_bytes
+    assert runner._effect.spec.max_output_bytes == policy.max_output_bytes
+    assert runner._effect.spec.process_cleanup_grace_ms == 275
+    assert runner._request.estimate.upper_bound.compute_wall_ms == 1_275
+
+    class InvalidIsolationPolicy(PortableDeploymentPolicy):
+        name = "test-invalid-isolation/v1"
+
+        def create_isolation(self, _protected_root):
+            return object()
+
+    invalid = InvalidIsolationPolicy()
+    invalid_environment = {
+        **environment,
+        "LAKATOTREE_RESOURCE_BUILD_DIR": str(tmp_path / "invalid-resource"),
+        "LAKATOTREE_RESOURCE_BUILD_POLICY": invalid.name,
+    }
+    with pytest.raises(ResourceBuildConfigError, match="invalid isolation port"):
+        resource_gated_build_runner_from_environment(
+            tree="T",
+            tag="invalid",
+            command="true",
+            timeout_seconds=1,
+            environment=invalid_environment,
+            deployment_policy_resolver=Resolver(invalid),
+        )
+
+
+def test_unknown_enabled_policy_fails_before_filesystem_side_effects(tmp_path):
+    resource_root = tmp_path / "must-not-exist"
+    environment = {
+        "LAKATOTREE_RESOURCE_BUILD_DIR": str(resource_root),
+        "LAKATOTREE_RESOURCE_BUILD_POLICY": "unknown/v99",
+    }
+
+    with pytest.raises(ResourceBuildConfigError, match="unknown resource build policy"):
+        resource_gated_build_runner_from_environment(
+            tree="T",
+            tag="v1",
+            command="true",
+            timeout_seconds=1,
+            environment=environment,
+        )
+
+    assert not resource_root.exists()
+
+
+def test_disabled_resource_mode_does_not_resolve_poisoned_policy():
+    class Resolver:
+        def resolve(self, name):
+            raise AssertionError(f"disabled mode resolved policy {name}")
+
+    assert resource_gated_build_runner_from_environment(
+        tree="T",
+        tag="v1",
+        command="true",
+        timeout_seconds=1,
+        environment={"LAKATOTREE_RESOURCE_BUILD_POLICY": "poisoned/v1"},
+        deployment_policy_resolver=Resolver(),
+    ) is None
+
+
+def test_closed_environment_is_allowlisted_and_policy_controlled():
+    source = {
+        "PATH": "/bin",
+        "LANG": "C.UTF-8",
+        "GIT_AUTHOR_NAME": "Lakato Builder",
+        "SSH_AUTH_SOCK": "/tmp/agent.sock",
+        "DOCKER_HOST": "unix:///tmp/docker.sock",
+        "KUBECONFIG": "/tmp/kubeconfig",
+        "HOME": "/secret-home",
+        "FUTURE_PROVIDER_CREDENTIAL": "secret",
+    }
+
+    assert closed_build_environment(source) == {
+        "PATH": "/bin",
+        "LANG": "C.UTF-8",
+        "GIT_AUTHOR_NAME": "Lakato Builder",
+        "SSH_AUTH_SOCK": "/tmp/agent.sock",
+        "DOCKER_HOST": "unix:///tmp/docker.sock",
+        "KUBECONFIG": "/tmp/kubeconfig",
+        "HOME": "/secret-home",
+    }
+    assert closed_build_environment(source, allowed_keys=("PATH", "LANG")) == {
+        "PATH": "/bin",
+        "LANG": "C.UTF-8",
+    }
+    with pytest.raises(ValueError, match="invalid key"):
+        BuildAdmissionPolicy(environment_allowlist=("PATH", 7))  # type: ignore[arg-type]
+
+
+def test_manifest_policy_bounds_json_entries_and_declared_bytes(tmp_path):
+    (tmp_path / "a.txt").write_text("aaaa")
+    (tmp_path / "b.txt").write_text("bbbb")
+    manifest = _write_manifest(tmp_path, "a.txt", "b.txt")
+    one_entry = BuildAdmissionPolicy(
+        **{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_manifest_entries": 1,
+        }
+    )
+    with pytest.raises(BuildInputManifestError, match="entry limit"):
+        VerifiedBuildInputManifest.load(manifest, root=tmp_path, policy=one_entry)
+
+    tiny_json = BuildAdmissionPolicy(
+        **{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_manifest_json_bytes": 128,
+        }
+    )
+    oversized_manifest = tmp_path / "oversized-manifest.json"
+    oversized_manifest.write_bytes(b" " * 129)
+    with pytest.raises(BuildInputManifestError, match="JSON byte limit"):
+        VerifiedBuildInputManifest.load(
+            oversized_manifest,
+            root=tmp_path,
+            policy=tiny_json,
+        )
+
+    three_bytes = BuildAdmissionPolicy(
+        **{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_input_file_bytes": 3,
+        }
+    )
+    with pytest.raises(BuildInputManifestError, match="per-file byte limit"):
+        VerifiedBuildInputManifest.load(manifest, root=tmp_path, policy=three_bytes)
+
+    six_bytes = BuildAdmissionPolicy(
+        **{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_input_bytes": 6,
+        }
+    )
+    with pytest.raises(BuildInputManifestError, match="declared byte limit"):
+        VerifiedBuildInputManifest.load(manifest, root=tmp_path, policy=six_bytes)
+
+
+def test_manifest_descriptor_verification_rejects_growth_and_wraps_io(
+    tmp_path,
+    monkeypatch,
+):
+    input_path = tmp_path / "input.txt"
+    input_path.write_bytes(b"abcd")
+    verifier = VerifiedBuildInputManifest.load(
+        _write_manifest(tmp_path, "input.txt"),
+        root=tmp_path,
+    )
+    real_read = local_build_execution.os.read
+    read_sizes = []
+
+    def growing_read(descriptor, size):
+        read_sizes.append(size)
+        if len(read_sizes) == 2:
+            return b"x"
+        return real_read(descriptor, size)
+
+    monkeypatch.setattr(local_build_execution.os, "read", growing_read)
+    with pytest.raises(BuildInputManifestError, match="grew while reading"):
+        verifier.verify()
+    assert read_sizes == [4, 1]
+
+    def failed_read(_descriptor, _size):
+        raise OSError("injected descriptor failure")
+
+    monkeypatch.setattr(local_build_execution.os, "read", failed_read)
+    with pytest.raises(BuildInputManifestError, match="could not be read safely"):
+        verifier.verify()
+
+
+def test_manifest_descriptor_walk_rejects_intermediate_symlink(tmp_path):
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    input_path = actual / "input.txt"
+    input_path.write_text("v1")
+    (tmp_path / "alias").symlink_to(actual, target_is_directory=True)
+    manifest = tmp_path / "symlink-manifest.json"
+    manifest.write_text(json.dumps({
+        "schema_version": "lakatotree.build-input-manifest/v1",
+        "files": [{
+            "path": "alias/input.txt",
+            "sha256": hashlib.sha256(input_path.read_bytes()).hexdigest(),
+        }],
+    }))
+
+    with pytest.raises(BuildInputManifestError, match="could not be read safely"):
+        VerifiedBuildInputManifest.load(manifest, root=tmp_path)
+
+
+def test_manifest_final_descriptor_open_is_nonblocking(tmp_path, monkeypatch):
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("stable")
+    verifier = VerifiedBuildInputManifest.load(
+        _write_manifest(tmp_path, "input.txt"),
+        root=tmp_path,
+    )
+    real_open = local_build_execution.os.open
+    observed_flags = []
+
+    def recording_open(path, flags, *args, **kwargs):
+        if path == "input.txt":
+            observed_flags.append(flags)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(local_build_execution.os, "open", recording_open)
+    verifier.verify_until(time.monotonic_ns() + 1_000_000_000)
+
+    assert observed_flags
+    assert observed_flags[-1] & os.O_NONBLOCK
+
+
+def test_deadline_bound_effect_rejects_preflight_only_verifier_before_durable_io(
+    tmp_path,
+):
+    class PreflightOnlyVerifier:
+        manifest_sha256 = _sha("preflight-only")
+
+        def verify(self):
+            return None
+
+    with pytest.raises(ValueError, match="deadline-aware verify_until"):
+        _runtime(
+            tmp_path,
+            command="true",
+            input_verifier=PreflightOnlyVerifier(),
+        )
+
+    assert not (tmp_path / "build-target.sqlite3").exists()
+
+
+def test_legacy_effect_accepts_verify_only_input_verifier(tmp_path):
+    class VerifyOnlyInputVerifier:
+        manifest_sha256 = _sha("legacy-inputs")
+
+        def __init__(self):
+            self.calls = 0
+
+        def verify(self):
+            self.calls += 1
+
+    verifier = VerifyOnlyInputVerifier()
+    marker = tmp_path / "legacy-marker"
+    runner, _journal, effect = _runtime(
+        tmp_path,
+        command=_command(marker),
+        input_verifier=verifier,
+        effect_type=SQLiteFencedBuildEffect,
+    )
+
+    assert runner(_command(marker)).returncode == 0
+    assert marker.read_text() == "1"
+    assert verifier.calls == 3  # service preflight plus legacy pre/post-claim checks
+    assert effect.adapter_version != DeadlineBoundSQLiteFencedBuildEffect.adapter_version
+
+
+def test_public_effect_boundary_versions_are_explicit_and_distinct(tmp_path):
+    assert BuildInputVerifierPort in DeadlineBoundBuildInputVerifierPort.__mro__
+    assert "BuildInputVerifierPort" in local_build_execution.__all__
+    assert "DeadlineBoundBuildInputVerifierPort" in local_build_execution.__all__
+    assert "SQLiteFencedBuildEffect" in local_build_execution.__all__
+    assert "DeadlineBoundSQLiteFencedBuildEffect" in local_build_execution.__all__
+
+    base = dict(
+        command="true",
+        cwd=str(tmp_path.resolve()),
+        shell="/bin/sh",
+        timeout_seconds=1,
+        environment_sha256=environment_sha256({"PATH": "/bin"}),
+        input_manifest_sha256=_sha("inputs"),
+        isolation_adapter=_TestIsolation.adapter,
+        isolation_version=_TestIsolation.adapter_version,
+        isolation_policy_sha256=_TestIsolation.policy_sha256,
+    )
+    legacy = BuildExecutionSpec(
+        **base,
+        adapter=SQLiteFencedBuildEffect.adapter,
+        adapter_version=SQLiteFencedBuildEffect.adapter_version,
+    )
+    deadline_bound = BuildExecutionSpec(
+        **base,
+        adapter=DeadlineBoundSQLiteFencedBuildEffect.adapter,
+        adapter_version=DeadlineBoundSQLiteFencedBuildEffect.adapter_version,
+    )
+
+    assert legacy.workload_sha256 != deadline_bound.workload_sha256
+
+
+def test_factory_upgrade_preserves_v1_target_and_uses_distinct_v2_store(
+    tmp_path,
+    monkeypatch,
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "input.txt").write_text("v1")
+    manifest = _write_manifest(source, "input.txt")
+    resource_root = tmp_path / "resource"
+    resource_root.mkdir(mode=0o700)
+    resource_root.chmod(0o700)
+    child_environment = {"PATH": os.environ.get("PATH", "")}
+    isolation = _TestIsolation()
+    legacy_spec = BuildExecutionSpec(
+        command="true",
+        cwd=str(source.resolve()),
+        shell="/bin/sh",
+        timeout_seconds=1,
+        environment_sha256=environment_sha256(child_environment),
+        input_manifest_sha256=_sha("legacy-inputs"),
+        isolation_adapter=isolation.adapter,
+        isolation_version=isolation.adapter_version,
+        isolation_policy_sha256=isolation.policy_sha256,
+        adapter=SQLiteFencedBuildEffect.adapter,
+        adapter_version=SQLiteFencedBuildEffect.adapter_version,
+    )
+    legacy_path = resource_root / SQLiteFencedBuildEffect.target_database_filename
+    legacy_effect = SQLiteFencedBuildEffect(
+        legacy_path,
+        spec=legacy_spec,
+        environment=child_environment,
+        isolation=isolation,
+        input_verifier=_StaticInputVerifier(legacy_spec.input_manifest_sha256),
+        authentication_key=bytes(range(64, 96)),
+    )
+    legacy_bytes = legacy_path.read_bytes()
+
+    class PortableDeploymentPolicy:
+        name = "test-upgrade/v1"
+        execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+        admission_policy = BuildAdmissionPolicy(environment_allowlist=("PATH",))
+
+        @staticmethod
+        def create_isolation(_protected_root):
+            return _TestIsolation()
+
+    class Resolver:
+        @staticmethod
+        def resolve(name):
+            assert name == PortableDeploymentPolicy.name
+            return PortableDeploymentPolicy()
+
+    monkeypatch.chdir(source)
+    runner = resource_gated_build_runner_from_environment(
+        tree="upgrade",
+        tag="v2",
+        command="true",
+        timeout_seconds=1,
+        environment={
+            **child_environment,
+            "LAKATOTREE_RESOURCE_BUILD_DIR": str(resource_root),
+            "LAKATOTREE_RESOURCE_BUILD_POLICY": PortableDeploymentPolicy.name,
+            "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+            "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+            "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+            "LAKATOTREE_BUILD_INPUT_MANIFEST": str(manifest),
+        },
+        deployment_policy_resolver=Resolver(),
+    )
+
+    assert runner is not None
+    assert isinstance(runner._effect, DeadlineBoundSQLiteFencedBuildEffect)
+    deadline_path = (
+        resource_root
+        / DeadlineBoundSQLiteFencedBuildEffect.target_database_filename
+    )
+    assert deadline_path.exists()
+    assert deadline_path != legacy_path
+    assert legacy_path.read_bytes() == legacy_bytes
+
+    with legacy_effect._scope_lock("upgrade-lock"):
+        pass
+    with runner._effect._scope_lock("upgrade-lock"):
+        pass
+    lock_names = {path.name for path in resource_root.glob(".*.lock")}
+    assert any(legacy_path.name in name for name in lock_names)
+    assert any(deadline_path.name in name for name in lock_names)
+
+
+def test_post_claim_input_refusal_is_terminal_and_settled(tmp_path):
+    class ChangesAfterClaim(_StaticInputVerifier):
+        def __init__(self):
+            super().__init__(_sha("inputs"))
+            self.calls = 0
+
+        def verify(self):
+            self.calls += 1
+            if self.calls == 2:
+                raise BuildInputManifestError("declared build input changed: input.txt")
+
+    marker = tmp_path / "must-not-run"
+    command = _command(marker)
+    verifier = ChangesAfterClaim()
+    runner, journal, effect = _runtime(
+        tmp_path,
+        command=command,
+        input_verifier=verifier,
+    )
+
+    run = runner(command)
+    result, _receipt = effect.load_terminal_result(
+        effect_id=runner._start.command_id,
+        workload_sha256=runner._start.workload_sha256,
+    )
+    grant = journal.load("harness-build:test-tree").state.grant(
+        "grant:effect:build:1"
+    )
+
+    assert not marker.exists()
+    assert run.returncode == 126
+    assert result.status is BuildTerminalStatus.INPUT_REJECTED
+    assert grant.status is GrantStatus.SETTLED
+    assert verifier.calls == 2
+
+
+def test_synthetic_terminal_stderr_obeys_split_stream_quota(tmp_path, monkeypatch):
+    class RejectsAfterPreflight(_StaticInputVerifier):
+        def __init__(self):
+            super().__init__(_sha("synthetic-input-refusal"))
+            self.calls = 0
+
+        def verify(self):
+            self.calls += 1
+            if self.calls == 2:
+                raise BuildInputManifestError("changed")
+
+    refusal_root = tmp_path / "input-refusal"
+    refusal_root.mkdir()
+    refusal_runner, _journal, refusal_effect = _runtime(
+        refusal_root,
+        command="true",
+        input_verifier=RejectsAfterPreflight(),
+        output_tail_bytes=1,
+        max_output_bytes=1,
+    )
+    refusal_runner("true")
+    refusal, _ = refusal_effect.load_terminal_result(
+        effect_id=refusal_runner._start.command_id,
+        workload_sha256=refusal_runner._start.workload_sha256,
+    )
+
+    spawn_root = tmp_path / "spawn-failure"
+    spawn_root.mkdir()
+    spawn_runner, _journal, spawn_effect = _runtime(
+        spawn_root,
+        command="true",
+        output_tail_bytes=1,
+        max_output_bytes=1,
+    )
+
+    def fail_spawn(*_args, **_kwargs):
+        raise OSError("injected spawn failure")
+
+    monkeypatch.setattr(local_build_execution.subprocess, "Popen", fail_spawn)
+    spawn_runner("true")
+    spawn, _ = spawn_effect.load_terminal_result(
+        effect_id=spawn_runner._start.command_id,
+        workload_sha256=spawn_runner._start.workload_sha256,
+    )
+
+    assert refusal.status is BuildTerminalStatus.INPUT_REJECTED
+    assert spawn.status is BuildTerminalStatus.SPAWN_FAILED
+    assert refusal.stderr_bytes == spawn.stderr_bytes == 0
+    assert refusal.output_tail == spawn.output_tail == ""
+
+
+def test_post_claim_verification_time_is_metered_before_input_rejection(tmp_path):
+    class MutableMonotonicClock:
+        now = 1_000_000_000
+
+        def __call__(self):
+            return self.now
+
+    class SlowChangedInput(_StaticInputVerifier):
+        def __init__(self, clock):
+            super().__init__(_sha("inputs"))
+            self.clock = clock
+            self.calls = 0
+
+        def verify(self):
+            self.calls += 1
+            if self.calls == 2:
+                self.clock.now += 250_000_000
+                raise BuildInputManifestError("declared build input changed: input.txt")
+
+    clock = MutableMonotonicClock()
+    verifier = SlowChangedInput(clock)
+    marker = tmp_path / "must-not-run"
+    command = _command(marker)
+    runner, journal, effect = _runtime(
+        tmp_path,
+        command=command,
+        input_verifier=verifier,
+        monotonic_ns=clock,
+    )
+
+    run = runner(command)
+    result, _receipt = effect.load_terminal_result(
+        effect_id=runner._start.command_id,
+        workload_sha256=runner._start.workload_sha256,
+    )
+
+    assert not marker.exists()
+    assert run.returncode == 126
+    assert result.status is BuildTerminalStatus.INPUT_REJECTED
+    assert result.elapsed_monotonic_ns == 250_000_000
+    assert result.compute_wall_ms == 250
+    assert journal.load("harness-build:test-tree").state.grant(
+        "grant:effect:build:1"
+    ).status is GrantStatus.SETTLED

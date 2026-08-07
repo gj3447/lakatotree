@@ -20,18 +20,26 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lakatos.build_execution import (  # noqa: E402
+    BuildAdmissionPolicy,
+    BuildExecutionPolicy,
     BuildExecutionSpec,
     BuildTerminalStatus,
+    DEFAULT_BUILD_ADMISSION_POLICY,
+    DEFAULT_BUILD_EXECUTION_POLICY,
     ResourceBuildConfigError,
     ResourceBuildOutcomeUnknown,
     environment_sha256,
+    reserved_compute_wall_ms,
+    split_stream_budget,
 )
 from lakatos.harness import BuildFailed, CycleSpec, LakatoHarness  # noqa: E402
 from lakatos.io import local_build_execution as local_build_execution_module  # noqa: E402
 from lakatos.io.local_build_execution import (  # noqa: E402
+    BuildDeploymentPolicyPort,
     BuildInputManifestError,
     BuildTargetError,
     BuildTargetOutcomeUnknown,
+    DeadlineBoundSQLiteFencedBuildEffect,
     ResourceGatedBuildRunner,
     SQLiteFencedBuildEffect,
     VerifiedBuildInputManifest,
@@ -40,6 +48,7 @@ from lakatos.io.local_build_execution import (  # noqa: E402
     darwin_sandbox_profile,
     resource_root_metadata_violation,
     resource_root_path_violation,
+    resource_gated_build_runner_from_environment,
 )
 from lakatos.io.resource_execution import (  # noqa: E402
     HMACPermitAuthenticator,
@@ -87,6 +96,9 @@ class _StaticInputVerifier:
 
     def verify(self) -> None:
         return None
+
+    def verify_until(self, _deadline_monotonic_ns: int) -> None:
+        self.verify()
 
 
 class _RollbackAfterDispatchClock:
@@ -157,6 +169,7 @@ def _runtime(
     target_timeout_seconds: float = 10.0,
     output_tail_bytes: int = 65_536,
     max_output_bytes: int = 16_777_216,
+    effect_type=DeadlineBoundSQLiteFencedBuildEffect,
 ):
     child_environment = {"PATH": os.environ.get("PATH", "")}
     isolation = _TestIsolation()
@@ -174,6 +187,8 @@ def _runtime(
         isolation_adapter=isolation.adapter,
         isolation_version=isolation.adapter_version,
         isolation_policy_sha256=isolation.policy_sha256,
+        adapter=effect_type.adapter,
+        adapter_version=effect_type.adapter_version,
         output_tail_bytes=output_tail_bytes,
         max_output_bytes=max_output_bytes,
     )
@@ -184,7 +199,7 @@ def _runtime(
     }
     if monotonic_ns is not None:
         effect_options["monotonic_ns"] = monotonic_ns
-    effect = SQLiteFencedBuildEffect(
+    effect = effect_type(
         root / "target.sqlite3",
         spec=spec,
         environment=child_environment,
@@ -228,7 +243,7 @@ def _runtime(
             adapter=effect.adapter,
             adapter_version=effect.adapter_version,
             upper_bound=ResourceVector(
-                compute_wall_ms=timeout_seconds * 1000 + 1000
+                compute_wall_ms=reserved_compute_wall_ms(spec)
             ),
             valid_until="2026-08-07T12:10:00Z",
         ),
@@ -274,6 +289,38 @@ _ISOLATION_POLICY_MARKER = (
 _AUTHENTICATE_BEFORE_DECODE_MARKER = '        target_mac = row["target_mac_sha256"]\n'
 _OUTPUT_CAP_MARKER = "        admitted = chunk[:remaining_bytes]\n"
 _SECRET_FILTER_MARKER = "        and not _is_sensitive_child_environment_key(key)\n"
+_ENVIRONMENT_ALLOWLIST_MARKER = (
+    "        if (admitted is None or key in admitted)\n"
+)
+_MANIFEST_JSON_LIMIT_MARKER = (
+    '            with path.open("rb") as stream:\n'
+    "                raw = stream.read(policy.maximum_manifest_json_bytes + 1)\n"
+    "            if len(raw) > policy.maximum_manifest_json_bytes:\n"
+)
+_INPUT_FILE_LIMIT_MARKER = (
+    "                    if before.st_size > self.maximum_input_file_bytes:\n"
+)
+_NONBLOCK_FILE_OPEN_MARKER = (
+    "    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK\n"
+)
+_DEADLINE_VERIFIER_PORT_MARKER = (
+    "        if self._requires_deadline_bound_verifier and not callable(\n"
+)
+_DEADLINE_BOUND_EFFECT_VERSION_MARKER = (
+    "    adapter_version = DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION\n"
+)
+_DEADLINE_BOUND_TARGET_FILENAME_MARKER = (
+    "    target_database_filename = _DEADLINE_BOUND_BUILD_TARGET_DATABASE_FILENAME\n"
+)
+_SPLIT_STREAM_BUDGET_MARKER = (
+    "    return ((total_bytes + 1) // 2, total_bytes // 2)\n"
+)
+_DEPLOYMENT_RESOLUTION_MARKER = (
+    "        deployment_policy = resolve_policy(policy_name)\n"
+)
+_INJECTED_BUILD_SELECTION_MARKER = (
+    "    if selected_build is None and spec.build_cmd:\n"
+)
 _ROOT_CONTAINS_CWD_MARKER = (
     "    if cwd == prospective or cwd.is_relative_to(prospective):\n"
 )
@@ -296,6 +343,7 @@ _LOCAL_BUILD_FILES = (
     "io/resource_journal.py",
     "io/local_build_execution.py",
 )
+_HARNESS_RUN_FILES = _LOCAL_BUILD_FILES + ("harness.py", "harness_run.py")
 
 
 def _run_isolated(
@@ -452,6 +500,7 @@ class Isolation:
 class Inputs:
     manifest_sha256 = sha("inputs")
     def verify(self): return None
+    def verify_until(self, deadline_monotonic_ns): return self.verify()
 
 root = Path("target-auth")
 root.mkdir()
@@ -527,7 +576,10 @@ raise SystemExit(0 if evidence.byte_count > 4 else 7)
 def _closed_environment_mutant_must_turn_red() -> None:
     probe = r'''
 from lakatos.io.local_build_execution import closed_build_environment
-closed = closed_build_environment({"PATH": "/bin", "OPENAI_API_KEY": "secret"})
+closed = closed_build_environment(
+    {"PATH": "/bin", "OPENAI_API_KEY": "secret"},
+    allowed_keys=("OPENAI_API_KEY", "PATH"),
+)
 raise SystemExit(0 if "OPENAI_API_KEY" in closed else 7)
 '''
     result = _run_isolated(
@@ -544,6 +596,503 @@ raise SystemExit(0 if "OPENAI_API_KEY" in closed else 7)
     _require(
         result.returncode == 0,
         "credential-filter removal mutant stayed green: " + result.stderr[-500:],
+    )
+
+
+def _environment_allowlist_mutant_must_turn_red() -> None:
+    probe = r'''
+from lakatos.io.local_build_execution import closed_build_environment
+closed = closed_build_environment({
+    "PATH": "/bin",
+    "UNDECLARED_BUILD_TUNING": "must-not-cross",
+}, allowed_keys=("PATH",))
+raise SystemExit(0 if "UNDECLARED_BUILD_TUNING" in closed else 7)
+'''
+    result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _ENVIRONMENT_ALLOWLIST_MARKER,
+                "        if True\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-environment-allowlist-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "environment-allowlist removal mutant stayed green: "
+        + result.stderr[-500:],
+    )
+
+
+def _execution_policy_field_mutants_must_collide() -> None:
+    cases = (
+        (
+            "shell",
+            "/usr/bin/sh",
+            '            "shell": self.shell,\n'
+            '            "output_tail_bytes": self.output_tail_bytes,\n',
+            '            "shell": "/bin/sh",\n'
+            '            "output_tail_bytes": self.output_tail_bytes,\n',
+        ),
+        (
+            "output_tail_bytes",
+            32_768,
+            '            "shell": self.shell,\n'
+            '            "output_tail_bytes": self.output_tail_bytes,\n',
+            '            "shell": self.shell,\n'
+            '            "output_tail_bytes": 65536,\n',
+        ),
+        (
+            "max_output_bytes",
+            20_000_000,
+            '            "output_tail_bytes": self.output_tail_bytes,\n'
+            '            "max_output_bytes": self.max_output_bytes,\n'
+            '            "process_cleanup_grace_ms": self.process_cleanup_grace_ms,\n',
+            '            "output_tail_bytes": self.output_tail_bytes,\n'
+            '            "max_output_bytes": 16777216,\n'
+            '            "process_cleanup_grace_ms": self.process_cleanup_grace_ms,\n',
+        ),
+        (
+            "process_cleanup_grace_ms",
+            1_250,
+            '            "max_output_bytes": self.max_output_bytes,\n'
+            '            "process_cleanup_grace_ms": self.process_cleanup_grace_ms,\n'
+            '            "stream_capture_strategy": self.stream_capture_strategy,\n',
+            '            "max_output_bytes": self.max_output_bytes,\n'
+            '            "process_cleanup_grace_ms": 1000,\n'
+            '            "stream_capture_strategy": self.stream_capture_strategy,\n',
+        ),
+    )
+    for field, changed_value, marker, replacement in cases:
+        probe = f'''
+from lakatos.build_execution import BuildExecutionPolicy, DEFAULT_BUILD_EXECUTION_POLICY
+base = DEFAULT_BUILD_EXECUTION_POLICY
+changed = BuildExecutionPolicy(**{{**base.to_dict(), {field!r}: {changed_value!r}}})
+raise SystemExit(0 if base.policy_sha256 == changed.policy_sha256 else 7)
+'''
+        result = _run_isolated(
+            files=("resource_coordination.py", "build_execution.py"),
+            replacements={"build_execution.py": (marker, replacement)},
+            probe=probe,
+            prefix=f"lakatotree-build-policy-{field}-mutant-",
+        )
+        _require(
+            result.returncode == 0,
+            f"execution-policy {field} omission mutant stayed green: "
+            + result.stderr[-500:],
+        )
+
+
+def _manifest_bound_mutants_must_turn_red() -> None:
+    json_probe = r'''
+import hashlib
+import json
+from pathlib import Path
+from lakatos.build_execution import BuildAdmissionPolicy, DEFAULT_BUILD_ADMISSION_POLICY
+from lakatos.io.local_build_execution import VerifiedBuildInputManifest
+
+root = Path("source")
+root.mkdir()
+relative = "declared-input-with-a-long-name-to-cross-the-json-boundary.txt"
+content = b"v1"
+(root / relative).write_bytes(content)
+manifest = root / "manifest.json"
+raw = json.dumps({
+    "schema_version": "lakatotree.build-input-manifest/v1",
+    "files": [{"path": relative, "sha256": hashlib.sha256(content).hexdigest()}],
+}).encode()
+assert len(raw) > 128
+manifest.write_bytes(raw)
+policy = BuildAdmissionPolicy(**{
+    **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+    "maximum_manifest_json_bytes": 128,
+})
+VerifiedBuildInputManifest.load(manifest, root=root, policy=policy)
+raise SystemExit(0)
+'''
+    json_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _MANIFEST_JSON_LIMIT_MARKER,
+                '            with path.open("rb") as stream:\n'
+                "                raw = stream.read()\n"
+                "            if False:\n",
+            )
+        },
+        probe=json_probe,
+        prefix="lakatotree-build-manifest-json-mutant-",
+    )
+    _require(
+        json_result.returncode == 0,
+        "manifest JSON-bound removal mutant stayed green: "
+        + json_result.stderr[-500:],
+    )
+
+    file_probe = r'''
+import hashlib
+import json
+from pathlib import Path
+from lakatos.build_execution import BuildAdmissionPolicy, DEFAULT_BUILD_ADMISSION_POLICY
+from lakatos.io.local_build_execution import VerifiedBuildInputManifest
+
+root = Path("source")
+root.mkdir()
+content = b"four"
+(root / "input.txt").write_bytes(content)
+manifest = root / "manifest.json"
+manifest.write_text(json.dumps({
+    "schema_version": "lakatotree.build-input-manifest/v1",
+    "files": [{"path": "input.txt", "sha256": hashlib.sha256(content).hexdigest()}],
+}))
+policy = BuildAdmissionPolicy(**{
+    **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+    "maximum_input_file_bytes": 3,
+})
+VerifiedBuildInputManifest.load(manifest, root=root, policy=policy)
+raise SystemExit(0)
+'''
+    file_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _INPUT_FILE_LIMIT_MARKER,
+                "                    if False:\n",
+            )
+        },
+        probe=file_probe,
+        prefix="lakatotree-build-input-file-bound-mutant-",
+    )
+    _require(
+        file_result.returncode == 0,
+        "per-file-bound removal mutant stayed green: "
+        + file_result.stderr[-500:],
+    )
+
+
+def _nonblocking_file_open_mutant_must_turn_red() -> None:
+    probe = r'''
+import subprocess
+import sys
+
+child = r"""
+import hashlib
+import os
+from pathlib import Path
+import time
+from lakatos.io.local_build_execution import VerifiedBuildInputManifest
+
+root = Path("fifo-input")
+root.mkdir()
+path = root / "input.txt"
+path.write_bytes(b"regular")
+expected = hashlib.sha256(path.read_bytes()).hexdigest()
+verifier = VerifiedBuildInputManifest(
+    root=root.resolve(),
+    entries=(("input.txt", expected),),
+    manifest_sha256=hashlib.sha256(b"manifest").hexdigest(),
+    maximum_input_file_bytes=1024,
+    maximum_input_bytes=1024,
+)
+path.unlink()
+os.mkfifo(path)
+verifier.verify_until(time.monotonic_ns() + 100_000_000)
+"""
+try:
+    subprocess.run([sys.executable, "-c", child], timeout=1, check=False)
+except subprocess.TimeoutExpired:
+    raise SystemExit(0)
+raise SystemExit(7)
+'''
+    result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _NONBLOCK_FILE_OPEN_MARKER,
+                "    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-blocking-fifo-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "blocking FIFO-open mutant did not strand verification: "
+        + result.stderr[-500:],
+    )
+
+
+def _deadline_verifier_port_mutant_must_turn_red() -> None:
+    probe = r'''
+import hashlib
+from pathlib import Path
+from lakatos.build_execution import BuildExecutionSpec, environment_sha256
+from lakatos.io.local_build_execution import DeadlineBoundSQLiteFencedBuildEffect
+
+sha = lambda value: hashlib.sha256(value.encode()).hexdigest()
+class Isolation:
+    adapter = "test.isolation"
+    adapter_version = "1"
+    policy_sha256 = sha("policy")
+    denies_provider_network = True
+    protects_resource_root = True
+    @staticmethod
+    def argv(spec): return (spec.shell, "-c", spec.command)
+class PreflightOnly:
+    manifest_sha256 = sha("inputs")
+    def verify(self): return None
+
+root = Path("deadline-port")
+root.mkdir()
+spec = BuildExecutionSpec(
+    command="true", cwd=str(root.resolve()), shell="/bin/sh", timeout_seconds=1,
+    environment_sha256=environment_sha256({"PATH": "/bin"}),
+    input_manifest_sha256=PreflightOnly.manifest_sha256,
+    isolation_adapter=Isolation.adapter, isolation_version=Isolation.adapter_version,
+    isolation_policy_sha256=Isolation.policy_sha256,
+    adapter=DeadlineBoundSQLiteFencedBuildEffect.adapter,
+    adapter_version=DeadlineBoundSQLiteFencedBuildEffect.adapter_version,
+)
+DeadlineBoundSQLiteFencedBuildEffect(
+    root / "target.sqlite3", spec=spec, environment={"PATH": "/bin"},
+    isolation=Isolation(), input_verifier=PreflightOnly(),
+    authentication_key=bytes(range(32)),
+)
+raise SystemExit(0)
+'''
+    result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _DEADLINE_VERIFIER_PORT_MARKER,
+                "        if False and not callable(\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-deadline-verifier-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "deadline-verifier port guard mutant stayed green: "
+        + result.stderr[-500:],
+    )
+
+
+def _versioned_effect_boundary_mutant_must_turn_red() -> None:
+    probe = r'''
+from lakatos.io.local_build_execution import (
+    DeadlineBoundSQLiteFencedBuildEffect,
+    SQLiteFencedBuildEffect,
+)
+raise SystemExit(
+    0
+    if DeadlineBoundSQLiteFencedBuildEffect.adapter_version
+    == SQLiteFencedBuildEffect.adapter_version
+    else 7
+)
+'''
+    result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _DEADLINE_BOUND_EFFECT_VERSION_MARKER,
+                "    adapter_version = LOCAL_BUILD_ADAPTER_VERSION\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-effect-version-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "deadline-bound effect identity mutant stayed green: "
+        + result.stderr[-500:],
+    )
+    filename_probe = r'''
+from lakatos.io.local_build_execution import (
+    DeadlineBoundSQLiteFencedBuildEffect,
+    SQLiteFencedBuildEffect,
+)
+raise SystemExit(
+    0
+    if DeadlineBoundSQLiteFencedBuildEffect.target_database_filename
+    == SQLiteFencedBuildEffect.target_database_filename
+    else 7
+)
+'''
+    filename_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _DEADLINE_BOUND_TARGET_FILENAME_MARKER,
+                "    target_database_filename = _LEGACY_BUILD_TARGET_DATABASE_FILENAME\n",
+            )
+        },
+        probe=filename_probe,
+        prefix="lakatotree-build-target-filename-mutant-",
+    )
+    _require(
+        filename_result.returncode == 0,
+        "deadline-bound target filename mutant stayed green: "
+        + filename_result.stderr[-500:],
+    )
+
+
+def _stream_split_mutant_must_turn_red() -> None:
+    probe = r'''
+from lakatos.build_execution import split_stream_budget
+raise SystemExit(0 if split_stream_budget(5) == (5, 5) else 7)
+'''
+    result = _run_isolated(
+        files=("resource_coordination.py", "build_execution.py"),
+        replacements={
+            "build_execution.py": (
+                _SPLIT_STREAM_BUDGET_MARKER,
+                "    return (total_bytes, total_bytes)\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-stream-split-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "shared-per-stream output budget mutant stayed green: "
+        + result.stderr[-500:],
+    )
+
+
+def _deployment_resolution_mutant_must_turn_red() -> None:
+    probe = r'''
+import hashlib
+import json
+from pathlib import Path
+import lakatos.io.local_build_execution as module
+from lakatos.build_execution import (
+    DEFAULT_BUILD_ADMISSION_POLICY, DEFAULT_BUILD_EXECUTION_POLICY,
+)
+
+class Isolation:
+    adapter = "test.portable-isolation"
+    adapter_version = "1"
+    policy_sha256 = hashlib.sha256(b"portable").hexdigest()
+    denies_provider_network = True
+    protects_resource_root = True
+    @staticmethod
+    def argv(spec): return (spec.shell, "-c", spec.command)
+
+class Policy:
+    name = "darwin-sandbox-exec/v1"
+    execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+    admission_policy = DEFAULT_BUILD_ADMISSION_POLICY
+    @staticmethod
+    def create_isolation(_root): return Isolation()
+
+class Resolver:
+    @staticmethod
+    def resolve(_name): return Policy()
+
+source = Path("source")
+source.mkdir()
+content = b"v1"
+(source / "input.txt").write_bytes(content)
+manifest = source / "manifest.json"
+manifest.write_text(json.dumps({
+    "schema_version": "lakatotree.build-input-manifest/v1",
+    "files": [{"path": "input.txt", "sha256": hashlib.sha256(content).hexdigest()}],
+}))
+environment = {
+    "PATH": "/bin",
+    "LAKATOTREE_RESOURCE_BUILD_DIR": str(Path("resource").resolve()),
+    "LAKATOTREE_RESOURCE_BUILD_POLICY": Policy.name,
+    "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+    "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+    "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+    "LAKATOTREE_BUILD_INPUT_MANIFEST": str(manifest.resolve()),
+}
+original = module.DarwinSandboxExecIsolation
+def forbidden_darwin(*_args, **_kwargs):
+    raise RuntimeError("injected resolver was bypassed")
+try:
+    module.DarwinSandboxExecIsolation = forbidden_darwin
+    old = Path.cwd()
+    try:
+        import os
+        os.chdir(source)
+        module.resource_gated_build_runner_from_environment(
+            tree="T", tag="v1", command="true", timeout_seconds=1,
+            environment=environment, deployment_policy_resolver=Resolver(),
+        )
+    finally:
+        os.chdir(old)
+except RuntimeError as exc:
+    raise SystemExit(0 if "bypassed" in str(exc) else 8)
+finally:
+    module.DarwinSandboxExecIsolation = original
+raise SystemExit(7)
+'''
+    result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _DEPLOYMENT_RESOLUTION_MARKER,
+                "        deployment_policy = DarwinBuildDeploymentPolicy()\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-deployment-resolution-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "Darwin-construction mutant did not bypass the injected resolver: "
+        + result.stderr[-500:],
+    )
+
+
+def _injected_build_selection_mutant_must_turn_red() -> None:
+    probe = r'''
+import json
+from pathlib import Path
+from lakatos import harness_run
+
+spec = Path("spec.json")
+spec.write_text(json.dumps({
+    "tree": "T", "tag": "v1", "parent": "root", "metric": "m",
+    "baseline": 0, "build_cmd": "make", "judge_cmd": "echo metric=1",
+}))
+def http(_method, path, _body=None):
+    if path.endswith("/test_result"):
+        return {"verdict": "progressive", "novel": None, "delta": 1}
+    if path.endswith("/standing"):
+        return {"stands": True}
+    return {"ok": True}
+def forbidden_factory(**_kwargs):
+    raise RuntimeError("explicit run_build was ignored")
+harness_run._http = http
+harness_run._bash = lambda _command: ("metric=1", 0)
+harness_run._git_sha = lambda: "abc123"
+harness_run.resource_gated_build_runner_from_environment = forbidden_factory
+try:
+    harness_run.main(spec, run_build=lambda _command: ("build-ok", 0))
+except RuntimeError as exc:
+    raise SystemExit(0 if "ignored" in str(exc) else 8)
+raise SystemExit(7)
+'''
+    result = _run_isolated(
+        files=_HARNESS_RUN_FILES,
+        replacements={
+            "harness_run.py": (
+                _INJECTED_BUILD_SELECTION_MARKER,
+                "    if spec.build_cmd:\n",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-harness-run-build-selection-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "explicit run_build override mutant stayed green: "
+        + result.stderr[-500:],
     )
 
 
@@ -789,6 +1338,8 @@ def verify(backend, cid):
             {**base, "isolation_adapter": "test.other-isolation"},
             {**base, "isolation_version": "2"},
             {**base, "isolation_policy_sha256": _sha("other-policy")},
+            {**base, "execution_policy_sha256": _sha("other-execution-policy")},
+            {**base, "process_cleanup_grace_ms": 750},
             {**base, "output_tail_bytes": 32_768},
             {**base, "max_output_bytes": 32_000_000},
         )
@@ -801,6 +1352,83 @@ def verify(backend, cid):
             "declared execution input failed to change workload identity",
         )
         backend.ship([_event(cid, "workload_identity_binds_execution_inputs")])
+
+        base_policy = DEFAULT_BUILD_EXECUTION_POLICY
+        bounded_policy = BuildExecutionPolicy(**{
+            **base_policy.to_dict(),
+            "process_cleanup_grace_ms": (
+                base_policy.process_cleanup_grace_ms + 250
+            ),
+        })
+        policy_arguments = dict(
+            command="make",
+            cwd=str(root.resolve()),
+            timeout_seconds=7,
+            environment_sha256=environment_sha256({"PATH": "/bin"}),
+            input_manifest_sha256=_sha("policy-inputs"),
+            isolation_adapter=_TestIsolation.adapter,
+            isolation_version=_TestIsolation.adapter_version,
+            isolation_policy_sha256=_TestIsolation.policy_sha256,
+        )
+        base_policy_spec = base_policy.make_spec(**policy_arguments)
+        bounded_policy_spec = bounded_policy.make_spec(**policy_arguments)
+        _require(
+            base_policy_spec.workload_sha256
+            != bounded_policy_spec.workload_sha256,
+            "execution policy did not change workload identity",
+        )
+        _require(
+            reserved_compute_wall_ms(base_policy_spec)
+            == base_policy.reserved_compute_wall_ms(7),
+            "execution policy and scheduler reservation diverged",
+        )
+        _execution_policy_field_mutants_must_collide()
+        backend.ship([_event(cid, "execution_policy_is_identity_bound")])
+
+        base_admission = DEFAULT_BUILD_ADMISSION_POLICY
+        tuned_admission = BuildAdmissionPolicy(**{
+            **base_admission.to_dict(),
+            "target_sqlite_timeout_ms": base_admission.target_sqlite_timeout_ms + 1,
+        })
+        _require(
+            tuned_admission.policy_sha256 != base_admission.policy_sha256,
+            "admission policy tuning was not independently identified",
+        )
+        _require(
+            base_admission.to_dict().keys().isdisjoint(base_policy.to_dict()),
+            "physical and admission policy ownership overlapped",
+        )
+        _require(
+            base_policy.make_spec(**policy_arguments).workload_sha256
+            == base_policy_spec.workload_sha256,
+            "non-input admission tuning changed physical workload identity",
+        )
+        inherited_environment = {
+            "PATH": "/bin",
+            "ORDINARY_BUILD_FLAG": "enabled",
+        }
+        default_environment = closed_build_environment(inherited_environment)
+        allowlisted_environment = closed_build_environment(
+            inherited_environment,
+            allowed_keys=("PATH",),
+        )
+        default_environment_spec = base_policy.make_spec(**{
+            **policy_arguments,
+            "environment_sha256": environment_sha256(default_environment),
+        })
+        allowlisted_environment_spec = base_policy.make_spec(**{
+            **policy_arguments,
+            "environment_sha256": environment_sha256(allowlisted_environment),
+        })
+        _require(
+            default_environment_spec.workload_sha256
+            != allowlisted_environment_spec.workload_sha256,
+            "input-shaping environment selection escaped workload identity",
+        )
+        backend.ship([_event(
+            cid,
+            "operational_admission_and_environment_identity_are_separate",
+        )])
 
         manifest_root = root / "verified-input"
         manifest_root.mkdir()
@@ -843,6 +1471,500 @@ def verify(backend, cid):
         else:
             raise RuntimeError("noncanonical manifest alias was accepted")
         backend.ship([_event(cid, "verified_input_change_blocks_stale_replay")])
+
+        bounded_root = root / "bounded-input"
+        bounded_root.mkdir()
+        (bounded_root / "a.txt").write_text("aaaa", encoding="utf-8")
+        (bounded_root / "b.txt").write_text("bbbb", encoding="utf-8")
+        bounded_manifest = _write_manifest(bounded_root, "a.txt", "b.txt")
+        one_entry_policy = BuildAdmissionPolicy(**{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_manifest_entries": 1,
+        })
+        try:
+            VerifiedBuildInputManifest.load(
+                bounded_manifest,
+                root=bounded_root,
+                policy=one_entry_policy,
+            )
+        except BuildInputManifestError as exc:
+            _require("entry limit" in str(exc), "entry bound lost its typed reason")
+        else:
+            raise RuntimeError("manifest entry bound was not enforced")
+        three_byte_file_policy = BuildAdmissionPolicy(**{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_input_file_bytes": 3,
+        })
+        try:
+            VerifiedBuildInputManifest.load(
+                bounded_manifest,
+                root=bounded_root,
+                policy=three_byte_file_policy,
+            )
+        except BuildInputManifestError as exc:
+            _require(
+                "per-file byte limit" in str(exc),
+                "per-file bound lost its typed reason",
+            )
+        else:
+            raise RuntimeError("manifest per-file byte bound was not enforced")
+        six_byte_policy = BuildAdmissionPolicy(**{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_input_bytes": 6,
+        })
+        try:
+            VerifiedBuildInputManifest.load(
+                bounded_manifest,
+                root=bounded_root,
+                policy=six_byte_policy,
+            )
+        except BuildInputManifestError as exc:
+            _require(
+                "declared byte limit" in str(exc),
+                "input byte bound lost its typed reason",
+            )
+        else:
+            raise RuntimeError("manifest input byte bound was not enforced")
+        compatibility_environment = {
+            "PATH": "/bin",
+            "GIT_AUTHOR_NAME": "Lakato Builder",
+            "UNDECLARED_BUILD_TUNING": "legacy-compatible",
+        }
+        _require(
+            closed_build_environment(compatibility_environment)
+            == compatibility_environment,
+            "default environment policy broke legacy ordinary variables",
+        )
+        _require(
+            closed_build_environment(
+                compatibility_environment,
+                allowed_keys=("GIT_AUTHOR_NAME", "PATH"),
+            ) == {
+                "PATH": "/bin",
+                "GIT_AUTHOR_NAME": "Lakato Builder",
+            },
+            "explicit environment allowlist admitted an undeclared key",
+        )
+        oversized_manifest = bounded_root / "oversized-manifest.json"
+        oversized_manifest.write_bytes(b" " * 129)
+        tiny_json_policy = BuildAdmissionPolicy(**{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "maximum_manifest_json_bytes": 128,
+        })
+        try:
+            VerifiedBuildInputManifest.load(
+                oversized_manifest,
+                root=bounded_root,
+                policy=tiny_json_policy,
+            )
+        except BuildInputManifestError as exc:
+            _require("JSON byte limit" in str(exc), "JSON bound lost its typed reason")
+        else:
+            raise RuntimeError("manifest JSON byte bound was not enforced")
+        _manifest_bound_mutants_must_turn_red()
+        _environment_allowlist_mutant_must_turn_red()
+        backend.ship([_event(cid, "bounded_manifest_and_allowlisted_environment")])
+
+        descriptor_root = root / "descriptor-input"
+        descriptor_root.mkdir()
+        descriptor_path = descriptor_root / "input.txt"
+        descriptor_path.write_bytes(b"abcd")
+        descriptor_verifier = VerifiedBuildInputManifest.load(
+            _write_manifest(descriptor_root, "input.txt"),
+            root=descriptor_root,
+        )
+        real_read = local_build_execution_module.os.read
+        read_calls = {"count": 0}
+
+        def growing_read(descriptor, size):
+            read_calls["count"] += 1
+            if read_calls["count"] == 2:
+                return b"x"
+            return real_read(descriptor, size)
+
+        local_build_execution_module.os.read = growing_read
+        try:
+            try:
+                descriptor_verifier.verify()
+            except BuildInputManifestError as exc:
+                _require("grew while reading" in str(exc), "growth lost typed reason")
+            else:
+                raise RuntimeError("descriptor growth was accepted")
+        finally:
+            local_build_execution_module.os.read = real_read
+        _require(read_calls["count"] == 2, "descriptor verifier skipped EOF probe")
+        def failed_read(_descriptor, _size):
+            raise OSError("injected descriptor failure")
+
+        local_build_execution_module.os.read = failed_read
+        try:
+            try:
+                descriptor_verifier.verify()
+            except BuildInputManifestError as exc:
+                _require(
+                    "could not be read safely" in str(exc),
+                    "descriptor I/O failure escaped its typed boundary",
+                )
+            else:
+                raise RuntimeError("descriptor I/O failure was accepted")
+        finally:
+            local_build_execution_module.os.read = real_read
+        observed_open_flags = []
+        real_open = local_build_execution_module.os.open
+
+        def recording_open(path, flags, *args, **kwargs):
+            if path == "input.txt":
+                observed_open_flags.append(flags)
+            return real_open(path, flags, *args, **kwargs)
+
+        local_build_execution_module.os.open = recording_open
+        try:
+            descriptor_verifier.verify_until(time.monotonic_ns() + 1_000_000_000)
+        finally:
+            local_build_execution_module.os.open = real_open
+        _require(
+            observed_open_flags
+            and observed_open_flags[-1] & os.O_NONBLOCK,
+            "final input descriptor open can block on a FIFO race",
+        )
+        _nonblocking_file_open_mutant_must_turn_red()
+        backend.ship([_event(cid, "descriptor_snapshot_rejects_input_growth")])
+
+        portable_source = root / "portable-source"
+        portable_source.mkdir()
+        (portable_source / "input.txt").write_text("v1", encoding="utf-8")
+        portable_manifest = _write_manifest(portable_source, "input.txt")
+        portable_policy = BuildExecutionPolicy(**{
+            **DEFAULT_BUILD_EXECUTION_POLICY.to_dict(),
+            "process_cleanup_grace_ms": 250,
+        })
+        portable_admission_policy = BuildAdmissionPolicy(**{
+            **DEFAULT_BUILD_ADMISSION_POLICY.to_dict(),
+            "environment_allowlist": ("PATH",),
+        })
+
+        class PortableDeploymentPolicy:
+            name = "ooptdd-portable/v1"
+            execution_policy = portable_policy
+            admission_policy = portable_admission_policy
+
+            def __init__(self):
+                self.calls = 0
+
+            def create_isolation(self, _protected_root):
+                self.calls += 1
+                return _TestIsolation()
+
+        class PortableResolver:
+            def __init__(self, selected):
+                self.selected = selected
+                self.names = []
+
+            def resolve(self, name):
+                self.names.append(name)
+                return self.selected
+
+        selected_policy = PortableDeploymentPolicy()
+        portable_resolver = PortableResolver(selected_policy)
+        portable_resource_root = root / "portable-resource"
+        portable_environment = {
+            "PATH": os.environ.get("PATH", ""),
+            "LAKATOTREE_RESOURCE_BUILD_DIR": str(portable_resource_root),
+            "LAKATOTREE_RESOURCE_BUILD_POLICY": selected_policy.name,
+            "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+            "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+            "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+            "LAKATOTREE_BUILD_INPUT_MANIFEST": str(portable_manifest),
+        }
+        original_cwd = Path.cwd()
+        original_darwin = local_build_execution_module.DarwinSandboxExecIsolation
+
+        def forbidden_darwin(*_args, **_kwargs):
+            raise RuntimeError("injected deployment policy was bypassed")
+
+        try:
+            os.chdir(portable_source)
+            local_build_execution_module.DarwinSandboxExecIsolation = forbidden_darwin
+            portable_runner = resource_gated_build_runner_from_environment(
+                tree="OOPTDD-T",
+                tag="v1",
+                command="true",
+                timeout_seconds=1,
+                environment=portable_environment,
+                deployment_policy_resolver=portable_resolver,
+            )
+        finally:
+            local_build_execution_module.DarwinSandboxExecIsolation = original_darwin
+            os.chdir(original_cwd)
+        _require(
+            isinstance(selected_policy, BuildDeploymentPolicyPort),
+            "injected deployment policy did not satisfy its structural port",
+        )
+        _require(portable_runner is not None, "portable policy did not compose")
+        _require(
+            portable_resolver.names == [selected_policy.name]
+            and selected_policy.calls == 1,
+            "composition did not route through the selected policy",
+        )
+        _require(
+            portable_runner._request.estimate.upper_bound.compute_wall_ms == 1_250,
+            "injected cleanup grace did not reach scheduling",
+        )
+        unknown_root = root / "unknown-policy-must-not-exist"
+        try:
+            resource_gated_build_runner_from_environment(
+                tree="OOPTDD-T",
+                tag="unknown",
+                command="true",
+                timeout_seconds=1,
+                environment={
+                    "LAKATOTREE_RESOURCE_BUILD_DIR": str(unknown_root),
+                    "LAKATOTREE_RESOURCE_BUILD_POLICY": "unknown/v99",
+                },
+            )
+        except ResourceBuildConfigError as exc:
+            _require(
+                "unknown resource build policy" in str(exc),
+                "unknown selector lost its typed reason",
+            )
+        else:
+            raise RuntimeError("unknown deployment policy was accepted")
+        _require(
+            not unknown_root.exists(),
+            "unknown deployment policy caused a filesystem side effect",
+        )
+        _deployment_resolution_mutant_must_turn_red()
+        backend.ship([_event(cid, "deployment_policy_is_injected_and_preflighted")])
+
+        class PreflightOnlyVerifier:
+            manifest_sha256 = _sha("preflight-only")
+
+            def verify(self):
+                return None
+
+        deadline_port_root = root / "deadline-verifier-port"
+        deadline_port_root.mkdir()
+        try:
+            _runtime(
+                deadline_port_root,
+                command="true",
+                scope="harness-build:ooptdd-deadline-port",
+                effect_id="effect:ooptdd-deadline-port",
+                input_verifier=PreflightOnlyVerifier(),
+            )
+        except ValueError as exc:
+            _require(
+                "deadline-aware verify_until" in str(exc),
+                "deadline verifier refusal lost its typed reason",
+            )
+        else:
+            raise RuntimeError("preflight-only verifier crossed the durable effect port")
+        _require(
+            not (deadline_port_root / "target.sqlite3").exists(),
+            "invalid verifier caused durable target I/O",
+        )
+        _deadline_verifier_port_mutant_must_turn_red()
+        backend.ship([_event(cid, "deadline_aware_verifier_port_is_required")])
+
+        class VerifyOnlyInputVerifier:
+            manifest_sha256 = _sha("legacy-inputs")
+
+            def __init__(self):
+                self.calls = 0
+
+            def verify(self):
+                self.calls += 1
+
+        legacy_root = root / "legacy-verifier-effect"
+        legacy_root.mkdir()
+        legacy_marker = legacy_root / "marker"
+        legacy_command = _command(legacy_marker)
+        legacy_verifier = VerifyOnlyInputVerifier()
+        legacy_runner, _legacy_journal = _runtime(
+            legacy_root,
+            command=legacy_command,
+            scope="harness-build:ooptdd-legacy-port",
+            effect_id="effect:ooptdd-legacy-port",
+            input_verifier=legacy_verifier,
+            effect_type=SQLiteFencedBuildEffect,
+        )
+        legacy_result = legacy_runner(legacy_command)
+        _require(legacy_result.returncode == 0, "legacy verifier effect did not run")
+        _require(legacy_verifier.calls == 3, "legacy verifier call contract drifted")
+        _require(
+            isinstance(portable_runner._effect, DeadlineBoundSQLiteFencedBuildEffect),
+            "production factory did not select the deadline-bound effect",
+        )
+        _require(
+            SQLiteFencedBuildEffect.adapter_version
+            != DeadlineBoundSQLiteFencedBuildEffect.adapter_version,
+            "legacy evidence can collide with deadline-bound effect identity",
+        )
+        _require(
+            SQLiteFencedBuildEffect.target_database_filename
+            != DeadlineBoundSQLiteFencedBuildEffect.target_database_filename,
+            "legacy and deadline-bound target stores share a filename",
+        )
+        upgrade_root = root / "versioned-target-upgrade"
+        upgrade_root.mkdir(mode=0o700)
+        upgrade_root.chmod(0o700)
+        upgrade_environment = {"PATH": os.environ.get("PATH", "")}
+        upgrade_isolation = _TestIsolation()
+        legacy_spec = BuildExecutionSpec(
+            command="true",
+            cwd=str(portable_source.resolve()),
+            shell="/bin/sh",
+            timeout_seconds=1,
+            environment_sha256=environment_sha256(upgrade_environment),
+            input_manifest_sha256=_sha("upgrade-legacy-inputs"),
+            isolation_adapter=upgrade_isolation.adapter,
+            isolation_version=upgrade_isolation.adapter_version,
+            isolation_policy_sha256=upgrade_isolation.policy_sha256,
+            adapter=SQLiteFencedBuildEffect.adapter,
+            adapter_version=SQLiteFencedBuildEffect.adapter_version,
+        )
+        legacy_target_path = (
+            upgrade_root / SQLiteFencedBuildEffect.target_database_filename
+        )
+        legacy_target = SQLiteFencedBuildEffect(
+            legacy_target_path,
+            spec=legacy_spec,
+            environment=upgrade_environment,
+            isolation=upgrade_isolation,
+            input_verifier=_StaticInputVerifier(legacy_spec.input_manifest_sha256),
+            authentication_key=bytes(range(64, 96)),
+        )
+        legacy_target_bytes = legacy_target_path.read_bytes()
+        upgrade_policy = PortableDeploymentPolicy()
+        upgrade_resolver = PortableResolver(upgrade_policy)
+        upgrade_factory_environment = {
+            **portable_environment,
+            "LAKATOTREE_RESOURCE_BUILD_DIR": str(upgrade_root),
+        }
+        try:
+            os.chdir(portable_source)
+            upgrade_runner = resource_gated_build_runner_from_environment(
+                tree="OOPTDD-upgrade",
+                tag="v2",
+                command="true",
+                timeout_seconds=1,
+                environment=upgrade_factory_environment,
+                deployment_policy_resolver=upgrade_resolver,
+            )
+        finally:
+            os.chdir(original_cwd)
+        deadline_target_path = (
+            upgrade_root
+            / DeadlineBoundSQLiteFencedBuildEffect.target_database_filename
+        )
+        _require(upgrade_runner is not None, "v1 target blocked v2 composition")
+        _require(deadline_target_path.exists(), "v2 target store was not created")
+        _require(
+            legacy_target_path.read_bytes() == legacy_target_bytes,
+            "v2 composition modified the v1 target store",
+        )
+        with legacy_target._scope_lock("upgrade-lock"):
+            pass
+        with upgrade_runner._effect._scope_lock("upgrade-lock"):
+            pass
+        lock_names = {path.name for path in upgrade_root.glob(".*.lock")}
+        _require(
+            any(legacy_target_path.name in name for name in lock_names)
+            and any(deadline_target_path.name in name for name in lock_names),
+            "v1 and v2 target lock namespaces collided",
+        )
+        _versioned_effect_boundary_mutant_must_turn_red()
+        backend.ship([_event(
+            cid,
+            "versioned_effect_boundary_preserves_legacy_verifier_compatibility",
+        )])
+
+        class ChangesAfterClaim(_StaticInputVerifier):
+            def __init__(self):
+                super().__init__(_sha("postclaim-inputs"))
+                self.calls = 0
+
+            def verify(self):
+                self.calls += 1
+                if self.calls == 2:
+                    raise BuildInputManifestError("declared input changed after claim")
+
+        postclaim_root = root / "postclaim-input-refusal"
+        postclaim_root.mkdir()
+        postclaim_marker = postclaim_root / "must-not-run"
+        postclaim_command = _command(postclaim_marker)
+        postclaim_verifier = ChangesAfterClaim()
+        postclaim_runner, postclaim_journal = _runtime(
+            postclaim_root,
+            command=postclaim_command,
+            scope="harness-build:ooptdd-postclaim-refusal",
+            effect_id="effect:ooptdd-postclaim-refusal",
+            input_verifier=postclaim_verifier,
+        )
+        postclaim_run = postclaim_runner(postclaim_command)
+        postclaim_result, _ = postclaim_runner._effect.load_terminal_result(
+            effect_id="effect:ooptdd-postclaim-refusal",
+            workload_sha256=postclaim_runner._start.workload_sha256,
+        )
+        _require(not postclaim_marker.exists(), "rejected input launched the build")
+        _require(postclaim_run.returncode == 126, "input refusal lost its exit code")
+        _require(
+            postclaim_result.status is BuildTerminalStatus.INPUT_REJECTED,
+            "post-claim input refusal was not terminalized",
+        )
+        _require(
+            postclaim_journal.load("harness-build:ooptdd-postclaim-refusal")
+            .state.grant(f"grant:{_sha('effect:ooptdd-postclaim-refusal')}")
+            .status is GrantStatus.SETTLED,
+            "post-claim input refusal stranded its resource grant",
+        )
+        _require(postclaim_verifier.calls == 2, "input verification count drifted")
+        backend.ship([_event(cid, "postclaim_input_refusal_terminalizes")])
+
+        class MutableMonotonicClock:
+            now = 1_000_000_000
+
+            def __call__(self):
+                return self.now
+
+        class SlowChangedInput(_StaticInputVerifier):
+            def __init__(self, clock):
+                super().__init__(_sha("metered-inputs"))
+                self.clock = clock
+                self.calls = 0
+
+            def verify(self):
+                self.calls += 1
+                if self.calls == 2:
+                    self.clock.now += 250_000_000
+                    raise BuildInputManifestError("slow declared input change")
+
+        metered_clock = MutableMonotonicClock()
+        metered_verifier = SlowChangedInput(metered_clock)
+        metered_root = root / "metered-input-refusal"
+        metered_root.mkdir()
+        metered_marker = metered_root / "must-not-run"
+        metered_command = _command(metered_marker)
+        metered_runner, _ = _runtime(
+            metered_root,
+            command=metered_command,
+            scope="harness-build:ooptdd-metered-input-refusal",
+            effect_id="effect:ooptdd-metered-input-refusal",
+            input_verifier=metered_verifier,
+            monotonic_ns=metered_clock,
+        )
+        metered_runner(metered_command)
+        metered_result, _ = metered_runner._effect.load_terminal_result(
+            effect_id="effect:ooptdd-metered-input-refusal",
+            workload_sha256=metered_runner._start.workload_sha256,
+        )
+        _require(not metered_marker.exists(), "metered input refusal launched build")
+        _require(
+            metered_result.elapsed_monotonic_ns == 250_000_000
+            and metered_result.compute_wall_ms == 250,
+            "post-claim verification time escaped compute evidence",
+        )
+        backend.ship([_event(cid, "postclaim_verification_time_is_metered")])
 
         auth_root = root / "target-auth"
         auth_root.mkdir()
@@ -1007,7 +2129,7 @@ def verify(backend, cid):
         rollback_marker = rollback_root / "marker"
         rollback_command = _command(rollback_marker)
         utc_values = iter(("2026-08-07T12:00:03Z", "2026-08-07T11:59:58Z"))
-        monotonic_values = iter((1_000_000_000, 2_250_000_000))
+        monotonic_values = iter((1_000_000_000, 1_000_000_000, 2_250_000_000))
         rollback_runner, rollback_journal = _runtime(
             rollback_root,
             command=rollback_command,
@@ -1049,9 +2171,11 @@ def verify(backend, cid):
             isolation_adapter=unsafe.adapter,
             isolation_version=unsafe.adapter_version,
             isolation_policy_sha256=unsafe.policy_sha256,
+            adapter=DeadlineBoundSQLiteFencedBuildEffect.adapter,
+            adapter_version=DeadlineBoundSQLiteFencedBuildEffect.adapter_version,
         )
         try:
-            SQLiteFencedBuildEffect(
+            DeadlineBoundSQLiteFencedBuildEffect(
                 unsafe_root / "target.sqlite3",
                 spec=unsafe_spec,
                 environment=unsafe_environment,
@@ -1176,8 +2300,9 @@ def verify(backend, cid):
             "output overflow was not terminalized",
         )
         _require(
-            terminal["stdout_bytes"] + terminal["stderr_bytes"] == 4096,
-            "output evidence exceeded or underfilled its hard bound",
+            terminal["stdout_bytes"] == split_stream_budget(4096)[0]
+            and terminal["stderr_bytes"] == 0,
+            "stdout escaped its deterministic no-borrow stream quota",
         )
         _require(
             output_journal.load("harness-build:ooptdd-output-limit")
@@ -1187,6 +2312,75 @@ def verify(backend, cid):
         )
         _output_cap_mutant_must_turn_red()
         backend.ship([_event(cid, "bounded_output_overflow_settles_terminally")])
+        _require(
+            split_stream_budget(5) == (3, 2),
+            "odd output budget lost its deterministic split",
+        )
+
+        class RejectsAfterPreflight(_StaticInputVerifier):
+            def __init__(self):
+                super().__init__(_sha("synthetic-input-refusal"))
+                self.calls = 0
+
+            def verify(self):
+                self.calls += 1
+                if self.calls == 2:
+                    raise BuildInputManifestError("changed")
+
+        synthetic_refusal_root = root / "synthetic-input-refusal"
+        synthetic_refusal_root.mkdir()
+        synthetic_refusal_runner, _ = _runtime(
+            synthetic_refusal_root,
+            command="true",
+            scope="harness-build:ooptdd-synthetic-refusal",
+            effect_id="effect:ooptdd-synthetic-refusal",
+            input_verifier=RejectsAfterPreflight(),
+            output_tail_bytes=1,
+            max_output_bytes=1,
+        )
+        synthetic_refusal_runner("true")
+        synthetic_refusal, _ = (
+            synthetic_refusal_runner._effect.load_terminal_result(
+                effect_id="effect:ooptdd-synthetic-refusal",
+                workload_sha256=synthetic_refusal_runner._start.workload_sha256,
+            )
+        )
+
+        synthetic_spawn_root = root / "synthetic-spawn-failure"
+        synthetic_spawn_root.mkdir()
+        synthetic_spawn_runner, _ = _runtime(
+            synthetic_spawn_root,
+            command="true",
+            scope="harness-build:ooptdd-synthetic-spawn",
+            effect_id="effect:ooptdd-synthetic-spawn",
+            output_tail_bytes=1,
+            max_output_bytes=1,
+        )
+        real_popen = local_build_execution_module.subprocess.Popen
+
+        def fail_spawn(*_args, **_kwargs):
+            raise OSError("injected spawn failure")
+
+        local_build_execution_module.subprocess.Popen = fail_spawn
+        try:
+            synthetic_spawn_runner("true")
+        finally:
+            local_build_execution_module.subprocess.Popen = real_popen
+        synthetic_spawn, _ = synthetic_spawn_runner._effect.load_terminal_result(
+            effect_id="effect:ooptdd-synthetic-spawn",
+            workload_sha256=synthetic_spawn_runner._start.workload_sha256,
+        )
+        _require(
+            synthetic_refusal.status is BuildTerminalStatus.INPUT_REJECTED
+            and synthetic_spawn.status is BuildTerminalStatus.SPAWN_FAILED
+            and synthetic_refusal.stderr_bytes == 0
+            and synthetic_spawn.stderr_bytes == 0
+            and synthetic_refusal.output_tail == ""
+            and synthetic_spawn.output_tail == "",
+            "synthetic stderr bypassed the split stream quota",
+        )
+        _stream_split_mutant_must_turn_red()
+        backend.ship([_event(cid, "stream_capture_budget_is_deterministically_split")])
 
         invalid_root = root / "invalid-output"
         invalid_root.mkdir()
@@ -1203,7 +2397,7 @@ def verify(backend, cid):
             scope="harness-build:ooptdd-invalid-output",
             effect_id="effect:ooptdd-invalid-output",
             output_tail_bytes=400_000,
-            max_output_bytes=500_000,
+            max_output_bytes=800_000,
         )
         invalid_run = invalid_runner(invalid_command)
         _require(invalid_run.returncode == 0, "invalid UTF-8 changed process status")
@@ -1279,3 +2473,5 @@ def verify(backend, cid):
     backend.ship([_event(cid, "workload_environment_binding_load_bearing")])
     _isolation_policy_binding_mutant_must_collide()
     backend.ship([_event(cid, "workload_isolation_policy_binding_load_bearing")])
+    _injected_build_selection_mutant_must_turn_red()
+    backend.ship([_event(cid, "explicit_run_build_override_is_preserved")])
