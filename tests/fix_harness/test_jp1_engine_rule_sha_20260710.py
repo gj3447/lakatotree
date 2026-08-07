@@ -239,10 +239,14 @@ class _SweepKg:
     def __call__(self, query, **p):
         if "verdict:'CANONICAL'" in query and "RETURN e.tag AS tag" in query:
             return [dict(r) for r in self.rows]
-        if "SET e.verdict='former_canonical'" in query:
+        if "stale_engine_rule_demoted_at" in query:
             row = next(r for r in self.rows if r["tag"] == p["tag"])
             if (row.get("prev_rsha") or "") != (p.get("prev") or ""):
                 return []                       # CAS 불일치
+            if row.get("vur") is not p.get("expected_vur"):
+                return []                       # 운영자 잠금 CAS 불일치
+            assert p["verdict"] == "former_canonical"
+            assert p["verdict_source"] == "engine"
             self.demoted.append(p["tag"])
             self.receipts.append({"receipt_sha": p["rsha"], "engine_rule_sha": p["engine_rule_sha"]})
             return [{"tag": p["tag"]}]

@@ -1,0 +1,147 @@
+{
+  "schema_version": "engine-spec/v1",
+  "name": "lakatotree-judgement-receipt-engine",
+  "purpose": "Own deterministic judgement, receipt, question-transition, and causal-outbox decisions for one LakatoTree aggregate while effect adapters retain explicit external capabilities.",
+  "decision": {
+    "verdict": "engine",
+    "current_consumers": [
+      "JudgementService compatibility facade",
+      "FastAPI judgement routes",
+      "ProgrammeService cycle runner"
+    ],
+    "planned_consumers": [
+      "direct CLI judgement adapter"
+    ],
+    "fit_evidence": [
+      "HTTP judgement and programme-cycle adapters already share stable verdict, receipt, replay, and temporal semantics.",
+      "One Neo4j aggregate head owns verdict state, receipt identity, question closure, causal outbox, and expected-head recovery.",
+      "The existing separate resource coordinator proves the command-to-decision pattern without becoming part of this state authority."
+    ],
+    "alternatives_considered": [
+      "Rewrite every class as free functions",
+      "Retain application-service god methods",
+      "Create one engine per extracted planner"
+    ]
+  },
+  "boundary": {
+    "owns": "Versioned verdict decisions, legal node and question transitions, receipt identities, replay-relevant facts, and causal effect requests for one LakatoTree aggregate.",
+    "mechanism": "Transform one tree's immutable observed head and judgement command into a decision, transition, receipt plan, causal outbox, or typed rejection; commit facts before interpreting projections.",
+    "policy_outside": [
+      "Research-programme content and product priority",
+      "Deployment credentials, host selection, and retry timing",
+      "HTTP presentation and operator UI"
+    ],
+    "non_goals": [
+      "Eliminating immutable dataclasses, Pydantic schemas, exceptions, or capability protocols",
+      "Calling clocks, filesystems, databases, subprocesses, or networks from pure planners",
+      "Changing durable wire identities during behavior-preserving extraction"
+    ],
+    "state_authority": "The writer-fenced Neo4j LakatosTree aggregate is the sole authority for verdict heads, receipts, question state, and causal outbox; PostgreSQL history is a repairable projection."
+  },
+  "model": {
+    "resources": [
+      "canonical verdict head",
+      "question and node lifecycle state",
+      "receipt and causal-outbox identity",
+      "temporal and replay evidence"
+    ],
+    "work_units": [
+      "prediction registration",
+      "test-result judgement",
+      "administrative verdict",
+      "stale-canonical sweep"
+    ]
+  },
+  "state_model": "Versioned immutable command, observation, decision, transition, receipt-plan, and effect-request records; lifecycle FSMs remain the authority for legal node and question transitions.",
+  "protocol": {
+    "commands": [
+      "RegisterPrediction",
+      "SubmitTestResult",
+      "SetAdministrativeVerdict",
+      "SweepStaleCanonicals"
+    ],
+    "events": [
+      "PredictionRegistered",
+      "VerdictJudged",
+      "QuestionClosed",
+      "CanonicalDemotionPlanned"
+    ],
+    "effects": [
+      "ApplyGuardedKgMutation",
+      "ProjectHistoryOutbox",
+      "MaterializeReplayArtifact"
+    ],
+    "versioning": "Additive optional fields require presence-dispatched compatible readers; hash-domain, schema, event, or receipt changes require a new version and explicit migration while original bytes remain readable."
+  },
+  "invariants": [
+    "Equal immutable inputs and version identities produce equal pure decisions.",
+    "A pure planner imports neither lakatos.io nor server.",
+    "A successful public response is never exposed before the authoritative expected-head commit succeeds.",
+    "Receipt, event, hash-domain, and replay identities remain byte-stable during extraction.",
+    "Dry-run commands cannot reach live readiness, clock, mutation, or history capabilities.",
+    "OO remains only where it represents immutable data, schemas, errors, protocols, repositories, or effect adapters."
+  ],
+  "ports": [
+    "Clock",
+    "KgQuery",
+    "WriterFencedKgTransaction",
+    "HistoryAppend",
+    "ReplayArtifactStore",
+    "TemporalProofProvider"
+  ],
+  "runtime": {
+    "ordering": "Commands are serialized by ledger scope or aggregate identity; existing database return order is preserved where observable.",
+    "concurrency": "Independent aggregates may proceed concurrently while every mutation retains its expected-head or revision fence.",
+    "backpressure": "Admission rejects or defers work at explicit queue, deadline, budget, and writer-readiness limits owned by the application shell.",
+    "cancellation": "Judgement commands finish or fail within their writer-fenced transaction boundary; cancellation is honored before commit intent, never by exposing a partial verdict.",
+    "timeouts": "External effects receive typed deadlines; pure decisions receive captured time only as immutable input."
+  },
+  "durability": {
+    "persistence": "Append receipt-bound facts and outbox intent before exposing success; retain canonical bytes for replay.",
+    "atomic_commit": "Commit expected-head mutation, receipt, causal outbox, and relevant locks in one writer-fenced transaction whenever they form one invariant.",
+    "recovery": "Rebuild the aggregate from receipts, then reconcile pending outbox or projection records without minting duplicate verdict facts.",
+    "effect_idempotency": "Use existing content-addressed receipt, event, attempt, and effect identities; do not invent wall-clock-only deduplication.",
+    "migration": "Use compatibility facades and strangler slices; breaking durable changes require explicit versioned upcast or dual-read migration."
+  },
+  "failure_model": [
+    "Invalid commands and malformed durable snapshots fail without mutation.",
+    "Expected-head conflicts skip or reject exactly as the frozen public contract specifies.",
+    "Writer-fence loss and readiness failure remain typed external failures and are not converted to successful decisions.",
+    "A post-commit projection failure remains recoverable from the committed outbox rather than repeating the domain mutation."
+  ],
+  "observability": {
+    "traces": [
+      "Command identity, observation hash, decision schema, receipt identity, commit result, and effect attempt share causation fields.",
+      "Compatibility facades expose the same public response while internal plan identities are available to tests and diagnostics."
+    ],
+    "metrics": [
+      "Decision rejection and expected-head conflict counts",
+      "Outbox lag, recovery duration, projection retry, and effect failure counts",
+      "Per-slice OOPTDD mutation-kill and regression status"
+    ],
+    "redaction": "Credentials and private payloads never enter plans, receipts, metric labels, or test fixtures; trace only bounded identities and hashes."
+  },
+  "security": [
+    "All ambient authority is isolated behind injected capabilities in the imperative shell.",
+    "Pure planners accept closed observations and cannot discover files, environment variables, credentials, or network state.",
+    "Mutation adapters retain authorization, writer fencing, containment, and fail-closed validation."
+  ],
+  "verification": [
+    "Write RED-first guard_defect and guard_mechanism tests for every vertical slice.",
+    "Ship a hermetic OOPTDD receipt that drives real production code and a load-bearing negative oracle.",
+    "Run focused compatibility, full pytest, import-linter, compile, and Longinus binding gates.",
+    "Crash- and conflict-test commit/effect cut points before moving a durable boundary."
+  ],
+  "implementation_slices": [
+    "Existing dual-resource decide/evolve kernel remains a separate engine and architectural precedent.",
+    "Stale-canonical immutable decision and receipt plan with the existing JudgementService CAS/history interpreter.",
+    "Submit-test-result receipt and causal-outbox plan while retaining its atomic Cypher interpreter.",
+    "Storage and production-readiness pure evaluators separated from live collectors.",
+    "Thin API, CLI, MCP, and composition adapters over stable compatibility facades."
+  ],
+  "falsifiers": [
+    "If a proposed slice has only one unstable call site and no reusable decision contract, keep it local rather than creating another engine.",
+    "If extraction requires changing receipt bytes, database ordering, error taxonomy, or replay identity without a migration, reject the extraction.",
+    "If an adapter can bypass the injected planner without an OOPTDD failure, the boundary is not load-bearing."
+  ]
+}

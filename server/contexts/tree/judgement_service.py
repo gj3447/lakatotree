@@ -10,7 +10,7 @@ import hashlib
 import math
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from functools import wraps
@@ -36,6 +36,17 @@ from lakatos.frontier_state import (
     step as step_question,
 )
 from lakatos.node_state import NodeState, assert_transition_allowed, derive_node_state
+from lakatos.stale_canonical import (
+    CanonicalHeadSnapshot,
+    StaleDemotionPlanner,
+    StaleSweepDecider,
+    decide_stale_canonical_sweep,
+    draft_stale_canonical_demotions,
+    project_stale_canonical_sweep,
+    seal_stale_canonical_demotions,
+    validate_stale_canonical_demotion_drafts,
+    validate_stale_canonical_sweep_decision,
+)
 from lakatos.trust import INTERNAL_SOURCE_TRUST
 from lakatos.verdict.argue import assemble_af, grounded_extension
 from lakatos.eureka import classify as eureka_classify
@@ -290,6 +301,10 @@ class JudgementService:
         ledger_scope=None,
         prediction_temporal_commitment_provider=None,
         temporal_proof_provider=None,
+        stale_sweep_decider: StaleSweepDecider | None = None,
+        stale_demotion_planner: StaleDemotionPlanner | None = None,
+        rule_floor_provider: Callable[[], Collection[str]] | None = None,
+        utc_now: Callable[[], datetime] | None = None,
     ):
         self.kg = kg
         self.kg_tx = kg_tx
@@ -317,6 +332,22 @@ class JudgementService:
             prediction_temporal_commitment_provider or (lambda _name, _tag: None)
         )
         self.temporal_proof_provider = temporal_proof_provider
+        self.stale_sweep_decider = (
+            decide_stale_canonical_sweep
+            if stale_sweep_decider is None
+            else stale_sweep_decider
+        )
+        self.stale_demotion_planner = (
+            draft_stale_canonical_demotions
+            if stale_demotion_planner is None
+            else stale_demotion_planner
+        )
+        self._rule_floor_provider = (
+            effective_floor if rule_floor_provider is None else rule_floor_provider
+        )
+        self._utc_now = (
+            (lambda: datetime.now(timezone.utc)) if utc_now is None else utc_now
+        )
 
     def _prediction_temporal_binding(
         self,
@@ -3508,7 +3539,7 @@ class JudgementService:
         app.py AGM per-tag CAS 패턴 계승). dry_run 기본 true = 후보 열거만(비파괴 기본off).
         인간 잠금(valid_until_rebutted=false)은 강등하지 않고 skipped_locked 로 보고만.
         demoted 카운트가 novel 오라클(stale_canonical_auto_demoted)의 실측값."""
-        floor = effective_floor()
+        floor = frozenset(self._rule_floor_provider())
         if not dry_run:
             self._require_ledger_ready()
         rows = self.kg('''MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {verdict:'CANONICAL'})
@@ -3516,47 +3547,78 @@ class JudgementService:
                   RETURN e.tag AS tag, e.current_receipt_sha AS prev_rsha,
                          r.engine_rule_sha AS ers,
                          coalesce(e.valid_until_rebutted, true) AS vur''', tree=name)
-        stale = [x for x in (rows or []) if x.get('ers') not in floor]
-        locked = [x['tag'] for x in stale if x.get('vur') is False]
-        candidates = [x for x in stale if x.get('vur') is not False]
-        out = {'tree': name, 'dry_run': dry_run, 'floor_size': len(floor),
-               'canonical_total': len(rows or []),
-               'candidates': [{'tag': x['tag'], 'sealed_engine_rule_sha': x.get('ers')}
-                              for x in candidates],
-               'skipped_locked': locked, 'demoted': []}
+        heads = tuple(
+            CanonicalHeadSnapshot(
+                tag=row['tag'],
+                previous_receipt_sha=row.get('prev_rsha'),
+                sealed_engine_rule_sha=row.get('ers'),
+                valid_until_rebutted=row.get('vur'),
+            )
+            for row in (rows or [])
+        )
+        proposed_decision = self.stale_sweep_decider(
+            tree=name,
+            heads=heads,
+            effective_floor=floor,
+            dry_run=dry_run,
+        )
+        decision = validate_stale_canonical_sweep_decision(
+            proposed_decision,
+            tree=name,
+            heads=heads,
+            effective_floor=floor,
+            dry_run=dry_run,
+        )
+        out = project_stale_canonical_sweep(decision)
         if dry_run:
             return out
-        for candidate in candidates:
-            self._project_pending_admin_predecessors(name, candidate['tag'])
-        ts = datetime.now(timezone.utc).isoformat()
-        for x in candidates:
-            prev = x.get('prev_rsha')
-            rsha = receipt_content_sha(dict(
-                tree=name, tag=x['tag'], target_id=None, verdict='former_canonical',
-                verdict_source='engine', metric_name=None, metric_value=None,
-                novel_confirmed=None, lakatos_status=None, judged_at=ts,
-                judge_script_sha=None, prev_receipt_sha=prev, engine_rule_sha=ENGINE_RULE_SHA))
+        proposed_drafts = self.stale_demotion_planner(decision)
+        drafts = validate_stale_canonical_demotion_drafts(
+            decision,
+            proposed_drafts,
+        )
+        if not drafts:
+            return out
+        for draft in drafts:
+            self._project_pending_admin_predecessors(draft.tree, draft.tag)
+        ts = self._utc_now().isoformat()
+        demotions = seal_stale_canonical_demotions(
+            decision,
+            drafts,
+            judged_at=ts,
+            engine_rule_sha=ENGINE_RULE_SHA,
+        )
+        for plan in demotions:
             done = self._ledger_write('''MATCH (t:LakatosTree {name:$tree})
                       SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
                       WITH t
                       MATCH (t)-[:HAS_NODE]->(e {tag:$tag})
                       WHERE e.verdict='CANONICAL'
                         AND coalesce(e.current_receipt_sha,'') = coalesce($prev,'')
-                      SET e.verdict='former_canonical', e.verdict_source='engine',
+                        AND coalesce(e.valid_until_rebutted,true)=$expected_vur
+                      SET e.verdict=$verdict, e.verdict_source=$verdict_source,
                           e.current_best_pointer=false, e.node_state=$former_state,
                           e.demoted_at=$ts, e.stale_engine_rule_demoted_at=$ts
                       MERGE (rec:VerdictReceipt {receipt_sha:$rsha})
-                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict='former_canonical',
-                          rec.verdict_source='engine', rec.judged_at=$ts, rec.prev_receipt_sha=$prev,
+                        ON CREATE SET rec.tree=$tree, rec.tag=$tag, rec.verdict=$verdict,
+                          rec.verdict_source=$verdict_source, rec.judged_at=$ts,
+                          rec.prev_receipt_sha=$prev,
                           rec.engine_rule_sha=$engine_rule_sha
                       MERGE (e)-[:HAS_RECEIPT]->(rec)
                       SET e.current_receipt_sha=$rsha
                       RETURN e.tag AS tag''',
-                           tree=name, tag=x['tag'], prev=prev, rsha=rsha, ts=ts,
-                           former_state=NodeState.FORMER_CANONICAL.value,
-                           engine_rule_sha=ENGINE_RULE_SHA)
+                           tree=plan.tree, tag=plan.tag,
+                           prev=plan.previous_receipt_sha,
+                           expected_vur=plan.expected_valid_until_rebutted,
+                           rsha=plan.receipt_sha, ts=plan.judged_at,
+                           verdict=plan.verdict,
+                           verdict_source=plan.verdict_source,
+                           former_state=plan.node_state,
+                           engine_rule_sha=plan.engine_rule_sha)
             if done:
-                out['demoted'].append(x['tag'])
-                self.hist(name, 'stale_engine_demotion', x['tag'],
-                          {'sealed': x.get('ers'), 'floor_size': len(floor), 'receipt_sha': rsha})
+                out['demoted'].append(plan.tag)
+                self.hist(plan.tree, 'stale_engine_demotion', plan.tag,
+                          {'sealed': plan.sealed_engine_rule_sha,
+                           'floor_size': decision.floor_size,
+                           'receipt_sha': plan.receipt_sha})
         return out

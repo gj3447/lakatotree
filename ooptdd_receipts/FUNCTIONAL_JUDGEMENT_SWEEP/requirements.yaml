@@ -1,0 +1,71 @@
+# Locked before the stale-canonical planner and shell wiring were implemented.
+# The adapter drives the real JudgementService with hermetic in-memory ports.
+name: lakatotree-functional-judgement-sweep
+target:
+  mode: in_process
+  callable: functional_judgement_sweep_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: FJS-1
+    description: Equal immutable canonical-head snapshots and floor inputs produce an equal frozen sweep decision without mutating the inputs.
+    gate:
+      - {event: stale_sweep_pure_decision, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:FUNCTIONAL_JUDGEMENT_SWEEP:stale_sweep_pure_decision
+      source: functional_judgement_sweep_receipt.py
+      symbol: verify
+      must_emit: stale_sweep_pure_decision
+
+  - id: FJS-2
+    description: The real JudgementService live sweep consumes the injected decision, demotion-plan, and clock ports while preserving candidate and effect order.
+    gate:
+      - {event: stale_sweep_injected_ports_used, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:FUNCTIONAL_JUDGEMENT_SWEEP:stale_sweep_injected_ports_used
+      source: functional_judgement_sweep_receipt.py
+      symbol: verify
+      must_emit: stale_sweep_injected_ports_used
+
+  - id: FJS-3
+    description: Replacing the decision port with an empty decision suppresses all demotions, proving the service does not bypass the port.
+    gate:
+      - {event: stale_sweep_decider_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:FUNCTIONAL_JUDGEMENT_SWEEP:stale_sweep_decider_load_bearing
+      source: functional_judgement_sweep_receipt.py
+      symbol: verify
+      must_emit: stale_sweep_decider_load_bearing
+
+  - id: FJS-4
+    description: Replacing the demotion planner with an empty effect draft suppresses predecessor recovery, clock, KG writes, and history, proving effects are interpreted only from a validated draft.
+    gate:
+      - {event: stale_sweep_demotion_plan_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:FUNCTIONAL_JUDGEMENT_SWEEP:stale_sweep_demotion_plan_load_bearing
+      source: functional_judgement_sweep_receipt.py
+      symbol: verify
+      must_emit: stale_sweep_demotion_plan_load_bearing
+
+  - id: FJS-5
+    description: The default functional plan preserves the established public response bytes, row order, shared timestamp, v2 receipt hash, expected-head and operator-lock CAS filtering, and exact post-commit history payload.
+    gate:
+      - {event: stale_sweep_compatibility_preserved, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:FUNCTIONAL_JUDGEMENT_SWEEP:stale_sweep_compatibility_preserved
+      source: functional_judgement_sweep_receipt.py
+      symbol: verify
+      must_emit: stale_sweep_compatibility_preserved
+
+  # Audit hardening added after the first GREEN; its fail-closed guard was
+  # observed RED before decision/plan validation was implemented.
+  - id: FJS-6
+    description: Injected decision and effect-draft ports may suppress work but cannot invent, unlock, reorder, mutate the frozen floor, or forge a ledger mutation.
+    gate:
+      - {event: stale_sweep_injected_outputs_fail_closed, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:FUNCTIONAL_JUDGEMENT_SWEEP:stale_sweep_injected_outputs_fail_closed
+      source: functional_judgement_sweep_receipt.py
+      symbol: verify
+      must_emit: stale_sweep_injected_outputs_fail_closed

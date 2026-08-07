@@ -162,6 +162,7 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | `lakatos/resource_kernel.py` | narrow injectable functional-kernel port for effect adapters |
 | `lakatos/resource_execution.py` | pure operation-bound intent, permit, receipt, and recovery-reference rules |
 | `lakatos/build_execution.py` | immutable local-build specification, terminal evidence, usage, and provenance values |
+| `lakatos/stale_canonical.py` | immutable stale-head decisions and receipt-bound demotion plans |
 | `lakatos/io/_resource_journal_contracts.py` | immutable journal DTOs, versions, errors, and adapter protocols |
 | `lakatos/io/_resource_journal_codec.py` | pure canonical codecs and journal/checkpoint hash functions |
 | `lakatos/io/_resource_anchor.py` | signed append-only external-checkpoint adapter |
@@ -172,14 +173,14 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | `formal/` | machine-checked kernel model |
 | `server/` | optional HTTP/MCP surface and stores |
 
-Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual model](docs/PIDNA.md), the [dual-resource coordination contract](docs/DUAL_RESOURCE_COORDINATION.md), the [HSWM agent-network design contract](docs/HSWM_AGENT_NETWORK.md), [quantitative grounding](docs/QUANTITATIVE_GROUNDING.md), and the prose rationale [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md).
+Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual model](docs/PIDNA.md), the [dual-resource coordination contract](docs/DUAL_RESOURCE_COORDINATION.md), the [functional-core migration contract](docs/FUNCTIONAL_CORE_MIGRATION_20260807.md), the [HSWM agent-network design contract](docs/HSWM_AGENT_NETWORK.md), [quantitative grounding](docs/QUANTITATIVE_GROUNDING.md), and the prose rationale [TOUCH_THE_SKY.md](TOUCH_THE_SKY.md).
 
 ## Module map
 
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `resource_coordination` `resource_kernel` `resource_execution` `build_execution` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
+`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `resource_coordination` `resource_kernel` `resource_execution` `build_execution` `stale_canonical` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`

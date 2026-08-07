@@ -30,6 +30,7 @@ _SET_CLAUSE = re.compile(
 )
 _TRANSITION_ASSIGNMENT = re.compile(
     r"\b[\w.]*verdict\s*=\s*'(CANONICAL|former_canonical)'"
+    r"|\be\.verdict\s*=\s*\$verdict\b"
     r"|\b[\w.]*verdict_source\s*=\s*'scripted'"
 )
 

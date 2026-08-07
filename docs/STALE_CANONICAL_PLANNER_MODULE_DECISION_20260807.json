@@ -1,0 +1,61 @@
+{
+  "schema_version": "engine-decision/v1",
+  "name": "stale-canonical-functional-planner",
+  "verdict": "module",
+  "purpose": "Provide a deterministic functional planning seam for one existing LakatoTree engine command without inventing a second lifecycle authority.",
+  "current_consumers": [
+    "JudgementService.demote_stale_canonical"
+  ],
+  "planned_consumers": [],
+  "rationale": [
+    "The command already belongs to the LakatoTree judgement engine and has one application-service consumer.",
+    "The extracted logic owns classification and receipt planning but no independent durable state, scheduler, recovery loop, or effect dispatcher.",
+    "A narrow module is sufficient and avoids premature command-event machinery."
+  ],
+  "boundary": {
+    "owns": "Ordered stale-head classification, operator-lock partitioning, public response projection, and deterministic demotion receipt planning.",
+    "mechanism": "Transform immutable canonical-head observations, effective floor, dry-run mode, captured timestamp, and engine identity into frozen plans.",
+    "policy_outside": [
+      "Rule-floor file discovery",
+      "Readiness and pending-predecessor projection",
+      "Clock capture, KG CAS, and history projection"
+    ],
+    "non_goals": [
+      "Changing stale judgement policy",
+      "Batching the per-head transactions",
+      "Creating a new runtime or persistence authority"
+    ],
+    "state_authority": "The existing Neo4j canonical head and writer-fenced JudgementService transaction remain authoritative."
+  },
+  "contract": "lakatotree.stale-canonical-sweep-plan/v1",
+  "invariants": [
+    "Query order is preserved.",
+    "Only valid_until_rebutted equal to false is locked.",
+    "Public candidates never expose the expected previous receipt head.",
+    "Injected effect drafts are validated before predecessor projection, then every selected live receipt uses the one timestamp captured after all predecessor projections.",
+    "Injected decisions and effect drafts may suppress only an ordered subset and cannot invent, unlock, reorder, or forge effects.",
+    "The guarded mutation rechecks both the observed receipt head and operator-lock value.",
+    "The planner imports no effect layer."
+  ],
+  "failure_model": [
+    "A dry-run decision cannot produce demotion effects.",
+    "A receipt-head or operator-lock CAS miss remains a skipped demotion with no history projection.",
+    "Receipt hashing continues through the existing versioned receipt authority."
+  ],
+  "verification": [
+    "Pure equality and frozen-input tests.",
+    "Injected-port load-bearing tests.",
+    "Mutable-floor, forged decision, forged or reordered draft, receipt-head race, and operator-lock race negative oracles.",
+    "JP1 receipt and legacy hash regression.",
+    "FUNCTIONAL_JUDGEMENT_SWEEP OOPTDD receipt."
+  ],
+  "promotion_gates": [
+    "A second independent consumer needs the same durable state authority.",
+    "The module gains an independent command/event lifecycle and recovery responsibility.",
+    "Operational evidence shows a scheduler or effect dispatcher cannot remain in the parent engine."
+  ],
+  "falsifiers": [
+    "If classification cannot remain deterministic from captured observations, return it to the application service.",
+    "If the module begins owning clocks, databases, files, or history, the boundary has failed."
+  ]
+}

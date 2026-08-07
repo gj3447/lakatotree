@@ -42,17 +42,22 @@ class _SweepKg:
     def __call__(self, query, **p):
         if "verdict:'CANONICAL'" in query and "RETURN e.tag AS tag" in query:
             return [dict(r) for r in self.rows]
-        if "SET e.verdict='former_canonical'" in query:
+        if "stale_engine_rule_demoted_at" in query:
             if (self.rows[0].get("prev_rsha") or "") != (p.get("prev") or ""):
                 return []
+            if self.rows[0].get("vur") is not p.get("expected_vur"):
+                return []
+            assert p["verdict"] == "former_canonical"
+            assert p["verdict_source"] == "engine"
             self.demoted.append(p["tag"])
             return [{"tag": p["tag"]}]
         return []
 
 
-def _svc(kg):
+def _svc(kg, **ports):
     return JudgementService(kg=kg, kg_tx=lambda ops: [], hist=lambda *a, **k: None,
-                            foundation=lambda n: None, reproducible_for_node=lambda n, t: None)
+                            foundation=lambda n: None, reproducible_for_node=lambda n, t: None,
+                            **ports)
 
 
 def verify(backend, cid):
@@ -77,20 +82,14 @@ def verify(backend, cid):
     stripped_matches = receipt_content_sha(dict(v2f, engine_rule_sha=None)) == v2sha
     injected_matches = receipt_content_sha(dict(_BASE, engine_rule_sha="f" * 64)) == _V1_GOLDEN_BASE
     assert not stripped_matches and not injected_matches, "위조가 recompute 를 통과(봉인 구멍)"
-    # floor 무력화(전체 허용) 재현: effective_floor 를 '모든 sha 포함' 으로 치환하면 강등 0 —
-    # 강등이 floor 대조에 인과적으로 매달림(vacuous green 차단). 소비 사이트 네임스페이스를 패치.
-    import server.contexts.tree.judgement_service as js_mod
-
-    class _Universe(frozenset):
-        def __contains__(self, item):
-            return True
-
-    orig = js_mod.effective_floor
-    try:
-        js_mod.effective_floor = lambda *a, **k: _Universe()
-        kg2 = _SweepKg()
-        run2 = _svc(kg2).demote_stale_canonical("T", dry_run=False)
-        assert run2["demoted"] == [], "floor 무력화에도 강등 발생 — 강등이 floor 와 무관(가짜 기제)"
-    finally:
-        js_mod.effective_floor = orig
+    # floor 무력화(관측된 모든 sha 허용) 재현: 주입 floor 에 legacy None 을 포함하면 강등 0 —
+    # 강등이 floor 대조에 인과적으로 매달림(vacuous green 차단). 포트 주입은 shell 이 immutable
+    # frozenset 으로 캡처하므로 특수 __contains__ monkeypatch 에 의존하지 않는다.
+    kg2 = _SweepKg()
+    permissive_floor = {row.get("ers") for row in kg2.rows}
+    run2 = _svc(
+        kg2,
+        rule_floor_provider=lambda: permissive_floor,
+    ).demote_stale_canonical("T", dry_run=False)
+    assert run2["demoted"] == [], "floor 무력화에도 강등 발생 — 강등이 floor 와 무관(가짜 기제)"
     backend.ship([_ev(cid, "jp1_negative_oracle", checks_load_bearing=True)])
