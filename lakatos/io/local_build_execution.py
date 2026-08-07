@@ -10,7 +10,7 @@ authoritative terminal evidence therefore remains explicitly unknown.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -37,11 +37,13 @@ from lakatos.build_execution import (
     BuildExecutionPolicy,
     BuildExecutionResult,
     BuildExecutionSpec,
+    BuildIdentityBundle,
     BuildRun,
     BuildTerminalStatus,
     DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION,
     DEFAULT_BUILD_ADMISSION_POLICY,
     DEFAULT_BUILD_EXECUTION_POLICY,
+    DEFAULT_BUILD_IDENTITY_POLICY,
     LOCAL_BUILD_ADAPTER,
     LOCAL_BUILD_ADAPTER_VERSION,
     ResourceBuildConfigError,
@@ -59,6 +61,7 @@ from lakatos.io._resource_journal_contracts import (
     TrustedAnchorUnavailable,
 )
 from lakatos.io.resource_execution import (
+    ClockPort,
     DispatchOutcomeUnknown,
     HMACPermitAuthenticator,
     ResourceExecutionGate,
@@ -107,6 +110,12 @@ _DEADLINE_BOUND_BUILD_TARGET_DATABASE_FILENAME = (
 )
 _MAX_RESULT_BLOB_BYTES = 8 * 1024 * 1024
 _MAX_RECEIPT_BLOB_BYTES = 64 * 1024
+_RESOURCE_JOURNAL_DATABASE_FILENAME = "resource.sqlite3"
+_RESOURCE_ANCHOR_FILENAME = "resource-anchor"
+_TARGET_KEY_DERIVATION_DOMAIN = b"lakatotree-local-build-target-key\x00v1\n"
+_INITIAL_RESOURCE_BUDGET_EPOCH = 1
+_ANCHOR_KEY_BYTES = 32
+_PERMIT_KEY_MINIMUM_BYTES = 32
 _BOUNDED_EFFECT_ROW_SQL = """
     SELECT
         effect_id,
@@ -306,6 +315,8 @@ class BuildDeploymentPolicyPort(Protocol):
 
 class BuildDeploymentPolicyResolverPort(Protocol):
     """Resolve one explicit deployment policy name without ambient discovery."""
+
+    default_policy_name: str
 
     def resolve(self, name: str) -> BuildDeploymentPolicyPort:
         ...
@@ -592,6 +603,8 @@ class DarwinBuildDeploymentPolicy:
 
 class BuiltinBuildDeploymentPolicyResolver:
     """Closed resolver for built-in policies; unknown selectors fail closed."""
+
+    default_policy_name = _DEFAULT_RESOURCE_BUILD_POLICY_NAME
 
     def __init__(self) -> None:
         darwin = DarwinBuildDeploymentPolicy()
@@ -1996,19 +2009,138 @@ class ResourceGatedBuildRunner:
         return self._terminal_run(settled.state)
 
 
-_RESOURCE_CONFIGURATION_KEYS = frozenset({
-    "LAKATOTREE_RESOURCE_BUILD_DIR",
-    "LAKATOTREE_RESOURCE_BUILD_POLICY",
-    "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX",
-    "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX",
-    "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS",
-    "LAKATOTREE_BUILD_INPUT_MANIFEST",
-})
+@dataclass(frozen=True, slots=True)
+class ResourceBuildEnvironmentKeys:
+    """Names used only by the environment configuration adapter."""
+
+    build_directory: str = "LAKATOTREE_RESOURCE_BUILD_DIR"
+    deployment_policy: str = "LAKATOTREE_RESOURCE_BUILD_POLICY"
+    anchor_key_hex: str = "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX"
+    permit_key_hex: str = "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX"
+    compute_cap_ms: str = "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS"
+    input_manifest: str = "LAKATOTREE_BUILD_INPUT_MANIFEST"
+
+    def __post_init__(self) -> None:
+        names = self.all
+        for name in names:
+            if (
+                not isinstance(name, str)
+                or not name
+                or not name.isprintable()
+                or "=" in name
+                or "\0" in name
+            ):
+                raise ValueError("resource build environment keys must be valid names")
+        if len(set(names)) != len(names):
+            raise ValueError("resource build environment keys must be unique")
+
+    @property
+    def all(self) -> tuple[str, ...]:
+        return (
+            self.build_directory,
+            self.deployment_policy,
+            self.anchor_key_hex,
+            self.permit_key_hex,
+            self.compute_cap_ms,
+            self.input_manifest,
+        )
+
+
+DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS = ResourceBuildEnvironmentKeys()
+_RESOURCE_CONFIGURATION_KEYS = frozenset(
+    DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS.all
+)
+
+
+def _matches_authority_key_material(
+    value: str,
+    authority_keys: tuple[bytes, ...],
+) -> bool:
+    """Compare hex-like child values to parsed authority keys by bytes."""
+
+    if not isinstance(value, str):
+        return False
+    try:
+        candidate = bytes.fromhex(value)
+    except ValueError:
+        return False
+    return any(hmac.compare_digest(candidate, key) for key in authority_keys)
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceBuildConfig:
+    """Typed, secret-safe result of one configuration-source snapshot."""
+
+    root: str
+    policy_name: str | None
+    anchor_key: bytes = field(repr=False)
+    permit_key: bytes = field(repr=False)
+    compute_cap_ms: int
+    manifest_path: str
+    child_environment: tuple[tuple[str, str], ...] = field(repr=False)
+    reserved_environment_keys: tuple[str, ...] = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.root, str) or not self.root:
+            raise ValueError("resource build root must be a filesystem path")
+        if self.policy_name is not None and (
+            not isinstance(self.policy_name, str) or not self.policy_name
+        ):
+            raise ValueError("resource build policy must be None or non-empty text")
+        if not isinstance(self.anchor_key, bytes) or len(self.anchor_key) != _ANCHOR_KEY_BYTES:
+            raise ValueError(
+                f"anchor key must contain exactly {_ANCHOR_KEY_BYTES} bytes"
+            )
+        if (
+            not isinstance(self.permit_key, bytes)
+            or len(self.permit_key) < _PERMIT_KEY_MINIMUM_BYTES
+        ):
+            raise ValueError(
+                "permit key must contain at least "
+                f"{_PERMIT_KEY_MINIMUM_BYTES} bytes"
+            )
+        if (
+            isinstance(self.compute_cap_ms, bool)
+            or not isinstance(self.compute_cap_ms, int)
+            or self.compute_cap_ms <= 0
+        ):
+            raise ValueError("compute cap must be a positive integer")
+        if not isinstance(self.manifest_path, str) or not self.manifest_path:
+            raise ValueError("input manifest must be a filesystem path")
+        if not isinstance(self.child_environment, tuple):
+            raise ValueError("child environment must be an immutable tuple")
+        if not isinstance(self.reserved_environment_keys, tuple):
+            raise ValueError("reserved environment keys must be an immutable tuple")
+        reserved = frozenset(self.reserved_environment_keys)
+        if len(reserved) != len(self.reserved_environment_keys):
+            raise ValueError("reserved environment keys must be unique")
+        if not _RESOURCE_CONFIGURATION_KEYS.issubset(reserved):
+            raise ValueError("canonical resource environment keys must stay reserved")
+        authority_keys = (self.anchor_key, self.permit_key)
+        previous: str | None = None
+        for item in self.child_environment:
+            if (
+                not isinstance(item, tuple)
+                or len(item) != 2
+                or not isinstance(item[0], str)
+                or not isinstance(item[1], str)
+            ):
+                raise ValueError("child environment must contain string pairs")
+            key = item[0]
+            if previous is not None and key <= previous:
+                raise ValueError("child environment must be sorted and unique")
+            if key in reserved or _is_sensitive_child_environment_key(key):
+                raise ValueError("child environment contains authority material")
+            if _matches_authority_key_material(item[1], authority_keys):
+                raise ValueError("child environment contains authority key material")
+            previous = key
 
 
 def _is_sensitive_child_environment_key(name: str) -> bool:
     upper = name.upper()
-    if upper in {"AUTH", "AUTHORIZATION"} or upper.endswith(("_AUTH", "_KEY")):
+    if upper in {"AUTH", "AUTHORIZATION"} or upper.endswith(
+        ("_AUTH", "_KEY", "_KEY_HEX")
+    ):
         return True
     return any(fragment in upper for fragment in (
         "API_KEY",
@@ -2027,15 +2159,17 @@ def closed_build_environment(
     environment: Mapping[str, str],
     *,
     allowed_keys: tuple[str, ...] | None = None,
+    reserved_keys: tuple[str, ...] | frozenset[str] = _RESOURCE_CONFIGURATION_KEYS,
 ) -> dict[str, str]:
     """Apply the compatibility credential/config filter and optional allowlist."""
 
     admitted = None if allowed_keys is None else frozenset(allowed_keys)
+    reserved = frozenset(reserved_keys)
     return {
         key: value
         for key, value in environment.items()
         if (admitted is None or key in admitted)
-        and key not in _RESOURCE_CONFIGURATION_KEYS
+        and key not in reserved
         and not _is_sensitive_child_environment_key(key)
     }
 
@@ -2073,6 +2207,106 @@ def _positive_configuration_integer(
     if value <= 0:
         raise ResourceBuildConfigError(f"{name} must be a positive integer")
     return value
+
+
+def _configuration_policy_name(
+    environment: Mapping[str, str],
+    name: str,
+) -> str | None:
+    policy_name = environment.get(name)
+    if policy_name is not None and (
+        not isinstance(policy_name, str) or not policy_name
+    ):
+        raise ResourceBuildConfigError(f"{name} must be a non-empty policy name")
+    return policy_name
+
+
+def resource_build_config_from_environment(
+    environment: Mapping[str, str] | None = None,
+    *,
+    keys: ResourceBuildEnvironmentKeys = DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS,
+) -> ResourceBuildConfig | None:
+    """Snapshot one environment adapter into typed, immutable build config.
+
+    ``None`` means snapshot the process environment; an explicitly empty mapping
+    remains empty and therefore keeps the resource build disabled.
+    """
+
+    if not isinstance(keys, ResourceBuildEnvironmentKeys):
+        raise ResourceBuildConfigError("invalid resource build environment key schema")
+    source_environment = dict(os.environ if environment is None else environment)
+    raw_root = source_environment.get(keys.build_directory)
+    if raw_root is None or raw_root == "":
+        return None
+    if not isinstance(raw_root, str):
+        raise ResourceBuildConfigError(
+            f"{keys.build_directory} must be a filesystem path"
+        )
+    policy_name = _configuration_policy_name(
+        source_environment,
+        keys.deployment_policy,
+    )
+    anchor_key = _configuration_key(
+        source_environment,
+        keys.anchor_key_hex,
+        exact_bytes=_ANCHOR_KEY_BYTES,
+    )
+    permit_key = _configuration_key(
+        source_environment,
+        keys.permit_key_hex,
+        minimum_bytes=_PERMIT_KEY_MINIMUM_BYTES,
+    )
+    cap_ms = _positive_configuration_integer(
+        source_environment,
+        keys.compute_cap_ms,
+    )
+    manifest_path = source_environment.get(keys.input_manifest)
+    if not isinstance(manifest_path, str) or not manifest_path:
+        raise ResourceBuildConfigError(
+            f"{keys.input_manifest} is required when resource build is enabled"
+        )
+    reserved_environment_keys = tuple(
+        sorted(set(keys.all) | set(DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS.all))
+    )
+    child_environment = closed_build_environment(
+        source_environment,
+        reserved_keys=reserved_environment_keys,
+    )
+    authority_keys = (anchor_key, permit_key)
+    child_environment = {
+        key: value
+        for key, value in child_environment.items()
+        if not _matches_authority_key_material(value, authority_keys)
+    }
+    try:
+        return ResourceBuildConfig(
+            root=raw_root,
+            policy_name=policy_name,
+            anchor_key=anchor_key,
+            permit_key=permit_key,
+            compute_cap_ms=cap_ms,
+            manifest_path=manifest_path,
+            child_environment=tuple(sorted(child_environment.items())),
+            reserved_environment_keys=reserved_environment_keys,
+        )
+    except ValueError as exc:
+        raise ResourceBuildConfigError(str(exc)) from exc
+
+
+def _resolve_workspace_root(workspace_root: str | os.PathLike[str]) -> Path:
+    try:
+        candidate = Path(workspace_root).expanduser()
+        resolved = candidate.resolve(strict=True)
+        metadata = resolved.stat()
+    except (OSError, TypeError, ValueError) as exc:
+        raise ResourceBuildConfigError(
+            "workspace_root must identify an existing directory"
+        ) from exc
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ResourceBuildConfigError(
+            "workspace_root must identify an existing directory"
+        )
+    return resolved
 
 
 def resource_root_path_violation(
@@ -2147,64 +2381,98 @@ def _prepare_resource_root(
     return root
 
 
-def resource_gated_build_runner_from_environment(
-    *,
-    tree: str,
-    tag: str,
-    command: str,
-    timeout_seconds: int,
-    environment: Mapping[str, str] | None = None,
-    deployment_policy_resolver: BuildDeploymentPolicyResolverPort | None = None,
-) -> ResourceGatedBuildRunner | None:
-    """Build the opt-in production composition, or return ``None`` for legacy mode.
-
-    Enabling is explicit through ``LAKATOTREE_RESOURCE_BUILD_DIR``.  Once enabled,
-    all authority, cap, and input-manifest values are mandatory and fail closed;
-    signing material is removed from the child subprocess environment.
-    """
-
-    source_environment = dict(os.environ if environment is None else environment)
-    raw_root = source_environment.get("LAKATOTREE_RESOURCE_BUILD_DIR")
-    if raw_root is None or raw_root == "":
-        return None
-    if not isinstance(raw_root, str):
-        raise ResourceBuildConfigError(
-            "LAKATOTREE_RESOURCE_BUILD_DIR must be a filesystem path"
-        )
-    policy_name = source_environment.get(
-        "LAKATOTREE_RESOURCE_BUILD_POLICY",
-        _DEFAULT_RESOURCE_BUILD_POLICY_NAME,
-    )
-    if not isinstance(policy_name, str) or not policy_name:
-        raise ResourceBuildConfigError(
-            "LAKATOTREE_RESOURCE_BUILD_POLICY must be a non-empty policy name"
-        )
-    resolver = (
-        _BUILTIN_DEPLOYMENT_POLICY_RESOLVER
-        if deployment_policy_resolver is None
-        else deployment_policy_resolver
-    )
+def _resolve_deployment_policy(
+    policy_name: str | None,
+    resolver: BuildDeploymentPolicyResolverPort,
+) -> BuildDeploymentPolicyPort:
     resolve_policy = getattr(resolver, "resolve", None)
     if not callable(resolve_policy):
         raise ResourceBuildConfigError(
             "resource build policy resolver has no callable resolve port"
         )
+    selected_name = policy_name
+    if selected_name is None:
+        selected_name = getattr(resolver, "default_policy_name", None)
+    if not isinstance(selected_name, str) or not selected_name:
+        raise ResourceBuildConfigError(
+            "resource build policy resolver has no valid default policy name"
+        )
     try:
-        deployment_policy = resolve_policy(policy_name)
+        deployment_policy = resolve_policy(selected_name)
     except ResourceBuildConfigError:
         raise
     except (LookupError, OSError, TypeError, ValueError) as exc:
         raise ResourceBuildConfigError(
-            f"unknown resource build policy: {policy_name!r}"
+            f"unknown resource build policy: {selected_name!r}"
         ) from exc
     if not isinstance(deployment_policy, BuildDeploymentPolicyPort):
         raise ResourceBuildConfigError(
             "resource build policy resolver returned an invalid policy"
         )
-    if deployment_policy.name != policy_name:
+    if deployment_policy.name != selected_name:
         raise ResourceBuildConfigError(
             "resource build policy resolver returned a different policy name"
         )
+    if (
+        not isinstance(deployment_policy.name, str)
+        or not deployment_policy.name
+        or not deployment_policy.name.isprintable()
+    ):
+        raise ResourceBuildConfigError(
+            "resource build policy resolver returned an invalid policy name"
+        )
+    return deployment_policy
+
+
+class _PinnedBuildDeploymentPolicyResolver:
+    """Carry an already preflighted policy across the parser/composer seam."""
+
+    def __init__(self, selected: BuildDeploymentPolicyPort) -> None:
+        self._selected = selected
+        self.default_policy_name = selected.name
+
+    def resolve(self, name: str) -> BuildDeploymentPolicyPort:
+        if name != self._selected.name:
+            raise ResourceBuildConfigError(
+                "pinned resource build policy received a different policy name"
+            )
+        return self._selected
+
+
+def resource_gated_build_runner_from_config(
+    *,
+    config: ResourceBuildConfig,
+    tree: str,
+    tag: str,
+    command: str,
+    timeout_seconds: int,
+    workspace_root: str | os.PathLike[str],
+    deployment_policy_resolver: BuildDeploymentPolicyResolverPort,
+    clock: ClockPort,
+) -> ResourceGatedBuildRunner:
+    """Compose one runner from typed config and explicit runtime capabilities."""
+
+    if not isinstance(config, ResourceBuildConfig):
+        raise ResourceBuildConfigError("invalid typed resource build configuration")
+    if (
+        not isinstance(tree, str)
+        or not tree
+        or "\0" in tree
+        or not isinstance(tag, str)
+        or not tag
+        or "\0" in tag
+    ):
+        raise ResourceBuildConfigError(
+            "tree and tag must be non-empty and contain no NUL for build identity"
+        )
+    authority_clock = clock
+    if not callable(getattr(authority_clock, "now_utc", None)):
+        raise ResourceBuildConfigError("build authority clock has no now_utc port")
+    policy_name = config.policy_name
+    deployment_policy = _resolve_deployment_policy(
+        policy_name,
+        deployment_policy_resolver,
+    )
     execution_policy = deployment_policy.execution_policy
     admission_policy = deployment_policy.admission_policy
     if not isinstance(execution_policy, BuildExecutionPolicy):
@@ -2215,22 +2483,9 @@ def resource_gated_build_runner_from_environment(
         raise ResourceBuildConfigError(
             "resource build policy has no immutable admission policy"
         )
-    if not isinstance(tree, str) or not tree or not isinstance(tag, str) or not tag:
-        raise ResourceBuildConfigError("tree and tag are required for build identity")
-    anchor_key = _configuration_key(
-        source_environment,
-        "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX",
-        exact_bytes=32,
-    )
-    permit_key = _configuration_key(
-        source_environment,
-        "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX",
-        minimum_bytes=32,
-    )
-    cap_ms = _positive_configuration_integer(
-        source_environment,
-        "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS",
-    )
+    anchor_key = config.anchor_key
+    permit_key = config.permit_key
+    cap_ms = config.compute_cap_ms
     try:
         admission_policy.validate_timeout(timeout_seconds)
     except ValueError as exc:
@@ -2240,16 +2495,11 @@ def resource_gated_build_runner_from_environment(
         raise ResourceBuildConfigError(
             "build timeout and cleanup grace exceed compute cap"
         )
-    cwd = Path.cwd().resolve()
-    manifest_path = source_environment.get("LAKATOTREE_BUILD_INPUT_MANIFEST")
-    if not isinstance(manifest_path, str) or not manifest_path:
-        raise ResourceBuildConfigError(
-            "LAKATOTREE_BUILD_INPUT_MANIFEST is required when resource build is enabled"
-        )
-    root = _prepare_resource_root(raw_root, cwd=cwd)
+    cwd = _resolve_workspace_root(workspace_root)
+    root = _prepare_resource_root(config.root, cwd=cwd)
     try:
         input_manifest = VerifiedBuildInputManifest.load(
-            manifest_path,
+            config.manifest_path,
             root=cwd,
             policy=admission_policy,
         )
@@ -2268,8 +2518,9 @@ def resource_gated_build_runner_from_environment(
             "resource build policy returned an invalid isolation port"
         )
     child_environment = closed_build_environment(
-        source_environment,
+        dict(config.child_environment),
         allowed_keys=admission_policy.environment_allowlist,
+        reserved_keys=config.reserved_environment_keys,
     )
     spec = execution_policy.make_spec(
         command=command,
@@ -2287,12 +2538,21 @@ def resource_gated_build_runner_from_environment(
         raise ResourceBuildConfigError(
             "resource reservation diverges from the admitted execution policy"
         )
-    identity = hashlib.sha256(
-        f"{tree}\0{tag}\0{spec.workload_sha256}".encode("utf-8")
-    ).hexdigest()
-    scope = f"harness-build:{hashlib.sha256(tree.encode('utf-8')).hexdigest()}"
-    effect_id = f"build:{identity}"
-    grant_id = f"grant:{identity}"
+    try:
+        identities = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+            tree=tree,
+            tag=tag,
+            workload_sha256=spec.workload_sha256,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ResourceBuildConfigError(str(exc)) from exc
+    if not isinstance(identities, BuildIdentityBundle):
+        raise ResourceBuildConfigError(
+            "build identity policy returned an invalid identity bundle"
+        )
+    scope = identities.scope
+    effect_id = identities.effect_id
+    grant_id = identities.grant_id
     effect = DeadlineBoundSQLiteFencedBuildEffect(
         root / DeadlineBoundSQLiteFencedBuildEffect.target_database_filename,
         spec=spec,
@@ -2301,7 +2561,7 @@ def resource_gated_build_runner_from_environment(
         input_verifier=input_manifest,
         authentication_key=hmac.new(
             permit_key,
-            b"lakatotree-local-build-target-key\x00v1\n",
+            _TARGET_KEY_DERIVATION_DOMAIN,
             hashlib.sha256,
         ).digest(),
         timeout_seconds=admission_policy.target_sqlite_timeout_ms / 1_000,
@@ -2309,16 +2569,16 @@ def resource_gated_build_runner_from_environment(
     fence_token = effect.allocate_fence(scope=scope, effect_id=effect_id)
     try:
         journal = SQLiteResourceJournal(
-            root / "resource.sqlite3",
+            root / _RESOURCE_JOURNAL_DATABASE_FILENAME,
             trusted_anchor=SignedAppendOnlyFileAnchor(
-                root / "resource-anchor",
+                root / _RESOURCE_ANCHOR_FILENAME,
                 signing_key=anchor_key,
             ),
         )
         state = ResourceState.create(
-            budget_id=f"budget:{hashlib.sha256(scope.encode('utf-8')).hexdigest()}",
+            budget_id=identities.budget_id,
             scope=scope,
-            epoch=1,
+            epoch=_INITIAL_RESOURCE_BUDGET_EPOCH,
             hard_caps=ResourceVector(compute_wall_ms=cap_ms),
         )
         try:
@@ -2333,24 +2593,29 @@ def resource_gated_build_runner_from_environment(
             "directory/tree or restore the original cap"
         )
 
-    observed = datetime.now(timezone.utc)
+    try:
+        observed_at = authority_clock.now_utc()
+        observed = _parse_utc(observed_at)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ResourceBuildConfigError(
+            "build authority clock returned an invalid UTC timestamp"
+        ) from exc
     expires = observed + timedelta(
         seconds=admission_policy.grant_ttl_seconds(
             timeout_seconds,
             cleanup_grace_ms=execution_policy.process_cleanup_grace_ms,
         )
     )
-    observed_at = observed.isoformat(timespec="microseconds").replace("+00:00", "Z")
     expires_at = expires.isoformat(timespec="microseconds").replace("+00:00", "Z")
     fresh_request = RequestGrant(
-        command_id=f"request:{identity}",
+        command_id=identities.request_command_id,
         grant_id=grant_id,
         fence_token=fence_token,
         observed_at=observed_at,
         expires_at=expires_at,
         estimate=ResourceEstimate(
-            work_id=f"work:{identity}",
-            attempt_id=f"attempt:{identity}",
+            work_id=identities.work_id,
+            attempt_id=identities.attempt_id,
             workload_sha256=spec.workload_sha256,
             adapter=effect.adapter,
             adapter_version=effect.adapter_version,
@@ -2428,10 +2693,10 @@ def resource_gated_build_runner_from_environment(
         scope=scope,
         journal=journal,
         effect=effect,
-        clock=_SystemClock(),
+        clock=authority_clock,
         permit_authenticator=HMACPermitAuthenticator(
             signing_key=permit_key,
-            issuer=f"lakatotree:harness-build:{identity[:24]}",
+            issuer=identities.permit_issuer,
         ),
         settlement_effect=effect,
         permit_ttl_seconds=admission_policy.permit_ttl_seconds,
@@ -2443,6 +2708,80 @@ def resource_gated_build_runner_from_environment(
         effect=effect,
         request=request,
         start=start,
+    )
+
+
+def resource_gated_build_runner_from_environment(
+    *,
+    tree: str,
+    tag: str,
+    command: str,
+    timeout_seconds: int,
+    environment: Mapping[str, str] | None = None,
+    workspace_root: str | os.PathLike[str] | None = None,
+    deployment_policy_resolver: BuildDeploymentPolicyResolverPort | None = None,
+    environment_keys: ResourceBuildEnvironmentKeys = (
+        DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS
+    ),
+    clock: ClockPort | None = None,
+) -> ResourceGatedBuildRunner | None:
+    """Compatibility environment adapter around the typed composition root.
+
+    Resource mode remains opt-in.  The ambient process environment and current
+    directory are sampled only here; embedded callers can inject exact mappings,
+    key names, workspace roots, resolver, and authority clock.
+    """
+
+    if not isinstance(environment_keys, ResourceBuildEnvironmentKeys):
+        raise ResourceBuildConfigError("invalid resource build environment key schema")
+    source_environment = dict(os.environ if environment is None else environment)
+    raw_root = source_environment.get(environment_keys.build_directory)
+    if raw_root is None or raw_root == "":
+        return None
+    if not isinstance(raw_root, str):
+        raise ResourceBuildConfigError(
+            f"{environment_keys.build_directory} must be a filesystem path"
+        )
+    policy_name = _configuration_policy_name(
+        source_environment,
+        environment_keys.deployment_policy,
+    )
+    resolver = (
+        _BUILTIN_DEPLOYMENT_POLICY_RESOLVER
+        if deployment_policy_resolver is None
+        else deployment_policy_resolver
+    )
+    adapter_policy_name = policy_name
+    if adapter_policy_name is None:
+        adapter_policy_name = getattr(
+            resolver,
+            "default_policy_name",
+            _DEFAULT_RESOURCE_BUILD_POLICY_NAME,
+        )
+    selected_policy = _resolve_deployment_policy(adapter_policy_name, resolver)
+    config = resource_build_config_from_environment(
+        source_environment,
+        keys=environment_keys,
+    )
+    if config is None:
+        raise ResourceBuildConfigError(
+            "enabled resource build configuration disappeared during parsing"
+        )
+    selected_workspace_root = (
+        Path.cwd() if workspace_root is None else workspace_root
+    )
+    authority_clock = _SystemClock() if clock is None else clock
+    return resource_gated_build_runner_from_config(
+        config=config,
+        tree=tree,
+        tag=tag,
+        command=command,
+        timeout_seconds=timeout_seconds,
+        workspace_root=selected_workspace_root,
+        deployment_policy_resolver=_PinnedBuildDeploymentPolicyResolver(
+            selected_policy
+        ),
+        clock=authority_clock,
     )
 
 
@@ -2458,6 +2797,9 @@ __all__ = [
     "BuildTargetError",
     "BuildTargetIdentityConflict",
     "BuildTargetOutcomeUnknown",
+    "DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS",
+    "ResourceBuildConfig",
+    "ResourceBuildEnvironmentKeys",
     "ResourceGatedBuildRunner",
     "SQLiteFencedBuildEffect",
     "StaleBuildFence",
@@ -2468,7 +2810,9 @@ __all__ = [
     "DarwinSandboxExecIsolation",
     "darwin_sandbox_argv",
     "darwin_sandbox_profile",
+    "resource_build_config_from_environment",
     "resource_root_metadata_violation",
     "resource_root_path_violation",
+    "resource_gated_build_runner_from_config",
     "resource_gated_build_runner_from_environment",
 ]

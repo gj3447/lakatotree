@@ -26,12 +26,22 @@ _LEGACY_BUILD_EXECUTION_SCHEMA_VERSION = "lakatotree.build-execution/v1"
 LOCAL_BUILD_ADAPTER = "lakatotree.local-subprocess-build"
 LOCAL_BUILD_ADAPTER_VERSION = "1"
 DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION = "2"
+BUILD_IDENTITY_SCHEMA_VERSION = "lakatotree.harness-build-identity/v1"
 _WORKLOAD_DOMAIN = b"lakatotree-local-build-workload\x00v2\n"
 _EVIDENCE_DOMAIN = b"lakatotree-local-build-evidence\x00v1\n"
 _MEASUREMENT_DOMAIN = b"lakatotree-local-build-measurement\x00v1\n"
 _ENVIRONMENT_DOMAIN = b"lakatotree-local-build-environment\x00v1\n"
 _EXECUTION_POLICY_DOMAIN = b"lakatotree-build-execution-policy\x00v1\n"
 _ADMISSION_POLICY_DOMAIN = b"lakatotree-build-admission-policy\x00v1\n"
+_BUILD_SCOPE_PREFIX = "harness-build"
+_BUILD_EFFECT_PREFIX = "build"
+_BUILD_GRANT_PREFIX = "grant"
+_BUILD_REQUEST_PREFIX = "request"
+_BUILD_WORK_PREFIX = "work"
+_BUILD_ATTEMPT_PREFIX = "attempt"
+_BUILD_BUDGET_PREFIX = "budget"
+_BUILD_PERMIT_ISSUER_PREFIX = "lakatotree:harness-build"
+_BUILD_PERMIT_ISSUER_DIGEST_CHARS = 24
 SPLIT_STREAM_CAPTURE_STRATEGY = "stdout-ceil-stderr-floor-no-borrow/v1"
 HARDENED_BUILD_ENVIRONMENT_ALLOWLIST = (
     "ARCHFLAGS",
@@ -108,6 +118,15 @@ def _require_identifier(value: str, label: str) -> None:
         raise ValueError(f"{label} must be printable, non-empty, and <= 256 chars")
 
 
+def _require_identity_component(value: str, label: str) -> None:
+    """Reject only the legacy delimiter while preserving published input bytes."""
+
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be non-empty text")
+    if "\0" in value:
+        raise ValueError(f"{label} must not contain NUL")
+
+
 def _require_utc(value: str, label: str) -> datetime:
     if not isinstance(value, str) or _RFC3339_UTC.fullmatch(value) is None:
         raise ValueError(f"{label} must be an RFC3339 UTC timestamp ending in Z")
@@ -150,6 +169,90 @@ def _bounded_integer(
         or not minimum <= value <= maximum
     ):
         raise ValueError(f"{label} must be between {minimum} and {maximum}")
+
+
+@dataclass(frozen=True, slots=True)
+class BuildIdentityBundle:
+    """One canonical set of durable identifiers for a harness build.
+
+    Keeping every prefix and digest derivation in one immutable result prevents
+    the composition shell from rebuilding only some identifiers after a policy
+    change.  The default policy deliberately preserves the previously published
+    bytes for all non-NUL ``tree`` and ``tag`` values.
+    """
+
+    identity_sha256: str
+    scope: str
+    effect_id: str
+    grant_id: str
+    request_command_id: str
+    work_id: str
+    attempt_id: str
+    budget_id: str
+    permit_issuer: str
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.identity_sha256, "identity_sha256")
+        for label, value in (
+            ("scope", self.scope),
+            ("effect_id", self.effect_id),
+            ("grant_id", self.grant_id),
+            ("request_command_id", self.request_command_id),
+            ("work_id", self.work_id),
+            ("attempt_id", self.attempt_id),
+            ("budget_id", self.budget_id),
+            ("permit_issuer", self.permit_issuer),
+        ):
+            _require_identifier(value, label)
+
+
+class BuildIdentityPolicy:
+    """Sealed v1 identity derivation for the durable build protocol.
+
+    The legacy NUL-delimited digest remains byte-compatible for all previously
+    admitted non-NUL inputs. NUL alone is rejected before I/O, closing the
+    ambiguous framing case without silently changing existing restart keys. A
+    successor must be a new versioned type and storage migration, not runtime
+    prefix configuration.
+    """
+
+    __slots__ = ()
+    schema_version = BUILD_IDENTITY_SCHEMA_VERSION
+
+    def derive(
+        self,
+        *,
+        tree: str,
+        tag: str,
+        workload_sha256: str,
+    ) -> BuildIdentityBundle:
+        _require_identity_component(tree, "tree")
+        _require_identity_component(tag, "tag")
+        _require_sha256(workload_sha256, "workload_sha256")
+        identity_sha256 = _sha256_bytes(
+            f"{tree}\0{tag}\0{workload_sha256}".encode("utf-8")
+        )
+        scope = f"{_BUILD_SCOPE_PREFIX}:{_sha256_bytes(tree.encode('utf-8'))}"
+        return BuildIdentityBundle(
+            identity_sha256=identity_sha256,
+            scope=scope,
+            effect_id=f"{_BUILD_EFFECT_PREFIX}:{identity_sha256}",
+            grant_id=f"{_BUILD_GRANT_PREFIX}:{identity_sha256}",
+            request_command_id=f"{_BUILD_REQUEST_PREFIX}:{identity_sha256}",
+            work_id=f"{_BUILD_WORK_PREFIX}:{identity_sha256}",
+            attempt_id=f"{_BUILD_ATTEMPT_PREFIX}:{identity_sha256}",
+            budget_id=(
+                f"{_BUILD_BUDGET_PREFIX}:"
+                f"{_sha256_bytes(scope.encode('utf-8'))}"
+            ),
+            permit_issuer=(
+                f"{_BUILD_PERMIT_ISSUER_PREFIX}:"
+                f"{identity_sha256[:_BUILD_PERMIT_ISSUER_DIGEST_CHARS]}"
+            ),
+        )
+
+
+DEFAULT_BUILD_IDENTITY_POLICY = BuildIdentityPolicy()
 
 
 @dataclass(frozen=True, slots=True)
@@ -759,14 +862,18 @@ class ResourceBuildOverrun(ResourceBuildError):
 
 __all__ = [
     "BUILD_EXECUTION_SCHEMA_VERSION",
+    "BUILD_IDENTITY_SCHEMA_VERSION",
     "BuildAdmissionPolicy",
     "BuildExecutionPolicy",
     "BuildExecutionResult",
     "BuildExecutionSpec",
+    "BuildIdentityBundle",
+    "BuildIdentityPolicy",
     "BuildRun",
     "BuildTerminalStatus",
     "DEFAULT_BUILD_ADMISSION_POLICY",
     "DEFAULT_BUILD_EXECUTION_POLICY",
+    "DEFAULT_BUILD_IDENTITY_POLICY",
     "DEADLINE_BOUND_LOCAL_BUILD_ADAPTER_VERSION",
     "HARDENED_BUILD_ENVIRONMENT_ALLOWLIST",
     "LOCAL_BUILD_ADAPTER",

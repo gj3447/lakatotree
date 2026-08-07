@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -20,12 +21,14 @@ from lakatos.io import local_build_execution
 from lakatos.build_execution import (
     BuildAdmissionPolicy,
     BuildExecutionPolicy,
+    BuildIdentityPolicy,
     BuildExecutionResult,
     BuildExecutionSpec,
     BuildRun,
     BuildTerminalStatus,
     DEFAULT_BUILD_ADMISSION_POLICY,
     DEFAULT_BUILD_EXECUTION_POLICY,
+    DEFAULT_BUILD_IDENTITY_POLICY,
     ResourceBuildConfigError,
     ResourceBuildOutcomeUnknown,
     environment_sha256,
@@ -42,6 +45,7 @@ from lakatos.io.local_build_execution import (
     DeadlineBoundBuildInputVerifierPort,
     DeadlineBoundSQLiteFencedBuildEffect,
     ResourceGatedBuildRunner,
+    ResourceBuildEnvironmentKeys,
     SQLiteFencedBuildEffect,
     VerifiedBuildInputManifest,
     closed_build_environment,
@@ -49,6 +53,8 @@ from lakatos.io.local_build_execution import (
     darwin_sandbox_profile,
     resource_root_metadata_violation,
     resource_root_path_violation,
+    resource_build_config_from_environment,
+    resource_gated_build_runner_from_config,
     resource_gated_build_runner_from_environment,
 )
 from lakatos.io.resource_execution import HMACPermitAuthenticator, ResourceExecutionGate
@@ -1907,3 +1913,264 @@ def test_post_claim_verification_time_is_metered_before_input_rejection(tmp_path
     assert journal.load("harness-build:test-tree").state.grant(
         "grant:effect:build:1"
     ).status is GrantStatus.SETTLED
+
+
+def test_identity_policy_preserves_legacy_bytes_and_rejects_ambiguous_components():
+    workload_sha256 = _sha("workload")
+    bundle = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+        tree="T",
+        tag="v1",
+        workload_sha256=workload_sha256,
+    )
+    legacy_identity = hashlib.sha256(
+        f"T\0v1\0{workload_sha256}".encode("utf-8")
+    ).hexdigest()
+
+    assert bundle.identity_sha256 == legacy_identity
+    assert bundle.scope == f"harness-build:{_sha('T')}"
+    assert bundle.effect_id == f"build:{legacy_identity}"
+    assert bundle.grant_id == f"grant:{legacy_identity}"
+    assert bundle.request_command_id == f"request:{legacy_identity}"
+    assert bundle.work_id == f"work:{legacy_identity}"
+    assert bundle.attempt_id == f"attempt:{legacy_identity}"
+    assert bundle.budget_id == f"budget:{_sha(bundle.scope)}"
+    assert bundle.permit_issuer == f"lakatotree:harness-build:{legacy_identity[:24]}"
+
+    with pytest.raises(ValueError, match="NUL"):
+        DEFAULT_BUILD_IDENTITY_POLICY.derive(
+            tree="a\0b",
+            tag="c",
+            workload_sha256=workload_sha256,
+        )
+    with pytest.raises(ValueError, match="NUL"):
+        DEFAULT_BUILD_IDENTITY_POLICY.derive(
+            tree="a",
+            tag="b\0c",
+            workload_sha256=workload_sha256,
+        )
+
+    legacy_control_identity = hashlib.sha256(
+        f"tree\nwith\ttabs\0tag\rvalue\0{workload_sha256}".encode("utf-8")
+    ).hexdigest()
+    assert DEFAULT_BUILD_IDENTITY_POLICY.derive(
+        tree="tree\nwith\ttabs",
+        tag="tag\rvalue",
+        workload_sha256=workload_sha256,
+    ).identity_sha256 == legacy_control_identity
+
+
+def test_published_identity_policy_is_sealed_protocol_not_runtime_configuration():
+    with pytest.raises(TypeError):
+        BuildIdentityPolicy(scope_prefix="forked-budget-scope")
+
+
+def test_environment_config_is_typed_secret_safe_and_key_schema_driven(tmp_path):
+    keys = ResourceBuildEnvironmentKeys(
+        build_directory="CUSTOM_BUILD_ROOT",
+        deployment_policy="CUSTOM_BUILD_POLICY",
+        anchor_key_hex="CUSTOM_ANCHOR_KEY",
+        permit_key_hex="CUSTOM_PERMIT_KEY",
+        compute_cap_ms="CUSTOM_COMPUTE_CAP",
+        input_manifest="CUSTOM_MANIFEST",
+    )
+    configuration = resource_build_config_from_environment(
+        {
+            "PATH": "/bin",
+            "CUSTOM_BUILD_ROOT": str(tmp_path / "authority"),
+            "CUSTOM_BUILD_POLICY": "portable/v1",
+            "CUSTOM_ANCHOR_KEY": bytes(range(32)).hex(),
+            "CUSTOM_PERMIT_KEY": bytes(range(32, 64)).hex(),
+            "CUSTOM_COMPUTE_CAP": "20000",
+            "CUSTOM_MANIFEST": str(tmp_path / "manifest.json"),
+            "LAKATOTREE_RESOURCE_BUILD_DIR": "must-not-survive",
+            "LAKATOTREE_RESOURCE_BUILD_POLICY": "must-not-survive",
+            "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": "must-not-survive",
+            "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": "must-not-survive",
+            "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "must-not-survive",
+            "LAKATOTREE_BUILD_INPUT_MANIFEST": "must-not-survive",
+            "BACKUP_KEY_HEX": "must-not-survive",
+            "BACKUP_MATERIAL": " ".join(
+                f"{value:02x}" for value in range(32)
+            ),
+            "OPENAI_API_KEY": "must-not-survive",
+        },
+        keys=keys,
+    )
+
+    assert configuration is not None
+    assert configuration.policy_name == "portable/v1"
+    assert configuration.compute_cap_ms == 20_000
+    assert configuration.child_environment == (("PATH", "/bin"),)
+    rendered = repr(configuration)
+    assert bytes(range(32)).hex() not in rendered
+    assert bytes(range(32, 64)).hex() not in rendered
+    assert "must-not-survive" not in rendered
+
+
+def test_config_composition_uses_resolver_default_explicit_workspace_and_one_clock(
+    tmp_path,
+    monkeypatch,
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "input.txt").write_text("v1")
+    manifest = _write_manifest(source, "input.txt")
+    authority = tmp_path / "authority"
+    environment = {
+        "PATH": "/bin",
+        "LAKATOTREE_RESOURCE_BUILD_DIR": str(authority),
+        "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+        "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+        "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+        "LAKATOTREE_BUILD_INPUT_MANIFEST": str(manifest),
+    }
+    configuration = resource_build_config_from_environment(environment)
+    assert configuration is not None
+
+    class PortablePolicy:
+        name = "portable-default/v1"
+        execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+        admission_policy = BuildAdmissionPolicy(environment_allowlist=("PATH",))
+
+        @staticmethod
+        def create_isolation(_protected_root):
+            return _TestIsolation()
+
+    class DefaultingResolver:
+        default_policy_name = PortablePolicy.name
+
+        def __init__(self):
+            self.selectors = []
+
+        def resolve(self, name):
+            self.selectors.append(name)
+            assert name == self.default_policy_name
+            return PortablePolicy()
+
+    class RecordingClock:
+        def __init__(self):
+            self.calls = 0
+
+        def now_utc(self):
+            self.calls += 1
+            return "2026-08-07T12:00:00Z"
+
+    resolver = DefaultingResolver()
+    clock = RecordingClock()
+    ambient = tmp_path / "ambient"
+    ambient.mkdir()
+    monkeypatch.chdir(ambient)
+
+    runner = resource_gated_build_runner_from_config(
+        config=configuration,
+        tree="T",
+        tag="v1",
+        command="true",
+        timeout_seconds=1,
+        workspace_root=source,
+        deployment_policy_resolver=resolver,
+        clock=clock,
+    )
+
+    expected_identities = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+        tree="T",
+        tag="v1",
+        workload_sha256=runner._effect.spec.workload_sha256,
+    )
+    assert runner._effect.spec.cwd == str(source.resolve())
+    assert runner._scope == expected_identities.scope
+    assert runner._start.command_id == expected_identities.effect_id
+    assert runner._request.command_id == expected_identities.request_command_id
+    assert runner._request.grant_id == expected_identities.grant_id
+    assert runner._request.estimate.work_id == expected_identities.work_id
+    assert runner._request.estimate.attempt_id == expected_identities.attempt_id
+    assert runner._journal.load(runner._scope).state.budget_id == (
+        expected_identities.budget_id
+    )
+    assert runner._gate._permit_authenticator._issuer == (
+        expected_identities.permit_issuer
+    )
+    assert runner._request.observed_at == "2026-08-07T12:00:00Z"
+    assert runner._request.expires_at == "2026-08-07T12:05:00.000000Z"
+    assert runner._request.estimate.valid_until == "2026-08-07T12:05:00.000000Z"
+    assert runner._gate._clock is clock
+    assert resolver.selectors == [PortablePolicy.name]
+    assert clock.calls == 1
+
+
+def test_typed_resolver_requires_owned_default_but_environment_adapter_keeps_legacy(
+    tmp_path,
+):
+    class LegacyPolicy:
+        name = "darwin-sandbox-exec/v1"
+        execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+        admission_policy = DEFAULT_BUILD_ADMISSION_POLICY
+
+        @staticmethod
+        def create_isolation(_protected_root):
+            return _TestIsolation()
+
+    class LegacyResolver:
+        def __init__(self):
+            self.selectors = []
+
+        def resolve(self, name):
+            self.selectors.append(name)
+            assert name == LegacyPolicy.name
+            return LegacyPolicy()
+
+    resolver = LegacyResolver()
+    with pytest.raises(
+        ResourceBuildConfigError,
+        match="resolver has no valid default policy name",
+    ):
+        local_build_execution._resolve_deployment_policy(None, resolver)
+    assert resolver.selectors == []
+
+    with pytest.raises(AssertionError, match="legacy resolver reached"):
+        class ProbingLegacyResolver(LegacyResolver):
+            def resolve(self, name):
+                self.selectors.append(name)
+                assert name == LegacyPolicy.name
+                raise AssertionError("legacy resolver reached")
+
+        probing_resolver = ProbingLegacyResolver()
+        resource_gated_build_runner_from_environment(
+            tree="T",
+            tag="v1",
+            command="true",
+            timeout_seconds=1,
+            environment={
+                "LAKATOTREE_RESOURCE_BUILD_DIR": "unused-after-policy-probe",
+            },
+            workspace_root=tmp_path,
+            deployment_policy_resolver=probing_resolver,
+        )
+    assert probing_resolver.selectors == [LegacyPolicy.name]
+
+
+def test_typed_composition_requires_runtime_capabilities_explicitly():
+    signature = inspect.signature(resource_gated_build_runner_from_config)
+    assert signature.parameters["deployment_policy_resolver"].default is (
+        inspect.Parameter.empty
+    )
+    assert signature.parameters["clock"].default is inspect.Parameter.empty
+
+
+def test_environment_wrapper_preserves_empty_mapping_and_accepts_explicit_workspace(
+    tmp_path,
+):
+    class PoisonedResolver:
+        @staticmethod
+        def resolve(name):
+            raise AssertionError(f"disabled mode resolved policy {name!r}")
+
+    assert resource_gated_build_runner_from_environment(
+        tree="T",
+        tag="v1",
+        command="true",
+        timeout_seconds=1,
+        environment={},
+        workspace_root=tmp_path,
+        deployment_policy_resolver=PoisonedResolver(),
+    ) is None

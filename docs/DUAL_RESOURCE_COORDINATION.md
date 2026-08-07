@@ -214,11 +214,29 @@ closed unless all of these values are valid:
 | variable | purpose |
 |---|---|
 | `LAKATOTREE_RESOURCE_BUILD_DIR` | dedicated durable SQLite, lock, and signed-anchor root |
-| `LAKATOTREE_RESOURCE_BUILD_POLICY` | explicit deployment-policy selector; omitted means built-in `darwin-sandbox-exec/v1` |
+| `LAKATOTREE_RESOURCE_BUILD_POLICY` | explicit deployment-policy selector; omission is resolved by the injected resolver (the bundled resolver selects `darwin-sandbox-exec/v1`) |
 | `LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX` | exactly 32 bytes for checkpoint authentication |
 | `LAKATOTREE_RESOURCE_PERMIT_KEY_HEX` | at least 32 bytes for permit authentication and derivation of a distinct target-evidence HMAC key |
 | `LAKATOTREE_RESOURCE_COMPUTE_CAP_MS` | immutable per-tree wall-time hard-cap declaration |
-| `LAKATOTREE_BUILD_INPUT_MANIFEST` | path to a canonical v1 file manifest rooted at the current working directory |
+| `LAKATOTREE_BUILD_INPUT_MANIFEST` | path to a canonical v1 file manifest rooted at the explicitly selected workspace root |
+
+The environment entry point is only a compatibility/ambient adapter. It snapshots the
+provided mapping once (`None` means the process environment, while `{}` remains an
+explicitly empty and therefore disabled configuration), translates names through an
+injectable `ResourceBuildEnvironmentKeys`, and produces a validated immutable
+`ResourceBuildConfig`. The active key schema is unioned with the canonical six names,
+and credential-shaped names including `*_KEY_HEX` are removed from the selected child
+environment. Values that decode to either authority key are removed by byte comparison,
+including alternate case and whitespace-formatted hex. Secret byte fields are excluded
+from the config representation.
+New composition roots should call `resource_gated_build_runner_from_config` with that
+typed config, an explicit workspace root, deployment resolver, and clock. This keeps
+environment lookup, current-directory lookup, and system time outside
+the reusable application service. A missing policy selector belongs to the resolver;
+its declared `default_policy_name` is part of the typed resolver port. The ambient
+environment compatibility adapter alone preserves the published Darwin selector for
+older string-only resolvers. Platform choice is not manufactured inside the typed
+service.
 
 The pure v2 `BuildExecutionSpec` binds the shell command, canonical working directory,
 shell, timeout, a hash of the selected child environment, the declared input-manifest
@@ -260,6 +278,16 @@ returns retained evidence instead of treating it as a request to run again. Oper
 must include every build-relevant file; v1 assumes a trusted local workspace does not
 mutate after the final verification read.
 
+`BuildIdentityPolicy.derive` is the single pure authority for scope, effect, request,
+work, attempt, budget, grant, and permit-issuer identifiers. It returns one immutable
+`BuildIdentityBundle`, preserves the historical SHA-256 bytes for every previously
+accepted non-NUL tree/tag input, and rejects NUL because it makes the legacy delimiter
+framing ambiguous. The published v1 policy is sealed: prefixes and issuer digest width
+are protocol constants, not runtime knobs. A successor requires a new versioned type,
+store migration, and compatibility proof. The application service also shares one
+injected `ClockPort` across initial request creation, exact expiry derivation, and the
+execution gate, so a test or replay cannot observe unrelated implicit clocks.
+
 The pre-existing public `BuildInputVerifierPort` (`manifest_sha256` plus `verify`) and
 `SQLiteFencedBuildEffect` remain as an explicitly deprecated v1 compatibility boundary.
 That legacy effect retains its original unbounded post-claim verification semantics and
@@ -270,6 +298,12 @@ untouched, separates the derived lock-file namespaces, and prevents legacy termi
 evidence from being replayed as evidence from the bounded production path. New callers
 must use the v2 port and effect; no thread, subprocess, or silent fallback pretends an
 arbitrary legacy verifier has bounded completion.
+
+The filenames `resource.sqlite3`, `resource-anchor`, `build-target.sqlite3`, and
+`build-target-v2.sqlite3`, together with their schema/hash domains, are named protocol
+constants rather than deployment configuration. Silently making them tunable would
+fork durable replay and migration authority. A change to one of these constants must
+therefore ship as an explicit versioned migration with compatibility tests.
 
 The target adapter allocates monotonically increasing fences per tree scope, holds a
 POSIX scope lock through launch and terminal commit, and checks exact replay before

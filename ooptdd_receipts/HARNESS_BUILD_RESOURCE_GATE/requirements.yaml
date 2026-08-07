@@ -340,3 +340,51 @@ requirements:
       source: harness_build_resource_gate_receipt.py
       symbol: verify
       must_emit: versioned_effect_boundary_preserves_legacy_verifier_compatibility
+
+  - id: HBRG-32
+    description: An injected typed deployment resolver owns its required default policy name when configuration omits a selector, while only the ambient compatibility adapter retains the published Darwin fallback for older string-only resolvers.
+    guard_defect: The generic composition root either manufactured a macOS policy for portable resolvers or passed None through the established string-only resolver contract.
+    guard_mechanism: The typed resolver port declares default_policy_name and generic resolution fails closed without it; resolver-owned-default, generic-Darwin-fallback, and missing compatibility-fallback mutants turn RED.
+    gate:
+      - {event: deployment_resolver_owns_default_selection, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:deployment_resolver_owns_default_selection
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: deployment_resolver_owns_default_selection
+
+  - id: HBRG-33
+    description: All durable harness-build identifiers are derived and consumed as one immutable bundle; the published v1 namespace is sealed, all prior non-NUL bytes remain compatible, and ambiguous NUL components are rejected before I/O.
+    guard_defect: Scattered prefix assembly allowed partial identity drift, while NUL-delimited tree/tag framing admitted colliding tuples such as ('a NUL b','c') and ('a','b NUL c').
+    guard_mechanism: The sealed BuildIdentityPolicy validates components and returns the complete bundle used by composition; NUL-validation, budget-consumption, and issuer-consumption mutants turn RED.
+    gate:
+      - {event: canonical_build_identity_bundle_is_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:canonical_build_identity_bundle_is_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: canonical_build_identity_bundle_is_load_bearing
+
+  - id: HBRG-34
+    description: Typed configuration parsing is separated from composition, supports an injected environment-key schema, always reserves the canonical keys, strips KEY_HEX names and byte-equivalent authority values including whitespace-formatted hex aliases, and preserves the empty-mapping disabled-mode contract.
+    guard_defect: Literal environment names inside the composition mixed secret parsing, policy selection, and runtime wiring and made alternate embedding adapters unsafe to add.
+    guard_mechanism: ResourceBuildEnvironmentKeys and secret-safe ResourceBuildConfig form the adapter boundary; root-key, policy-key, canonical-reserved-union, KEY_HEX-name, and normalized-authority-value mutants fail the custom schema probe.
+    gate:
+      - {event: typed_environment_configuration_boundary_is_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:typed_environment_configuration_boundary_is_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: typed_environment_configuration_boundary_is_load_bearing
+
+  - id: HBRG-35
+    description: Typed composition consumes one explicit canonical workspace root and one injected authority clock for request time, expiry, and later gate authorization.
+    guard_defect: Ambient process CWD could change the workload root and separate system clocks could disagree across request construction and permit authorization.
+    guard_mechanism: resource_gated_build_runner_from_config requires workspace_root, resolver, and clock and shares that ClockPort with expiry construction and ResourceExecutionGate; ambient-CWD, fresh-gate-clock, and ambient-expiry-clock mutants turn RED with typed or direct observables.
+    gate:
+      - {event: explicit_workspace_and_authority_clock_are_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:explicit_workspace_and_authority_clock_are_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: explicit_workspace_and_authority_clock_are_load_bearing

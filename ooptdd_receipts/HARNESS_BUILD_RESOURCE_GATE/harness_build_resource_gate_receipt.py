@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -23,9 +24,11 @@ from lakatos.build_execution import (  # noqa: E402
     BuildAdmissionPolicy,
     BuildExecutionPolicy,
     BuildExecutionSpec,
+    BuildIdentityPolicy,
     BuildTerminalStatus,
     DEFAULT_BUILD_ADMISSION_POLICY,
     DEFAULT_BUILD_EXECUTION_POLICY,
+    DEFAULT_BUILD_IDENTITY_POLICY,
     ResourceBuildConfigError,
     ResourceBuildOutcomeUnknown,
     environment_sha256,
@@ -40,12 +43,15 @@ from lakatos.io.local_build_execution import (  # noqa: E402
     BuildTargetError,
     BuildTargetOutcomeUnknown,
     DeadlineBoundSQLiteFencedBuildEffect,
+    ResourceBuildEnvironmentKeys,
     ResourceGatedBuildRunner,
     SQLiteFencedBuildEffect,
     VerifiedBuildInputManifest,
     closed_build_environment,
     darwin_sandbox_argv,
     darwin_sandbox_profile,
+    resource_build_config_from_environment,
+    resource_gated_build_runner_from_config,
     resource_root_metadata_violation,
     resource_root_path_violation,
     resource_gated_build_runner_from_environment,
@@ -316,8 +322,56 @@ _SPLIT_STREAM_BUDGET_MARKER = (
     "    return ((total_bytes + 1) // 2, total_bytes // 2)\n"
 )
 _DEPLOYMENT_RESOLUTION_MARKER = (
-    "        deployment_policy = resolve_policy(policy_name)\n"
+    "    deployment_policy = _resolve_deployment_policy(\n"
+    "        policy_name,\n"
+    "        deployment_policy_resolver,\n"
+    "    )\n"
 )
+_RESOLVER_DEFAULT_MARKER = (
+    "    adapter_policy_name = policy_name\n"
+    "    if adapter_policy_name is None:\n"
+    "        adapter_policy_name = getattr(\n"
+    "            resolver,\n"
+    "            \"default_policy_name\",\n"
+    "            _DEFAULT_RESOURCE_BUILD_POLICY_NAME,\n"
+    "        )\n"
+    "    selected_policy = _resolve_deployment_policy(adapter_policy_name, resolver)\n"
+)
+_TYPED_RESOLVER_DEFAULT_MARKER = (
+    '        selected_name = getattr(resolver, "default_policy_name", None)\n'
+)
+_LEGACY_RESOLVER_FALLBACK_MARKER = (
+    "        adapter_policy_name = getattr(\n"
+    "            resolver,\n"
+    "            \"default_policy_name\",\n"
+    "            _DEFAULT_RESOURCE_BUILD_POLICY_NAME,\n"
+    "        )\n"
+)
+_IDENTITY_COMPONENT_VALIDATION_MARKER = (
+    "    if \"\\0\" in value:\n"
+    "        raise ValueError(f\"{label} must not contain NUL\")\n"
+)
+_ENVIRONMENT_CONFIG_ROOT_MARKER = (
+    "    raw_root = source_environment.get(keys.build_directory)\n"
+)
+_ENVIRONMENT_CONFIG_POLICY_MARKER = "    policy_name = environment.get(name)\n"
+_ENVIRONMENT_RESERVED_UNION_MARKER = (
+    "    reserved_environment_keys = tuple(\n"
+    "        sorted(set(keys.all) | set(DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS.all))\n"
+    "    )\n"
+)
+_SENSITIVE_KEY_HEX_MARKER = '        ("_AUTH", "_KEY", "_KEY_HEX")\n'
+_AUTHORITY_VALUE_FILTER_MARKER = (
+    "        if not _matches_authority_key_material(value, authority_keys)\n"
+)
+_WORKSPACE_ROOT_MARKER = "    cwd = _resolve_workspace_root(workspace_root)\n"
+_AUTHORITY_CLOCK_GATE_MARKER = (
+    "        clock=authority_clock,\n"
+    "        permit_authenticator=HMACPermitAuthenticator(\n"
+)
+_AUTHORITY_EXPIRY_CLOCK_MARKER = "    expires = observed + timedelta(\n"
+_IDENTITY_BUDGET_CONSUMPTION_MARKER = "            budget_id=identities.budget_id,\n"
+_IDENTITY_ISSUER_CONSUMPTION_MARKER = "            issuer=identities.permit_issuer,\n"
 _INJECTED_BUILD_SELECTION_MARKER = (
     "    if selected_build is None and spec.build_cmd:\n"
 )
@@ -1036,7 +1090,7 @@ raise SystemExit(7)
         replacements={
             "io/local_build_execution.py": (
                 _DEPLOYMENT_RESOLUTION_MARKER,
-                "        deployment_policy = DarwinBuildDeploymentPolicy()\n",
+                "    deployment_policy = DarwinBuildDeploymentPolicy()\n",
             )
         },
         probe=probe,
@@ -1046,6 +1100,548 @@ raise SystemExit(7)
         result.returncode == 0,
         "Darwin-construction mutant did not bypass the injected resolver: "
         + result.stderr[-500:],
+    )
+
+
+def _resolver_default_mutant_must_turn_red() -> None:
+    resolver_owned_probe = r'''
+from pathlib import Path
+import lakatos.io.local_build_execution as module
+
+class Resolver:
+    default_policy_name = "portable-default/v1"
+
+    @staticmethod
+    def resolve(name):
+        if name == Resolver.default_policy_name:
+            raise RuntimeError("resolver-owned-default")
+        if name == "darwin-sandbox-exec/v1":
+            raise RuntimeError("forced-darwin-default")
+        raise RuntimeError("unexpected-selector")
+
+try:
+    module.resource_gated_build_runner_from_environment(
+        tree="T", tag="v1", command="true", timeout_seconds=1,
+        environment={"LAKATOTREE_RESOURCE_BUILD_DIR": str(Path("authority"))},
+        workspace_root=Path.cwd(), deployment_policy_resolver=Resolver(),
+    )
+except RuntimeError as exc:
+    raise SystemExit(0 if str(exc) == "forced-darwin-default" else 7)
+raise SystemExit(8)
+'''
+    result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _RESOLVER_DEFAULT_MARKER,
+                "    adapter_policy_name = (\n"
+                "        _DEFAULT_RESOURCE_BUILD_POLICY_NAME\n"
+                "        if policy_name is None else policy_name\n"
+                "    )\n"
+                "    selected_policy = _resolve_deployment_policy(\n"
+                "        adapter_policy_name, resolver\n"
+                "    )\n",
+            )
+        },
+        probe=resolver_owned_probe,
+        prefix="lakatotree-build-resolver-default-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "Darwin default-selection mutant stayed green: " + result.stderr[-500:],
+    )
+
+    typed_fallback_probe = r'''
+from lakatos.build_execution import ResourceBuildConfigError
+import lakatos.io.local_build_execution as module
+
+class LegacyResolver:
+    @staticmethod
+    def resolve(name):
+        if name == "darwin-sandbox-exec/v1":
+            raise RuntimeError("generic-forced-darwin")
+        raise RuntimeError("unexpected-selector")
+
+try:
+    module._resolve_deployment_policy(None, LegacyResolver())
+except RuntimeError as exc:
+    raise SystemExit(0 if str(exc) == "generic-forced-darwin" else 8)
+except ResourceBuildConfigError:
+    raise SystemExit(7)
+raise SystemExit(9)
+'''
+    typed_fallback_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _TYPED_RESOLVER_DEFAULT_MARKER,
+                "        selected_name = getattr(\n"
+                "            resolver, \"default_policy_name\",\n"
+                "            _DEFAULT_RESOURCE_BUILD_POLICY_NAME,\n"
+                "        )\n",
+            )
+        },
+        probe=typed_fallback_probe,
+        prefix="lakatotree-build-typed-resolver-fallback-mutant-",
+    )
+    _require(
+        typed_fallback_result.returncode == 0,
+        "typed Darwin fallback mutant stayed green: "
+        + typed_fallback_result.stderr[-500:],
+    )
+
+    legacy_fallback_probe = r'''
+from pathlib import Path
+from lakatos.build_execution import ResourceBuildConfigError
+import lakatos.io.local_build_execution as module
+
+class LegacyResolver:
+    @staticmethod
+    def resolve(name):
+        if name == "darwin-sandbox-exec/v1":
+            raise RuntimeError("legacy-fallback-reached")
+        raise RuntimeError("unexpected-selector")
+
+try:
+    module.resource_gated_build_runner_from_environment(
+        tree="T", tag="v1", command="true", timeout_seconds=1,
+        environment={"LAKATOTREE_RESOURCE_BUILD_DIR": str(Path("authority"))},
+        workspace_root=Path.cwd(), deployment_policy_resolver=LegacyResolver(),
+    )
+except ResourceBuildConfigError as exc:
+    raise SystemExit(
+        0 if "resolver has no valid default policy name" in str(exc) else 8
+    )
+except RuntimeError:
+    raise SystemExit(7)
+raise SystemExit(9)
+'''
+    legacy_fallback_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _LEGACY_RESOLVER_FALLBACK_MARKER,
+                "        adapter_policy_name = None\n",
+            )
+        },
+        probe=legacy_fallback_probe,
+        prefix="lakatotree-build-legacy-resolver-fallback-mutant-",
+    )
+    _require(
+        legacy_fallback_result.returncode == 0,
+        "environment legacy-resolver fallback mutant stayed green: "
+        + legacy_fallback_result.stderr[-500:],
+    )
+
+
+def _identity_component_mutant_must_turn_red() -> None:
+    probe = r'''
+import hashlib
+from lakatos.build_execution import DEFAULT_BUILD_IDENTITY_POLICY
+
+workload = hashlib.sha256(b"workload").hexdigest()
+left = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+    tree="a\0b", tag="c", workload_sha256=workload,
+)
+right = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+    tree="a", tag="b\0c", workload_sha256=workload,
+)
+raise SystemExit(0 if left.identity_sha256 == right.identity_sha256 else 7)
+'''
+    result = _run_isolated(
+        files=("resource_coordination.py", "build_execution.py"),
+        replacements={
+            "build_execution.py": (
+                _IDENTITY_COMPONENT_VALIDATION_MARKER,
+                "",
+            )
+        },
+        probe=probe,
+        prefix="lakatotree-build-identity-framing-mutant-",
+    )
+    _require(
+        result.returncode == 0,
+        "ambiguous identity framing mutant stayed green: " + result.stderr[-500:],
+    )
+
+
+def _identity_consumption_mutants_must_turn_red() -> None:
+    probe = r'''
+import hashlib
+import json
+from pathlib import Path
+from lakatos.build_execution import (
+    DEFAULT_BUILD_ADMISSION_POLICY,
+    DEFAULT_BUILD_EXECUTION_POLICY,
+    DEFAULT_BUILD_IDENTITY_POLICY,
+)
+from lakatos.io.local_build_execution import (
+    resource_build_config_from_environment,
+    resource_gated_build_runner_from_config,
+)
+
+class Isolation:
+    adapter = "test.portable-isolation"
+    adapter_version = "1"
+    policy_sha256 = hashlib.sha256(b"portable").hexdigest()
+    denies_provider_network = True
+    protects_resource_root = True
+    @staticmethod
+    def argv(spec): return (spec.shell, "-c", spec.command)
+class Policy:
+    name = "portable/v1"
+    execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+    admission_policy = DEFAULT_BUILD_ADMISSION_POLICY
+    @staticmethod
+    def create_isolation(_root): return Isolation()
+class Resolver:
+    @staticmethod
+    def resolve(name):
+        if name != Policy.name: raise ValueError(name)
+        return Policy()
+class Clock:
+    def now_utc(self): return "2026-08-07T12:00:00Z"
+
+source = Path("source")
+source.mkdir()
+(source / "input.txt").write_bytes(b"v1")
+manifest = source / "manifest.json"
+manifest.write_text(json.dumps({
+    "schema_version": "lakatotree.build-input-manifest/v1",
+    "files": [{"path": "input.txt", "sha256": hashlib.sha256(b"v1").hexdigest()}],
+}))
+config = resource_build_config_from_environment({
+    "PATH": "/bin",
+    "LAKATOTREE_RESOURCE_BUILD_DIR": str(Path("authority").resolve()),
+    "LAKATOTREE_RESOURCE_BUILD_POLICY": Policy.name,
+    "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+    "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+    "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+    "LAKATOTREE_BUILD_INPUT_MANIFEST": str(manifest.resolve()),
+})
+runner = resource_gated_build_runner_from_config(
+    config=config, tree="T", tag="v1", command="true", timeout_seconds=1,
+    workspace_root=source, deployment_policy_resolver=Resolver(), clock=Clock(),
+)
+expected = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+    tree="T", tag="v1", workload_sha256=runner._effect.spec.workload_sha256,
+)
+raise SystemExit(0 if __MUTANT_CHECK__ else 7)
+'''
+    budget_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _IDENTITY_BUDGET_CONSUMPTION_MARKER,
+                '            budget_id="budget:mutant",\n',
+            )
+        },
+        probe=probe.replace(
+            "__MUTANT_CHECK__",
+            "runner._journal.load(runner._scope).state.budget_id "
+            "!= expected.budget_id",
+        ),
+        prefix="lakatotree-build-identity-budget-mutant-",
+    )
+    _require(
+        budget_result.returncode == 0,
+        "identity budget-consumption mutant stayed green: "
+        + budget_result.stderr[-500:],
+    )
+
+    issuer_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _IDENTITY_ISSUER_CONSUMPTION_MARKER,
+                '            issuer="mutant-issuer",\n',
+            )
+        },
+        probe=probe.replace(
+            "__MUTANT_CHECK__",
+            "runner._gate._permit_authenticator._issuer != expected.permit_issuer",
+        ),
+        prefix="lakatotree-build-identity-issuer-mutant-",
+    )
+    _require(
+        issuer_result.returncode == 0,
+        "identity issuer-consumption mutant stayed green: "
+        + issuer_result.stderr[-500:],
+    )
+
+
+def _environment_key_schema_mutant_must_turn_red() -> None:
+    base_probe = r'''
+from pathlib import Path
+from lakatos.io.local_build_execution import (
+    ResourceBuildConfigError,
+    ResourceBuildEnvironmentKeys,
+    resource_build_config_from_environment,
+)
+keys = ResourceBuildEnvironmentKeys(
+    build_directory="CUSTOM_ROOT", deployment_policy="CUSTOM_POLICY",
+    anchor_key_hex="CUSTOM_ANCHOR", permit_key_hex="CUSTOM_PERMIT",
+    compute_cap_ms="CUSTOM_CAP", input_manifest="CUSTOM_MANIFEST",
+)
+environment = {
+    "PATH": "/bin",
+    "CUSTOM_ROOT": str(Path("authority")),
+    "CUSTOM_POLICY": "portable/v1",
+    "CUSTOM_ANCHOR": bytes(range(32)).hex(),
+    "CUSTOM_PERMIT": bytes(range(32, 64)).hex(),
+    "CUSTOM_CAP": "20000", "CUSTOM_MANIFEST": "manifest.json",
+    "LAKATOTREE_RESOURCE_BUILD_DIR": "must-not-survive",
+    "LAKATOTREE_RESOURCE_BUILD_POLICY": "must-not-survive",
+    "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": "must-not-survive",
+    "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": "must-not-survive",
+    "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "must-not-survive",
+    "LAKATOTREE_BUILD_INPUT_MANIFEST": "must-not-survive",
+    "BACKUP_KEY_HEX": "must-not-survive",
+    "BACKUP_MATERIAL": " ".join(f"{value:02x}" for value in range(32)),
+}
+try:
+    config = resource_build_config_from_environment(environment, keys=keys)
+except ResourceBuildConfigError as exc:
+    raise SystemExit(0 if __EXPECTED_ERROR__ in str(exc) else 9)
+raise SystemExit(0 if __MUTANT_CHECK__ else 7)
+'''
+    root_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _ENVIRONMENT_CONFIG_ROOT_MARKER,
+                "    raw_root = source_environment.get(\n"
+                "        DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS.build_directory\n"
+                "    )\n",
+            )
+        },
+        probe=base_probe.replace(
+            "__EXPECTED_ERROR__", "'__NO_EXCEPTION_EXPECTED__'"
+        ).replace(
+            "__MUTANT_CHECK__", "config.root == 'must-not-survive'"
+        ),
+        prefix="lakatotree-build-environment-schema-mutant-",
+    )
+    _require(
+        root_result.returncode == 0,
+        "fixed environment-root-key mutant stayed green: "
+        + root_result.stderr[-500:],
+    )
+
+    policy_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _ENVIRONMENT_CONFIG_POLICY_MARKER,
+                "    policy_name = environment.get(\n"
+                "        DEFAULT_RESOURCE_BUILD_ENVIRONMENT_KEYS.deployment_policy\n"
+                "    )\n",
+            )
+        },
+        probe=base_probe.replace(
+            "__EXPECTED_ERROR__", "'__NO_EXCEPTION_EXPECTED__'"
+        ).replace(
+            "__MUTANT_CHECK__", "config.policy_name == 'must-not-survive'"
+        ),
+        prefix="lakatotree-build-environment-policy-key-mutant-",
+    )
+    _require(
+        policy_result.returncode == 0,
+        "fixed environment-policy-key mutant stayed green: "
+        + policy_result.stderr[-500:],
+    )
+
+    reserved_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _ENVIRONMENT_RESERVED_UNION_MARKER,
+                "    reserved_environment_keys = keys.all\n",
+            )
+        },
+        probe=base_probe.replace(
+            "__EXPECTED_ERROR__", "'canonical resource environment keys'"
+        ).replace("__MUTANT_CHECK__", "False"),
+        prefix="lakatotree-build-environment-reserved-union-mutant-",
+    )
+    _require(
+        reserved_result.returncode == 0,
+        "canonical reserved-key union mutant stayed green: "
+        + reserved_result.stderr[-500:],
+    )
+
+    key_hex_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _SENSITIVE_KEY_HEX_MARKER,
+                '        ("_AUTH", "_KEY")\n',
+            )
+        },
+        probe=base_probe.replace(
+            "__EXPECTED_ERROR__", "'__NO_EXCEPTION_EXPECTED__'"
+        ).replace(
+            "__MUTANT_CHECK__",
+            "('BACKUP_KEY_HEX', 'must-not-survive') in config.child_environment",
+        ),
+        prefix="lakatotree-build-environment-key-hex-mutant-",
+    )
+    _require(
+        key_hex_result.returncode == 0,
+        "KEY_HEX credential-filter mutant stayed green: "
+        + key_hex_result.stderr[-500:],
+    )
+
+    authority_value_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _AUTHORITY_VALUE_FILTER_MARKER,
+                "        if value.lower() not in {\n"
+                "            anchor_key.hex(), permit_key.hex()\n"
+                "        }\n",
+            )
+        },
+        probe=base_probe.replace(
+            "__EXPECTED_ERROR__", "'child environment contains authority key material'"
+        ).replace("__MUTANT_CHECK__", "False"),
+        prefix="lakatotree-build-environment-authority-value-mutant-",
+    )
+    _require(
+        authority_value_result.returncode == 0,
+        "whitespace-hex authority-value mutant stayed green: "
+        + authority_value_result.stderr[-500:],
+    )
+
+
+def _workspace_and_clock_mutants_must_turn_red() -> None:
+    probe = r'''
+import hashlib
+import json
+from pathlib import Path
+from lakatos.build_execution import (
+    DEFAULT_BUILD_ADMISSION_POLICY, DEFAULT_BUILD_EXECUTION_POLICY,
+)
+from lakatos.io.local_build_execution import (
+    ResourceBuildConfigError,
+    resource_build_config_from_environment,
+    resource_gated_build_runner_from_config,
+)
+
+class Isolation:
+    adapter = "test.portable-isolation"
+    adapter_version = "1"
+    policy_sha256 = hashlib.sha256(b"portable").hexdigest()
+    denies_provider_network = True
+    protects_resource_root = True
+    @staticmethod
+    def argv(spec): return (spec.shell, "-c", spec.command)
+class Policy:
+    name = "portable/v1"
+    execution_policy = DEFAULT_BUILD_EXECUTION_POLICY
+    admission_policy = DEFAULT_BUILD_ADMISSION_POLICY
+    @staticmethod
+    def create_isolation(_root): return Isolation()
+class Resolver:
+    @staticmethod
+    def resolve(name):
+        if name != Policy.name: raise ValueError(name)
+        return Policy()
+class Clock:
+    def now_utc(self): return "2026-08-07T12:00:00Z"
+
+source = Path("source")
+source.mkdir()
+(source / "input.txt").write_bytes(b"v1")
+manifest = source / "manifest.json"
+manifest.write_text(json.dumps({
+    "schema_version": "lakatotree.build-input-manifest/v1",
+    "files": [{"path": "input.txt", "sha256": hashlib.sha256(b"v1").hexdigest()}],
+}))
+config = resource_build_config_from_environment({
+    "PATH": "/bin",
+    "LAKATOTREE_RESOURCE_BUILD_DIR": str(Path("authority").resolve()),
+    "LAKATOTREE_RESOURCE_BUILD_POLICY": Policy.name,
+    "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": bytes(range(32)).hex(),
+    "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": bytes(range(32, 64)).hex(),
+    "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "20000",
+    "LAKATOTREE_BUILD_INPUT_MANIFEST": str(manifest.resolve()),
+})
+try:
+    runner = resource_gated_build_runner_from_config(
+        config=config, tree="T", tag="v1", command="true", timeout_seconds=1,
+        workspace_root=source, deployment_policy_resolver=Resolver(), clock=Clock(),
+    )
+except ResourceBuildConfigError as exc:
+    raise SystemExit(0 if __EXPECTED_ERROR__ in str(exc) else 9)
+raise SystemExit(0 if __MUTANT_CHECK__ else 7)
+'''
+    workspace_probe = probe.replace(
+        "__EXPECTED_ERROR__",
+        "'declared build input could not be read safely'",
+    ).replace("__MUTANT_CHECK__", "False")
+    workspace_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _WORKSPACE_ROOT_MARKER,
+                "    cwd = Path.cwd().resolve()\n",
+            )
+        },
+        probe=workspace_probe,
+        prefix="lakatotree-build-workspace-mutant-",
+    )
+    _require(
+        workspace_result.returncode == 0,
+        "ambient workspace mutant stayed green: " + workspace_result.stderr[-500:],
+    )
+
+    clock_probe = probe.replace(
+        "__EXPECTED_ERROR__", "'__NO_EXCEPTION_EXPECTED__'"
+    ).replace(
+        "__MUTANT_CHECK__",
+        "runner._gate._clock.__class__.__name__ == '_SystemClock'",
+    )
+    clock_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _AUTHORITY_CLOCK_GATE_MARKER,
+                "        clock=_SystemClock(),\n"
+                "        permit_authenticator=HMACPermitAuthenticator(\n",
+            )
+        },
+        probe=clock_probe,
+        prefix="lakatotree-build-authority-clock-mutant-",
+    )
+    _require(
+        clock_result.returncode == 0,
+        "fresh system-clock mutant stayed green: " + clock_result.stderr[-500:],
+    )
+
+    expiry_probe = probe.replace(
+        "__EXPECTED_ERROR__", "'__NO_EXCEPTION_EXPECTED__'"
+    ).replace(
+        "__MUTANT_CHECK__",
+        "runner._request.expires_at != '2026-08-07T12:05:00.000000Z' "
+        "or runner._request.estimate.valid_until "
+        "!= '2026-08-07T12:05:00.000000Z'",
+    )
+    expiry_result = _run_isolated(
+        files=_LOCAL_BUILD_FILES,
+        replacements={
+            "io/local_build_execution.py": (
+                _AUTHORITY_EXPIRY_CLOCK_MARKER,
+                "    expires = _parse_utc(_SystemClock().now_utc()) + timedelta(\n",
+            )
+        },
+        probe=expiry_probe,
+        prefix="lakatotree-build-authority-expiry-clock-mutant-",
+    )
+    _require(
+        expiry_result.returncode == 0,
+        "ambient expiry-clock mutant stayed green: "
+        + expiry_result.stderr[-500:],
     )
 
 
@@ -1735,6 +2331,203 @@ def verify(backend, cid):
         )
         _deployment_resolution_mutant_must_turn_red()
         backend.ship([_event(cid, "deployment_policy_is_injected_and_preflighted")])
+
+        custom_keys = ResourceBuildEnvironmentKeys(
+            build_directory="OOPTDD_BUILD_ROOT",
+            deployment_policy="OOPTDD_BUILD_POLICY",
+            anchor_key_hex="OOPTDD_ANCHOR_KEY",
+            permit_key_hex="OOPTDD_PERMIT_KEY",
+            compute_cap_ms="OOPTDD_COMPUTE_CAP",
+            input_manifest="OOPTDD_MANIFEST",
+        )
+        custom_environment = {
+            "PATH": os.environ.get("PATH", ""),
+            "OPENAI_API_KEY": "must-not-survive",
+            "OOPTDD_BUILD_ROOT": str(root / "typed-config-authority"),
+            "OOPTDD_BUILD_POLICY": PortableDeploymentPolicy.name,
+            "OOPTDD_ANCHOR_KEY": bytes(range(32)).hex(),
+            "OOPTDD_PERMIT_KEY": bytes(range(32, 64)).hex(),
+            "OOPTDD_COMPUTE_CAP": "20000",
+            "OOPTDD_MANIFEST": str(portable_manifest),
+            "LAKATOTREE_RESOURCE_BUILD_DIR": "must-not-survive",
+            "LAKATOTREE_RESOURCE_BUILD_POLICY": "must-not-survive",
+            "LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX": "must-not-survive",
+            "LAKATOTREE_RESOURCE_PERMIT_KEY_HEX": "must-not-survive",
+            "LAKATOTREE_RESOURCE_COMPUTE_CAP_MS": "must-not-survive",
+            "LAKATOTREE_BUILD_INPUT_MANIFEST": "must-not-survive",
+            "BACKUP_KEY_HEX": "must-not-survive",
+            "BACKUP_MATERIAL": " ".join(
+                f"{value:02x}" for value in range(32)
+            ),
+        }
+        typed_config = resource_build_config_from_environment(
+            custom_environment,
+            keys=custom_keys,
+        )
+        _require(typed_config is not None, "custom key schema did not enable config")
+        _require(
+            typed_config.child_environment
+            == (("PATH", os.environ.get("PATH", "")),),
+            "typed config retained authority or provider credential material",
+        )
+        _require(
+            bytes(range(32)).hex() not in repr(typed_config)
+            and bytes(range(32, 64)).hex() not in repr(typed_config)
+            and "must-not-survive" not in repr(typed_config),
+            "typed config repr disclosed secret material",
+        )
+
+        class DefaultingResolver:
+            def __init__(self, selected):
+                self.selected = selected
+                self.default_policy_name = selected.name
+                self.selectors = []
+
+            def resolve(self, selector):
+                self.selectors.append(selector)
+                if selector != self.selected.name:
+                    raise RuntimeError("composition forced a non-portable default")
+                return self.selected
+
+        class RecordingClock:
+            def __init__(self):
+                self.calls = 0
+
+            def now_utc(self):
+                self.calls += 1
+                return "2026-08-07T12:00:00Z"
+
+        defaulting_resolver = DefaultingResolver(PortableDeploymentPolicy())
+        resolved_default = local_build_execution_module._resolve_deployment_policy(
+            None,
+            defaulting_resolver,
+        )
+        _require(
+            resolved_default.name == defaulting_resolver.default_policy_name
+            and defaulting_resolver.selectors
+            == [defaulting_resolver.default_policy_name],
+            "injected resolver did not own omitted-selector defaulting",
+        )
+        defaulting_resolver.selectors.clear()
+        recording_clock = RecordingClock()
+        composition_signature = inspect.signature(
+            resource_gated_build_runner_from_config
+        )
+        _require(
+            composition_signature.parameters[
+                "deployment_policy_resolver"
+            ].default
+            is inspect.Parameter.empty
+            and composition_signature.parameters["clock"].default
+            is inspect.Parameter.empty,
+            "typed composition retained an ambient resolver or clock default",
+        )
+        typed_runner = resource_gated_build_runner_from_config(
+            config=typed_config,
+            tree="OOPTDD-config-T",
+            tag="v1",
+            command="true",
+            timeout_seconds=1,
+            workspace_root=portable_source,
+            deployment_policy_resolver=defaulting_resolver,
+            clock=recording_clock,
+        )
+        expected_identities = DEFAULT_BUILD_IDENTITY_POLICY.derive(
+            tree="OOPTDD-config-T",
+            tag="v1",
+            workload_sha256=typed_runner._effect.spec.workload_sha256,
+        )
+        _require(
+            defaulting_resolver.selectors
+            == [defaulting_resolver.selected.name],
+            "typed composition ignored the custom deployment-policy key",
+        )
+        _require(
+            typed_runner._scope == expected_identities.scope
+            and typed_runner._start.command_id == expected_identities.effect_id
+            and typed_runner._request.command_id
+            == expected_identities.request_command_id
+            and typed_runner._request.grant_id == expected_identities.grant_id
+            and typed_runner._request.estimate.work_id == expected_identities.work_id
+            and typed_runner._request.estimate.attempt_id
+            == expected_identities.attempt_id
+            and typed_runner._journal.load(typed_runner._scope).state.budget_id
+            == expected_identities.budget_id
+            and typed_runner._gate._permit_authenticator._issuer
+            == expected_identities.permit_issuer,
+            "composition rebuilt or ignored part of the canonical identity bundle",
+        )
+        _require(
+            typed_runner._effect.spec.cwd == str(portable_source.resolve()),
+            "typed composition ignored its explicit workspace root",
+        )
+        _require(
+            typed_runner._request.observed_at == "2026-08-07T12:00:00Z"
+            and typed_runner._request.expires_at
+            == "2026-08-07T12:05:00.000000Z"
+            and typed_runner._request.estimate.valid_until
+            == "2026-08-07T12:05:00.000000Z"
+            and typed_runner._gate._clock is recording_clock
+            and recording_clock.calls == 1,
+            "typed composition did not share one injected authority clock",
+        )
+        legacy_identity = hashlib.sha256(
+            (
+                "OOPTDD-config-T\0v1\0"
+                + typed_runner._effect.spec.workload_sha256
+            ).encode("utf-8")
+        ).hexdigest()
+        _require(
+            DEFAULT_BUILD_IDENTITY_POLICY.derive(
+                tree="OOPTDD-config-T",
+                tag="v1",
+                workload_sha256=typed_runner._effect.spec.workload_sha256,
+            ).identity_sha256
+            == legacy_identity,
+            "default identity policy changed published printable-input bytes",
+        )
+        control_identity = hashlib.sha256(
+            (
+                "OOPTDD\nconfig\tT\0v1\rcontrol\0"
+                + typed_runner._effect.spec.workload_sha256
+            ).encode("utf-8")
+        ).hexdigest()
+        _require(
+            DEFAULT_BUILD_IDENTITY_POLICY.derive(
+                tree="OOPTDD\nconfig\tT",
+                tag="v1\rcontrol",
+                workload_sha256=typed_runner._effect.spec.workload_sha256,
+            ).identity_sha256
+            == control_identity,
+            "identity hardening broke a previously valid non-NUL input",
+        )
+        try:
+            BuildIdentityPolicy(scope_prefix="forked-budget-scope")
+        except TypeError:
+            pass
+        else:
+            raise RuntimeError("published v1 identity namespace became configurable")
+        for ambiguous_tree, ambiguous_tag in (("a\0b", "c"), ("a", "b\0c")):
+            try:
+                DEFAULT_BUILD_IDENTITY_POLICY.derive(
+                    tree=ambiguous_tree,
+                    tag=ambiguous_tag,
+                    workload_sha256=typed_runner._effect.spec.workload_sha256,
+                )
+            except ValueError:
+                pass
+            else:
+                raise RuntimeError("ambiguous build identity component was accepted")
+
+        _resolver_default_mutant_must_turn_red()
+        backend.ship([_event(cid, "deployment_resolver_owns_default_selection")])
+        _identity_component_mutant_must_turn_red()
+        _identity_consumption_mutants_must_turn_red()
+        backend.ship([_event(cid, "canonical_build_identity_bundle_is_load_bearing")])
+        _environment_key_schema_mutant_must_turn_red()
+        backend.ship([_event(cid, "typed_environment_configuration_boundary_is_load_bearing")])
+        _workspace_and_clock_mutants_must_turn_red()
+        backend.ship([_event(cid, "explicit_workspace_and_authority_clock_are_load_bearing")])
 
         class PreflightOnlyVerifier:
             manifest_sha256 = _sha("preflight-only")

@@ -4,7 +4,8 @@
 spec.json = CycleSpec 필드. internet_sources 는 [[url, trust], ...] (parent 가 미리 read).
 환경: LAKATOTREE_URL (기본 http://localhost:55170)
       LAKATOTREE_BASH_TIMEOUT (기본 600) — build/judge 서브프로세스 *벽시계* 예산(초, 양의 정수).
-      LAKATOTREE_RESOURCE_BUILD_POLICY — opt-in build 배포정책 선택자(기본 Darwin 정책).
+      LAKATOTREE_RESOURCE_BUILD_POLICY — opt-in build 배포정책 선택자.
+        미설정 기본은 주입된 resolver가 소유하며 bundled resolver는 Darwin 정책을 선택한다.
 # KG: span_lakatotree_harness
 """
 import json, os, subprocess, sys
@@ -118,6 +119,8 @@ def main(
             tag=spec.tag,
             command=spec.build_cmd,
             timeout_seconds=_bash_timeout(),
+            # CLI/process 경계만 ambient CWD를 읽고, 아래 조합 함수에는 명시 값으로 넘긴다.
+            workspace_root=os.getcwd(),
             deployment_policy_resolver=deployment_policy_resolver,
         )
     # 상계는 read-only — 인터넷 fetch 는 parent(상위 agent)가 미리 채워 internet_sources 에 (url,trust) 로 주입.
