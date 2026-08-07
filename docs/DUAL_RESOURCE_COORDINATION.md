@@ -2,7 +2,10 @@
 
 - Status: **executable kernel plus durable single-host journal; live metering and harness wiring not yet implemented**
 - Schema: `lakatotree.resource/v1`
-- Code: `lakatos/resource_coordination.py`, `lakatos/io/resource_journal.py`
+- Code: `lakatos/resource_coordination.py`, `lakatos/resource_kernel.py`,
+  `lakatos/io/_resource_journal_contracts.py`,
+  `lakatos/io/_resource_journal_codec.py`, `lakatos/io/_resource_anchor.py`,
+  `lakatos/io/resource_journal.py`
 
 ## Why this is separate from `cycle_budget`
 
@@ -57,6 +60,42 @@ a progressive result does not refund or enlarge a resource budget.
   [uniqueness/upsert](https://sqlite.org/lang_upsert.html) documentation.
 
 ## v1 boundary
+
+### Functional architecture and extension seams
+
+The resource slice is a functional core inside an imperative shell:
+
+```text
+immutable values + decide/evolve       lakatos/resource_coordination.py
+                ↓ packaged as
+injected ResourceKernel port           lakatos/resource_kernel.py
+                ↓ consumed by
+SQLite transaction/replay repository   lakatos/io/resource_journal.py
+                ↙             ↘
+pure canonical codec          TrustedAnchorStore protocol
+_resource_journal_codec.py    + _resource_anchor.py adapter
+                ↘             ↙
+immutable shared contracts and version identities
+_resource_journal_contracts.py
+```
+
+Existing consumers keep importing from `lakatos.io.resource_journal`; it is the
+compatibility facade and re-exports the exact contract and anchor objects rather than
+copies. For AI-assisted changes, use these bounded seams:
+
+- change admission or lifecycle semantics only through pure `decide`/`evolve` and
+  immutable commands/events, then prove equal inputs yield equal outputs;
+- inject a `ResourceKernel` in shell tests instead of patching globals;
+- add a trusted-anchor implementation against `TrustedAnchorStore`, without teaching
+  SQLite or the pure kernel about its filesystem/network details;
+- treat codec, schema, hash-domain, and rule-identity changes as explicit version
+  migrations; the v1 decoder remains closed and fail-fast;
+- never import `lakatos.io` or `server` from the functional core. `.importlinter`
+  makes that direction machine-enforced.
+
+The private filenames are internal ownership boundaries, not new public import
+promises. Their canonical bytes and the public facade identities are nevertheless
+frozen by RED-first regression tests and an isolated-mutant OOPTDD receipt.
 
 The pure kernel owns:
 

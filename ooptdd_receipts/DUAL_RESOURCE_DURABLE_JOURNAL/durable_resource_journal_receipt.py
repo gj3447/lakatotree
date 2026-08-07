@@ -260,12 +260,22 @@ with tempfile.TemporaryDirectory() as raw:
         io_package.mkdir(parents=True)
         (package / "__init__.py").write_text("", encoding="utf-8")
         (io_package / "__init__.py").write_text("", encoding="utf-8")
-        (package / "resource_coordination.py").write_bytes(
-            (ROOT / "lakatos" / "resource_coordination.py").read_bytes()
-        )
-        (package / "write_cert.py").write_bytes(
-            (ROOT / "lakatos" / "write_cert.py").read_bytes()
-        )
+        for relative in (
+            "resource_coordination.py",
+            "resource_kernel.py",
+            "write_cert.py",
+        ):
+            (package / relative).write_bytes(
+                (ROOT / "lakatos" / relative).read_bytes()
+            )
+        for name in (
+            "_resource_journal_contracts.py",
+            "_resource_journal_codec.py",
+            "_resource_anchor.py",
+        ):
+            (io_package / name).write_bytes(
+                (ROOT / "lakatos" / "io" / name).read_bytes()
+            )
         (io_package / "resource_journal.py").write_text(mutant, encoding="utf-8")
         environment = os.environ.copy()
         environment["PYTHONPATH"] = raw_temp

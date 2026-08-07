@@ -158,8 +158,12 @@ The dependency direction is `programme → verdict → quant → io`, over a sha
 | `lakatos/verdict/` | deterministic judgement and dialectical composition |
 | `lakatos/quant/` | credence, problem-solving, calibration, multiplicity, programme-series diagnostics |
 | `lakatos/programme/` | branching, lifecycle, comparison, public authoring |
-| `lakatos/resource_coordination.py` | deterministic compute/token reservation and settlement kernel |
-| `lakatos/io/resource_journal.py` | single-host SQLite revision-CAS journal and signed external-checkpoint adapter |
+| `lakatos/resource_coordination.py` | immutable resource values plus pure `decide`/`evolve` semantics |
+| `lakatos/resource_kernel.py` | narrow injectable functional-kernel port for effect adapters |
+| `lakatos/io/_resource_journal_contracts.py` | immutable journal DTOs, versions, errors, and adapter protocols |
+| `lakatos/io/_resource_journal_codec.py` | pure canonical codecs and journal/checkpoint hash functions |
+| `lakatos/io/_resource_anchor.py` | signed append-only external-checkpoint adapter |
+| `lakatos/io/resource_journal.py` | stable public facade and single-host SQLite revision-CAS repository |
 | `lakatos/io/` | receipts, lineage, replay, persistence adapters |
 | `formal/` | machine-checked kernel model |
 | `server/` | optional HTTP/MCP surface and stores |
@@ -171,7 +175,7 @@ Detailed explanations belong in [THEORY.md](THEORY.md), the [PIDNA conceptual mo
 This compact roster is machine-checked against the package. See the architecture links above for meaning.
 
 ### Foundation — `lakatos/`
-`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `resource_coordination` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
+`engine` `engine_identity` `verdicts` `node_state` `frontier_state` `grounding` `coverage` `trust` `claim` `world_gates` `resource_coordination` `resource_kernel` `harness` `harness_run` `longinus` `longinus_dashboard` `semantic_surface` `cli` `mcp_server` `eureka` `facts` `research_import` `provenance_backfill` `ontology` `assurance` `write_cert` `layout` `temporal` `measurement_lock` `replay_artifacts` `backtest` `backtest_cli`
 
 ### `verdict/`
 `judge` `pnr` `spine` `promote` `certify` `cert_gate` `argue` `compose` `industrial` `kusari` `z_height`
@@ -183,7 +187,7 @@ This compact roster is machine-checked against the package. See the architecture
 `kuhn` `leaderboard` `lifecycle` `stack` `agm` `explore` `heuristic` `series` `flip` `tradition` `consilience` `authoring` `evidence` `record_judge` `multi_run`
 
 ### `io/`
-`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify` `resource_journal`
+`lineage` `replay` `rebuild` `reconcile` `adapters` `prov` `envfp` `oo_sink` `oo_verify` `marquez_sink` `marquez_verify` `_resource_journal_contracts` `_resource_journal_codec` `_resource_anchor` `resource_journal`
 
 ## Develop and verify
 

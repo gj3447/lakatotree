@@ -37,6 +37,11 @@ jobs:
           with zipfile.ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
               required = {
+                  "lakatos/resource_coordination.py",
+                  "lakatos/resource_kernel.py",
+                  "lakatos/io/_resource_journal_contracts.py",
+                  "lakatos/io/_resource_journal_codec.py",
+                  "lakatos/io/_resource_anchor.py",
                   "lakatos/io/resource_journal.py",
                   "server/schema.sql",
                   "server/storage_migrations/critique_history_v1.sql",

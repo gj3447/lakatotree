@@ -74,3 +74,16 @@ source_modules =
 forbidden_modules =
     lakatos
     server
+
+; ── 듀얼 자원 functional core → effects 금지 ───────────────────────────────────
+; resource_coordination + 그 함수형 capability bundle 은 clock/DB/filesystem/server 를
+; 알 수 없다. SQLite/anchor 가 이 둘에 의존하며, 반대 방향은 import-linter 가 차단한다.
+[importlinter:contract:resource-functional-core-no-effects]
+name = resource functional core must not import effects
+type = forbidden
+source_modules =
+    lakatos.resource_coordination
+    lakatos.resource_kernel
+forbidden_modules =
+    lakatos.io
+    server

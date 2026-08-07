@@ -1,0 +1,79 @@
+# Locked before implementation of the injected functional-kernel port.
+# The adapter drives the real SQLite shell and mutates only isolated copies.
+name: lakatotree-dual-resource-functional-shell
+target:
+  mode: in_process
+  callable: functional_shell_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: DRF-1
+    description: Equal immutable state and command inputs produce equal decisions and evolved states without mutating the original state.
+    gate:
+      - {event: pure_kernel_referentially_transparent, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:pure_kernel_referentially_transparent
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: pure_kernel_referentially_transparent
+
+  - id: DRF-2
+    description: The real SQLite apply path invokes its explicitly injected decide port.
+    gate:
+      - {event: injected_decide_port_used, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:injected_decide_port_used
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: injected_decide_port_used
+
+  - id: DRF-3
+    description: Bypassing the injected decide port with the concrete global function makes the isolated mutant RED.
+    gate:
+      - {event: decide_port_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:decide_port_load_bearing
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: decide_port_load_bearing
+
+  - id: DRF-4
+    description: Bypassing the injected evolve port with the concrete global function makes the isolated mutant RED.
+    gate:
+      - {event: evolve_port_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:evolve_port_load_bearing
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: evolve_port_load_bearing
+
+  - id: DRF-5
+    description: Verified replay indexes are immutable tuples and replacing one with a mutable list makes the isolated mutant RED.
+    gate:
+      - {event: replay_index_immutability_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:replay_index_immutability_load_bearing
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: replay_index_immutability_load_bearing
+
+  - id: DRF-6
+    description: The split contracts, codec, anchor, and SQLite facade retain exact public identities and the canonical journal head.
+    gate:
+      - {event: split_codec_contract_stable, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:split_codec_contract_stable
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: split_codec_contract_stable
+
+  - id: DRF-7
+    description: Changing the persisted journal hash domain makes the isolated codec mutant RED against the frozen canonical head.
+    gate:
+      - {event: codec_hash_contract_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_FUNCTIONAL_SHELL:codec_hash_contract_load_bearing
+      source: functional_shell_receipt.py
+      symbol: verify
+      must_emit: codec_hash_contract_load_bearing

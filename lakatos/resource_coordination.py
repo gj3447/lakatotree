@@ -700,6 +700,8 @@ class Decision:
     _replay_receipt: ResourceReceipt | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.transitions, tuple):
+            raise ValueError("transitions must be a tuple")
         if self.replayed:
             if self.transitions or self._replay_receipt is None:
                 raise ValueError("replay decision requires one stored receipt and no transition")
@@ -826,6 +828,10 @@ class ResourceState:
             raise ValueError("spent must be a ResourceVector")
         if not isinstance(self.status, BudgetStatus):
             raise ValueError("budget status must be a BudgetStatus")
+        if not isinstance(self.grants, tuple):
+            raise ValueError("grants must be a tuple")
+        if not isinstance(self.command_records, tuple):
+            raise ValueError("command_records must be a tuple")
         if any(not isinstance(grant, ResourceGrant) for grant in self.grants):
             raise ValueError("grants must contain ResourceGrant values")
 

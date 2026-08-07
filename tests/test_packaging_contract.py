@@ -19,6 +19,11 @@ _CORE_MODULES = [
     "lakatos/programme/authoring.py",
     "lakatos/programme/evidence.py",
     "lakatos/programme/record_judge.py",
+    "lakatos/resource_coordination.py",
+    "lakatos/resource_kernel.py",
+    "lakatos/io/_resource_journal_contracts.py",
+    "lakatos/io/_resource_journal_codec.py",
+    "lakatos/io/_resource_anchor.py",
     "lakatos/io/resource_journal.py",
 ]
 _THIRD_PARTY = {"fastapi", "starlette", "uvicorn", "httpx", "pydantic", "mcp",
