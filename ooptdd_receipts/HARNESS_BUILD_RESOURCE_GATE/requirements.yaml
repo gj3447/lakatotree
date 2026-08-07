@@ -1,0 +1,210 @@
+# RED was observed before implementation: the focused pytest could not import
+# lakatos.build_execution. The adapter below drives real SQLite journals, target
+# effects, subprocesses, recovery, settlement, and isolated source mutants.
+name: lakatotree-harness-build-resource-gate
+target:
+  mode: in_process
+  callable: harness_build_resource_gate_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: HBRG-1
+    description: One harness build crosses confirmed admission and authenticated dispatch, commits one target-fenced subprocess result, meters wall time, and settles before scientific judging.
+    gate:
+      - {event: gated_build_runs_once_and_settles, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:gated_build_runs_once_and_settles
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: gated_build_runs_once_and_settles
+
+  - id: HBRG-2
+    description: A response lost after terminal target commit is recovered by lookup and never launches the subprocess twice.
+    gate:
+      - {event: terminal_response_loss_recovers_without_redispatch, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:terminal_response_loss_recovers_without_redispatch
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: terminal_response_loss_recovers_without_redispatch
+
+  - id: HBRG-3
+    description: A crash after durable claim but before terminal evidence remains unknown across restart and never relaunches the ambiguous effect.
+    gate:
+      - {event: nonterminal_claim_stays_unknown_without_redispatch, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:nonterminal_claim_stays_unknown_without_redispatch
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: nonterminal_claim_stays_unknown_without_redispatch
+
+  - id: HBRG-4
+    description: A nonzero build is a terminal metered effect that settles first, then reaches the existing BuildFailed scientific boundary without judge execution.
+    gate:
+      - {event: nonzero_build_settles_then_fails_scientifically, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:nonzero_build_settles_then_fails_scientifically
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: nonzero_build_settles_then_fails_scientifically
+
+  - id: HBRG-5
+    description: Workload identity changes for every declared execution input, including shell, isolation identity and policy, output evidence bounds, and input manifest.
+    gate:
+      - {event: workload_identity_binds_execution_inputs, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:workload_identity_binds_execution_inputs
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: workload_identity_binds_execution_inputs
+
+  - id: HBRG-6
+    description: Replacing the build-specific harness port with legacy bash in an isolated source copy performs a forbidden marker effect, proving the wiring guard is load-bearing.
+    gate:
+      - {event: harness_build_port_wiring_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:harness_build_port_wiring_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: harness_build_port_wiring_load_bearing
+
+  - id: HBRG-7
+    description: Removing closed-environment identity from the pure workload hash in an isolated source copy makes distinct execution contexts collide and the mutant RED.
+    gate:
+      - {event: workload_environment_binding_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:workload_environment_binding_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: workload_environment_binding_load_bearing
+
+  - id: HBRG-8
+    description: Every declared input file is reverified before terminal replay, so an input change refuses stale evidence without redispatch.
+    gate:
+      - {event: verified_input_change_blocks_stale_replay, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:verified_input_change_blocks_stale_replay
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: verified_input_change_blocks_stale_replay
+
+  - id: HBRG-9
+    description: A length-first SQLite query withholds oversized terminal blobs; bounded raw bytes are authenticated with a parent-held HMAC before JSON/schema decode, target tampering is rejected without redispatch, and an isolated decode-first source mutant turns RED.
+    gate:
+      - {event: target_authentication_rejects_forged_terminal, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:target_authentication_rejects_forged_terminal
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: target_authentication_rejects_forged_terminal
+
+  - id: HBRG-10
+    description: Ordinary background descendants in the build process group are killed before terminal settlement and cannot continue unmetered work.
+    gate:
+      - {event: ordinary_background_descendant_is_closed, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:ordinary_background_descendant_is_closed
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: ordinary_background_descendant_is_closed
+
+  - id: HBRG-11
+    description: A wall-clock rollback during execution cannot predate the start or strand a completed build; monotonic elapsed time supplies the completion floor and settlement time.
+    gate:
+      - {event: clock_rollback_preserves_terminal_settlement, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:clock_rollback_preserves_terminal_settlement
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: clock_rollback_preserves_terminal_settlement
+
+  - id: HBRG-12
+    description: The effect adapter refuses an isolation port that cannot attest provider-network denial and resource-authority protection.
+    gate:
+      - {event: provider_denial_capability_is_required, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:provider_denial_capability_is_required
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: provider_denial_capability_is_required
+
+  - id: HBRG-13
+    description: Removing isolation-policy identity from the pure workload hash in an isolated source copy makes distinct security policies collide and the mutant RED.
+    gate:
+      - {event: workload_isolation_policy_binding_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:workload_isolation_policy_binding_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: workload_isolation_policy_binding_load_bearing
+
+  - id: HBRG-14
+    description: The production Darwin sandbox profile and argv are exact pure values that deny network and resource-authority access on every test platform.
+    gate:
+      - {event: darwin_sandbox_policy_is_exact, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:darwin_sandbox_policy_is_exact
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: darwin_sandbox_policy_is_exact
+
+  - id: HBRG-15
+    description: Subprocess output is streamed through a hard workload-bound byte cap; overflow is a typed terminal effect whose bounded evidence and measured usage settle normally, while an isolated cap-removal source mutant turns RED.
+    gate:
+      - {event: bounded_output_overflow_settles_terminally, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:bounded_output_overflow_settles_terminally
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: bounded_output_overflow_settles_terminally
+
+  - id: HBRG-16
+    description: Closed child-environment composition removes resource authority and credential-shaped keys while retaining ordinary variables, and a filter-removal source mutant turns RED on every platform.
+    gate:
+      - {event: closed_environment_secret_filter_is_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:closed_environment_secret_filter_is_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: closed_environment_secret_filter_is_load_bearing
+
+  - id: HBRG-17
+    description: Resource-authority root policy rejects containment of the working tree, symlinks, foreign ownership, and group or other permissions; isolated policy-removal mutants turn RED.
+    gate:
+      - {event: resource_root_policy_is_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:resource_root_policy_is_load_bearing
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: resource_root_policy_is_load_bearing
+
+  - id: HBRG-18
+    description: Invalid UTF-8 output is replacement-decoded without expanding persisted evidence past the workload-bound byte limit, and the terminal effect settles.
+    gate:
+      - {event: invalid_utf8_tail_remains_bounded_and_terminal, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:invalid_utf8_tail_remains_bounded_and_terminal
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: invalid_utf8_tail_remains_bounded_and_terminal
+
+  - id: HBRG-19
+    description: A stream-read failure after process launch kills the process group, bounded-waits, reaps the leader, and remains an explicit outcome-unknown claim.
+    gate:
+      - {event: exceptional_stream_cleanup_reaps_leader, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:exceptional_stream_cleanup_reaps_leader
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: exceptional_stream_cleanup_reaps_leader
+
+  - id: HBRG-20
+    description: Target SQLite busy or locked failures cross the public boundary as transient outcome-unknown, while corrupt durable state crosses it as a permanent typed target error; raw sqlite exceptions never reach the CLI, including on the Python 3.10 sqlite surface without 3.11 result-code names.
+    gate:
+      - {event: target_sqlite_failures_are_typed, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:HARNESS_BUILD_RESOURCE_GATE:target_sqlite_failures_are_typed
+      source: harness_build_resource_gate_receipt.py
+      symbol: verify
+      must_emit: target_sqlite_failures_are_typed

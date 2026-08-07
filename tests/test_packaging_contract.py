@@ -22,11 +22,13 @@ _CORE_MODULES = [
     "lakatos/resource_coordination.py",
     "lakatos/resource_kernel.py",
     "lakatos/resource_execution.py",
+    "lakatos/build_execution.py",
     "lakatos/io/_resource_journal_contracts.py",
     "lakatos/io/_resource_journal_codec.py",
     "lakatos/io/_resource_anchor.py",
     "lakatos/io/resource_journal.py",
     "lakatos/io/resource_execution.py",
+    "lakatos/io/local_build_execution.py",
 ]
 _THIRD_PARTY = {"fastapi", "starlette", "uvicorn", "httpx", "pydantic", "mcp",
                 "psycopg2", "pymongo", "neo4j", "prov", "lxml", "rdflib", "numpy", "scipy"}

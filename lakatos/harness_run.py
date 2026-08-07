@@ -8,8 +8,16 @@ spec.json = CycleSpec 필드. internet_sources 는 [[url, trust], ...] (parent �
 """
 import json, os, subprocess, sys
 import urllib.request, urllib.error
+from lakatos.build_execution import (ResourceBuildConfigError,
+                                     ResourceBuildOutcomeUnknown,
+                                     ResourceBuildOverrun)
 from lakatos.harness import (LakatoHarness, CycleSpec, BashConfigError, BashTimeout,
                              BuildFailed, ScoringRefused)
+from lakatos.io.local_build_execution import (
+    BuildTargetError,
+    BuildTargetOutcomeUnknown,
+    resource_gated_build_runner_from_environment,
+)
 
 BASE = os.environ.get('LAKATOTREE_URL', 'http://localhost:55170')
 BASH_TIMEOUT_DEFAULT = 600   # 종전 하드코딩값 — env 미설정 시 거동 동일(비파괴)
@@ -22,6 +30,11 @@ TYPED_TERMINALS = {
     BuildFailed:     ('build_failed', 'permanent'),
     ScoringRefused:  ('scoring_refused', 'permanent'),
     BashConfigError: ('config_error', 'permanent'),
+    ResourceBuildConfigError: ('resource_build_config_error', 'permanent'),
+    ResourceBuildOutcomeUnknown: ('resource_build_outcome_unknown', 'transient'),
+    ResourceBuildOverrun: ('resource_build_overrun', 'permanent'),
+    BuildTargetOutcomeUnknown: ('resource_build_target_outcome_unknown', 'transient'),
+    BuildTargetError: ('resource_build_target_error', 'permanent'),
     # 서버 부재(연결거부/DNS 실패) — _http 는 HTTPError(4xx/5xx)만 잡아 dict 로 접었고 URLError 는
     #   그대로 샜다. 그런데 harness 는 build 게이트 *전에* _register_node 로 HTTP 를 친다(harness.py)
     #   = 서버가 죽어 있으면 '타입화된 CLI' 라던 바로 그 표면이 생 스택트레이스로 터진다.
@@ -89,11 +102,20 @@ def _git_sha():
         return None
 
 
-def main(path):
+def main(path, *, run_build=None):
     spec = CycleSpec(**json.loads(open(path).read()))
+    selected_build = run_build
+    if selected_build is None and spec.build_cmd:
+        selected_build = resource_gated_build_runner_from_environment(
+            tree=spec.tree,
+            tag=spec.tag,
+            command=spec.build_cmd,
+            timeout_seconds=_bash_timeout(),
+        )
     # 상계는 read-only — 인터넷 fetch 는 parent(상위 agent)가 미리 채워 internet_sources 에 (url,trust) 로 주입.
     # 하네스는 그 신뢰가중만 결합 (실 WebFetch 는 agent 도구, 하네스 안에서 호출 안 함 = 권한 경계 존중).
-    h = LakatoHarness(http=_http, run_bash=_bash, read_internet=None, git_sha=_git_sha)
+    h = LakatoHarness(http=_http, run_bash=_bash, read_internet=None, git_sha=_git_sha,
+                      run_build=selected_build)
     if spec.internet_sources:
         h._internet = lambda url, prompt: ('(상계 read: parent 제공)', 0.0)
         # seed_trust(주입값) 우선 — None 이면 0

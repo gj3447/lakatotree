@@ -81,6 +81,23 @@ distribution.
 
 ### Added
 
+- The harness now has an opt-in, build-specific dual-resource vertical slice. It binds
+  command/cwd/timeout/closed-environment/input identity in a pure workload contract,
+  reserves before launch, consumes a target-local monotonic fence, records a durable
+  claim before a provider-free subprocess, exact-readbacks terminal evidence after
+  response loss, settles measured wall time (including failed builds), and preserves
+  ambiguous post-claim crashes without redispatch. The judge port and default legacy
+  build path remain unchanged unless the resource-build environment is fully enabled.
+  The macOS composition verifies a file-by-file input manifest, denies child network
+  and resource-root access, strips credentials, authenticates target evidence with a
+  derived raw-blob HMAC before decode, streams through a workload-bound output cap,
+  closes ordinary background process groups, and remains terminal/settle-safe across
+  a backward UTC clock step. Length-first target queries avoid materializing oversized
+  forged blobs, exceptional stream cleanup reaps the leader, invalid UTF-8 cannot expand
+  persisted tails past their byte contract, and journal/target uncertainty now reaches
+  the CLI through explicit transient versus permanent terminals. Target SQLite
+  availability failures are transient outcome-unknown, while corruption and schema
+  failures are permanent; raw SQLite exceptions no longer cross the service boundary.
 - A dependency-free dual-resource coordination kernel now models componentwise,
   all-or-nothing reservations across compute wall time and LLM input/output tokens.
   It produces receipt- and state-chain-bound semantic transitions, enforces causal

@@ -1,10 +1,12 @@
 # Dual-resource coordination (v1)
 
-- Status: **executable kernel, durable single-host journal, and operation-specific
-  workload-dispatch authority; live metering and harness wiring not yet implemented**
+- Status: **executable kernel, durable single-host journal, operation-specific
+  workload-dispatch authority, and one opt-in target-fenced/metered local-build
+  vertical slice; provider token metering and fleet enforcement are not implemented**
 - Schema: `lakatotree.resource/v1`
 - Code: `lakatos/resource_coordination.py`, `lakatos/resource_kernel.py`,
-  `lakatos/resource_execution.py`, `lakatos/io/resource_execution.py`,
+  `lakatos/resource_execution.py`, `lakatos/build_execution.py`,
+  `lakatos/io/resource_execution.py`, `lakatos/io/local_build_execution.py`,
   `lakatos/io/_resource_journal_contracts.py`,
   `lakatos/io/_resource_journal_codec.py`, `lakatos/io/_resource_anchor.py`,
   `lakatos/io/resource_journal.py`
@@ -83,6 +85,12 @@ _resource_journal_contracts.py
 confirmed state + StartGrant intent      lakatos/resource_execution.py
                 ↓ fresh-head revalidation through injected ports
 operation-specific dispatch shell        lakatos/io/resource_execution.py
+
+closed build inputs + terminal usage      lakatos/build_execution.py
+                ↓ implemented by
+target fence + subprocess + settlement    lakatos/io/local_build_execution.py
+                ↓ injected only at build seam
+LakatoHarness(run_build=...)               lakatos/harness.py
 ```
 
 Existing consumers keep importing from `lakatos.io.resource_journal`; it is the
@@ -96,7 +104,7 @@ copies. For AI-assisted changes, use these bounded seams:
   SQLite or the pure kernel about its filesystem/network details;
 - treat codec, schema, hash-domain, and rule-identity changes as explicit version
   migrations; the v1 decoder remains closed and fail-fast;
-- never import `lakatos.io` or `server` from either functional-core module.
+- never import `lakatos.io` or `server` from any resource/build functional-core module.
   `.importlinter`
   makes that direction machine-enforced.
 
@@ -196,14 +204,125 @@ in-process reference boundary: deployment across an untrusted transport still ne
 proper secret distribution, rotation, and endpoint authentication. Constructing either
 pure dataclass directly does not confer authority over an effect port.
 
+### Opt-in local harness build slice
+
+`harness_run` can inject a resource-gated callable into the harness build seam while
+leaving the judge callable and all default callers unchanged. The composition is
+enabled only when `LAKATOTREE_RESOURCE_BUILD_DIR` is non-empty; once enabled it fails
+closed unless all of these values are valid:
+
+| variable | purpose |
+|---|---|
+| `LAKATOTREE_RESOURCE_BUILD_DIR` | dedicated durable SQLite, lock, and signed-anchor root |
+| `LAKATOTREE_RESOURCE_ANCHOR_KEY_HEX` | exactly 32 bytes for checkpoint authentication |
+| `LAKATOTREE_RESOURCE_PERMIT_KEY_HEX` | at least 32 bytes for permit authentication and derivation of a distinct target-evidence HMAC key |
+| `LAKATOTREE_RESOURCE_COMPUTE_CAP_MS` | immutable per-tree wall-time hard-cap declaration |
+| `LAKATOTREE_BUILD_INPUT_MANIFEST` | path to a canonical v1 file manifest rooted at the current working directory |
+
+The pure `BuildExecutionSpec` binds the shell command, canonical working directory,
+shell, timeout, a hash of the closed child environment, the declared input-manifest
+hash, isolation adapter/version/policy hash, retained-tail and total-output byte caps,
+adapter version, and the provider-free declaration. The manifest has this closed shape and must contain a
+non-empty, lexically sorted, duplicate-free list of normalized relative regular files:
+
+```json
+{"schema_version":"lakatotree.build-input-manifest/v1","files":[{"path":"src/a.py","sha256":"<64 lowercase hex>"}]}
+```
+
+Each listed file is content-verified when the composition is built, before every
+replay, and again after the target claim immediately before launch. Missing, changed,
+out-of-root, or final-component symlink inputs fail closed. Changing any bound input or
+regenerating a manifest for changed content produces another workload/effect identity.
+Conversely, the same tree, tag, and workload identity is an idempotency key: restart
+returns retained evidence instead of treating it as a request to run again. Operators
+must include every build-relevant file; v1 assumes a trusted local workspace does not
+mutate after the final verification read.
+
+The target adapter allocates monotonically increasing fences per tree scope, holds a
+POSIX scope lock through launch and terminal commit, and checks exact replay before
+freshness. Its separate SQLite target registry uses rollback journaling,
+`synchronous=FULL`, exact schema/metadata readback, a schema hash receipt, and one
+transaction for terminal result plus dispatch receipt. A terminal response lost after
+commit is recovered by lookup and is not launched twice. A crash after the durable
+`CLAIMED` row but before terminal evidence is deliberately left unknown and will not
+be relaunched. Thus the adapter claims durable exact-retry deduplication and at-most-one
+launch attempt for a stable effect—not generic exactly-once execution. The configured
+directory must be on a filesystem whose `flock` and SQLite durability semantics the
+operator trusts; this adapter does not prove those properties remotely.
+
+Terminal result and dispatch-receipt semantic hashes plus their raw bounded-blob hashes
+are covered by an HMAC whose key is derived domain-separately from the permit key. A
+length-first SQLite query returns blob bytes only when they fit the readback cap; those
+raw bytes are then authenticated before JSON/schema decoding. The target stores only a
+key id and MAC, and exact metadata/schema readback rejects foreign or downgraded
+databases. The resource directory must be a real current-user-owned directory with no
+group/other permissions. The production child cannot read or write it, and resource
+keys are absent from its environment, so a build cannot manufacture authoritative
+target evidence merely by editing the SQLite file.
+
+Subprocess elapsed time is measured with a monotonic clock from immediately before
+spawn through reap and rounded upward to milliseconds. A monotonic completion floor
+prevents a backward UTC clock step from making terminal evidence predate its start;
+settlement likewise chooses the latest of lifecycle and measurement times. Exit zero,
+nonzero exit, timeout after process-group kill/reap, and a known spawn failure are
+terminal resource outcomes and are settled before the harness applies its scientific
+`BuildFailed` or `BashTimeout` boundary. Ordinary background descendants in the build
+process group are killed before the result is committed. Stdout and stderr are hashed,
+counted, and tail-retained incrementally through pipes while the process is still inside
+the measured interval. Their combined admitted evidence is capped at 16 MiB by default
+(the pure spec permits an explicit workload-bound value); excess output kills the group
+and becomes the settled `OUTPUT_LIMIT_EXCEEDED` terminal (`BuildRun.returncode=125`).
+Only the admitted prefix and the final workload-bound tail are retained as evidence or
+persisted; transient pipe reads are capped at 64 KiB. Per-stream bounded tails are
+combined and final-truncated to 64 KiB by default. Replacement decoding of invalid UTF-8
+is byte-trimmed again so persisted text cannot expand past that bound.
+Evidence binds result classification, timing, output evidence and limits,
+workload/intent/fence, and adapter method.
+
+A stream-read or cleanup failure after launch remains outcome-unknown rather than being
+misreported as terminal. Exceptional cleanup kills the process group and always makes a
+bounded wait to reap the leader while preserving the original failure. At the public
+service/CLI boundary, unresolved target claims, revision conflicts, and temporarily
+unavailable anchors are transient. Target SQLite busy, locked, read-only, full, I/O,
+open, interrupted, and protocol failures are likewise outcome-unknown because durable
+effect state may be inaccessible; corrupt databases, schema drift, and identity
+failures are permanent configuration/integrity terminals. The adapter translates these
+at connection, transaction, readback, and commit boundaries, so raw `sqlite3.Error`
+values do not escape through the typed CLI.
+
+This v1 subprocess adapter records zero LLM tokens only under its explicit
+`provider_calls=forbidden` workload contract. The built-in production composition is
+currently macOS-only and invokes `/usr/bin/sandbox-exec` with network access and the
+resource-authority root denied. Resource configuration and credential-like environment
+names are removed before the remaining closed environment is hashed and passed to the
+child. If that sandbox is unavailable—or on a non-macOS host—opt-in composition fails
+closed. Model-calling commands require a provider usage adapter and must not be routed
+through this zero-token adapter.
+
+The sandbox is a provider-denial boundary, not a general confidential-filesystem
+sandbox: its current profile allows ordinary host file reads outside the protected
+resource root. The command is therefore still required to be trusted and may not be
+used to process secrets merely because credential-shaped environment names were
+removed. A future untrusted-command adapter needs a closed filesystem allowlist or
+container identity in addition to provider metering.
+
+The wall deadline and process-group cleanup are not CPU, memory, GPU, cgroup, or
+fleet isolation. V1 accepts only trusted build/TDD commands that do not deliberately
+detach into a new process session; a deliberately daemonizing command can escape the
+ordinary process-group boundary and is outside this adapter's contract. A stronger
+deployment must inject an OS/container scheduler adapter that provides descendant-wide
+containment and metering before untrusted commands are admitted.
+
 Reconciliation in this slice is synchronous and caller-driven. The outbox has only
 `PENDING` and `CONFIRMED` states, and the journal does not yet stop a caller from
 adding later revisions while an earlier checkpoint remains unconfirmed. Consequently,
 an anchor outage can accumulate a local-only branch; none of that branch authorizes
-an external effect. The remaining harness milestone must add a bounded
+an external effect. The remaining runtime milestone must add a bounded
 retry/deadline and reconciliation state machine and halt fresh branch advancement
 while the trusted head is unresolved. The dispatch gate itself does not retry,
-auto-settle usage, or guess whether a failed provider call took effect.
+or guess whether a failed provider call took effect. Its explicit `settle` operation
+requires exact terminal receipt and usage; the local build application service invokes
+that operation synchronously.
 
 The initial dimensions are intentionally small and enforceable:
 

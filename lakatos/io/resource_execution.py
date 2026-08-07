@@ -14,6 +14,7 @@ the fence at its own target boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import hmac
 from typing import NoReturn, Protocol
@@ -25,6 +26,8 @@ from lakatos.io._resource_journal_contracts import (
 from lakatos.resource_coordination import (
     GrantStatus,
     ResourceCommand,
+    ResourceUsage,
+    SettleGrant,
     StartGrant,
     UsageUnknown,
 )
@@ -224,6 +227,16 @@ class WorkloadEffectPort(Protocol):
         ...
 
 
+class MeasuredWorkloadEffectPort(WorkloadEffectPort, Protocol):
+    """Effect port that can exact-readback terminal resource measurement."""
+
+    def lookup_usage(
+        self,
+        reference: WorkloadDispatchIntentReference,
+    ) -> ResourceUsage | None:
+        ...
+
+
 def authority_from_snapshot(snapshot: JournalSnapshot) -> ResourceAuthority:
     if not isinstance(snapshot, JournalSnapshot):
         raise TypeError("snapshot must be a JournalSnapshot")
@@ -278,6 +291,28 @@ def _usage_unknown_command_id(
     return f"usage-unknown:{hashlib.sha256(material).hexdigest()}"
 
 
+def _settle_command_id(
+    reference: WorkloadDispatchIntentReference,
+    usage: ResourceUsage,
+) -> str:
+    material = (
+        f"{reference.scope}\0{reference.effect_id}\0{reference.intent_sha256}\0"
+        f"{usage.measurement_sha256}\0{usage.evidence_sha256}"
+    ).encode("utf-8")
+    return f"settle:{hashlib.sha256(material).hexdigest()}"
+
+
+def _latest_utc(*values: str) -> str:
+    """Select a lifecycle-safe UTC observation even if the system clock steps back."""
+
+    return max(
+        values,
+        key=lambda value: datetime.fromisoformat(
+            value.removesuffix("Z") + "+00:00"
+        ),
+    )
+
+
 class ResourceExecutionGate:
     """Prepare, dispatch, and reconcile through injected journal/effect ports."""
 
@@ -289,6 +324,7 @@ class ResourceExecutionGate:
         effect: WorkloadEffectPort,
         clock: ClockPort,
         permit_authenticator: PermitAuthenticatorPort,
+        settlement_effect: MeasuredWorkloadEffectPort | None = None,
         permit_ttl_seconds: int = DEFAULT_WORKLOAD_DISPATCH_PERMIT_TTL_SECONDS,
     ) -> None:
         if not isinstance(scope, str) or not scope or not scope.isprintable():
@@ -309,6 +345,14 @@ class ResourceExecutionGate:
         self._scope = scope
         self._journal = journal
         self._effect = effect
+        if (
+            settlement_effect is not None
+            and _effect_identity(settlement_effect) != _effect_identity(effect)
+        ):
+            raise ValueError(
+                "settlement effect identity must match the dispatch effect identity"
+            )
+        self._settlement_effect = settlement_effect
         self._clock = clock
         self._permit_authenticator = permit_authenticator
         self._permit_ttl_seconds = permit_ttl_seconds
@@ -534,12 +578,108 @@ class ResourceExecutionGate:
                 returned_receipt=receipt,
             )
 
+    def settle(self, effect_id: str) -> DurableDecision:
+        """Exact-read terminal receipt/usage and durably settle the open grant.
+
+        Settlement never revives a permit and never redispatches.  It is valid only
+        while the persisted StartGrant remains unresolved; callers recovering an
+        already terminal grant must exact-read its retained settlement receipt.
+        """
+
+        current = self._journal.load(self._scope)
+        authority = authority_from_snapshot(current)
+        require_current_confirmed_authority(current.state, authority)
+        reference = derive_workload_dispatch_intent_reference(
+            current.state,
+            effect_id=effect_id,
+        )
+        validate_workload_dispatch_intent_reference(current.state, reference)
+        if _effect_identity(self._effect) != (
+            reference.adapter,
+            reference.adapter_version,
+        ):
+            raise InvalidWorkloadDispatchIntent(
+                "effect adapter identity diverges from the settlement intent"
+            )
+        settlement_effect = self._settlement_effect
+        if settlement_effect is None:
+            raise InvalidWorkloadDispatchIntent(
+                "no measured settlement effect was injected into this gate"
+            )
+        if _effect_identity(settlement_effect) != (
+            reference.adapter,
+            reference.adapter_version,
+        ):
+            raise InvalidWorkloadDispatchIntent(
+                "settlement effect identity diverges from the settlement intent"
+            )
+        try:
+            receipt = settlement_effect.lookup(reference)
+            usage = settlement_effect.lookup_usage(reference)
+        except Exception as exc:
+            self._raise_unknown(
+                reference,
+                f"effect settlement lookup raised {type(exc).__name__}",
+                cause=exc,
+            )
+        if receipt is None or usage is None:
+            self._raise_unknown(
+                reference,
+                "effect has no complete terminal receipt and usage",
+            )
+        if not isinstance(receipt, WorkloadDispatchReceipt):
+            self._raise_unknown(
+                reference,
+                "effect settlement returned no typed receipt",
+            )
+        if not isinstance(usage, ResourceUsage):
+            self._raise_unknown(
+                reference,
+                "effect settlement returned no typed usage",
+            )
+        try:
+            validate_workload_dispatch_receipt(reference, receipt)
+        except (TypeError, InvalidWorkloadDispatchIntent) as exc:
+            self._raise_unknown(
+                reference,
+                "effect settlement receipt binding diverged",
+                cause=exc,
+                returned_receipt=receipt,
+            )
+        if usage.evidence_sha256 != receipt.evidence_sha256:
+            self._raise_unknown(
+                reference,
+                "effect usage evidence diverges from the dispatch receipt",
+                returned_receipt=receipt,
+            )
+        command = SettleGrant(
+            command_id=_settle_command_id(reference, usage),
+            grant_id=reference.grant_id,
+            fence_token=reference.fence_token,
+            workload_sha256=reference.workload_sha256,
+            observed_at=_latest_utc(
+                self._clock.now_utc(),
+                current.state.grant(reference.grant_id).last_observed_at,
+                usage.measured_at,
+            ),
+            usage=usage,
+        )
+        durable = self._journal.apply(
+            self._scope,
+            command,
+            expected_revision=current.state.revision,
+        )
+        if durable.decision.rejection is not None:
+            raise durable.decision.rejection
+        return durable
+
 
 __all__ = [
     "AuthenticatedWorkloadDispatchPermit",
     "ClockPort",
     "DispatchOutcomeUnknown",
     "HMACPermitAuthenticator",
+    "MeasuredWorkloadEffectPort",
     "PermitAuthenticatorPort",
     "ResourceExecutionGate",
     "ResourceJournalPort",

@@ -13,6 +13,39 @@
 import hashlib
 import re
 from dataclasses import dataclass, field
+from typing import Protocol
+
+from lakatos.build_execution import BuildRun
+
+
+class HarnessHttpPort(Protocol):
+    def __call__(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+    ) -> dict:
+        ...
+
+
+class HarnessBashPort(Protocol):
+    def __call__(self, command: str) -> tuple[str, int]:
+        ...
+
+
+class HarnessBuildPort(Protocol):
+    def __call__(self, command: str) -> BuildRun | tuple[str, int]:
+        ...
+
+
+class HarnessInternetPort(Protocol):
+    def __call__(self, url: str, prompt: str) -> tuple[str, float]:
+        ...
+
+
+class HarnessGitShaPort(Protocol):
+    def __call__(self) -> str | None:
+        ...
 
 
 class BuildFailed(Exception):
@@ -82,9 +115,20 @@ def _parse_metric(stdout: str) -> float:
 class LakatoHarness:
     """주입된 포트로 한 라카토트리 사이클을 엮어 실행. 모든 계·행위자 관통."""
 
-    def __init__(self, http, run_bash, read_internet=None, git_sha=None):
+    def __init__(
+        self,
+        http: HarnessHttpPort,
+        run_bash: HarnessBashPort,
+        read_internet: HarnessInternetPort | None = None,
+        git_sha: HarnessGitShaPort | None = None,
+        *,
+        run_build: HarnessBuildPort | None = None,
+    ) -> None:
         self._http = http               # 하계 read-write: KG/DB (서버 API)
         self._bash = run_bash           # 하계 read-write: bash 실행 → (stdout, exit)
+        # build 와 judge 는 실패/권한/정산 의미가 다르다. build 전용 포트를 선택 주입하되,
+        # 미주입 기존 호출은 정확히 종전 run_bash 로 귀결한다(하위호환).
+        self._build = run_bash if run_build is None else run_build
         self._internet = read_internet  # 상계 read-only: (url, prompt) → (content, trust)
         self._git = git_sha or (lambda: None)
 
@@ -162,8 +206,20 @@ class LakatoHarness:
         """하계(execute, ground truth) — 빌드/TDD. 실패면 BuildFailed 로 사이클 중단(채점 전)."""
         if not s.build_cmd:
             return None
-        out, code = self._bash(s.build_cmd)
+        raw = self._build(s.build_cmd)
+        resource = None
+        if isinstance(raw, BuildRun):
+            out, code = raw.output, raw.returncode
+            resource = raw.resource_provenance
+            if raw.timed_out:
+                raise BashTimeout(
+                    f'하계 명령이 자원계측 빌드 벽시계 예산 초과 — 중단. {s.build_cmd[:80]}'
+                )
+        else:
+            out, code = raw
         info = {'cmd': s.build_cmd, 'exit': code, 'tail': out[-120:]}
+        if resource is not None:
+            info['resource'] = resource
         if code != 0:
             raise BuildFailed(f'빌드/TDD 실패(exit {code}) — 채점 중단. {out[-120:]}')
         return info
