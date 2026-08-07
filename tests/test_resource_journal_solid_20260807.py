@@ -163,7 +163,12 @@ def test_guard_defect_functional_core_io_dependency_contract_is_declared():
         encoding="utf-8"
     )
     assert "resource functional core must not import effects" in config
-    assert "source_modules =\n    lakatos.resource_coordination\n    lakatos.resource_kernel" in config
+    assert (
+        "source_modules =\n"
+        "    lakatos.resource_coordination\n"
+        "    lakatos.resource_kernel\n"
+        "    lakatos.resource_execution"
+    ) in config
     assert "forbidden_modules =\n    lakatos.io\n    server" in config
 
 

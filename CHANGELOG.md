@@ -95,10 +95,18 @@ distribution.
   anchor is a reference trust boundary and must live on independently administered or
   append-only storage. Its reconciliation is currently synchronous and caller-driven;
   it neither bounds retry work nor fences later local revisions behind an unconfirmed
-  head, and it deliberately mints no execution permit. This remains separate from the
-  scored-node `cycle_budget`; harness preflight, a bounded anchor-outbox state machine,
-  operation-bound effect permits, stop-work effects, and live compute/provider
-  metering are explicit follow-up gates.
+  head. A new operation-specific execution gate now treats a confirmed `StartGrant`
+  as the persisted workload-dispatch intent, mints a short-lived permit over the exact
+  grant, fence, workload, adapter, expiry, state, checkpoint, and journal head, and
+  authenticates the permit through a pinned composition-root issuer, then reloads and
+  revalidates it immediately before an injected idempotent effect port. Stable
+  intent-bound receipts survive legitimate permit reminting; response loss records
+  `UsageUnknown`, holds the reservation, and supports journal-discovered, lookup-only
+  recovery across process and adapter restart without retaining the ephemeral permit.
+  It makes no generic exactly-once claim: target-side fence enforcement remains an
+  adapter obligation. This remains separate from the scored-node `cycle_budget`;
+  harness preflight/wiring, a bounded anchor-outbox state machine, stop-work effects,
+  and live compute/provider metering are explicit follow-up gates.
 - A dependency-free production/L3 readiness case evaluator now reverifies exact
   storage bindings, a signed writer fence, least-privilege role projections, runtime
   state, and a policy-bound two-ended signed receipt-time component. Arbitrary cases

@@ -1,0 +1,80 @@
+# Locked before implementation: targeted pytest initially failed because the
+# operation-specific authority modules did not exist. The main oracle uses a local
+# transactional target; negative oracles mutate isolated copies and leave marker effects.
+name: lakatotree-dual-resource-execution-authority
+target:
+  mode: in_process
+  callable: execution_authority_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: DRE-1
+    description: A confirmed persisted StartGrant is the workload-dispatch intent and mints an authenticated short-lived permit bound to its effect id, grant, fence, workload, adapter identity, expiry, state, checkpoint, and journal head.
+    gate:
+      - {event: confirmed_start_intent_mints_exact_permit, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:confirmed_start_intent_mints_exact_permit
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: confirmed_start_intent_mints_exact_permit
+
+  - id: DRE-2
+    description: Dispatch through the real gate commits one transactional target effect and receipt, and exact same-head StartGrant replay does not repeat the physical effect.
+    gate:
+      - {event: exact_retry_deduplicates_physical_effect, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:exact_retry_deduplicates_physical_effect
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: exact_retry_deduplicates_physical_effect
+
+  - id: DRE-2B
+    description: After journal-head movement, replay remints current short-lived authority while the stable intent and transactional target receipt survive adapter restart without repeating work.
+    gate:
+      - {event: restart_remint_reuses_stable_effect_intent, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:restart_remint_reuses_stable_effect_intent
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: restart_remint_reuses_stable_effect_intent
+
+  - id: DRE-3
+    description: Any confirmed journal-head movement after permit minting makes the permit stale and prevents the physical effect.
+    gate:
+      - {event: stale_head_fails_closed_before_effect, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:stale_head_fails_closed_before_effect
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: stale_head_fails_closed_before_effect
+
+  - id: DRE-4
+    description: Removing immediate pre-effect permit revalidation in an isolated source copy executes the preregistered stale effect and makes the mutant RED.
+    gate:
+      - {event: immediate_revalidation_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:immediate_revalidation_load_bearing
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: immediate_revalidation_load_bearing
+
+  - id: DRE-5
+    description: Response loss after a durable effect records confirmed UsageUnknown, holds the resource reservation, and reconstructs the stable intent from the confirmed journal for lookup-only recovery after adapter restart without the ephemeral permit or redispatch.
+    gate:
+      - {event: unknown_outcome_persists_and_reconciles, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:unknown_outcome_persists_and_reconciles
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: unknown_outcome_persists_and_reconciles
+
+  - id: DRE-6
+    description: Removing authenticated-permit verification in an isolated source copy lets a forged envelope execute and makes the preregistered mutant RED.
+    gate:
+      - {event: permit_authentication_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:DUAL_RESOURCE_EXECUTION_AUTHORITY:permit_authentication_load_bearing
+      source: execution_authority_receipt.py
+      symbol: verify
+      must_emit: permit_authentication_load_bearing

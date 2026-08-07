@@ -1,8 +1,10 @@
 # Dual-resource coordination (v1)
 
-- Status: **executable kernel plus durable single-host journal; live metering and harness wiring not yet implemented**
+- Status: **executable kernel, durable single-host journal, and operation-specific
+  workload-dispatch authority; live metering and harness wiring not yet implemented**
 - Schema: `lakatotree.resource/v1`
 - Code: `lakatos/resource_coordination.py`, `lakatos/resource_kernel.py`,
+  `lakatos/resource_execution.py`, `lakatos/io/resource_execution.py`,
   `lakatos/io/_resource_journal_contracts.py`,
   `lakatos/io/_resource_journal_codec.py`, `lakatos/io/_resource_anchor.py`,
   `lakatos/io/resource_journal.py`
@@ -77,6 +79,10 @@ _resource_journal_codec.py    + _resource_anchor.py adapter
                 ↘             ↙
 immutable shared contracts and version identities
 _resource_journal_contracts.py
+
+confirmed state + StartGrant intent      lakatos/resource_execution.py
+                ↓ fresh-head revalidation through injected ports
+operation-specific dispatch shell        lakatos/io/resource_execution.py
 ```
 
 Existing consumers keep importing from `lakatos.io.resource_journal`; it is the
@@ -90,7 +96,8 @@ copies. For AI-assisted changes, use these bounded seams:
   SQLite or the pure kernel about its filesystem/network details;
 - treat codec, schema, hash-domain, and rule-identity changes as explicit version
   migrations; the v1 decoder remains closed and fail-fast;
-- never import `lakatos.io` or `server` from the functional core. `.importlinter`
+- never import `lakatos.io` or `server` from either functional-core module.
+  `.importlinter`
   makes that direction machine-enforced.
 
 The private filenames are internal ownership boundaries, not new public import
@@ -129,19 +136,74 @@ The state-plane adapter owns a stricter I/O boundary:
 must be independently administered or genuinely append-only relative to the SQLite
 writer; placing it beside the database under the same deletion-capable principal does
 not detect wholesale rollback. A remote predecessor-CAS authority can implement the
-same port. An accepted kernel decision alone is not an execution permit: this slice
-deliberately exposes no operation-agnostic `executable` boolean. A future harness
-adapter must persist an effect intent and mint/revalidate a permit bound to the current
-anchor head, operation, grant, fence, workload, expiry, and effect id immediately
-before dispatch.
+same port. An accepted admission decision alone is not an execution permit, and this
+slice still exposes no operation-agnostic `executable` boolean.
+
+For the single implemented operation, `workload.dispatch/v1`, an accepted and
+externally confirmed `StartGrant` is the durable effect intent. This is an explicit
+semantic strengthening of that lifecycle command: its `command_id` is the stable
+`effect_id`, and `IN_USE` conservatively means the dispatch may already have occurred;
+it does not prove effect completion. The workload hash must cover the complete input
+consumed by the effect adapter. This equivalence is scoped to workload dispatch and
+does not turn arbitrary commands into effect intents.
+
+`ResourceExecutionGate.prepare` loads a confirmed cut, persists `StartGrant`, reloads
+the current cut even on exact replay, and mints an immutable permit bound to operation,
+budget identity, grant, fence, workload, estimate and adapter identity, expiry,
+StartGrant command/receipt hashes, state, checkpoint, and journal head. Permits are
+short-lived (30 seconds by default, closed maximum 300 seconds, and never beyond the
+grant). The pure permit is a claim, not effect authority: `prepare` seals it in an
+authenticated envelope through an injected authenticator, and the reference shell
+uses an HMAC-SHA256 tag and a pinned issuer. `dispatch` first verifies that envelope,
+then performs another fresh load and pure revalidation immediately before calling the
+injected effect port. Any forged envelope, unconfirmed authority, head movement,
+cancellation/state change, binding drift, or expiry visible at that decision point
+fails before the effect boundary.
+
+Dynamic permit authority and stable effect identity are deliberately separate. A
+legitimate replay after time or journal-head movement receives a different permit but
+retains the same `intent_sha256`. The effect port must durably deduplicate exact
+`(effect_id, workload_sha256, intent_sha256)` retries across process restarts, return
+the same stable-intent receipt for an exact replay, and reject changed intent under
+the same effect id. A live adapter must also atomically consume or reject the fence at
+the target boundary; source-side reload alone cannot provide target-side fencing.
+
+A port exception or mismatched receipt is `DispatchOutcomeUnknown`. While the process
+is alive the gate immediately appends and confirms a stable `UsageUnknown`, retaining
+the reservation in `RECONCILIATION_REQUIRED`. `reconcile` performs authoritative
+adapter lookup only—it never redispatches—and validates any recovered receipt against
+the stable intent. Recovery does not retain or revive the expired permit: a fresh
+confirmed journal load discovers unresolved effect ids and reconstructs the stable
+intent reference from the accepted `StartGrant`. Abrupt process termination can leave
+the grant in `IN_USE`; that status already means “may have dispatched,” so restart
+recovery also discovers it, looks up the same effect id, and never infers zero use. An
+authoritative not-found result still does not release resources by itself. These
+contracts provide operation-scoped replay safety; they are not a generic exactly-once
+claim.
+
+The final source-side revalidation is the dispatch linearization point. Journal
+movement already visible there rejects the permit. A cancellation that commits after
+that point is a later lifecycle event, moves the accepted start toward
+`CANCEL_PENDING`, and requires the future idempotent `StopWork` path; it does not
+retroactively prove that dispatch did not happen. This ordering, plus target-side
+fence enforcement, is required of the live harness adapter.
+
+`ResourceAuthority` and raw `WorkloadDispatchPermit` are immutable pure values, not
+cryptographic bearer tokens. The trusted composition root constructs authority only
+from a fully verified `JournalSnapshot`; the I/O gate accepts only an authenticated
+permit envelope from its pinned authenticator. The bundled HMAC implementation is an
+in-process reference boundary: deployment across an untrusted transport still needs
+proper secret distribution, rotation, and endpoint authentication. Constructing either
+pure dataclass directly does not confer authority over an effect port.
 
 Reconciliation in this slice is synchronous and caller-driven. The outbox has only
 `PENDING` and `CONFIRMED` states, and the journal does not yet stop a caller from
 adding later revisions while an earlier checkpoint remains unconfirmed. Consequently,
 an anchor outage can accumulate a local-only branch; none of that branch authorizes
-an external effect. The harness milestone must add a bounded retry/deadline state
-machine, halt fresh branch advancement while the trusted head is unresolved, and
-revalidate an operation-specific permit against the confirmed head at dispatch time.
+an external effect. The remaining harness milestone must add a bounded
+retry/deadline and reconciliation state machine and halt fresh branch advancement
+while the trusted head is unresolved. The dispatch gate itself does not retry,
+auto-settle usage, or guess whether a failed provider call took effect.
 
 The initial dimensions are intentionally small and enforceable:
 
@@ -256,16 +318,28 @@ Implemented now:
   same-revision replacement, and signed-record tamper integration guards;
 - an additional OOPTDD receipt that ablates commit-before-response in an isolated
   source copy and proves the durable ordering is load-bearing.
+- a pure operation-specific authority kernel plus injected execution shell that treats
+  confirmed `StartGrant` as workload-dispatch intent, binds permits to the exact
+  confirmed cut, and revalidates immediately before the effect boundary;
+- authenticated short-lived adapter-bound permits, stable intent-bound receipts,
+  automatic `UsageUnknown`, journal-only recovery discovery, and lookup-only recovery
+  through a restart-capable effect port;
+- RED-first stale-head, cancellation, expiry, adapter/payload drift, remint/replay,
+  response-loss recovery, forged authorization, and receipt-mismatch guards, plus
+  OOPTDD mutants that remove immediate revalidation or permit authentication only in
+  isolated source copies and then perform the forbidden physical effect.
 
 Still required before claiming live dual-resource enforcement:
 
-1. a harness preflight that receives an injected `ResourceEstimate`;
+1. implement a durable build adapter that atomically enforces the fence, then wire one
+   harness build effect through preflight with an injected `ResourceEstimate` and the
+   operation-specific gate;
 2. a real compute meter/limiter and an LLM provider usage adapter;
 3. settlement/reconciliation workers, expiry observation, and an idempotent
    `StopWork` outbox effect for in-use cancel/deadline transitions;
 4. only then, a versioned fair-queue or quality-per-cost routing policy.
 
 Until those gates land, legacy harness calls remain uninstrumented. The repository can
-claim a deterministic coordination kernel and a durable local journal with an
-external-checkpoint protocol—not live-metered, effect-fenced, or fleet-wide
-enforcement.
+claim a deterministic coordination kernel, a durable local journal with an
+external-checkpoint protocol, and a tested workload-dispatch authority primitive—not
+live target-fenced, metered, harness-wide, or fleet-wide enforcement.

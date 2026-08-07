@@ -84,6 +84,7 @@ type = forbidden
 source_modules =
     lakatos.resource_coordination
     lakatos.resource_kernel
+    lakatos.resource_execution
 forbidden_modules =
     lakatos.io
     server
