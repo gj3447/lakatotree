@@ -13,12 +13,25 @@ from lakatos import assurance
 from lakatos.coverage import validate_coverage_declaration
 from lakatos.io.reconcile import HistoryPayloadError, validate_history_record
 from server.contexts.tree.materialization import TreeMaterializationPlanner
-from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
+from server.contexts.tree.schemas import (
+    NodeIn,
+    ParentEdgeIn,
+    QuestionIn,
+    StructuralBatchIn,
+)
 from server.contexts.tree.validation import LakatosSemanticValidator, PolicyFinding
 from server.contexts.tree.writer import (
     BudgetRaiseCertificateRequired,
     BudgetRaiseConfirmationRequired,
     CycleClaimLost,
+    DurableStructuralBatchWrite,
+    StructuralBatchIdempotencyConflict,
+    StructuralBatchNotFound,
+    StructuralConstraintUnavailable,
+    StructuralOwnershipConflict,
+    StructuralPrestateMismatch,
+    StructuralReferenceConflict,
+    StructuralInvariantFailure,
     TierDowngrade,
     TreeAlreadyExists,
     TreeBudgetStateCorrupt,
@@ -79,6 +92,96 @@ class TreeMutationService:
         self.validator = validator
         self.hist = hist
         self.planner = planner or TreeMaterializationPlanner(chunk_size=writer.chunk_size)
+
+    def apply_structural_batch(
+        self,
+        name: str,
+        command: StructuralBatchIn,
+        *,
+        idempotency_key: str,
+        constraints_ready: bool,
+    ) -> dict:
+        """Commit one structural delta, then project its durable outbox intents.
+
+        Neo4j owns the atomic domain result.  PostgreSQL history is a retryable
+        projection of immutable event ids already committed beside that result;
+        only an explicit ``False`` from the history port is pending.  Immutable
+        history conflicts intentionally escape instead of being mislabeled as a
+        dependency outage.
+        """
+
+        try:
+            durable = self.writer.apply_structural_batch(
+                name=name,
+                command=command,
+                idempotency_key=idempotency_key,
+                constraints_ready=constraints_ready,
+            )
+        except StructuralBatchNotFound as exc:
+            raise HTTPException(404, f"structural batch tree not found: {name}") from exc
+        except (
+            StructuralBatchIdempotencyConflict,
+            StructuralOwnershipConflict,
+        ) as exc:
+            raise HTTPException(409, str(exc) or command.batch_id) from exc
+        except StructuralPrestateMismatch as exc:
+            raise HTTPException(412, f"structural prestate mismatch: {name}") from exc
+        except StructuralConstraintUnavailable as exc:
+            raise HTTPException(
+                503,
+                f"structural batch constraints are not ready: {name}",
+            ) from exc
+        except (StructuralReferenceConflict, HistoryPayloadError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+        return self._project_structural_batch_history(name, durable)
+
+    def _project_structural_batch_history(
+        self,
+        name: str,
+        durable: DurableStructuralBatchWrite,
+    ) -> dict:
+        applied: list[str] = []
+        pending: list[str] = []
+        for event in durable.event_intents:
+            if event.get("tree") != name:
+                raise StructuralInvariantFailure(
+                    "structural batch event tree diverged from its receipt"
+                )
+            projected = self.hist(
+                name,
+                event["op"],
+                event["node_tag"],
+                event["payload"],
+                event_id=event["event_id"],
+            )
+            if projected is False:
+                pending.append(event["event_id"])
+            else:
+                applied.append(event["event_id"])
+
+        return {
+            "schema_version": "lakatotree-structural-batch-result/v1",
+            "tree": name,
+            "receipt_id": durable.receipt_id,
+            "batch_id": durable.batch_id,
+            "manifest_sha256": durable.manifest_sha256,
+            "request_sha256": durable.request_sha256,
+            "created_at": durable.created_at,
+            "status": (
+                "APPLIED_HISTORY_PENDING" if pending else "APPLIED"
+            ),
+            "idempotent": durable.idempotent,
+            "prestate": durable.prestate,
+            "poststate": durable.poststate,
+            "history": {
+                "expected": len(durable.event_intents),
+                "applied": len(applied),
+                "pending": len(pending),
+                "applied_event_ids": applied,
+                "pending_event_ids": pending,
+            },
+        }
 
     def add_node(
         self,

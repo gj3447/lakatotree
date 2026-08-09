@@ -1,0 +1,80 @@
+# Locked after the missing structural-batch/CAS negative oracle was observed RED.
+# Hermetic: the adapter drives the real TreeKgWriter through injected memory
+# ports, and its isolated mutant never edits the canonical checkout.
+name: lakatotree-structural-batch-cas
+target:
+  mode: in_process
+  callable: structural_batch_cas_receipt:verify
+  backend: memory
+  root: "."
+
+requirements:
+  - id: SBC-1
+    description: At the injected writer-port contract, one structural batch packages its draft delta, immutable receipt, and outbox intents in exactly one guarded managed-transaction call.
+    gate:
+      - {event: structural_batch_atomic_commit, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_atomic_commit
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_atomic_commit
+
+  - id: SBC-2
+    description: An injected stale-prestate guard outcome is mapped fail-closed before any writer-port effect or history projection.
+    gate:
+      - {event: structural_batch_stale_cas_no_effect, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_stale_cas_no_effect
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_stale_cas_no_effect
+
+  - id: SBC-3
+    description: Repeating the same batch identity and canonical request returns the immutable prior receipt without rerunning domain statements.
+    gate:
+      - {event: structural_batch_exact_replay, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_exact_replay
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_exact_replay
+
+  - id: SBC-4
+    description: Reusing a batch identity for a different canonical request is rejected before any domain statement.
+    gate:
+      - {event: structural_batch_idempotency_conflict, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_idempotency_conflict
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_idempotency_conflict
+
+  - id: SBC-5
+    description: An injected create-only ownership-conflict guard outcome is mapped fail-closed before any writer-port effect.
+    gate:
+      - {event: structural_batch_element_ownership_guard, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_element_ownership_guard
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_element_ownership_guard
+
+  - id: SBC-6
+    description: Replacing the structural-batch GuardedKgOps boundary with a plain operation list makes a stale request execute a later statement in an isolated source mutant and therefore turns RED.
+    gate:
+      - {event: structural_batch_guard_load_bearing, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_guard_load_bearing
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_guard_load_bearing
+
+  - id: SBC-7
+    description: Exact replay preserves the immutable receipt timestamp, and a noncanonical prior timestamp is rejected without a domain effect.
+    gate:
+      - {event: structural_batch_immutable_timestamp_binding, op: "==", count: 1}
+    longinus:
+      kg_anchor: ref_site:STRUCTURAL_BATCH_CAS:structural_batch_immutable_timestamp_binding
+      source: structural_batch_cas_receipt.py
+      symbol: verify
+      must_emit: structural_batch_immutable_timestamp_binding

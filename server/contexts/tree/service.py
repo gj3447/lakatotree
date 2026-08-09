@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 
 from fastapi import HTTPException
 
@@ -26,14 +28,37 @@ from lakatos.frontier_state import (
     QuestionState,
     step as step_question,
 )
+from lakatos.io.reconcile import validate_history_record
 
-from server.contexts.tree.schemas import CreateTreeIn, NodeIn, ParentEdgeIn, QuestionIn
+from server.contexts.tree.diagnostics import (
+    diagnose_structural_batch_constraints,
+    structural_batch_identity_audit_query,
+)
+from server.contexts.tree.schemas import (
+    CreateTreeIn,
+    NodeIn,
+    ParentEdgeIn,
+    QuestionIn,
+    StructuralBatchIn,
+)
 from server.contexts.tree.mutations import TreeMutationService, TreeSpec
 from server.contexts.tree.repository import TemporalProofBatchProvider, TreeKgRepository
 from server.contexts.tree.validation import LakatosSemanticValidator
-from server.contexts.tree.writer import TreeKgWriter
+from server.contexts.tree.writer import (
+    TreeKgWriter,
+    parse_structural_state_row,
+    parse_structural_utc_timestamp,
+    structural_batch_outbox_query,
+    structural_batch_receipt_id,
+    structural_batch_receipt_query,
+    structural_state_query,
+    validate_structural_batch_receipt_binding,
+)
 from server.read_models import compute_tree_metrics
 from server.ports import HistoryAppend, KgQuery, KgTx, PgFactory
+
+
+_STRUCTURAL_BATCH_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
 @dataclass(frozen=True)
@@ -46,6 +71,10 @@ class TreeService:
     repo: TreeKgRepository | None = None
     validator: LakatosSemanticValidator | None = None
     mutations: TreeMutationService | None = None
+    # Structural batches are history-bearing multi-store mutations.  The
+    # ordinary tree service is intentionally read-only for this capability;
+    # production composition must opt in only from a writer-fenced boundary.
+    structural_batch_apply_enabled: bool = False
 
     def _repo(self) -> TreeKgRepository:
         return self.repo or TreeKgRepository(
@@ -68,6 +97,244 @@ class TreeService:
 
     def tree_data(self, name: str) -> dict:
         return self._repo().load_tree_data(name)
+
+    def _structural_batch_readiness(self) -> dict:
+        """Read exact constraint and population evidence; never install or repair it."""
+
+        try:
+            constraint_rows = self.kg("SHOW CONSTRAINTS")
+            identity_rows = self.kg(structural_batch_identity_audit_query())
+        except Exception as exc:
+            raise HTTPException(
+                503,
+                detail={"error": "structural_batch_readiness_unavailable"},
+            ) from exc
+        try:
+            diagnostics = diagnose_structural_batch_constraints(
+                constraint_rows,
+                identity_rows,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                503,
+                detail={"error": "structural_batch_readiness_unavailable"},
+            ) from exc
+        if not diagnostics["ok"]:
+            raise HTTPException(
+                503,
+                detail={
+                    "error": "structural_batch_constraints_not_ready",
+                    "diagnostics": diagnostics,
+                },
+            )
+        return diagnostics
+
+    def structural_state(self, name: str) -> dict:
+        """Return the exact full-projection digest used by the CAS guard."""
+
+        rows = self.kg(structural_state_query(), tree=name)
+        if not rows:
+            raise HTTPException(404, f"tree not found: {name}")
+        if len(rows) != 1:
+            raise HTTPException(500, "structural state lookup is not unique")
+        try:
+            state = parse_structural_state_row(rows[0])
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(500, "structural state evidence is invalid") from exc
+        if state["tree"] != name:
+            raise HTTPException(500, "structural state tree binding is invalid")
+        return state
+
+    def apply_structural_batch(
+        self,
+        name: str,
+        command: StructuralBatchIn,
+        *,
+        idempotency_key: str,
+    ) -> dict:
+        """Admit a structural batch only after exact identity/readiness checks."""
+
+        if self.structural_batch_apply_enabled is not True:
+            raise HTTPException(
+                503,
+                detail={"error": "structural_batch_apply_disabled"},
+            )
+
+        if not (
+            isinstance(idempotency_key, str)
+            and 1 <= len(idempotency_key) <= 256
+            and idempotency_key.isascii()
+            and idempotency_key.isprintable()
+        ):
+            raise HTTPException(
+                422,
+                "Idempotency-Key must be 1..256 printable ASCII characters",
+            )
+        if idempotency_key != command.batch_id:
+            raise HTTPException(422, "Idempotency-Key must equal command batch_id")
+        self._structural_batch_readiness()
+        return self._mutations().apply_structural_batch(
+            name,
+            command,
+            idempotency_key=idempotency_key,
+            constraints_ready=True,
+        )
+
+    def structural_batch_status(self, name: str, batch_id: str) -> dict:
+        """Bind one immutable receipt to the exact outbox projection state."""
+
+        if not isinstance(batch_id, str) or not _STRUCTURAL_BATCH_ID.fullmatch(
+            batch_id
+        ):
+            raise HTTPException(422, "invalid structural batch id")
+        receipt_id = structural_batch_receipt_id(name, batch_id)
+        rows = self.kg(
+            structural_batch_receipt_query(),
+            tree=name,
+            batch_id=batch_id,
+            receipt_id=receipt_id,
+        )
+        if not rows:
+            raise HTTPException(404, f"structural batch receipt not found: {batch_id}")
+        if len(rows) != 1:
+            raise HTTPException(500, "structural batch receipt lookup is not unique")
+        try:
+            result, _command = validate_structural_batch_receipt_binding(
+                tree=name,
+                batch_id=batch_id,
+                row=rows[0],
+            )
+            history = self._structural_batch_history_status(
+                name=name,
+                batch_id=batch_id,
+                request_sha256=result["request_sha256"],
+                receipt_created_at=result["created_at"],
+                expected_events=result["event_intents"],
+            )
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                500,
+                "structural batch receipt or outbox evidence is invalid",
+            ) from exc
+        return {
+            "schema_version": "lakatotree-structural-batch-status/v1",
+            "tree": name,
+            "receipt_id": receipt_id,
+            "batch_id": batch_id,
+            "manifest_sha256": result["manifest_sha256"],
+            "request_sha256": result["request_sha256"],
+            "created_at": result["created_at"],
+            "status": (
+                "APPLIED" if history["pending"] == 0
+                else "APPLIED_HISTORY_PENDING"
+            ),
+            "idempotent": True,
+            "prestate": result["prestate"],
+            "poststate": result["poststate"],
+            "history": history,
+        }
+
+    def _structural_batch_history_status(
+        self,
+        *,
+        name: str,
+        batch_id: str,
+        request_sha256: str,
+        receipt_created_at: str,
+        expected_events: list[dict],
+    ) -> dict:
+        receipt_time = parse_structural_utc_timestamp(receipt_created_at)
+        rows = self.kg(
+            structural_batch_outbox_query(),
+            tree=name,
+            batch_id=batch_id,
+        )
+        expected_by_id = {event["event_id"]: event for event in expected_events}
+        if len(expected_by_id) != len(expected_events):
+            raise ValueError("structural receipt event ids are not unique")
+        if not isinstance(rows, list) or any(
+            not isinstance(row, Mapping) for row in rows
+        ):
+            raise ValueError("structural outbox lookup returned an invalid shape")
+        actual_ids = [row.get("event_id") for row in rows]
+        if (
+            len(actual_ids) != len(set(actual_ids))
+            or set(actual_ids) != set(expected_by_id)
+        ):
+            raise ValueError("structural outbox set does not match its receipt")
+
+        expected_row_keys = {
+            "adopted_at",
+            "adopted_by",
+            "applied_at",
+            "created_at",
+            "event_id",
+            "node_tag",
+            "op",
+            "payload",
+            "reason",
+            "request_sha256",
+            "status",
+            "structural_batch_id",
+            "tree",
+        }
+        applied: list[str] = []
+        pending: list[str] = []
+        for raw in rows:
+            if not isinstance(raw, Mapping) or set(raw) != expected_row_keys:
+                raise ValueError("structural outbox row has an invalid shape")
+            row = dict(raw)
+            event_id = row["event_id"]
+            event = expected_by_id[event_id]
+            expected_payload = validate_history_record(
+                name,
+                event["op"],
+                event["node_tag"],
+                event["payload"],
+                event_id,
+            )
+            created_at = parse_structural_utc_timestamp(row["created_at"])
+            if not (
+                row["tree"] == name
+                and row["op"] == event["op"]
+                and row["node_tag"] == event["node_tag"]
+                and row["payload"] == expected_payload
+                and row["reason"] == "structural_batch_commit_intent"
+                and row["request_sha256"] == request_sha256
+                and row["structural_batch_id"] == batch_id
+                and row["created_at"] == receipt_created_at
+                and created_at == receipt_time
+            ):
+                raise ValueError("structural outbox binding is invalid")
+            if row["status"] == "pending":
+                if not (
+                    row["applied_at"] is None
+                    and row["adopted_by"] is None
+                    and row["adopted_at"] is None
+                ):
+                    raise ValueError("pending structural outbox state is invalid")
+                pending.append(event_id)
+            elif row["status"] == "applied":
+                applied_at = parse_structural_utc_timestamp(row["applied_at"])
+                if not (
+                    applied_at >= created_at
+                    and row["adopted_by"] is None
+                    and row["adopted_at"] is None
+                ):
+                    raise ValueError("applied structural outbox state is invalid")
+                applied.append(event_id)
+            else:
+                raise ValueError("structural outbox state must be pending or applied")
+
+        applied.sort()
+        pending.sort()
+        return {
+            "expected": len(expected_events),
+            "applied": len(applied),
+            "pending": len(pending),
+            "applied_event_ids": applied,
+            "pending_event_ids": pending,
+        }
 
     def compute_metrics(self, td: dict) -> dict:
         return compute_tree_metrics(td)

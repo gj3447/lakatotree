@@ -211,6 +211,7 @@ class TreeKgRepository:
             # Durable bundle lineage is audit state: expose it rather than
             # hiding it behind the generic mutation boundary.
             "t.tree_incarnation_id AS tree_incarnation_id, "
+            "t.structural_revision AS structural_revision, "
             "t.tree_upsert_generation AS tree_upsert_generation, "
             "t.last_tree_upsert_event_id AS last_tree_upsert_event_id, "
             "t.updated_at AS updated_at",

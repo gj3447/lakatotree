@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ★server-set-only 경계(적대 재검증 2026-06-21): verdict_source 등 server 전용 필드는 client 가 절대 못 쓴다.
@@ -465,6 +467,163 @@ class FoundationRequirementIn(BaseModel):
             owner=self.owner,
             risk_if_missing=self.risk_if_missing,
         )
+
+
+# ── Additive structural-batch/CAS surface ──────────────────────────────────
+# This is intentionally separate from the legacy per-resource schemas.  The
+# batch is a narrow DRAFT-only materialization capability; strict wrappers keep
+# every unknown/server-owned field fail-closed without changing old clients.
+
+
+class StructuralBatchCountsIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    nodes: int = Field(ge=0)
+    questions: int = Field(ge=0)
+    foundations: int = Field(ge=0)
+    elements: int = Field(ge=0)
+    element_uses: int = Field(ge=0)
+    parent_edges: int = Field(ge=0)
+
+
+class StructuralAuthorityCountsIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    predictions: int = Field(ge=0)
+    results: int = Field(ge=0)
+    verdict_receipts: int = Field(ge=0)
+    progress_verdicts: int = Field(ge=0)
+
+
+class StructuralExpectedStateIn(BaseModel):
+    model_config = _SERVER_SET_ONLY
+    tree_incarnation_id: str = Field(min_length=1, max_length=256)
+    structural_revision: int = Field(ge=0)
+    state_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    counts: StructuralBatchCountsIn
+    authority: StructuralAuthorityCountsIn = Field(
+        default_factory=lambda: StructuralAuthorityCountsIn(
+            predictions=0,
+            results=0,
+            verdict_receipts=0,
+            progress_verdicts=0,
+        )
+    )
+
+
+class StructuralParentEdgeIn(ParentEdgeIn):
+    model_config = _SERVER_SET_ONLY
+
+
+class StructuralNodeIn(NodeIn):
+    model_config = _SERVER_SET_ONLY
+    parent_edges: list[StructuralParentEdgeIn] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _one_parent_surface(self) -> "StructuralNodeIn":
+        if self.parent is not None or self.parents:
+            raise ValueError("structural batch uses parent_edges only")
+        if self.verdict != "proof":
+            raise ValueError("structural batch nodes must retain raw DRAFT proof self-report")
+        if any(
+            value is not None
+            for value in (self.metric_name, self.metric_value, self.metric_scope)
+        ):
+            raise ValueError("structural batch cannot carry scored metric fields")
+        return self
+
+
+class StructuralQuestionIn(QuestionIn):
+    model_config = _SERVER_SET_ONLY
+    state: Literal["OPEN"] = "OPEN"
+
+
+class StructuralElementIn(ElementIn):
+    model_config = _SERVER_SET_ONLY
+    name: str = Field(min_length=1)
+
+
+class StructuralFoundationIn(FoundationRequirementIn):
+    model_config = _SERVER_SET_ONLY
+    name: str = Field(min_length=1)
+
+
+class StructuralElementUseIn(ElementUseIn):
+    model_config = _SERVER_SET_ONLY
+    tag: str = Field(min_length=1)
+    element_name: str = Field(min_length=1)
+
+
+class StructuralBatchIn(BaseModel):
+    """One create-only DRAFT structural delta with an exact expected state."""
+
+    model_config = _SERVER_SET_ONLY
+    schema_version: Literal["lakatotree-structural-batch-command/v1"]
+    capability: Literal["structural:draft:additive:v1"]
+    batch_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+    )
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_prestate: StructuralExpectedStateIn
+    # The server owns the opaque post-state digest and monotonic revision.  A
+    # client can only declare the additive cardinality it expects; accepting a
+    # caller-authored post digest would turn the final readback into a promise
+    # rather than evidence.
+    expected_post_counts: StructuralBatchCountsIn
+    questions: list[StructuralQuestionIn] = Field(default_factory=list)
+    nodes: list[StructuralNodeIn] = Field(default_factory=list)
+    foundations: list[StructuralFoundationIn] = Field(default_factory=list)
+    elements: list[StructuralElementIn] = Field(default_factory=list)
+    element_uses: list[StructuralElementUseIn] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_additive_delta(self) -> "StructuralBatchIn":
+        collections = {
+            "node tag": [item.tag for item in self.nodes],
+            "question name": [item.qname for item in self.questions],
+            "foundation name": [item.name for item in self.foundations],
+            "element name": [item.name for item in self.elements],
+            "element use": [
+                (item.tag, item.element_name) for item in self.element_uses
+            ],
+        }
+        for label, values in collections.items():
+            if len(values) != len(set(values)):
+                raise ValueError(f"duplicate structural {label}")
+        for node in self.nodes:
+            parents = [edge.tag for edge in node.parent_edges]
+            if len(parents) != len(set(parents)):
+                raise ValueError(f"duplicate parent edge on node {node.tag}")
+            if node.tag in parents:
+                raise ValueError(f"structural node cannot parent itself: {node.tag}")
+            if any(edge.inferred for edge in node.parent_edges):
+                raise ValueError("structural batch accepts explicit parent edges only")
+        if not any((
+            self.questions,
+            self.nodes,
+            self.foundations,
+            self.elements,
+            self.element_uses,
+        )):
+            raise ValueError("structural batch delta must not be empty")
+
+        before = self.expected_prestate
+        after_counts = self.expected_post_counts
+        if any(before.authority.model_dump().values()):
+            raise ValueError("structural batch requires and preserves zero authority counts")
+
+        expected_delta = {
+            "nodes": len(self.nodes),
+            "questions": len(self.questions),
+            "foundations": len(self.foundations),
+            "elements": len(self.elements),
+            "element_uses": len(self.element_uses),
+            "parent_edges": sum(len(node.parent_edges) for node in self.nodes),
+        }
+        for key, delta in expected_delta.items():
+            if getattr(after_counts, key) != getattr(before.counts, key) + delta:
+                raise ValueError(f"structural batch post count mismatch: {key}")
+        return self
 
 
 # ── #① Laudan 연구전통 authoring (diagnostic-only) — programme/tradition.py 도메인 객체로 검증 ──

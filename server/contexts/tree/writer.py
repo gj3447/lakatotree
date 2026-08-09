@@ -20,7 +20,12 @@ from lakatos.io.reconcile import (
 )
 from lakatos.node_state import NodeState
 from lakatos.verdicts import MUTATION_PROTECTED_SOURCES, is_self_report_blocked_verdict
-from server.contexts.tree.schemas import NodeIn, ParentEdgeIn, QuestionIn
+from server.contexts.tree.schemas import (
+    NodeIn,
+    ParentEdgeIn,
+    QuestionIn,
+    StructuralBatchIn,
+)
 from server.ports import GuardedKgOps, KgTx, KgTxGuardFailed
 
 # G1(git-흡수 2026-07-02, S3 봉합): 노드-쓰기는 verdict 의 유일 발행처가 아니다 — 채점(scripted/engine/…)은
@@ -89,8 +94,39 @@ class DurableTreeBundleWrite:
     superseded: bool = False
 
 
+@dataclass(frozen=True)
+class DurableStructuralBatchWrite:
+    """One immutable additive structural commit plus its history intents."""
+
+    summary: WriteSummary
+    receipt_id: str
+    batch_id: str
+    manifest_sha256: str
+    request_sha256: str
+    created_at: str
+    prestate: dict
+    poststate: dict
+    event_intents: tuple[dict, ...]
+    idempotent: bool = False
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def parse_structural_utc_timestamp(value: object) -> datetime:
+    """Parse the one canonical UTC timestamp form used by batch evidence."""
+
+    if not isinstance(value, str):
+        raise ValueError("structural timestamp must be canonical text")
+    parsed = datetime.fromisoformat(value)
+    if not (
+        parsed.tzinfo is not None
+        and parsed.utcoffset() == timezone.utc.utcoffset(None)
+        and parsed.isoformat() == value
+    ):
+        raise ValueError("structural timestamp must be canonical UTC text")
+    return parsed
 
 
 def _tree_upsert_history_payload(value: object) -> dict:
@@ -234,6 +270,768 @@ class TreeBudgetStateCorrupt(Exception):
     """A legacy cycle_budget value is not an integer and cannot be compared safely."""
 
 
+class StructuralBatchNotFound(Exception):
+    """The target tree or immutable structural-batch receipt was not found."""
+
+
+class StructuralBatchIdempotencyConflict(Exception):
+    """A structural batch identity was reused for different canonical bytes."""
+
+
+class StructuralPrestateMismatch(Exception):
+    """The locked tree no longer equals the caller's complete expected state."""
+
+
+class StructuralConstraintUnavailable(Exception):
+    """Required uniqueness/identity constraints are not installed and healthy."""
+
+
+class StructuralOwnershipConflict(Exception):
+    """A create-only identity is already owned or has a divergent definition."""
+
+
+class StructuralReferenceConflict(Exception):
+    """An incoming parent, question, or element-use reference is unresolved."""
+
+
+class StructuralInvariantFailure(Exception):
+    """A durable receipt, result, or postcondition is internally inconsistent."""
+
+
+def _structural_batch_managed_ops(
+    ops: Sequence[tuple[str, dict]],
+) -> GuardedKgOps:
+    """The deliberately load-bearing single-transaction CAS boundary."""
+
+    return GuardedKgOps(
+        ops,
+        guard_field="guard_status",
+        guard_expected="ok",
+    )
+
+
+def _canonical_json(value: object) -> str:
+    """Canonical JSON for immutable structural-batch identities and receipts."""
+
+    return json.dumps(
+        _history_request_value(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def structural_batch_receipt_id(tree: str, batch_id: str) -> str:
+    """Content identity used by apply, replay, and the status surface."""
+
+    return "sbr-" + hashlib.sha256(
+        _canonical_json([
+            "lakatotree-structural-batch-receipt/v1",
+            tree,
+            batch_id,
+        ]).encode("utf-8")
+    ).hexdigest()
+
+
+def structural_batch_request_document(
+    tree: str,
+    command: StructuralBatchIn,
+    idempotency_key: str,
+) -> dict:
+    """Build the exact durable request whose hash owns the batch receipt."""
+
+    return {
+        "schema": "lakatotree-structural-batch-request/v1",
+        "tree": tree,
+        "idempotency_key": idempotency_key,
+        "command": command.model_dump(mode="json"),
+    }
+
+
+def _strict_structural_batch_result(value: object) -> dict:
+    """Decode the immutable Neo4j receipt without accepting shape drift."""
+
+    parsed = _strict_canonical_json_object(value)
+    expected = {
+        "batch_id",
+        "event_intents",
+        "manifest_sha256",
+        "poststate",
+        "prestate",
+        "created_at",
+        "receipt_id",
+        "request_sha256",
+        "schema_version",
+    }
+    if set(parsed) != expected:
+        raise ValueError("structural batch result has an invalid shape")
+    if parsed.get("schema_version") != "lakatotree-structural-batch-result/v1":
+        raise ValueError("structural batch result schema is invalid")
+    parse_structural_utc_timestamp(parsed.get("created_at"))
+    if not (
+        isinstance(parsed.get("batch_id"), str)
+        and bool(parsed["batch_id"])
+        and isinstance(parsed.get("receipt_id"), str)
+        and parsed["receipt_id"].startswith("sbr-")
+        and _is_lower_hex(parsed["receipt_id"][4:], 64)
+        and _is_lower_hex(parsed.get("manifest_sha256"), 64)
+        and _is_lower_hex(parsed.get("request_sha256"), 64)
+    ):
+        raise ValueError("structural batch result identity is invalid")
+    for key in ("prestate", "poststate"):
+        state = parsed.get(key)
+        if not isinstance(state, dict) or set(state) != {
+            "authority",
+            "counts",
+            "state_sha256",
+            "structural_revision",
+            "tree_incarnation_id",
+        }:
+            raise ValueError(f"structural batch {key} has an invalid shape")
+        counts = state.get("counts")
+        if not isinstance(counts, dict) or set(counts) != {
+            "elements",
+            "element_uses",
+            "foundations",
+            "nodes",
+            "parent_edges",
+            "questions",
+        }:
+            raise ValueError(f"structural batch {key} counts have an invalid shape")
+        authority = state.get("authority")
+        if not isinstance(authority, dict) or set(authority) != {
+            "predictions", "progress_verdicts", "results", "verdict_receipts",
+        }:
+            raise ValueError(f"structural batch {key} authority has an invalid shape")
+        if not (
+            isinstance(state.get("tree_incarnation_id"), str)
+            and bool(state["tree_incarnation_id"])
+            and _is_lower_hex(state.get("state_sha256"), 64)
+            and _is_nonnegative_int(state.get("structural_revision"))
+            and all(_is_nonnegative_int(item) for item in counts.values())
+            and all(_is_nonnegative_int(item) for item in authority.values())
+        ):
+            raise ValueError(f"structural batch {key} values are invalid")
+    events = parsed.get("event_intents")
+    if not isinstance(events, list):
+        raise ValueError("structural batch result event intents must be a list")
+    event_ids: set[str] = set()
+    allowed_ops = {
+        "element_upsert",
+        "element_use",
+        "foundation_upsert",
+        "node_create",
+        "question_open",
+    }
+    for event in events:
+        if not isinstance(event, dict) or set(event) != {
+            "event_id", "node_tag", "op", "payload", "tree",
+        }:
+            raise ValueError("structural batch result event intent has an invalid shape")
+        if not (
+            isinstance(event.get("event_id"), str)
+            and event["event_id"].startswith("ob-structural-")
+            and isinstance(event.get("tree"), str)
+            and bool(event["tree"])
+            and event.get("op") in allowed_ops
+            and (
+                event.get("node_tag") is None
+                if event.get("op") == "question_open"
+                else isinstance(event.get("node_tag"), str)
+                and bool(event["node_tag"])
+            )
+            and isinstance(event.get("payload"), dict)
+        ):
+            raise ValueError("structural batch result event payload must be an object")
+        if event["event_id"] in event_ids:
+            raise ValueError("structural batch result event ids must be unique")
+        event_ids.add(event["event_id"])
+        validate_history_record(
+            event["tree"],
+            event["op"],
+            event["node_tag"],
+            event["payload"],
+            event["event_id"],
+        )
+    return parsed
+
+
+def _is_lower_hex(value: object, length: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _is_nonnegative_int(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _strict_canonical_json_array(value: object) -> list:
+    if not isinstance(value, str):
+        raise ValueError("durable array must be canonical JSON text")
+    def unique_object(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = item
+        return result
+
+    parsed = json.loads(
+        value,
+        object_pairs_hook=unique_object,
+        parse_constant=lambda token: (_ for _ in ()).throw(
+            ValueError(f"non-finite JSON number: {token}")
+        ),
+    )
+    if not isinstance(parsed, list) or _canonical_json(parsed) != value:
+        raise ValueError("durable array is not canonical JSON")
+    return parsed
+
+
+def _structural_result_from_receipt_row(row: Mapping[str, object]) -> dict:
+    """Reconstruct the public result from immutable scalar/JSON receipt fields."""
+
+    prestate = _strict_canonical_json_object(row.get("prestate_json"))
+    events = _strict_canonical_json_array(row.get("event_intents_json"))
+    poststate = {
+        "authority": {
+            "predictions": row.get("post_predictions"),
+            "progress_verdicts": row.get("post_progress_verdicts"),
+            "results": row.get("post_results"),
+            "verdict_receipts": row.get("post_verdict_receipts"),
+        },
+        "counts": {
+            "elements": row.get("post_elements"),
+            "element_uses": row.get("post_element_uses"),
+            "foundations": row.get("post_foundations"),
+            "nodes": row.get("post_nodes"),
+            "parent_edges": row.get("post_parent_edges"),
+            "questions": row.get("post_questions"),
+        },
+        "state_sha256": row.get("post_state_sha256"),
+        "structural_revision": row.get("post_structural_revision"),
+        "tree_incarnation_id": row.get("tree_incarnation_id"),
+    }
+    result = {
+        "batch_id": row.get("batch_id"),
+        "event_intents": events,
+        "manifest_sha256": row.get("manifest_sha256"),
+        "poststate": poststate,
+        "prestate": prestate,
+        "created_at": row.get("created_at"),
+        "receipt_id": row.get("receipt_id"),
+        "request_sha256": row.get("request_sha256"),
+        "schema_version": "lakatotree-structural-batch-result/v1",
+    }
+    # Round-trip through the strict parser so corrupt or partially populated
+    # receipts fail loudly instead of being treated as successful replays.
+    return _strict_structural_batch_result(_canonical_json(result))
+
+
+def _structural_result_matches_expected(
+    result: Mapping[str, object],
+    *,
+    prestate: dict,
+    expected_counts: dict,
+    expected_authority: dict,
+    expected_revision: int,
+    expected_incarnation: str,
+    expected_events: Sequence[dict],
+) -> bool:
+    """Bind an immutable receipt to the exact admitted command and event plan."""
+
+    poststate = result.get("poststate")
+    return bool(
+        result.get("prestate") == prestate
+        and isinstance(poststate, dict)
+        and poststate.get("counts") == expected_counts
+        and poststate.get("authority") == expected_authority
+        and poststate.get("structural_revision") == expected_revision
+        and poststate.get("tree_incarnation_id") == expected_incarnation
+        and result.get("event_intents") == list(expected_events)
+    )
+
+
+def _structural_outbox_timestamps_match(
+    rows: object,
+    *,
+    expected_events: Sequence[dict],
+    receipt_created_at: str,
+) -> bool:
+    """Bind replay evidence to the receipt clock and exact event-id set."""
+
+    parse_structural_utc_timestamp(receipt_created_at)
+    if not isinstance(rows, list):
+        return False
+    expected_ids = [event.get("event_id") for event in expected_events]
+    actual_ids: list[str] = []
+    for row in rows:
+        if not isinstance(row, Mapping) or set(row) != {"created_at", "event_id"}:
+            return False
+        event_id = row.get("event_id")
+        created_at = row.get("created_at")
+        if not isinstance(event_id, str):
+            return False
+        try:
+            parse_structural_utc_timestamp(created_at)
+        except (TypeError, ValueError):
+            return False
+        if created_at != receipt_created_at:
+            return False
+        actual_ids.append(event_id)
+    return (
+        len(actual_ids) == len(set(actual_ids))
+        and sorted(actual_ids) == sorted(expected_ids)
+    )
+
+
+def _structural_batch_event_intents(
+    tree: str,
+    command: StructuralBatchIn,
+    request_sha256: str,
+) -> tuple[dict, ...]:
+    """Build PG-safe, stable event intents before entering the managed tx."""
+
+    raw: list[tuple[str, str | None, dict]] = []
+    for question in command.questions:
+        payload = question.model_dump(exclude={"state"}, mode="json")
+        raw.append(("question_open", None, payload))
+    for node in command.nodes:
+        payload = node.model_dump(mode="json")
+        raw.append(("node_create", node.tag, payload))
+    for foundation in command.foundations:
+        raw.append(
+            (
+                "foundation_upsert",
+                foundation.name,
+                foundation.to_engine().db_record(),
+            )
+        )
+    for element in command.elements:
+        raw.append(("element_upsert", element.name, element.model_dump(mode="json")))
+    for use in command.element_uses:
+        raw.append(
+            (
+                "element_use",
+                use.tag,
+                {
+                    "element": use.element_name,
+                    "note": use.note,
+                    "evidence_ref": use.evidence_ref,
+                },
+            )
+        )
+
+    intents: list[dict] = []
+    for ordinal, (op, node_tag, payload) in enumerate(raw):
+        event_id = (
+            f"ob-structural-{request_sha256}-"
+            f"{ordinal:04d}-{hashlib.sha256(_canonical_json([op, node_tag, payload]).encode('utf-8')).hexdigest()[:16]}"
+        )
+        payload_json = validate_history_record(
+            tree, op, node_tag, payload, event_id,
+        )
+        intents.append(
+            {
+                "event_id": event_id,
+                "tree": tree,
+                "op": op,
+                "node_tag": node_tag,
+                "payload": json.loads(payload_json),
+                "payload_json": payload_json,
+            }
+        )
+    return tuple(intents)
+
+
+# This projection is intentionally complete for the additive structural surface.
+# Both GET structural-state and the first statement of apply_structural_batch use
+# this exact fragment, so the caller's digest cannot be checked against a weaker
+# count-only view.  Ordering happens before every collect; apoc.convert.toJson then
+# hashes one deterministic JSON projection inside the locked Neo4j transaction.
+_STRUCTURAL_STATE_PROJECTION = r"""
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(n:LakatosNode)
+  WITH n ORDER BY n.tag, n.name
+  RETURN [x IN collect(CASE WHEN n IS NULL THEN null ELSE {
+    algorithm:n.algorithm, author:n.author, comment:n.comment,
+    limitation:n.limitation, metric_name:n.metric_name,
+    metric_scope:n.metric_scope, metric_value:n.metric_value,
+    name:n.name, node_state:n.node_state, open_question:n.open_question,
+    result_path:n.result_path, script:n.script, tag:n.tag,
+    verdict:n.verdict, verdict_source:n.verdict_source
+  } END) WHERE x IS NOT NULL] AS structural_nodes
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion)
+  WITH q ORDER BY q.name
+  RETURN [x IN collect(CASE WHEN q IS NULL THEN null ELSE {
+    body:q.body, cost:q.cost, expected_gain:q.expected_gain,
+    name:q.name, state:coalesce(q.status,'OPEN'), tree:q.tree
+  } END) WHERE x IS NOT NULL] AS structural_questions
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(child:LakatosNode)
+                 -[edge:BRANCHED_FROM]->(parent:LakatosNode)<-[:HAS_NODE]-(t)
+  WITH child, edge, parent ORDER BY child.tag, parent.tag,
+       edge.relation_kind, edge.evidence_ref
+  RETURN [x IN collect(CASE WHEN edge IS NULL THEN null ELSE {
+    child:child.tag, evidence_ref:edge.evidence_ref,
+    inferred:coalesce(edge.inferred,false), parent:parent.tag,
+    relation_kind:edge.relation_kind
+  } END) WHERE x IS NOT NULL] AS structural_parent_edges
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(n:LakatosNode)-[:RAISES_QUESTION]->(q:OpenQuestion)
+  WITH n, q ORDER BY n.tag, q.name
+  RETURN [x IN collect(CASE WHEN q IS NULL THEN null ELSE {
+    node:n.tag, question:q.name
+  } END) WHERE x IS NOT NULL] AS structural_question_links
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_FOUNDATION]->(f:FoundationRequirement)
+  WITH f ORDER BY f.short_name, f.name
+  RETURN [x IN collect(CASE WHEN f IS NULL THEN null ELSE {
+    acceptance_criteria:f.acceptance_criteria, evidence_refs:f.evidence_refs,
+    kind:f.kind, name:f.name, optional:f.optional, owner:f.owner,
+    question:f.question, risk_if_missing:f.risk_if_missing,
+    satisfied:f.satisfied, short_name:f.short_name, status:f.status,
+    why_needed:f.why_needed
+  } END) WHERE x IS NOT NULL] AS structural_foundations
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_ELEMENT]->(el:LakatosElement)
+  WITH el ORDER BY el.name
+  RETURN [x IN collect(CASE WHEN el IS NULL THEN null ELSE {
+    definition:el.definition, implication:el.implication,
+    lifecycle:el.lifecycle, name:el.name, scope:el.scope
+  } END) WHERE x IS NOT NULL] AS structural_elements
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(n:LakatosNode)-[u:USES_ELEMENT]->(el:LakatosElement)<-[:HAS_ELEMENT]-(t)
+  WITH n, u, el ORDER BY n.tag, el.name
+  RETURN [x IN collect(CASE WHEN u IS NULL THEN null ELSE {
+    element:el.name, evidence_ref:u.evidence_ref, node:n.tag, note:u.note
+  } END) WHERE x IS NOT NULL] AS structural_element_uses
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(n:LakatosNode)-[:HAS_RECEIPT]->(r:VerdictReceipt)
+  RETURN count(DISTINCT r) AS structural_verdict_receipts,
+         count(DISTINCT CASE WHEN r.receipt_kind='prediction' THEN r END)
+           AS structural_predictions,
+         count(DISTINCT CASE WHEN coalesce(r.receipt_kind,'verdict')<>'prediction'
+                             THEN r END) AS structural_results
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(n:LakatosNode)
+  WHERE coalesce(n.node_state,'DRAFT') <> 'DRAFT'
+     OR NOT coalesce(n.verdict,'proof') IN ['', 'proof']
+     OR coalesce(n.verdict_source,'') <> ''
+  RETURN count(DISTINCT n) AS structural_progress_verdicts
+}
+WITH t, structural_nodes, structural_questions, structural_parent_edges,
+     structural_question_links, structural_foundations, structural_elements,
+     structural_element_uses,
+     {
+       predictions:structural_predictions,
+       progress_verdicts:structural_progress_verdicts,
+       results:structural_results,
+       verdict_receipts:structural_verdict_receipts
+     } AS structural_authority,
+     {
+       elements:size(structural_elements),
+       element_uses:size(structural_element_uses),
+       foundations:size(structural_foundations),
+       nodes:size(structural_nodes),
+       parent_edges:size(structural_parent_edges),
+       questions:size(structural_questions)
+     } AS structural_counts
+WITH t, structural_authority, structural_counts,
+     structural_nodes, structural_questions, structural_parent_edges,
+     structural_question_links, structural_foundations, structural_elements,
+     structural_element_uses,
+     {
+       authority:structural_authority,
+       elements:structural_elements,
+       element_uses:structural_element_uses,
+       foundations:structural_foundations,
+       nodes:structural_nodes,
+       parent_edges:structural_parent_edges,
+       question_links:structural_question_links,
+       questions:structural_questions,
+       structural_revision:coalesce(t.structural_revision,0),
+       tree_incarnation_id:t.tree_incarnation_id
+     } AS structural_state
+WITH t, structural_authority, structural_counts,
+     structural_nodes, structural_questions, structural_elements,
+     structural_state, apoc.convert.toJson(structural_state) AS structural_state_json
+WITH t, structural_authority, structural_counts,
+     structural_nodes, structural_questions, structural_elements,
+     structural_state, structural_state_json,
+     apoc.util.sha256([structural_state_json]) AS structural_state_sha256
+"""
+
+
+def structural_state_query() -> str:
+    """Return the exact projection used by the managed-transaction CAS guard."""
+
+    return (
+        "MATCH (t:LakatosTree {name:$tree}) WITH t\n"
+        + _STRUCTURAL_STATE_PROJECTION
+        + """
+RETURN t.name AS tree,
+       t.tree_incarnation_id AS tree_incarnation_id,
+       coalesce(t.structural_revision,0) AS structural_revision,
+       structural_state AS structural_state,
+       structural_state_json AS structural_state_json,
+       structural_state_sha256 AS state_sha256,
+       structural_counts AS counts,
+       structural_authority AS authority
+"""
+    )
+
+
+def parse_structural_state_row(row: Mapping[str, object]) -> dict:
+    """Validate the complete read projection before exposing it as CAS input."""
+
+    state_json = row.get("structural_state_json")
+    if not isinstance(state_json, str):
+        raise ValueError("structural state JSON is missing")
+
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate structural state key: {key}")
+            result[key] = value
+        return result
+
+    parsed = json.loads(state_json, object_pairs_hook=unique_object)
+    state = row.get("structural_state")
+    if not isinstance(parsed, dict) or not isinstance(state, Mapping):
+        raise ValueError("structural state projection must be an object")
+    state = dict(state)
+    expected_state_keys = {
+        "authority",
+        "elements",
+        "element_uses",
+        "foundations",
+        "nodes",
+        "parent_edges",
+        "question_links",
+        "questions",
+        "structural_revision",
+        "tree_incarnation_id",
+    }
+    list_keys = {
+        "elements",
+        "element_uses",
+        "foundations",
+        "nodes",
+        "parent_edges",
+        "question_links",
+        "questions",
+    }
+    count_keys = {
+        "elements",
+        "element_uses",
+        "foundations",
+        "nodes",
+        "parent_edges",
+        "questions",
+    }
+    authority_keys = {
+        "predictions", "progress_verdicts", "results", "verdict_receipts",
+    }
+    state_sha256 = row.get("state_sha256")
+    counts = row.get("counts")
+    authority = row.get("authority")
+    if not (
+        parsed == state
+        and _is_lower_hex(state_sha256, 64)
+        and hashlib.sha256(state_json.encode("utf-8")).hexdigest() == state_sha256
+        and isinstance(row.get("tree"), str)
+        and bool(row["tree"])
+        and isinstance(row.get("tree_incarnation_id"), str)
+        and bool(row["tree_incarnation_id"])
+        and _is_nonnegative_int(row.get("structural_revision"))
+        and isinstance(counts, Mapping)
+        and isinstance(authority, Mapping)
+        and set(state) == expected_state_keys
+        and all(isinstance(state.get(key), list) for key in list_keys)
+        and set(counts) == count_keys
+        and all(_is_nonnegative_int(value) for value in counts.values())
+        and set(authority) == authority_keys
+        and all(_is_nonnegative_int(value) for value in authority.values())
+    ):
+        raise ValueError("structural state projection binding is invalid")
+    public = {
+        "schema": "lakatotree.structural-state.v1",
+        "tree": row["tree"],
+        "tree_incarnation_id": row["tree_incarnation_id"],
+        "structural_revision": row["structural_revision"],
+        "state_sha256": state_sha256,
+        "counts": dict(counts),
+        "authority": dict(authority),
+        "structural_state": state,
+    }
+    if not (
+        state.get("tree_incarnation_id") == public["tree_incarnation_id"]
+        and state.get("structural_revision") == public["structural_revision"]
+        and state.get("authority") == public["authority"]
+        and {
+            "nodes": len(state["nodes"]),
+            "questions": len(state["questions"]),
+            "foundations": len(state["foundations"]),
+            "elements": len(state["elements"]),
+            "element_uses": len(state["element_uses"]),
+            "parent_edges": len(state["parent_edges"]),
+        } == public["counts"]
+    ):
+        raise ValueError("structural state projection counts are inconsistent")
+    return public
+
+
+def structural_batch_receipt_query() -> str:
+    """Read one immutable receipt by tree and batch identity."""
+
+    return r"""
+MATCH (t:LakatosTree {name:$tree})-[:HAS_STRUCTURAL_BATCH_RECEIPT]->
+      (receipt:StructuralBatchReceipt {
+        id:$receipt_id, tree:$tree, batch_id:$batch_id
+      })
+RETURN receipt.id AS receipt_id,
+       receipt.tree AS receipt_tree,
+       receipt.request_json AS request_json,
+       receipt.prestate_json AS prestate_json,
+       receipt.event_intents_json AS event_intents_json,
+       receipt.post_predictions AS post_predictions,
+       receipt.post_progress_verdicts AS post_progress_verdicts,
+       receipt.post_results AS post_results,
+       receipt.post_verdict_receipts AS post_verdict_receipts,
+       receipt.post_elements AS post_elements,
+       receipt.post_element_uses AS post_element_uses,
+       receipt.post_foundations AS post_foundations,
+       receipt.post_nodes AS post_nodes,
+       receipt.post_parent_edges AS post_parent_edges,
+       receipt.post_questions AS post_questions,
+       receipt.post_state_sha256 AS post_state_sha256,
+       receipt.post_structural_revision AS post_structural_revision,
+       receipt.tree_incarnation_id AS tree_incarnation_id,
+       receipt.batch_id AS batch_id,
+       receipt.manifest_sha256 AS manifest_sha256,
+       receipt.receipt_id AS recorded_receipt_id,
+       receipt.request_sha256 AS request_sha256,
+       receipt.created_at AS created_at
+"""
+
+
+def parse_structural_batch_receipt_row(row: Mapping[str, object]) -> dict:
+    """Public strict decoder shared by apply replay and status reads."""
+
+    normalized = dict(row)
+    recorded = normalized.pop("recorded_receipt_id", normalized.get("receipt_id"))
+    if recorded != normalized.get("receipt_id"):
+        raise ValueError("structural batch receipt identity fields diverged")
+    return _structural_result_from_receipt_row(normalized)
+
+
+def validate_structural_batch_receipt_binding(
+    *,
+    tree: str,
+    batch_id: str,
+    row: Mapping[str, object],
+) -> tuple[dict, StructuralBatchIn]:
+    """Bind a status read to its exact canonical request and result receipt."""
+
+    expected_receipt_id = structural_batch_receipt_id(tree, batch_id)
+    if not (
+        row.get("receipt_id") == expected_receipt_id
+        and row.get("recorded_receipt_id") == expected_receipt_id
+        and row.get("receipt_tree") == tree
+        and row.get("batch_id") == batch_id
+    ):
+        raise ValueError("structural batch receipt lookup binding is invalid")
+
+    request_json = row.get("request_json")
+    request = _strict_canonical_json_object(request_json)
+    if set(request) != {"command", "idempotency_key", "schema", "tree"}:
+        raise ValueError("structural batch durable request has an invalid shape")
+    if not (
+        request.get("schema") == "lakatotree-structural-batch-request/v1"
+        and request.get("tree") == tree
+        and request.get("idempotency_key") == batch_id
+        and isinstance(request.get("command"), dict)
+        and hashlib.sha256(request_json.encode("utf-8")).hexdigest()
+        == row.get("request_sha256")
+    ):
+        raise ValueError("structural batch durable request binding is invalid")
+    command = StructuralBatchIn.model_validate(request["command"])
+    if command.batch_id != batch_id:
+        raise ValueError("structural batch command identity is invalid")
+
+    result = parse_structural_batch_receipt_row(row)
+    expected_events = [
+        {key: value for key, value in event.items() if key != "payload_json"}
+        for event in _structural_batch_event_intents(
+            tree,
+            command,
+            result["request_sha256"],
+        )
+    ]
+    if not (
+        result["receipt_id"] == expected_receipt_id
+        and result["batch_id"] == batch_id
+        and result["manifest_sha256"] == command.manifest_sha256
+        and _structural_result_matches_expected(
+            result,
+            prestate=command.expected_prestate.model_dump(mode="json"),
+            expected_counts=command.expected_post_counts.model_dump(mode="json"),
+            expected_authority=command.expected_prestate.authority.model_dump(mode="json"),
+            expected_revision=command.expected_prestate.structural_revision + 1,
+            expected_incarnation=command.expected_prestate.tree_incarnation_id,
+            expected_events=expected_events,
+        )
+    ):
+        raise ValueError("structural batch receipt does not bind its durable request")
+    return result, command
+
+
+def structural_batch_outbox_query() -> str:
+    """Read every outbox row owned by one structural-batch receipt."""
+
+    return r"""
+MATCH (o:OutboxEntry {tree:$tree, structural_batch_id:$batch_id})
+RETURN o.id AS event_id,
+       o.tree AS tree,
+       o.op AS op,
+       o.node_tag AS node_tag,
+       o.payload AS payload,
+       o.status AS status,
+       o.created_at AS created_at,
+       o.reason AS reason,
+       o.applied_at AS applied_at,
+       o.adopted_by AS adopted_by,
+       o.adopted_at AS adopted_at,
+       o.request_sha256 AS request_sha256,
+       o.structural_batch_id AS structural_batch_id
+ORDER BY o.id
+"""
+
+
 # G6 단조 ratchet 의 DB-side 랭크 CASE — 서열 정본(assurance.TIER_RANK)에서 생성(표류 불가).
 _TIER_RANK_CASE = assurance.cypher_tier_rank_case("t.assurance_tier")
 
@@ -246,6 +1044,615 @@ class TreeKgWriter:
     def __init__(self, kg_tx: KgTx, *, chunk_size: int = 100):
         self.kg_tx = kg_tx
         self.chunk_size = max(1, chunk_size)
+
+    def apply_structural_batch(
+        self,
+        *,
+        name: str,
+        command: StructuralBatchIn,
+        idempotency_key: str,
+        constraints_ready: bool = False,
+    ) -> DurableStructuralBatchWrite:
+        """Commit one create-only structural delta behind an exact-state CAS.
+
+        The first Cypher statement locks the tree, computes the same complete
+        projection exposed by the structural-state read surface, and decides
+        replay/conflict/prestate/reference guards.  Every domain write, durable
+        history intent, revision increment, postcondition, and receipt then runs
+        in the *same* managed Neo4j transaction.  PostgreSQL history is only a
+        later projection of the committed outbox intents.
+        """
+
+        if not (
+            isinstance(idempotency_key, str)
+            and 1 <= len(idempotency_key) <= 256
+            and idempotency_key.isascii()
+            and idempotency_key.isprintable()
+        ):
+            raise ValueError(
+                "structural batch idempotency key must be 1..256 printable ASCII characters"
+            )
+        if idempotency_key != command.batch_id:
+            raise ValueError("structural batch idempotency key must equal batch_id")
+        if constraints_ready is not True:
+            raise StructuralConstraintUnavailable(name)
+
+        request_document = structural_batch_request_document(
+            name,
+            command,
+            idempotency_key,
+        )
+        request_json = _canonical_json(request_document)
+        request_sha256 = hashlib.sha256(request_json.encode("utf-8")).hexdigest()
+        receipt_id = structural_batch_receipt_id(name, command.batch_id)
+        ts = _utc_now()
+
+        event_intents = _structural_batch_event_intents(
+            name, command, request_sha256,
+        )
+        public_events = [
+            {key: value for key, value in intent.items() if key != "payload_json"}
+            for intent in event_intents
+        ]
+        event_intents_json = _canonical_json(public_events)
+        outbox_rows = [
+            {
+                "event_id": intent["event_id"],
+                "tree": intent["tree"],
+                "op": intent["op"],
+                "node_tag": intent["node_tag"],
+                "payload": intent["payload_json"],
+            }
+            for intent in event_intents
+        ]
+
+        prestate = command.expected_prestate.model_dump(mode="json")
+        prestate_json = _canonical_json(prestate)
+        expected_counts = command.expected_post_counts.model_dump(mode="json")
+        expected_pre_counts = command.expected_prestate.counts.model_dump(mode="json")
+        expected_authority = command.expected_prestate.authority.model_dump(mode="json")
+
+        questions = [
+            question.model_dump(exclude={"state"}, mode="json")
+            for question in command.questions
+        ]
+        nodes = [
+            {
+                "tag": node.tag,
+                "author": node.author,
+                "verdict": node.verdict,
+                "script": node.script,
+                "result_path": node.result_path,
+                "algorithm": node.algorithm,
+                "comment": node.comment,
+                "limitation": node.limitation,
+                "open_question": node.open_question.strip(),
+            }
+            for node in command.nodes
+        ]
+        parent_edges = [
+            {
+                "tag": node.tag,
+                "parent": edge.tag,
+                "inferred": edge.inferred,
+                "relation_kind": edge.relation_kind,
+                "evidence_ref": edge.evidence_ref,
+            }
+            for node in command.nodes
+            for edge in node.parent_edges
+        ]
+        question_links = [
+            {"tag": node.tag, "qname": node.open_question.strip()}
+            for node in command.nodes
+            if node.open_question.strip()
+        ]
+        foundations = [
+            foundation.to_engine().db_record()
+            for foundation in command.foundations
+        ]
+        elements = [element.model_dump(mode="json") for element in command.elements]
+        element_uses = [
+            use.model_dump(mode="json") for use in command.element_uses
+        ]
+
+        incoming_node_names = [f"{name}/{row['tag']}" for row in nodes]
+        incoming_foundation_names = [
+            f"{name}/{row['name']}" for row in foundations
+        ]
+        incoming_question_names = [row["qname"] for row in questions]
+        incoming_element_names = [row["name"] for row in elements]
+        incoming_node_tags = [row["tag"] for row in nodes]
+        required_parent_tags = sorted({row["parent"] for row in parent_edges})
+        required_question_names = sorted({row["qname"] for row in question_links})
+        required_use_tags = sorted({row["tag"] for row in element_uses})
+        required_use_elements = sorted({row["element_name"] for row in element_uses})
+        incoming_outbox_ids = [row["event_id"] for row in outbox_rows]
+
+        guard_query = (
+            """MATCH (t:LakatosTree {name:$tree})
+               SET t._tree_write_cas=coalesce(t._tree_write_cas,0)+0
+               WITH t
+            """
+            + _STRUCTURAL_STATE_PROJECTION
+            + r"""
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (existing_node:LakatosNode)
+  WHERE existing_node.name IN $incoming_node_names
+  RETURN count(existing_node) AS existing_node_conflicts
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (existing_question:OpenQuestion {tree:$tree})
+  WHERE existing_question.name IN $incoming_question_names
+  RETURN count(existing_question) AS existing_question_conflicts
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (existing_foundation:FoundationRequirement)
+  WHERE existing_foundation.name IN $incoming_foundation_names
+  RETURN count(existing_foundation) AS existing_foundation_conflicts
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (existing_element:LakatosElement)
+  WHERE existing_element.name IN $incoming_element_names
+  RETURN count(existing_element) AS existing_element_conflicts
+}
+CALL (t) {
+  WITH t
+  OPTIONAL MATCH (t)-[:HAS_NODE]->(use_node:LakatosNode)
+                 -[existing_use:USES_ELEMENT]->(use_element:LakatosElement)
+  WHERE any(pair IN $incoming_use_pairs
+            WHERE pair.tag=use_node.tag AND pair.element_name=use_element.name)
+  RETURN count(existing_use) AS existing_use_conflicts
+}
+CALL () {
+  OPTIONAL MATCH (existing_outbox:OutboxEntry)
+  WHERE existing_outbox.id IN $incoming_outbox_ids
+  RETURN count(existing_outbox) AS existing_outbox_conflicts
+}
+CALL () {
+  OPTIONAL MATCH (prior_outbox:OutboxEntry {
+    tree:$tree, structural_batch_id:$batch_id
+  })
+  WITH [item IN collect(
+    CASE WHEN prior_outbox IS NULL THEN null
+         ELSE {event_id:prior_outbox.id, created_at:prior_outbox.created_at}
+    END
+  ) WHERE item IS NOT NULL] AS rows
+  RETURN rows AS prior_outboxes
+}
+OPTIONAL MATCH (prior:StructuralBatchReceipt {id:$receipt_id})
+WITH t, structural_authority, structural_counts, structural_state_sha256,
+     structural_nodes, structural_questions, structural_elements,
+     existing_node_conflicts, existing_question_conflicts,
+     existing_foundation_conflicts, existing_element_conflicts,
+     existing_use_conflicts, existing_outbox_conflicts, prior_outboxes,
+     [item IN collect(prior) WHERE item IS NOT NULL] AS priors,
+     [item IN structural_nodes | item.tag] + $incoming_node_tags AS known_tags,
+     [item IN structural_questions | item.name] + $incoming_question_names AS known_questions,
+     [item IN structural_elements | item.name] + $incoming_element_names AS known_elements
+WITH t, structural_authority, structural_counts, structural_state_sha256,
+     existing_node_conflicts, existing_question_conflicts,
+     existing_foundation_conflicts, existing_element_conflicts,
+     existing_use_conflicts, existing_outbox_conflicts, prior_outboxes, priors,
+     CASE WHEN size(priors)=1 THEN priors[0] ELSE null END AS prior,
+     known_tags, known_questions, known_elements
+RETURN
+  CASE
+    WHEN size(priors)>1 THEN 'idempotency_conflict'
+    WHEN size(priors)=1 AND coalesce(
+      prior.tree=$tree
+      AND prior.batch_id=$batch_id
+      AND prior.manifest_sha256=$manifest_sha256
+      AND prior.request_sha256=$request_sha256
+      AND prior.receipt_id=$receipt_id,
+      false) THEN 'already_committed'
+    WHEN size(priors)=1 OR existing_outbox_conflicts>0
+      THEN 'idempotency_conflict'
+    WHEN NOT $constraints_ready THEN 'constraint_missing'
+    WHEN coalesce(t.tree_incarnation_id,'') <> $expected_incarnation
+      OR coalesce(t.structural_revision,0) <> $expected_revision
+      OR structural_state_sha256 <> $expected_state_sha256
+      OR structural_counts <> $expected_pre_counts
+      OR structural_authority <> $expected_authority
+      THEN 'prestate_mismatch'
+    WHEN existing_node_conflicts>0 OR existing_question_conflicts>0
+      OR existing_foundation_conflicts>0 OR existing_element_conflicts>0
+      OR existing_use_conflicts>0
+      THEN 'ownership_conflict'
+    WHEN any(tag IN $required_parent_tags WHERE NOT tag IN known_tags)
+      OR any(qname IN $required_question_names WHERE NOT qname IN known_questions)
+      OR any(tag IN $required_use_tags WHERE NOT tag IN known_tags)
+      OR any(elname IN $required_use_elements WHERE NOT elname IN known_elements)
+      THEN 'invariant_conflict'
+    ELSE 'ok'
+  END AS guard_status,
+  prior.prestate_json AS prestate_json,
+  prior.event_intents_json AS event_intents_json,
+  prior.post_predictions AS post_predictions,
+  prior.post_progress_verdicts AS post_progress_verdicts,
+  prior.post_results AS post_results,
+  prior.post_verdict_receipts AS post_verdict_receipts,
+  prior.post_elements AS post_elements,
+  prior.post_element_uses AS post_element_uses,
+  prior.post_foundations AS post_foundations,
+  prior.post_nodes AS post_nodes,
+  prior.post_parent_edges AS post_parent_edges,
+  prior.post_questions AS post_questions,
+  prior.post_state_sha256 AS post_state_sha256,
+  prior.post_structural_revision AS post_structural_revision,
+  prior.tree_incarnation_id AS tree_incarnation_id,
+  prior.batch_id AS batch_id,
+  prior.manifest_sha256 AS manifest_sha256,
+  prior.receipt_id AS receipt_id,
+  prior.request_sha256 AS request_sha256,
+  prior.created_at AS created_at,
+  prior_outboxes AS prior_outboxes
+"""
+        )
+
+        common = {
+            "tree": name,
+            "batch_id": command.batch_id,
+            "manifest_sha256": command.manifest_sha256,
+            "request_sha256": request_sha256,
+            "receipt_id": receipt_id,
+            "constraints_ready": bool(constraints_ready),
+            "expected_incarnation": command.expected_prestate.tree_incarnation_id,
+            "expected_revision": command.expected_prestate.structural_revision,
+            "expected_state_sha256": command.expected_prestate.state_sha256,
+            "expected_pre_counts": expected_pre_counts,
+            "expected_authority": expected_authority,
+            "incoming_node_names": incoming_node_names,
+            "incoming_question_names": incoming_question_names,
+            "incoming_foundation_names": incoming_foundation_names,
+            "incoming_element_names": incoming_element_names,
+            "incoming_node_tags": incoming_node_tags,
+            "incoming_use_pairs": element_uses,
+            "incoming_outbox_ids": incoming_outbox_ids,
+            "required_parent_tags": required_parent_tags,
+            "required_question_names": required_question_names,
+            "required_use_tags": required_use_tags,
+            "required_use_elements": required_use_elements,
+        }
+
+        ops: list[tuple[str, dict]] = [(guard_query, common)]
+        ops.append((
+            """UNWIND $events AS event
+               CREATE (intent:OutboxEntry {id:event.event_id})
+               SET intent.tree=event.tree, intent.op=event.op,
+                   intent.node_tag=event.node_tag, intent.payload=event.payload,
+                   intent.status='pending', intent.created_at=$ts,
+                   intent.reason='structural_batch_commit_intent',
+                   intent.request_sha256=$request_sha256,
+                   intent.structural_batch_id=$batch_id
+               WITH count(intent) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected, 'structural_batch_outbox_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS event_count""",
+            {
+                "events": outbox_rows,
+                "expected": len(outbox_rows),
+                "ts": ts,
+                "request_sha256": request_sha256,
+                "batch_id": command.batch_id,
+            },
+        ))
+        ops.append((
+            """MATCH (t:LakatosTree {name:$tree})
+               UNWIND $rows AS row
+               CREATE (q:OpenQuestion {name:row.qname, tree:$tree})
+               SET q.body=row.body, q.expected_gain=row.expected_gain,
+                   q.cost=row.cost, q.status='OPEN', q.created_at=$ts
+               CREATE (t)-[:HAS_FRONTIER]->(q)
+               WITH count(q) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected, 'structural_batch_question_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS questions""",
+            {"tree": name, "rows": questions, "ts": ts, "expected": len(questions)},
+        ))
+        ops.append((
+            """MATCH (t:LakatosTree {name:$tree})
+               UNWIND $rows AS row
+               CREATE (node:LakatosNode:PrismExperiment {name:$tree+'/'+row.tag})
+               SET node.tag=row.tag, node.author=row.author,
+                   node.verdict='proof', node.verdict_source=null,
+                   node.node_state='DRAFT', node.script=row.script,
+                   node.result_path=row.result_path, node.algorithm=row.algorithm,
+                   node.comment=row.comment, node.limitation=row.limitation,
+                   node.open_question=row.open_question,
+                   node.metric_name=null, node.metric_value=null,
+                   node.metric_scope=null, node.recorded_at=$ts
+               CREATE (t)-[:HAS_NODE]->(node)
+               WITH count(node) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected, 'structural_batch_node_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS nodes""",
+            {"tree": name, "rows": nodes, "ts": ts, "expected": len(nodes)},
+        ))
+        ops.append((
+            """UNWIND $rows AS row
+               MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(node:LakatosNode {tag:row.tag})
+               MATCH (t)-[:HAS_FRONTIER]->(q:OpenQuestion {name:row.qname})
+               CREATE (node)-[:RAISES_QUESTION]->(q)
+               WITH count(q) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected,
+                 'structural_batch_question_link_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS question_links""",
+            {"tree": name, "rows": question_links, "expected": len(question_links)},
+        ))
+        ops.append((
+            """UNWIND $rows AS row
+               MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(child:LakatosNode {tag:row.tag})
+               MATCH (t)-[:HAS_NODE]->(parent:LakatosNode {tag:row.parent})
+               CREATE (child)-[edge:BRANCHED_FROM]->(parent)
+               SET edge.inferred=false, edge.relation_kind=row.relation_kind,
+                   edge.evidence_ref=row.evidence_ref
+               WITH count(edge) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected,
+                 'structural_batch_parent_edge_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS parent_edges""",
+            {"tree": name, "rows": parent_edges, "expected": len(parent_edges)},
+        ))
+        ops.append((
+            """MATCH (t:LakatosTree {name:$tree})
+               UNWIND $rows AS row
+               CREATE (foundation:FoundationRequirement {name:$tree+'/'+row.name})
+               SET foundation.short_name=row.name, foundation.kind=row.kind,
+                   foundation.question=row.question,
+                   foundation.why_needed=row.why_needed,
+                   foundation.acceptance_criteria=row.acceptance_criteria,
+                   foundation.evidence_refs=row.evidence_refs,
+                   foundation.status=row.status, foundation.optional=row.optional,
+                   foundation.owner=row.owner,
+                   foundation.risk_if_missing=row.risk_if_missing,
+                   foundation.satisfied=row.satisfied,
+                   foundation.updated_at=$ts
+               CREATE (t)-[:HAS_FOUNDATION]->(foundation)
+               WITH count(foundation) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected,
+                 'structural_batch_foundation_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS foundations""",
+            {
+                "tree": name,
+                "rows": foundations,
+                "ts": ts,
+                "expected": len(foundations),
+            },
+        ))
+        ops.append((
+            """MATCH (t:LakatosTree {name:$tree})
+               UNWIND $rows AS row
+               CREATE (element:LakatosElement {name:row.name})
+               SET element.definition=row.definition,
+                   element.implication=row.implication,
+                   element.lifecycle=row.lifecycle, element.scope=row.scope,
+                   element.updated_at=$ts
+               CREATE (t)-[:HAS_ELEMENT]->(element)
+               WITH count(element) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected, 'structural_batch_element_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS elements""",
+            {"tree": name, "rows": elements, "ts": ts, "expected": len(elements)},
+        ))
+        ops.append((
+            """UNWIND $rows AS row
+               MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(node:LakatosNode {tag:row.tag})
+               MATCH (t)-[:HAS_ELEMENT]->(element:LakatosElement {name:row.element_name})
+               CREATE (node)-[use:USES_ELEMENT]->(element)
+               SET use.note=row.note, use.evidence_ref=row.evidence_ref, use.at=$ts
+               WITH count(use) AS actual
+               CALL apoc.util.validate(
+                 actual <> $expected,
+                 'structural_batch_element_use_count_mismatch',
+                 [actual, $expected]
+               )
+               RETURN actual AS element_uses""",
+            {
+                "tree": name,
+                "rows": element_uses,
+                "ts": ts,
+                "expected": len(element_uses),
+            },
+        ))
+
+        final_query = (
+            """MATCH (t:LakatosTree {name:$tree})
+               SET t.structural_revision=coalesce(t.structural_revision,0)+1
+               WITH t
+            """
+            + _STRUCTURAL_STATE_PROJECTION
+            + r"""
+CALL apoc.util.validate(
+  structural_counts <> $expected_post_counts
+  OR structural_authority <> $expected_authority,
+  'structural_batch_postcondition_mismatch',
+  []
+)
+CREATE (receipt:StructuralBatchReceipt {id:$receipt_id})
+SET receipt.receipt_id=$receipt_id, receipt.tree=$tree,
+    receipt.batch_id=$batch_id, receipt.manifest_sha256=$manifest_sha256,
+    receipt.request_sha256=$request_sha256, receipt.request_json=$request_json,
+    receipt.prestate_json=$prestate_json,
+    receipt.event_intents_json=$event_intents_json,
+    receipt.tree_incarnation_id=t.tree_incarnation_id,
+    receipt.post_structural_revision=t.structural_revision,
+    receipt.post_state_sha256=structural_state_sha256,
+    receipt.post_nodes=structural_counts.nodes,
+    receipt.post_questions=structural_counts.questions,
+    receipt.post_foundations=structural_counts.foundations,
+    receipt.post_elements=structural_counts.elements,
+    receipt.post_element_uses=structural_counts.element_uses,
+    receipt.post_parent_edges=structural_counts.parent_edges,
+    receipt.post_predictions=structural_authority.predictions,
+    receipt.post_results=structural_authority.results,
+    receipt.post_verdict_receipts=structural_authority.verdict_receipts,
+    receipt.post_progress_verdicts=structural_authority.progress_verdicts,
+    receipt.created_at=$ts
+CREATE (t)-[:HAS_STRUCTURAL_BATCH_RECEIPT]->(receipt)
+RETURN receipt.prestate_json AS prestate_json,
+       receipt.event_intents_json AS event_intents_json,
+       receipt.post_predictions AS post_predictions,
+       receipt.post_progress_verdicts AS post_progress_verdicts,
+       receipt.post_results AS post_results,
+       receipt.post_verdict_receipts AS post_verdict_receipts,
+       receipt.post_elements AS post_elements,
+       receipt.post_element_uses AS post_element_uses,
+       receipt.post_foundations AS post_foundations,
+       receipt.post_nodes AS post_nodes,
+       receipt.post_parent_edges AS post_parent_edges,
+       receipt.post_questions AS post_questions,
+       receipt.post_state_sha256 AS post_state_sha256,
+       receipt.post_structural_revision AS post_structural_revision,
+       receipt.tree_incarnation_id AS tree_incarnation_id,
+       receipt.batch_id AS batch_id,
+       receipt.manifest_sha256 AS manifest_sha256,
+       receipt.receipt_id AS receipt_id,
+       receipt.request_sha256 AS request_sha256,
+       receipt.created_at AS created_at
+"""
+        )
+        ops.append((
+            final_query,
+            {
+                "tree": name,
+                "expected_post_counts": expected_counts,
+                "expected_authority": expected_authority,
+                "receipt_id": receipt_id,
+                "batch_id": command.batch_id,
+                "manifest_sha256": command.manifest_sha256,
+                "request_sha256": request_sha256,
+                "request_json": request_json,
+                "prestate_json": prestate_json,
+                "event_intents_json": event_intents_json,
+                "ts": ts,
+            },
+        ))
+
+        try:
+            results = self.kg_tx(_structural_batch_managed_ops(ops))
+        except KgTxGuardFailed as exc:
+            state = exc.actual
+            if state == "already_committed":
+                try:
+                    replay = _structural_result_from_receipt_row(exc.row or {})
+                except (TypeError, ValueError, json.JSONDecodeError) as replay_exc:
+                    raise StructuralInvariantFailure(
+                        f"structural batch durable receipt is corrupt: {receipt_id}"
+                    ) from replay_exc
+                if (
+                    replay["receipt_id"] != receipt_id
+                    or replay["batch_id"] != command.batch_id
+                    or replay["manifest_sha256"] != command.manifest_sha256
+                    or replay["request_sha256"] != request_sha256
+                ):
+                    raise StructuralBatchIdempotencyConflict(command.batch_id) from exc
+                if not _structural_result_matches_expected(
+                    replay,
+                    prestate=prestate,
+                    expected_counts=expected_counts,
+                    expected_authority=expected_authority,
+                    expected_revision=command.expected_prestate.structural_revision + 1,
+                    expected_incarnation=command.expected_prestate.tree_incarnation_id,
+                    expected_events=public_events,
+                ) or not _structural_outbox_timestamps_match(
+                    (exc.row or {}).get("prior_outboxes"),
+                    expected_events=public_events,
+                    receipt_created_at=replay["created_at"],
+                ):
+                    raise StructuralInvariantFailure(
+                        f"structural batch replay receipt binding mismatch: {receipt_id}"
+                    ) from exc
+                return DurableStructuralBatchWrite(
+                    summary=WriteSummary(tx_count=1, op_count=len(ops), rows=1),
+                    receipt_id=receipt_id,
+                    batch_id=command.batch_id,
+                    manifest_sha256=command.manifest_sha256,
+                    request_sha256=request_sha256,
+                    created_at=replay["created_at"],
+                    prestate=replay["prestate"],
+                    poststate=replay["poststate"],
+                    event_intents=tuple(replay["event_intents"]),
+                    idempotent=True,
+                )
+            if state == "idempotency_conflict":
+                raise StructuralBatchIdempotencyConflict(command.batch_id) from exc
+            if state == "prestate_mismatch":
+                raise StructuralPrestateMismatch(name) from exc
+            if state == "constraint_missing":
+                raise StructuralConstraintUnavailable(name) from exc
+            if state == "ownership_conflict":
+                raise StructuralOwnershipConflict(name) from exc
+            if state == "invariant_conflict":
+                raise StructuralReferenceConflict(name) from exc
+            raise StructuralBatchNotFound(name) from exc
+
+        if not results or not results[0]:
+            raise StructuralBatchNotFound(name)
+        final_rows = results[-1] if results else []
+        if len(final_rows) != 1:
+            raise StructuralInvariantFailure(
+                f"structural batch final receipt cardinality is {len(final_rows)}"
+            )
+        try:
+            result = _structural_result_from_receipt_row(final_rows[0])
+        except (TypeError, ValueError, json.JSONDecodeError) as result_exc:
+            raise StructuralInvariantFailure(
+                f"structural batch result is corrupt: {receipt_id}"
+            ) from result_exc
+        if (
+            result["receipt_id"] != receipt_id
+            or result["batch_id"] != command.batch_id
+            or result["manifest_sha256"] != command.manifest_sha256
+            or result["request_sha256"] != request_sha256
+            or result["created_at"] != ts
+            or not _structural_result_matches_expected(
+                result,
+                prestate=prestate,
+                expected_counts=expected_counts,
+                expected_authority=expected_authority,
+                expected_revision=command.expected_prestate.structural_revision + 1,
+                expected_incarnation=command.expected_prestate.tree_incarnation_id,
+                expected_events=public_events,
+            )
+        ):
+            raise StructuralInvariantFailure("structural batch receipt binding mismatch")
+        logical_rows = (
+            len(questions) + len(nodes) + len(question_links) + len(parent_edges)
+            + len(foundations)
+            + len(elements) + len(element_uses) + len(event_intents) + 1
+        )
+        return DurableStructuralBatchWrite(
+            summary=WriteSummary(tx_count=1, op_count=len(ops), rows=logical_rows),
+            receipt_id=receipt_id,
+            batch_id=command.batch_id,
+            manifest_sha256=command.manifest_sha256,
+            request_sha256=request_sha256,
+            created_at=result["created_at"],
+            prestate=result["prestate"],
+            poststate=result["poststate"],
+            event_intents=tuple(result["event_intents"]),
+            idempotent=False,
+        )
 
     def add_node(
         self, tree: str, node: NodeIn, parent_edges: Sequence[ParentEdgeIn]

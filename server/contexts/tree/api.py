@@ -7,9 +7,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Response
 
-from server.contexts.tree.schemas import CreateTreeIn, NodeIn, QuestionIn
+from server.contexts.tree.schemas import (
+    CreateTreeIn,
+    NodeIn,
+    QuestionIn,
+    StructuralBatchIn,
+)
 from server.contexts.tree.service import TreeService
 
 
@@ -29,6 +34,33 @@ def create_tree_router(service_factory: Callable[[], TreeService]) -> APIRouter:
     @router.get("/api/tree/{name}")
     def tree(name: str):
         return service_factory().tree_data(name)
+
+    @router.get("/api/tree/{name}/structural-state")
+    def structural_state(name: str):
+        """Return the complete digest-bound structural CAS projection."""
+        return service_factory().structural_state(name)
+
+    @router.post("/api/tree/{name}/structural-batch")
+    def apply_structural_batch(
+        name: str,
+        command: StructuralBatchIn,
+        response: Response,
+        idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    ):
+        """Apply one create-only structural delta under expected-prestate CAS."""
+        result = service_factory().apply_structural_batch(
+            name,
+            command,
+            idempotency_key=idempotency_key,
+        )
+        if result.get("status") == "APPLIED_HISTORY_PENDING":
+            response.status_code = 202
+        return result
+
+    @router.get("/api/tree/{name}/structural-batch/{batch_id}")
+    def structural_batch_status(name: str, batch_id: str):
+        """Read an immutable batch receipt, including outbox projection status."""
+        return service_factory().structural_batch_status(name, batch_id)
 
     @router.post("/api/tree/{name}")
     def create_tree(
