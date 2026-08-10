@@ -1,22 +1,31 @@
-# 소실된 MCP 도구 14개 복구 명세 — 2026-08-10
+# MCP 도구 14개 인터페이스 명세 — 2026-08-10
 
-> **출처**: 2026-08-10 오전, `~/CD/SYMPOSIUM/GIT/lakatotree_codex_harness_20260714/`가
-> 하드 삭제되면서 그 안의 미푸시 커밋 7개가 소실됐다. 소스는 복구 불가(휴지통 비어 있음,
-> Time Machine 없음, GitHub `gj3447/lakatotree`에는 `master` 브랜치만 존재).
+> ## ⚠️ 전제 정정 (2026-08-10, 같은 날)
 >
-> 다만 삭제 당시 그 서버가 **아직 실행 중**이었고(PID 43018, 삭제된 inode 유지),
-> 살아 있는 MCP 세션의 도구 레지스트리에서 아래 14개의 이름·설명·입력 스키마를 회수했다.
-> 이 문서는 **인터페이스 명세**이지 소스가 아니다. 구현은 다시 써야 한다.
+> **이 문서는 "소실 복구용"으로 작성됐으나 그 전제가 틀렸다. 소스는 소실되지 않았다.**
+>
+> `~/CD/SYMPOSIUM/GIT/`가 Mac에서 비어 있던 것은 소실이 아니라 **dev-01 NVMe로 계획 이관**된
+> 것이었다(`SYMPOSIUM/FINDINGS/git-directory-loss-2026-08-10/RESOLUTION.md`).
+> `lakatotree_codex_harness_20260714`은 `dev-01:/root/CD/SYMPOSIUM/GIT/`에 HEAD `6e4ccdd`로
+> 온전히 있고, `@mcp.tool` 50개가 그대로다. 아래 14개 전부 `grep "def <name>"`로 존재 확인했다.
+>
+> **따라서 재구현은 불필요하다.** Mac 런타임은 `~/CD/lakatotree-mcp/`(dev-01의 rsync 미러)로
+> 복원해 `tools/list` 50개 응답을 확인했다.
+>
+> 이 문서는 **재구현 명세가 아니라 도구 레퍼런스**로 남긴다. 아래 설명은 실행 중이던 서버의
+> 도구 레지스트리에서 직접 뽑은 것이라 정확하며, 특히 `cycle_budget`의 self-raisable 한계처럼
+> 소스만 읽어서는 놓치기 쉬운 운영 의미론이 정리돼 있다.
 
 ## 대조
 
-| | 도구 수 |
+| 코드베이스 | 도구 수 |
 |---|---|
-| 삭제된 `lakatotree_codex_harness_20260714` | **50** |
-| 현재 `~/CD/lakatotree` (HEAD `506f8aa`, 2026-07-25) | **36** |
-| 차이 = 재구현 대상 | **14** |
+| `lakatotree_codex_harness_20260714` (dev-01, HEAD `6e4ccdd`) — **Mac 런타임 정본** | **50** |
+| `~/CD/lakatotree` (HEAD `506f8aa`, 2026-07-25) | **36** |
+| 차이 = 이 문서가 다루는 도구 | **14** |
 
-현존 36개는 정상 동작한다(2026-08-10 smoke test: `initialize` + `tools/list` 통과).
+두 코드베이스가 갈라져 있다는 사실 자체는 유효하다. `~/CD/lakatotree`만 쓰면 아래 14개를
+못 쓴다. Mac MCP는 50개짜리(`~/CD/lakatotree-mcp/`)를 가리키도록 맞춰 뒀다.
 
 ---
 
@@ -174,7 +183,9 @@ ontology_commitments[], methodology_rules[], exemplars[], ...}`
 
 ---
 
-## 재구현 순서 제안
+## 두 코드베이스를 합칠 때의 순서 제안
+
+재구현은 불필요하지만, `~/CD/lakatotree`(36개)와 harness(50개)를 정리할 일이 생기면:
 
 1. **`create_tree` / `delete_tree`** — 나머지 전부의 전제조건. 없으면 새 트리를 못 만든다.
 2. **`verify_verdict` / `node_receipts` / `fsck`** — 무결성 계층. 기존 데이터 보호용.
