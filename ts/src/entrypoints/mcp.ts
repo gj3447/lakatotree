@@ -217,11 +217,23 @@ const handleLine = async (line: string): Promise<void> => {
 
 void bootReadback().then(() => {
   arm(); // posture 확정 후 무장 — read-only 여부가 게이트웨이에 각인된다
+  // one-shot 파이프 지원: stdin 종료 시 in-flight 응답을 전부 드레인한 뒤 종료
+  // (드레인 없이 exit 하면 느린 백엔드 호출의 응답이 조용히 유실된다 — 제3자 리뷰 노트 채택).
+  let inFlight = 0;
+  let stdinClosed = false;
+  const exitIfDrained = (): void => {
+    if (stdinClosed && inFlight === 0) process.exit(0);
+  };
   const rl = createInterface({ input: process.stdin, terminal: false });
   rl.on("line", (line) => {
-    void handleLine(line);
+    inFlight += 1;
+    void handleLine(line).finally(() => {
+      inFlight -= 1;
+      exitIfDrained();
+    });
   });
   rl.on("close", () => {
-    process.exit(0);
+    stdinClosed = true;
+    exitIfDrained();
   });
 });

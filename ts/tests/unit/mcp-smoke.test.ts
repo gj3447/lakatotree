@@ -149,6 +149,50 @@ describe("MCP stdio smoke", () => {
   });
 });
 
+describe("one-shot 파이프: stdin 종료 후에도 in-flight 응답을 드레인하고 종료", () => {
+  it("느린 백엔드 + 즉시 stdin.end() → tools/call 응답이 유실되지 않는다", async () => {
+    const slowStore = createServer((req, res) => {
+      if (req.url === "/version") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ auth_posture: "open", stale: false }));
+        return;
+      }
+      setTimeout(() => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ slow: true }));
+      }, 150);
+    });
+    await new Promise<void>((resolve) => {
+      slowStore.listen(0, "127.0.0.1", resolve);
+    });
+    const address = slowStore.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    const oneShot = spawn(process.execPath, [entrypoint], {
+      env: { ...process.env, LAKATOS_STORE_URL: `http://127.0.0.1:${address.port}` },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let out = "";
+    oneShot.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+    });
+    oneShot.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "os", version: "0" } } })}\n` +
+      `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_tree", arguments: { name: "t" } } })}\n`,
+    );
+    oneShot.stdin.end(); // 응답 도착 전 즉시 종료 신호
+    const exitCode = await new Promise<number | null>((resolve) => {
+      oneShot.on("exit", (code) => resolve(code));
+    });
+    await new Promise<void>((resolve, reject) => {
+      slowStore.close((err) => (err ? reject(err) : resolve()));
+    });
+    expect(exitCode).toBe(0);
+    const ids = out.split("\n").filter((l) => l.trim() !== "")
+      .map((l) => (JSON.parse(l) as { id?: number }).id);
+    expect(ids).toContain(2); // in-flight 응답이 드레인됐다
+  }, 10_000);
+});
+
 describe("READONLY-POSTURE: token_required 스토어 + 무토큰", () => {
   let roStore: Server;
   let roChild: ChildProcessWithoutNullStreams;
