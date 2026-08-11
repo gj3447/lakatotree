@@ -25,7 +25,11 @@ const isValidCap = (cap: number): boolean => Number.isSafeInteger(cap) && cap > 
 const parseCursor = (cursor: string, totalChars: number): number | null => {
   if (cursor === "") return 0;
   const offset = Number(cursor);
-  return Number.isSafeInteger(offset) && offset >= 0 && offset <= totalChars
+  // 왕복 검사 = 정준 십진 표기만 수용("1e2"·"0x10"·" 5 "·"007" 거부) — 한 개념 한 표현 (wire 레벨).
+  return Number.isSafeInteger(offset) &&
+    offset >= 0 &&
+    offset <= totalChars &&
+    String(offset) === cursor
     ? offset
     : null;
 };

@@ -51,4 +51,14 @@ describe("emitPage", () => {
       });
     }
   });
+
+  it("guard_defect: 비정준 표기 커서는 값이 범위 안이어도 거부 — 한 개념 한 표현 (왕복 검사)", () => {
+    for (const cursor of ["07", "+5", " 5", "5 ", "0x5", "5e0", "-0"]) {
+      expect(emitPage("s", "abcdefghij", 2, cursor)).toEqual({
+        _tag: "invalid_page", reason: "invalid_cursor",
+      });
+    }
+    // 같은 값의 정준 표기는 수용된다
+    expect(emitPage("s", "abcdefghij", 2, "5")).toMatchObject({ _tag: "ToolPage", offsetChars: 5 });
+  });
 });
