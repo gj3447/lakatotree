@@ -10,7 +10,11 @@ TypeScript+함수형 재개발 라카토트리. 기존 Python 엔진(`~/CD/lakat
 ```
 pnpm check    # typecheck + lint + arch  — 수시, 초 단위
 pnpm verify   # check + unit + property  — DONE 의 유일한 정의
+node src/entrypoints/mcp.ts   # MCP stdio 게이트웨이 (env: LAKATOS_STORE_URL·LAKATOS_API_TOKEN·LAKATOS_TS_*_CAP)
 ```
+
+커밋 게이트: `pnpm verify && git commit`(exit code 직접 연결) — 커밋 시점 트리가 verify 시점과
+같아야 한다 (dirty-tree verify ≠ 커밋 검증, 사고 2건 실측 2026-08-11).
 
 ## Definition of Done
 
@@ -26,9 +30,9 @@ pnpm verify   # check + unit + property  — DONE 의 유일한 정의
 src/contracts/     wire 스키마(Zod)·타입. contracts 외 import 금지.
 src/domain/        순수 함수만. Effect·Promise·IO·Date·random·throw·zod 런타임 전부 금지.
                    결정 = Decision 값 반환(오류는 값), 상태 전이 = 이벤트 소싱 reduce.
-src/application/   유스케이스 오케스트레이션 (이후 Effect 허용 예정).
-src/adapters/      PG 이벤트 스토어·콘텐츠 주소 증거 스토어·HTTP (미구현).
-src/entrypoints/   런타임 실행이 허용되는 유일한 곳 (+ tests).
+src/application/   유스케이스 오케스트레이션 — gateway(51도구 유계 파이프라인)·assemblers(body 조립 셈 이식).
+src/adapters/      storehttp(:55170 프록시) 구현. PG 이벤트 스토어·콘텐츠 주소 증거 스토어 (미구현).
+src/entrypoints/   런타임 실행이 허용되는 유일한 곳 (+ tests) — mcp.ts stdio 게이트웨이.
 ```
 
 - 도메인 시각은 이벤트 데이터로만 들어온다 (ambient clock 금지).
