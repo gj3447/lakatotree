@@ -14,8 +14,18 @@ import type { BudgetDeclaration, CapBreach, Usage } from "./budget.ts";
 import { checkCaps, usageOf, validateBudgetDeclaration } from "./budget.ts";
 import type { GateResult, GateStreak } from "./streak.ts";
 import { NO_PROGRESS_RED_LIMIT, reduceStreaks, streakOf } from "./streak.ts";
+import type { EmissionLedger, EmissionRecorded } from "./emission.ts";
+import { emptyEmissionLedger, reduceEmission, validateEmission } from "./emission.ts";
+import type { WaitEvent } from "./wait.ts";
+import { applyWait } from "./wait.ts";
 
-export type RunEvent = BudgetDeclaration | TokenSpend | ComputeSpend | GateResult;
+export type RunEvent =
+  | BudgetDeclaration
+  | TokenSpend
+  | ComputeSpend
+  | GateResult
+  | EmissionRecorded
+  | WaitEvent;
 
 export const REJECT_REASONS = [
   "budget_not_declared",
@@ -25,7 +35,10 @@ export const REJECT_REASONS = [
   "run_id_mismatch",
   "negative_or_non_integer_tokens",
   "negative_or_non_integer_compute",
+  "negative_or_non_integer_emission",
   "red_without_reason",
+  "duplicate_wait_poll",
+  "wait_not_open",
   "already_halted",
 ] as const;
 export type RejectReason = (typeof REJECT_REASONS)[number];
@@ -34,6 +47,7 @@ export const HALT_REASONS = [
   "call_cap_exceeded",
   "token_cap_exceeded",
   "wall_cap_exceeded",
+  "emission_cap_exceeded",
   "no_progress_same_gate_red3",
 ] as const;
 
@@ -50,6 +64,15 @@ export type HaltReport =
       readonly gateId: string;
       readonly gateReason: string;
       readonly reds: number;
+    }
+  | {
+      readonly _tag: "emission_halt";
+      readonly reason: "emission_cap_exceeded";
+      readonly surface: string;
+      readonly capBytes: number;
+      readonly emittedBytes: number;
+      readonly capItems: number;
+      readonly emittedItems: number;
     };
 
 export type RunDecision =
@@ -60,7 +83,9 @@ export type RunDecision =
 export interface RunState {
   readonly declared: BudgetDeclaration | null;
   readonly budget: BudgetState;
+  readonly emission: EmissionLedger;
   readonly streaks: readonly GateStreak[];
+  readonly openWaits: readonly string[];
   readonly calls: number;
   readonly halt: HaltReport | null;
 }
@@ -68,7 +93,9 @@ export interface RunState {
 export const initialRunState: RunState = {
   declared: null,
   budget: emptyBudget,
+  emission: emptyEmissionLedger,
   streaks: [],
+  openWaits: [],
   calls: 0,
   halt: null,
 };
@@ -141,6 +168,57 @@ export const applyRunEvent = (state: RunState, event: RunEvent): RunApplyResult 
   }
   if (event.runId !== declared.runId) {
     return rejected(state, "run_id_mismatch");
+  }
+  if (event._tag === "EmissionRecorded") {
+    if (validateEmission(event) !== null) {
+      return rejected(state, "negative_or_non_integer_emission");
+    }
+    const over =
+      event.emittedBytes > declared.emissionByteCap ||
+      event.emittedItems > declared.emissionItemCap;
+    const emission = reduceEmission(state.emission, event, over);
+    const calls = state.calls + 1;
+    if (over) {
+      // 이벤트 자신의 위반(단일 응답 캡)이 누적 캡보다 우선한다 — spec emission_check 핀.
+      const report: HaltReport = {
+        _tag: "emission_halt",
+        reason: "emission_cap_exceeded",
+        surface: event.surface,
+        capBytes: declared.emissionByteCap,
+        emittedBytes: event.emittedBytes,
+        capItems: declared.emissionItemCap,
+        emittedItems: event.emittedItems,
+      };
+      return {
+        next: { ...state, emission, calls, halt: report },
+        decision: { _tag: "halted", report },
+      };
+    }
+    const usage = usageOf(calls, state.budget);
+    const breach = checkCaps(declared, usage);
+    if (breach === null) {
+      return { next: { ...state, emission, calls }, decision: { _tag: "admitted" } };
+    }
+    const report: HaltReport = {
+      _tag: "cap_halt",
+      reason: breach,
+      capValue: capValueOf(declared, breach),
+      usedValue: usedValueOf(usage, breach),
+    };
+    return {
+      next: { ...state, emission, calls, halt: report },
+      decision: { _tag: "halted", report },
+    };
+  }
+  if (event._tag === "WaitScheduled" || event._tag === "WaitCompleted") {
+    const outcome = applyWait(state.openWaits, event);
+    if (outcome._tag === "invalid_wait") {
+      return rejected(state, outcome.reason);
+    }
+    return {
+      next: { ...state, openWaits: outcome.openWaits },
+      decision: { _tag: "admitted" },
+    };
   }
   if (event._tag === "GateResultRecorded") {
     if (event.outcome === "red" && event.reason === "") {
