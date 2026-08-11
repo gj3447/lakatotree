@@ -1,0 +1,166 @@
+{
+  "cases": [
+    {
+      "id": "nj-happy-register-submit",
+      "machine": "node-judgment",
+      "steps": [
+        {"event": "PREDICTION_REGISTERED", "guard_results": {"is_author": true}, "expected_state": "preregistered", "expected_effects": ["SealPredictionReceipt"]},
+        {"event": "RESULT_SUBMITTED", "guard_results": {"is_author": true}, "expected_state": "judged", "expected_effects": ["SealVerdictReceipt"]}
+      ]
+    },
+    {
+      "id": "nj-rejudge-cas",
+      "machine": "node-judgment",
+      "steps": [
+        {"event": "PREDICTION_REGISTERED", "guard_results": {"is_author": true}, "expected_state": "preregistered", "expected_effects": ["SealPredictionReceipt"]},
+        {"event": "RESULT_SUBMITTED", "guard_results": {"is_author": true}, "expected_state": "judged", "expected_effects": ["SealVerdictReceipt"]},
+        {"event": "REJUDGE_SUBMITTED", "guard_results": {"supersedes_matches_head": true}, "expected_state": "judged", "expected_effects": ["SealVerdictReceipt", "MovePointerCAS"]}
+      ]
+    },
+    {
+      "id": "nj-nonauthor-register-rejected",
+      "machine": "node-judgment",
+      "steps": [
+        {"event": "PREDICTION_REGISTERED", "guard_results": {"is_author": false}, "expected_state": "draft", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "nj-stale-cas-rejudge-rejected",
+      "machine": "node-judgment",
+      "steps": [
+        {"event": "PREDICTION_REGISTERED", "guard_results": {"is_author": true}, "expected_state": "preregistered", "expected_effects": ["SealPredictionReceipt"]},
+        {"event": "RESULT_SUBMITTED", "guard_results": {"is_author": true}, "expected_state": "judged", "expected_effects": ["SealVerdictReceipt"]},
+        {"event": "REJUDGE_SUBMITTED", "guard_results": {"supersedes_matches_head": false}, "expected_state": "judged", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "nj-submit-without-prereg-rejected",
+      "machine": "node-judgment",
+      "steps": [
+        {"event": "RESULT_SUBMITTED", "guard_results": {"is_author": true}, "expected_state": "draft", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "nj-prereg-immutable-after-lock",
+      "machine": "node-judgment",
+      "steps": [
+        {"event": "PREDICTION_REGISTERED", "guard_results": {"is_author": true}, "expected_state": "preregistered", "expected_effects": ["SealPredictionReceipt"]},
+        {"event": "PREDICTION_REGISTERED", "guard_results": {"is_author": true}, "expected_state": "preregistered", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "ns-demote-refresh-cycle",
+      "machine": "node-standing",
+      "steps": [
+        {"event": "ENGINE_RULE_STALE", "guard_results": {"is_engine_auditor": true}, "expected_state": "demoted_stale", "expected_effects": ["MovePointerCAS"]},
+        {"event": "ENGINE_RULE_REFRESHED", "guard_results": {"is_engine_auditor": true}, "expected_state": "active", "expected_effects": ["MovePointerCAS"]}
+      ]
+    },
+    {
+      "id": "ns-retract-reinstate",
+      "machine": "node-standing",
+      "steps": [
+        {"event": "STANDING_RETRACTED", "guard_results": {"is_human_owner": true}, "expected_state": "retracted", "expected_effects": ["MovePointerCAS"]},
+        {"event": "STANDING_REINSTATED", "guard_results": {"is_human_owner": true}, "expected_state": "active", "expected_effects": ["MovePointerCAS"]}
+      ]
+    },
+    {
+      "id": "ns-nonauditor-demote-rejected",
+      "machine": "node-standing",
+      "steps": [
+        {"event": "ENGINE_RULE_STALE", "guard_results": {"is_engine_auditor": false}, "expected_state": "active", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "ns-nonowner-retract-rejected",
+      "machine": "node-standing",
+      "steps": [
+        {"event": "STANDING_RETRACTED", "guard_results": {"is_human_owner": false}, "expected_state": "active", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "ns-double-retract-invalid",
+      "machine": "node-standing",
+      "steps": [
+        {"event": "STANDING_RETRACTED", "guard_results": {"is_human_owner": true}, "expected_state": "retracted", "expected_effects": ["MovePointerCAS"]},
+        {"event": "STANDING_RETRACTED", "guard_results": {"is_human_owner": true}, "expected_state": "retracted", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "q-close-by-judgment-then-reopen",
+      "machine": "question",
+      "steps": [
+        {"event": "QUESTION_CLOSED", "guard_results": {"from_judgment_seam": true}, "expected_state": "closed", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "QUESTION_REOPENED", "guard_results": {"is_human_owner": true}, "expected_state": "open", "expected_effects": ["RecordQuestionReopen"]}
+      ]
+    },
+    {
+      "id": "q-retro-closure-rejected",
+      "machine": "question",
+      "steps": [
+        {"event": "QUESTION_CLOSED", "guard_results": {"from_judgment_seam": false}, "expected_state": "open", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "q-nonowner-reopen-rejected",
+      "machine": "question",
+      "steps": [
+        {"event": "QUESTION_CLOSED", "guard_results": {"from_judgment_seam": true}, "expected_state": "closed", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "QUESTION_REOPENED", "guard_results": {"is_human_owner": false}, "expected_state": "closed", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "q-double-close-invalid",
+      "machine": "question",
+      "steps": [
+        {"event": "QUESTION_CLOSED", "guard_results": {"from_judgment_seam": true}, "expected_state": "closed", "expected_effects": ["RecordQuestionClosure"]},
+        {"event": "QUESTION_CLOSED", "guard_results": {"from_judgment_seam": true}, "expected_state": "closed", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "eb-seal-happy",
+      "machine": "evidence-bundle",
+      "steps": [
+        {"event": "BUNDLE_SHA_VERIFIED", "guard_results": {"sha_matches": true}, "expected_state": "sealed", "expected_effects": ["RecordBundleSealed"]}
+      ]
+    },
+    {
+      "id": "eb-mismatch-stays-then-rejected",
+      "machine": "evidence-bundle",
+      "steps": [
+        {"event": "BUNDLE_SHA_VERIFIED", "guard_results": {"sha_matches": false}, "expected_state": "received", "expected_effects": ["AuditInvalidTransition"]},
+        {"event": "BUNDLE_REJECTED", "guard_results": {}, "expected_state": "rejected", "expected_effects": ["RecordBundleRejected"]}
+      ]
+    },
+    {
+      "id": "eb-event-after-terminal-invalid",
+      "machine": "evidence-bundle",
+      "steps": [
+        {"event": "BUNDLE_SHA_VERIFIED", "guard_results": {"sha_matches": true}, "expected_state": "sealed", "expected_effects": ["RecordBundleSealed"]},
+        {"event": "BUNDLE_REJECTED", "guard_results": {}, "expected_state": "sealed", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "tr-archive",
+      "machine": "tree",
+      "steps": [
+        {"event": "TREE_ARCHIVED", "guard_results": {"is_human_owner": true}, "expected_state": "archived", "expected_effects": ["RecordTreeArchived"]}
+      ]
+    },
+    {
+      "id": "tr-nonowner-archive-rejected",
+      "machine": "tree",
+      "steps": [
+        {"event": "TREE_ARCHIVED", "guard_results": {"is_human_owner": false}, "expected_state": "active", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    },
+    {
+      "id": "tr-double-archive-invalid",
+      "machine": "tree",
+      "steps": [
+        {"event": "TREE_ARCHIVED", "guard_results": {"is_human_owner": true}, "expected_state": "archived", "expected_effects": ["RecordTreeArchived"]},
+        {"event": "TREE_ARCHIVED", "guard_results": {"is_human_owner": true}, "expected_state": "archived", "expected_effects": ["AuditInvalidTransition"]}
+      ]
+    }
+  ]
+}

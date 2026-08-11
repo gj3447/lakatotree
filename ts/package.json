@@ -1,0 +1,27 @@
+{
+  "name": "lakatotree-ts",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "node node_modules/typescript7/bin/tsc --noEmit",
+    "typecheck:ts6": "tsc --noEmit",
+    "lint": "eslint .",
+    "check:arch": "depcruise src",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:arch",
+    "test:unit": "vitest run tests/unit",
+    "test:prop": "vitest run tests/properties",
+    "verify": "pnpm check && pnpm test:unit && pnpm test:prop"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "dependency-cruiser": "^18.1.1",
+    "eslint": "^9.0.0",
+    "fast-check": "^4.0.0",
+    "typescript": "6.0.3",
+    "typescript7": "npm:typescript@7.0.2",
+    "vitest": "^3.0.0",
+    "zod": "^4.0.0"
+  }
+}

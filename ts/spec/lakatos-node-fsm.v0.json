@@ -1,0 +1,187 @@
+{
+  "schema_version": "fsm-spec/v1",
+  "name": "lakatotree-lifecycle-v0",
+  "formalism_note": "FSM covers only STORED lifecycle: node judgment, standing pointers (CAS-moved), questions, evidence bundles, tree. Assurance VAL (L0..L3), certification, and metrics are deliberately EXCLUDED — canon rule: derived at read time from sealed fields, never persisted states (lakatos/verdicts.py:365-370). FLR mapping: this file = F transitions; VAL/certify = L derived logic; frontier/outbox = R.",
+  "execution": {
+    "step_interface": "step(configuration, typed_event) -> next_configuration, effect_commands",
+    "event_queue": "External events are FIFO per aggregate; commands emitted by one step are not re-entered synchronously.",
+    "run_to_completion": "One event is fully selected and reduced before the next external event; verdict computation is a pure function inside the reducer (no external judge event — measurement sovereignty: authors submit measurements, never verdicts).",
+    "action_order": "Select transition, compute next state and sealed-record content (pure), then emit typed effect commands (adapter persists via CAS + outbox)."
+  },
+  "context_schema": {
+    "head_receipt_sha": {"type": "string", "note": "empty string until the first verdict receipt is sealed; the reducer populates it before any effect binding reads it"},
+    "prediction_sealed": {"type": "boolean"},
+    "last_verdict": {"type": "string", "note": "defined by the pure judge inside the same step before SealVerdictReceipt is emitted; never read while empty"}
+  },
+  "coordination": {
+    "event_protocol": "The five machines are orthogonal per-aggregate regions coordinated only by explicit events through the adapter layer: SealVerdictReceipt commands from node-judgment cause the judgment seam to emit QUESTION_CLOSED (origin=judgment_seam) for bound questions; BUNDLE_SHA_VERIFIED must reach sealed before RESULT_SUBMITTED referencing that bundle_sha is admitted (adapter-enforced admission precondition); fsck emits ENGINE_RULE_STALE/REFRESHED into node-standing. No machine transitions another machine's state directly.",
+    "global_invariants": [
+      "A RESULT_SUBMITTED or REJUDGE_SUBMITTED event is admitted only when its bundle_sha names an evidence-bundle in state sealed (seal-before-judge).",
+      "QUESTION_CLOSED events originate exclusively from the judgment seam in the same logical step that sealed the closing verdict receipt (no retroactive closure).",
+      "node-standing pointer states never affect node-judgment reachability: a retracted node keeps its full receipt chain and may still be re-judged after reinstatement (records are never deleted).",
+      "Derived assurance (VAL L0..L3) and certification read the product configuration of all regions plus sealed receipt content; they are recomputed on every read and never stored as machine state.",
+      "The product configuration is bounded: judgment(3) x standing(3) x per-question(2) x per-bundle(3) x tree(2); cross-region deadlock is impossible because no region waits synchronously on another (all coordination is via queued events)."
+    ],
+    "perpetual_machines_note": "node-judgment, node-standing, and question are intentionally perpetual: research records are never terminal (judged nodes can be re-judged via CAS supersession, retracted standing can be reinstated, closed questions can be reopened) — deletion is pointer death only, so no final state is honest for them."
+  },
+  "event_schemas": {
+    "PREDICTION_REGISTERED": {"type": "object", "required": ["tree", "tag", "metric", "baseline", "direction", "noise_band", "spec_sha", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "metric": {"type": "string"}, "baseline": {"type": "integer-scaled"}, "direction": {"type": "string"}, "noise_band": {"type": "integer-scaled"}, "spec_sha": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "RESULT_SUBMITTED": {"type": "object", "required": ["tree", "tag", "value", "bundle_sha", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "value": {"type": "integer-scaled"}, "bundle_sha": {"type": "string"}, "script_sha": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "REJUDGE_SUBMITTED": {"type": "object", "required": ["tree", "tag", "value", "bundle_sha", "supersedes_receipt_sha", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "value": {"type": "integer-scaled"}, "bundle_sha": {"type": "string"}, "supersedes_receipt_sha": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "ENGINE_RULE_STALE": {"type": "object", "required": ["tree", "tag", "engine_rule_sha", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "engine_rule_sha": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "ENGINE_RULE_REFRESHED": {"type": "object", "required": ["tree", "tag", "engine_rule_sha", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "engine_rule_sha": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "STANDING_RETRACTED": {"type": "object", "required": ["tree", "tag", "reason", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "reason": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "STANDING_REINSTATED": {"type": "object", "required": ["tree", "tag", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "QUESTION_CLOSED": {"type": "object", "required": ["tree", "question_id", "closed_by_receipt_sha", "origin", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "question_id": {"type": "string"}, "closed_by_receipt_sha": {"type": "string"}, "origin": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "QUESTION_REOPENED": {"type": "object", "required": ["tree", "question_id", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "question_id": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "BUNDLE_SHA_VERIFIED": {"type": "object", "required": ["bundle_sha", "recomputed_sha", "actor_role", "event_id"], "properties": {"bundle_sha": {"type": "string"}, "recomputed_sha": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "BUNDLE_REJECTED": {"type": "object", "required": ["bundle_sha", "reason", "actor_role", "event_id"], "properties": {"bundle_sha": {"type": "string"}, "reason": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}},
+    "TREE_ARCHIVED": {"type": "object", "required": ["tree", "actor_role", "event_id"], "properties": {"tree": {"type": "string"}, "actor_role": {"type": "actor-id"}, "event_id": {"type": "string"}}}
+  },
+  "guards": {
+    "is_author": {"reads": [], "event_reads": ["actor_role"], "pure": true, "synchronous": true},
+    "is_engine_auditor": {"reads": [], "event_reads": ["actor_role"], "pure": true, "synchronous": true},
+    "is_human_owner": {"reads": [], "event_reads": ["actor_role"], "pure": true, "synchronous": true},
+    "from_judgment_seam": {"reads": [], "event_reads": ["origin", "actor_role"], "pure": true, "synchronous": true},
+    "supersedes_matches_head": {"reads": ["head_receipt_sha"], "event_reads": ["supersedes_receipt_sha"], "pure": true, "synchronous": true},
+    "sha_matches": {"reads": [], "event_reads": ["bundle_sha", "recomputed_sha"], "pure": true, "synchronous": true}
+  },
+  "effects": {
+    "SealPredictionReceipt": {"kind": "command", "payload_schema": {"type": "object", "required": ["tree", "tag", "spec_sha", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "spec_sha": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "SealVerdictReceipt": {"kind": "command", "payload_schema": {"type": "object", "required": ["tree", "tag", "bundle_sha", "verdict", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "bundle_sha": {"type": "string"}, "verdict": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "MovePointerCAS": {"kind": "command", "payload_schema": {"type": "object", "required": ["tree", "tag", "pointer", "expected_old", "new_value", "event_id"], "properties": {"tree": {"type": "string"}, "tag": {"type": "string"}, "pointer": {"type": "string"}, "expected_old": {"type": "string"}, "new_value": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "RecordQuestionClosure": {"kind": "command", "payload_schema": {"type": "object", "required": ["tree", "question_id", "closed_by_receipt_sha", "event_id"], "properties": {"tree": {"type": "string"}, "question_id": {"type": "string"}, "closed_by_receipt_sha": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "RecordQuestionReopen": {"kind": "command", "payload_schema": {"type": "object", "required": ["tree", "question_id", "event_id"], "properties": {"tree": {"type": "string"}, "question_id": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "RecordBundleSealed": {"kind": "command", "payload_schema": {"type": "object", "required": ["bundle_sha", "event_id"], "properties": {"bundle_sha": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "RecordBundleRejected": {"kind": "command", "payload_schema": {"type": "object", "required": ["bundle_sha", "reason", "event_id"], "properties": {"bundle_sha": {"type": "string"}, "reason": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "RecordTreeArchived": {"kind": "command", "payload_schema": {"type": "object", "required": ["tree", "event_id"], "properties": {"tree": {"type": "string"}, "event_id": {"type": "string"}}}},
+    "AuditInvalidTransition": {"kind": "audit", "payload_schema": {"type": "object", "required": ["state", "event", "actor", "reason", "event_id"], "properties": {"state": {"type": "string"}, "event": {"type": "string"}, "actor": {"type": "actor-id"}, "reason": {"type": "string"}, "event_id": {"type": "string"}}}}
+  },
+  "machines": [
+    {
+      "id": "node-judgment",
+      "initial": "draft",
+      "states": [
+        {"id": "draft", "kind": "atomic"},
+        {"id": "preregistered", "kind": "atomic"},
+        {"id": "judged", "kind": "atomic"}
+      ],
+      "events": ["PREDICTION_REGISTERED", "RESULT_SUBMITTED", "REJUDGE_SUBMITTED"],
+      "invalid_event_policy": {
+        "mode": "reject-and-audit",
+        "guard_false": "reject-and-audit",
+        "state_change": "none",
+        "effect": "AuditInvalidTransition",
+        "effect_binding": {"state": "configuration.state", "event": "event.type", "actor": "event.actor_role", "reason": "rejection.reason", "event_id": "event.event_id"}
+      },
+      "transitions": [
+        {"id": "register-prediction", "from": "draft", "event": "PREDICTION_REGISTERED", "to": "preregistered", "guard": "is_author", "effects": ["SealPredictionReceipt"], "effect_bindings": {"SealPredictionReceipt": {"tree": "event.tree", "tag": "event.tag", "spec_sha": "event.spec_sha", "event_id": "event.event_id"}}},
+        {"id": "submit-result", "from": "preregistered", "event": "RESULT_SUBMITTED", "to": "judged", "guard": "is_author", "effects": ["SealVerdictReceipt"], "effect_bindings": {"SealVerdictReceipt": {"tree": "event.tree", "tag": "event.tag", "bundle_sha": "event.bundle_sha", "verdict": "context.last_verdict", "event_id": "event.event_id"}}},
+        {"id": "rejudge", "from": "judged", "event": "REJUDGE_SUBMITTED", "to": "judged", "guard": "supersedes_matches_head", "effects": ["SealVerdictReceipt", "MovePointerCAS"], "effect_bindings": {"SealVerdictReceipt": {"tree": "event.tree", "tag": "event.tag", "bundle_sha": "event.bundle_sha", "verdict": "context.last_verdict", "event_id": "event.event_id"}, "MovePointerCAS": {"tree": "event.tree", "tag": "event.tag", "pointer": "literal:current_receipt_sha", "expected_old": "event.supersedes_receipt_sha", "new_value": "context.head_receipt_sha", "event_id": "event.event_id"}}}
+      ]
+    },
+    {
+      "id": "node-standing",
+      "initial": "active",
+      "states": [
+        {"id": "active", "kind": "atomic"},
+        {"id": "demoted_stale", "kind": "atomic"},
+        {"id": "retracted", "kind": "atomic"}
+      ],
+      "events": ["ENGINE_RULE_STALE", "ENGINE_RULE_REFRESHED", "STANDING_RETRACTED", "STANDING_REINSTATED"],
+      "invalid_event_policy": {
+        "mode": "reject-and-audit",
+        "guard_false": "reject-and-audit",
+        "state_change": "none",
+        "effect": "AuditInvalidTransition",
+        "effect_binding": {"state": "configuration.state", "event": "event.type", "actor": "event.actor_role", "reason": "rejection.reason", "event_id": "event.event_id"}
+      },
+      "transitions": [
+        {"id": "demote-stale", "from": "active", "event": "ENGINE_RULE_STALE", "to": "demoted_stale", "guard": "is_engine_auditor", "effects": ["MovePointerCAS"], "effect_bindings": {"MovePointerCAS": {"tree": "event.tree", "tag": "event.tag", "pointer": "literal:standing", "expected_old": "literal:active", "new_value": "literal:demoted_stale", "event_id": "event.event_id"}}},
+        {"id": "refresh-stale", "from": "demoted_stale", "event": "ENGINE_RULE_REFRESHED", "to": "active", "guard": "is_engine_auditor", "effects": ["MovePointerCAS"], "effect_bindings": {"MovePointerCAS": {"tree": "event.tree", "tag": "event.tag", "pointer": "literal:standing", "expected_old": "literal:demoted_stale", "new_value": "literal:active", "event_id": "event.event_id"}}},
+        {"id": "retract", "from": "active", "event": "STANDING_RETRACTED", "to": "retracted", "guard": "is_human_owner", "effects": ["MovePointerCAS"], "effect_bindings": {"MovePointerCAS": {"tree": "event.tree", "tag": "event.tag", "pointer": "literal:standing", "expected_old": "literal:active", "new_value": "literal:retracted", "event_id": "event.event_id"}}},
+        {"id": "reinstate", "from": "retracted", "event": "STANDING_REINSTATED", "to": "active", "guard": "is_human_owner", "effects": ["MovePointerCAS"], "effect_bindings": {"MovePointerCAS": {"tree": "event.tree", "tag": "event.tag", "pointer": "literal:standing", "expected_old": "literal:retracted", "new_value": "literal:active", "event_id": "event.event_id"}}}
+      ]
+    },
+    {
+      "id": "question",
+      "initial": "open",
+      "states": [
+        {"id": "open", "kind": "atomic"},
+        {"id": "closed", "kind": "atomic"}
+      ],
+      "events": ["QUESTION_CLOSED", "QUESTION_REOPENED"],
+      "invalid_event_policy": {
+        "mode": "reject-and-audit",
+        "guard_false": "reject-and-audit",
+        "state_change": "none",
+        "effect": "AuditInvalidTransition",
+        "effect_binding": {"state": "configuration.state", "event": "event.type", "actor": "event.actor_role", "reason": "rejection.reason", "event_id": "event.event_id"}
+      },
+      "transitions": [
+        {"id": "close-by-judgment", "from": "open", "event": "QUESTION_CLOSED", "to": "closed", "guard": "from_judgment_seam", "effects": ["RecordQuestionClosure"], "effect_bindings": {"RecordQuestionClosure": {"tree": "event.tree", "question_id": "event.question_id", "closed_by_receipt_sha": "event.closed_by_receipt_sha", "event_id": "event.event_id"}}},
+        {"id": "reopen", "from": "closed", "event": "QUESTION_REOPENED", "to": "open", "guard": "is_human_owner", "effects": ["RecordQuestionReopen"], "effect_bindings": {"RecordQuestionReopen": {"tree": "event.tree", "question_id": "event.question_id", "event_id": "event.event_id"}}}
+      ]
+    },
+    {
+      "id": "evidence-bundle",
+      "initial": "received",
+      "states": [
+        {"id": "received", "kind": "atomic"},
+        {"id": "sealed", "kind": "final"},
+        {"id": "rejected", "kind": "final"}
+      ],
+      "events": ["BUNDLE_SHA_VERIFIED", "BUNDLE_REJECTED"],
+      "invalid_event_policy": {
+        "mode": "reject-and-audit",
+        "guard_false": "reject-and-audit",
+        "state_change": "none",
+        "effect": "AuditInvalidTransition",
+        "effect_binding": {"state": "configuration.state", "event": "event.type", "actor": "event.actor_role", "reason": "rejection.reason", "event_id": "event.event_id"}
+      },
+      "transitions": [
+        {"id": "seal-bundle", "from": "received", "event": "BUNDLE_SHA_VERIFIED", "to": "sealed", "guard": "sha_matches", "effects": ["RecordBundleSealed"], "effect_bindings": {"RecordBundleSealed": {"bundle_sha": "event.bundle_sha", "event_id": "event.event_id"}}},
+        {"id": "reject-bundle", "from": "received", "event": "BUNDLE_REJECTED", "to": "rejected", "effects": ["RecordBundleRejected"], "effect_bindings": {"RecordBundleRejected": {"bundle_sha": "event.bundle_sha", "reason": "event.reason", "event_id": "event.event_id"}}}
+      ]
+    },
+    {
+      "id": "tree",
+      "initial": "active",
+      "states": [
+        {"id": "active", "kind": "atomic"},
+        {"id": "archived", "kind": "final"}
+      ],
+      "events": ["TREE_ARCHIVED"],
+      "invalid_event_policy": {
+        "mode": "reject-and-audit",
+        "guard_false": "reject-and-audit",
+        "state_change": "none",
+        "effect": "AuditInvalidTransition",
+        "effect_binding": {"state": "configuration.state", "event": "event.type", "actor": "event.actor_role", "reason": "rejection.reason", "event_id": "event.event_id"}
+      },
+      "transitions": [
+        {"id": "archive", "from": "active", "event": "TREE_ARCHIVED", "to": "archived", "guard": "is_human_owner", "effects": ["RecordTreeArchived"], "effect_bindings": {"RecordTreeArchived": {"tree": "event.tree", "event_id": "event.event_id"}}}
+      ]
+    }
+  ],
+  "safety_properties": [
+    {"id": "author-cannot-judge", "statement": "No event schema carries a verdict field; verdicts are computed only by the pure judge inside the reducer during submit/rejudge transitions (측정주권: 저자는 측정을 제출하고 판정은 엔진이 도출한다).", "verification": "Event-schema audit plus conformance test asserting SealVerdictReceipt.verdict originates from the reducer's judge output, never event payload."},
+    {"id": "no-verdict-without-prereg", "statement": "judged is reachable only through preregistered; a RESULT_SUBMITTED at draft is rejected and audited.", "verification": "Reachability analysis plus invalid-event trace."},
+    {"id": "prereg-immutable", "statement": "No transition consumes PREDICTION_REGISTERED at preregistered or judged — post-hoc spec edits are unrepresentable (C1 S3 hash-causal ordering).", "verification": "Completeness table: PREDICTION_REGISTERED outside draft → reject-and-audit trace."},
+    {"id": "cas-only-pointer-moves", "statement": "Every stored-pointer mutation (standing, current_receipt_sha) is emitted exclusively as MovePointerCAS with expected_old — no transition emits a blind pointer write (GitAbsorption G1 mandatory CAS).", "verification": "Effect-catalog audit: no non-CAS pointer effect exists; conformance test on adapter."},
+    {"id": "no-retro-question-closure", "statement": "QUESTION_CLOSED is admissible only with origin=judgment_seam (guard from_judgment_seam); manual post-submit closure is rejected — problem-balance seam (사후 closure 소급집계 없음).", "verification": "Guard-false trace plus conformance test."},
+    {"id": "bundle-fail-closed", "statement": "A bundle whose recomputed sha mismatches its declared sha can never reach sealed; the only paths out of received are sha-verified seal or explicit rejection (seal-don't-point, fail-closed totality).", "verification": "Guard-false trace (sha_matches=false stays received) plus reachability: sealed has a single inbound guarded transition."},
+    {"id": "assurance-not-stored", "statement": "No machine in this file models VAL levels or certification — they are read-time derivations over sealed fields (L layer), and persisting them as states would violate the SLSA rule (verdicts.py:365-370).", "verification": "Spec review: state inventory contains no assurance vocabulary; TS domain exposes VAL only as a pure derive() function."},
+    {"id": "retraction-preserves-records", "statement": "retract/demote move standing pointers only; no transition deletes receipts or nodes (Eilu-va-Eilu, deletion = pointer death only).", "verification": "Effect-catalog audit: no delete effect exists."}
+  ],
+  "liveness_properties": [
+    {"id": "submit-judges-atomically", "statement": "A RESULT_SUBMITTED admitted at preregistered reaches judged in the same step (verdict computation is pure and synchronous).", "assumptions": ["Reducer total on admitted events."], "verification": "Transition structure plus unit test."},
+    {"id": "bundle-eventually-terminal", "statement": "A received bundle eventually reaches sealed or rejected.", "assumptions": ["The anchor verifier eventually reports verification or rejection for every received bundle."], "verification": "Adapter-level integration test with verification worker."}
+  ],
+  "trace_fixtures": ["lakatos-node-fsm-traces.v0.json"],
+  "conformance": {
+    "implementation_step": "Bind guards/effects to typed pure functions in ts/src/domain; the reducer implements step(configuration, event) with verdict computed by the pure judge before SealVerdictReceipt emission.",
+    "model_trace_runner": "python3 ~/.claude/skills/fsm-design/scripts/run_fsm_traces.py ts/spec/lakatos-node-fsm.v0.json ts/spec/lakatos-node-fsm-traces.v0.json",
+    "contract_tests": "Every transition, guard-false, and invalid-event fixture runs against both the abstract model and the TS reducer (vitest conformance suite)."
+  }
+}
