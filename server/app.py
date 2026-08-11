@@ -945,9 +945,13 @@ def _persist_revision(tree: str, op: str, r, old_canonical_id: str | None):
     beliefs = [dict(belief_id=b.belief_id, statement=b.statement, kind=b.kind, credence=b.credence,
                     problem_balance=b.problem_balance, connectivity=b.connectivity,
                     depends_on=list(b.depends_on)) for b in r.base]
+    # V1 수리(2026-07-28 검증 감사): MERGE 키를 (belief_id, tree) 복합으로 — 종전 전역 belief_id
+    #   MERGE 는 두 트리가 같은 id 를 쓰면 *하나의* Belief 를 공유해, 한 트리의 contraction
+    #   (abandoned=true)이 다른 트리 base 에서 침묵 소실을 일으켰다. OpenQuestion 2026-07-23
+    #   트리-스코프 수리(service.open_question)와 동일 버그 클래스·동일 해법.
     ops = [("""MATCH (t:LakatosTree {name:$tree})
                UNWIND $beliefs AS b
-               MERGE (bel:Belief {belief_id: b.belief_id})
+               MERGE (bel:Belief {belief_id: b.belief_id, tree: $tree})
                SET bel.statement=b.statement, bel.kind=b.kind, bel.credence=b.credence,
                    bel.problem_balance=b.problem_balance, bel.connectivity=b.connectivity,
                    bel.depends_on=b.depends_on, bel.updated_at=$ts,

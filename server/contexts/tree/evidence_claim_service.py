@@ -272,6 +272,36 @@ class EvidenceClaimService:
                     authoritative=True, authority_reason='content_valid_v5_receipt')
 
     def add_critique(self, name: str, tag: str, c: CritiqueIn) -> dict:
+        # V5 수리(2026-07-28 검증 감사) — 두 침묵 통로 봉합:
+        #  ① 타깃 미검증: attacks 가 tag 도, 등재된 argument 도 아니면 AF 조립에서 엣지가 사라져
+        #     제기자는 200 을 받고도 판결을 못 막았다(막았다고 오인). → 422 로 거부.
+        #  ② 가변 논증: 같은 arg_id MERGE+SET 이 타인 doubt 를 rebuttal 로 개서해 standing 을 침묵
+        #     복원할 수 있었다. → 기존 논증은 불변(동일 내용 재등재만 멱등, 변경은 409).
+        prior = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})
+              OPTIONAL MATCH (e)-[:HAS_ARGUMENT]->(a:Argument)
+              RETURN e.tag AS tag, collect({id:a.id, attacks:a.attacks, by:a.by,
+                                            kind:a.kind, body:a.body}) AS args""",
+                        tree=name, tag=tag)
+        if not prior:
+            raise HTTPException(404, f'노드 없음: {tag} (critique 대상 부재 — 등재 거부)')
+        existing = [a for a in (prior[0].get('args') or []) if a and a.get('id')]
+        arg_full = f'{name}/{c.arg_id}'
+        known = {a['id'] for a in existing} | {a['id'].split('/')[-1] for a in existing}
+        if c.attacks != tag and c.attacks not in known:
+            raise HTTPException(
+                422, f"attacks 타깃 '{c.attacks}' 미상 — 노드 tag('{tag}') 또는 이 노드에 이미 "
+                     f"등재된 argument 여야 한다. 미상 타깃은 AF 에서 침묵 소실한다(등재 거부).")
+        same = next((a for a in existing if a['id'] == arg_full), None)
+        if same is not None:
+            identical = (same.get('by') == c.by and same.get('kind') == c.kind
+                         and same.get('body') == c.body and same.get('attacks') == c.attacks)
+            if identical:
+                return {'ok': True, 'idempotent': True,
+                        'note': '동일 내용 재등재 — 멱등 no-op(논증은 불변)'}
+            raise HTTPException(
+                409, f"argument '{c.arg_id}' 는 불변 — 이미 {same.get('by') or '(익명)'} 의 "
+                     f"{same.get('kind')} 로 등재됐다. 반론은 새 arg_id 로 등재하라"
+                     f"(타인 논증 개서로 standing 을 침묵 복원할 수 없다).")
         # fail-loud(나생문 #13): MERGE 가 노드 부재 시 no-op 이면 형제 mutation 과 달리 200·history 를
         #   남겨 provenance 를 오염한다 → RETURN e.tag 로 매칭 확인, 0행이면 hist 전에 404.
         rows = self.kg("""MATCH (t:LakatosTree {name:$tree})-[:HAS_NODE]->(e {tag:$tag})

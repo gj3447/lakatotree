@@ -24,6 +24,8 @@ class PredictionLocked(Exception):
 # '정밀·재현 ≠ 타당'(THEORY §8): 순서형에 interval 산술을 묵시 적용하던 구멍을 막는다. 라이선스: stevens1946.
 SCALE_TYPES = ('ratio', 'interval', 'ordinal', 'nominal')
 _MAGNITUDE_SCALES = ('ratio', 'interval')   # 빼기·크기 밴드·effect-size 적법
+VERDICTS = ('progressive', 'partial', 'equivalent', 'rejected')
+NOVEL_MARKER = 'novel'
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,10 @@ class Prediction:
     scale_type: str = 'ratio'    # Stevens 측정척도 (기본 ratio = 하위호환·크기연산 적법)
 
     def __post_init__(self):
+        if not isinstance(self.metric_name, str) or not self.metric_name.strip():
+            raise ValueError('metric_name 은 비어 있지 않은 문자열')
+        if self.novel_prediction is not None and not isinstance(self.novel_prediction, str):
+            raise ValueError('novel_prediction 은 문자열')
         if self.scale_type not in SCALE_TYPES:
             raise ValueError(f"scale_type 은 {SCALE_TYPES} 중 (Stevens 측정척도)")
         # 명목형: 순서 부재 → 개선 방향 정의 불가 → 채점 불가(일찍 거부)
@@ -53,6 +59,8 @@ class Prediction:
             raise ValueError('baseline_value 는 유한수')
         if self.direction not in ('lower', 'higher'):
             raise ValueError("direction 은 'lower'|'higher'")
+        if not math.isfinite(self.noise_band):
+            raise ValueError('noise_band 는 유한수')
 
 
 NOVELTY_SENSES = ('zahar_use_novelty', 'temporal_novelty', 'worrall_use_novelty')
@@ -80,6 +88,16 @@ class NovelTarget:
             return measured <= self.threshold
         return measured >= self.threshold
 
+    def __post_init__(self):
+        if not isinstance(self.metric_name, str) or not self.metric_name.strip():
+            raise ValueError('novel metric_name 은 비어 있지 않은 문자열')
+        if self.direction not in ('lower', 'higher'):
+            raise ValueError("novel_target.direction 은 'lower'|'higher'")
+        if self.novelty_sense not in NOVELTY_SENSES:
+            raise ValueError(f'novelty_sense 는 {NOVELTY_SENSES} 중 하나')
+        if not math.isfinite(self.threshold):
+            raise ValueError('novel_target.threshold 는 유한수')
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -90,9 +108,73 @@ class Verdict:
     reason: str
 
 
+@dataclass(frozen=True)
+class _NovelAssessment:
+    novel: bool
+    noindep: bool = False
+    noindep_cross: bool = False
+    witness_licensed: bool = False
+
+
 def check_registration(already_judged: bool) -> None:
     if already_judged:
         raise PredictionLocked('이미 채점된 노드 — 사후 예측등록/변경 금지')
+
+
+def _distinct_sha(a: str, b: str) -> bool:
+    return bool(a and b and a != b)
+
+
+def _resolve_novelity(pred: Prediction, novel_target: NovelTarget | None = None, novel_measured: float | None = None,
+                     *, measured_sha: str = '', novel_sha: str = '',
+                     require_independent_source: bool = False, independence_witness: str = '') -> _NovelAssessment:
+    witness = independence_witness.strip()
+    if novel_target is None:
+        return _NovelAssessment(novel=False)
+    novel = novel_target.corroborated(novel_measured)  # type: ignore[arg-type]
+    noindep = noindep_cross = False
+    witness_licensed = False
+    same_metric = novel_target.metric_name == pred.metric_name
+
+    if novel and same_metric and not _distinct_sha(measured_sha, novel_sha):
+        noindep = True
+        novel = False
+    elif novel and require_independent_source and not same_metric and not _distinct_sha(measured_sha, novel_sha):
+        if witness:
+            witness_licensed = True
+        else:
+            noindep_cross = True
+            novel = False
+    return _NovelAssessment(
+        novel=novel,
+        noindep=noindep,
+        noindep_cross=noindep_cross,
+        witness_licensed=witness_licensed,
+    )
+
+
+def _classify_verdict(improved: bool, novel: bool, within_noise: bool) -> str:
+    if improved and novel:
+        return 'progressive'
+    if improved:
+        return 'partial'
+    if within_noise:
+        return 'equivalent'
+    return 'rejected'
+
+
+def _reason_suffix(novel_assessment: _NovelAssessment, novel_target: NovelTarget | None, witness: str) -> str:
+    if novel_target is None:
+        return ''
+    parts = [f', novelty_sense={novel_target.novelty_sense}']
+    if novel_assessment.noindep:
+        parts.append(' [novel 비독립: 같은 metric·동일 출처(sha)/측정 재활용 → 초과내용 아님]')
+    if novel_assessment.noindep_cross:
+        parts.append(' [novel 비독립: cross-metric 출처 미증명(distinct sha·witness 부재) — '
+                     'require_independent_source 하 초과내용 불인정]')
+    if novel_assessment.witness_licensed:
+        parts.append(f' [independence_witness: {witness}]')
+    return ''.join(parts)
 
 
 def judge(pred: Prediction | None, measured: float,
@@ -138,44 +220,27 @@ def judge(pred: Prediction | None, measured: float,
                    f'novel metric({novel_target.metric_name})≠개선 metric({pred.metric_name}) — 독립 측정 명시.'))
         if not math.isfinite(novel_measured):
             raise ValueError('novel_measured 비유한')
-        novel = novel_target.corroborated(novel_measured)
-        # prom-honesty/sha (적대 재검증 강화 2026-06-21): 같은 metric 의 novel 확증은 *독립 출처*(distinct
-        #   sha)를 증명해야 초과경험내용으로 인정한다(Zahar use-novelty). distinct sha = 독립(값이 epsilon
-        #   가까워도 다른 측정이면 정당); sha 누락(독립 증명 불가) 또는 same sha(같은 측정 재활용)는 비독립.
-        #   ★옛 값-동일 폴백은 epsilon 우회를 허용했고 novel_sha 를 안 보내는 호출자(cli/mcp/programme) 전부
-        #   샜다 → 출처 없으면 비독립으로 *강화*해 모든 경로에서 봉쇄. 비독립이면 demote(유효 측정이되 novel 아님).
-        #   다른 metric 의 novel 은 그 자체로 독립 사실이라 이 게이트 밖(영향 없음).
-        noindep = (novel and novel_target.metric_name == pred.metric_name
-                   and not (measured_sha and novel_sha and novel_sha != measured_sha))
-        if noindep:
-            novel = False
+
+        assessment = _resolve_novelity(
+            pred, novel_target, novel_measured,
+            measured_sha=measured_sha, novel_sha=novel_sha,
+            require_independent_source=require_independent_source,
+            independence_witness=witness,
+        )
+        novel = assessment.novel
+        noindep = assessment.noindep
+        noindep_cross = assessment.noindep_cross
+        witness_licensed = assessment.witness_licensed
     else:
         # 나생문 F-CON-3: 구조적 novel_target 없으면 텍스트 존재만으론 novel 불인정(→partial)
         novel = False
         noindep = False
-    # jp6 cross-metric 게이트(armed 전용): same-metric 게이트(위, 불변 — witness 로 못 약화) 통과 후에도
-    #   metric 이 다르면 :133 의 'different-metric=independent by construction' 라이선스가 남는다.
-    #   armed 면 그 라이선스를 default-deny 로 뒤집는다: distinct sha(같은 독립 화폐) OR 선언 witness.
-    noindep_cross = witness_licensed = False
-    if (require_independent_source and novel and novel_target is not None
-            and novel_target.metric_name != pred.metric_name
-            and not (measured_sha and novel_sha and novel_sha != measured_sha)):
-        if witness:
-            witness_licensed = True    # witness 가 실제로 license 를 실은 유일한 경우에만 마커 봉인
-        else:
-            novel, noindep_cross = False, True
-    if improved and novel:
-        verdict = 'progressive'
-    elif improved:
-        verdict = 'partial'
-    elif within_noise:
-        verdict = 'equivalent'
-    else:
-        verdict = 'rejected'
-    sense = f', novelty_sense={novel_target.novelty_sense}' if novel_target is not None else ''
-    indep = ' [novel 비독립: 같은 metric·동일 출처(sha)/측정 재활용 → 초과내용 아님]' if noindep else ''
-    xind = (' [novel 비독립: cross-metric 출처 미증명(distinct sha·witness 부재) — '
-            'require_independent_source 하 초과내용 불인정]' if noindep_cross else '')
-    wit = f' [independence_witness: {witness}]' if witness_licensed else ''
+        noindep_cross = False
+        witness_licensed = False
+    verdict = _classify_verdict(improved=improved, novel=novel, within_noise=within_noise)
+    reason = (_reason_suffix(
+        _NovelAssessment(novel=novel, noindep=noindep,
+                         noindep_cross=noindep_cross, witness_licensed=witness_licensed),
+        novel_target, witness))
     return Verdict(verdict=verdict, delta=delta, improved=improved, novel=novel,
-                   reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{sense}{indep}{xind}{wit}')
+                   reason=f'improved={improved}, novel={novel}, noise_band={pred.noise_band}{reason}')

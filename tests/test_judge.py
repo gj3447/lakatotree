@@ -202,6 +202,21 @@ def test_invalid_scale_type_refused():
     with pytest.raises(ValueError, match='scale_type'):
         Prediction(metric_name='m', direction='lower', baseline_value=1.0, scale_type='bogus')
 
+def test_empty_metric_name_rejected():
+    with pytest.raises(ValueError, match='metric_name'):
+        Prediction(metric_name='   ', direction='lower', baseline_value=1.0)
+
+def test_invalid_novel_target_metric_and_sense_rejected():
+    from lakatos.verdict.judge import NovelTarget
+    with pytest.raises(ValueError, match='novel metric_name'):
+        NovelTarget('   ', 'higher', 0.5)
+    with pytest.raises(ValueError, match='novelty_sense'):
+        NovelTarget('m', 'higher', 0.5, novelty_sense='bogus')
+
+def test_nonfinite_noise_rejected():
+    with pytest.raises(ValueError, match='noise_band'):
+        Prediction(metric_name='m', direction='lower', baseline_value=1.0, noise_band=float('inf'))
+
 def test_ordinal_scores_by_order_only():
     # 순서형(noise_band=0): 순서 비교만 — 크기 무관. 5→3 개선(partial), 동순위=equivalent, 악화=rejected.
     p = Prediction(metric_name='rank', direction='lower', baseline_value=5, noise_band=0.0, scale_type='ordinal')

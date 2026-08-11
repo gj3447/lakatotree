@@ -360,7 +360,8 @@ class TreeKgWriter:
                     """MATCH (t:LakatosTree {name:$tree})
                        UNWIND $rows AS row
                        MERGE (qn:OpenQuestion {name:row.qname, tree:$tree})
-                       SET qn.body=row.body, qn.status='OPEN', qn.created_at=row.ts,
+                       SET qn.body=row.body, qn.status=coalesce(qn.status, 'OPEN'),
+                           qn.created_at=coalesce(qn.created_at, row.ts),
                            qn.expected_gain=row.expected_gain, qn.cost=row.cost,
                            qn.n_visits=coalesce(qn.n_visits, 0)
                        MERGE (t)-[:HAS_FRONTIER]->(qn)""",

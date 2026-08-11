@@ -157,10 +157,16 @@ class TreeService:
         # 2026-07-23 트리-스코프 수리: MERGE 키를 (tree, name) 복합으로 — 종전 {name} 전역 MERGE 는
         # 두 트리가 같은 qname 을 쓰면 *하나의* OpenQuestion 을 공유해 body last-write-wins 덮어씀·
         # close/n_visits 오염이 트리를 걸쳐 새는 결함이었다(실충돌 관측: judgment-ledger-repair-20260723).
+        # V2 수리(2026-07-28 검증 감사): 재-MERGE 가 무가드 status='OPEN' + created_at=$ts 였다 —
+        #   CLOSED 질문이 침묵 재개방되고(QuestionClosure 잔존과 모순) 원 등록 시각이 파괴됐다.
+        #   가드를 같은 쿼리의 WHERE 로 넣어 원자적으로(읽고-쓰기 race 없음) CLOSED 를 0행 처리하고,
+        #   created_at 은 coalesce 로 보존한다. 0행의 사유(트리/질문 부재 vs CLOSED)는 아래서 구분.
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})
+          OPTIONAL MATCH (t)-[:HAS_FRONTIER]->(prior {name:$qn})
+          WITH t, prior WHERE prior IS NULL OR coalesce(prior.status, 'OPEN') <> 'CLOSED'
           MERGE (qn:OpenQuestion {name:$qn, tree:$tree})
-          SET qn.body=$body, qn.status='OPEN', qn.created_at=$ts,
+          SET qn.body=$body, qn.status='OPEN', qn.created_at=coalesce(qn.created_at, $ts),
               qn.expected_gain=$expected_gain, qn.cost=$cost,
               qn.n_visits=coalesce(qn.n_visits, 0)
           MERGE (t)-[:HAS_FRONTIER]->(qn)
@@ -172,7 +178,14 @@ class TreeService:
             cost=question.cost,
             ts=datetime.now(timezone.utc).isoformat(),
         )
-        if not rows:   # MATCH 0행 = 나무 미존재 — 종전엔 침묵 no-op ok:true (close_question 과 비대칭)
+        if not rows:   # 0행 = 나무 미존재 *또는* CLOSED 가드 미통과(V2) — 사유를 구분해 보고한다.
+            closed = self.kg(
+                "MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn}) "
+                "WHERE coalesce(q.status,'OPEN')='CLOSED' RETURN q.name AS name",
+                tree=name, qn=question.qname)
+            if closed:
+                raise HTTPException(409, f"이미 CLOSED 인 질문({question.qname}) — 침묵 재개방 금지. "
+                                         f"재탐색은 새 질문으로 분기하라(폐쇄 이력·등록시각 보존).")
             raise HTTPException(404, f"나무 없음: {name} (질문 열기 실패 — 침묵 no-op 금지)")
         self.hist(name, "question_open", None, question.model_dump())
         return {"ok": True}
@@ -180,8 +193,12 @@ class TreeService:
     def close_question(self, name: str, qname: str, closed_by: str = "") -> dict:
         ts = datetime.now(timezone.utc).isoformat()
         closure_id = f'{name}/{qname}/closure/{closed_by or "unknown"}@{ts}'
+        # V2 수리(2026-07-28): OPEN 가드 — 종전엔 이미 CLOSED 인 질문의 재폐쇄가 매 호출
+        #   n_visits 증가 + closed_events append + QuestionClosure 생성을 했다(멱등도 거부도 아님).
+        #   이제 CLOSED 는 already_closed 로 멱등 반환(침묵 성공 금지 — 응답에 표기).
         rows = self.kg(
             """MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn})
+              WHERE coalesce(q.status,'OPEN')='OPEN'
               SET q.status='CLOSED',
                   q.n_visits=coalesce(q.n_visits, 0) + 1,
                   q.closed_by=CASE
@@ -204,6 +221,13 @@ class TreeService:
             ts=ts,
         )
         if not rows:
+            # 0행 = 질문 부재 *또는* 이미 CLOSED(OPEN 가드 미통과) — 둘을 구분해 보고한다.
+            existing = self.kg(
+                "MATCH (t:LakatosTree {name:$tree})-[:HAS_FRONTIER]->(q {name:$qn}) "
+                "RETURN q.status AS status", tree=name, qn=qname)
+            if existing:
+                return {"ok": True, "already_closed": True,
+                        "note": "이미 닫힌 질문 — 멱등 no-op(방문수·폐쇄이력 미증가)"}
             raise HTTPException(404, f"질문 없음: {qname}")
         self.hist(name, "question_close", closed_by, {"question": qname})
-        return {"ok": True}
+        return {"ok": True, "already_closed": False}
