@@ -170,6 +170,34 @@ describe("gateway pipeline", () => {
     });
   });
 
+  it("A-5 footgun 봉합: 경로 파라미터 name 부재 시 tree= alias 수용 (외부리뷰 2026-07-24)", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "ok" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
+    const result = await gateway.call("get_tree", { tree: "t9" });
+    expect(result).toMatchObject({ _tag: "ToolPage" });
+    expect(calls[0]).toMatchObject({ path: "/api/tree/t9" });
+    // name 이 명시되면 alias 는 무시된다 (한 개념 한 표현 — name 이 정본)
+    await gateway.call("get_tree", { name: "n1", tree: "t9" });
+    expect(calls[1]).toMatchObject({ path: "/api/tree/n1" });
+  });
+
+  it("READONLY-POSTURE: 무토큰∧token_required 기동 — read 만 서빙, write/ops 는 백엔드 미접촉 차단", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "ok" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null, "read_only"));
+    // read 도구는 정상 서빙
+    expect(await gateway.call("get_tree", { name: "t" })).toMatchObject({ _tag: "ToolPage" });
+    // write 도구는 로컬 typed 차단 — 포트 호출 없음 (fail-closed, 401 왕복도 없다)
+    const before = calls.length;
+    const blocked = await gateway.call("critique", { tree: "t", arg_id: "a", attacks: "r" });
+    expect(blocked).toMatchObject({ _tag: "tool_error", reason: "auth_required" });
+    expect(calls.length).toBe(before);
+    // ops 도 차단 (fsck 는 kind ops)
+    expect(await gateway.call("fsck", {})).toMatchObject({
+      _tag: "tool_error", reason: "auth_required",
+    });
+    expect(calls.length).toBe(before);
+  });
+
   it("guard_defect: 미등록 도구·백엔드 오류는 닫힌 오류 값 (throw 없음)", async () => {
     const { port } = fakePort(() => ({ status: 500, bodyText: "boom" }));
     const gateway = mustGateway(createGateway(SPECS, decl, port, null));

@@ -9,7 +9,7 @@ import { createInterface } from "node:readline";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { Gateway, ToolSpec } from "../application/gateway.ts";
+import type { Gateway, GatewayPosture, ToolSpec } from "../application/gateway.ts";
 import { createGateway, type ToolArgs } from "../application/gateway.ts";
 import { httpStorePort } from "../adapters/storehttp.ts";
 import type { BudgetDeclaration } from "../domain/budget.ts";
@@ -58,23 +58,24 @@ const declFor = (runId: string): BudgetDeclaration => ({
 const port = httpStorePort(baseUrl);
 let armCount = 0;
 let gateway: Gateway;
+let posture: GatewayPosture = "full";
 
 const arm = (): string => {
   armCount += 1;
   const runId = `mcp-${process.pid}-r${armCount}`;
-  const created = createGateway(surface.tools, declFor(runId), port, bearer);
+  const created = createGateway(surface.tools, declFor(runId), port, bearer, posture);
   if ("_tag" in created) {
     log(`fatal: invalid budget declaration (${created.reason}) — fail-closed`);
     process.exit(1);
   }
   gateway = created;
-  log(`armed runId=${runId} store=${baseUrl}`);
+  log(`armed runId=${runId} store=${baseUrl} posture=${posture}`);
   return runId;
 };
-arm();
 
 /** 기동 readback — /version 의 auth_posture·stale 을 stderr 로 공시.
- * token_required 인데 토큰 부재면 기동 거부 (fail-closed, recon 리스크 #6). */
+ * token_required + 토큰 부재 = read-only 기동: kind:read 만 서빙, write/ops 는 로컬
+ * auth_required 차단 (기동 자체는 막지 않는다 — Python 브리지의 무토큰 읽기 운용과 파리티). */
 const bootReadback = async (): Promise<void> => {
   const version = await port.request("GET", "/version", null, bearer);
   if (version.status !== 200) {
@@ -85,8 +86,8 @@ const bootReadback = async (): Promise<void> => {
     const info = JSON.parse(version.bodyText) as Record<string, unknown>;
     log(`store /version: auth_posture=${String(info["auth_posture"])} stale=${String(info["stale"])}`);
     if (info["auth_posture"] === "token_required" && bearer === null) {
-      log("fatal: store requires Bearer but LAKATOS_API_TOKEN is unset — fail-closed");
-      process.exit(1);
+      posture = "read_only";
+      log("read-only 기동: store token_required + LAKATOS_API_TOKEN 부재 — write/ops 는 auth_required 로컬 차단");
     }
   } catch {
     log("warn: /version body unparseable");
@@ -215,6 +216,7 @@ const handleLine = async (line: string): Promise<void> => {
 };
 
 void bootReadback().then(() => {
+  arm(); // posture 확정 후 무장 — read-only 여부가 게이트웨이에 각인된다
   const rl = createInterface({ input: process.stdin, terminal: false });
   rl.on("line", (line) => {
     void handleLine(line);

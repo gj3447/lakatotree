@@ -64,8 +64,13 @@ export type CallError = {
   readonly reason: "missing_param";
 };
 
+/** read_only: token_required 스토어 + 토큰 부재 기동 — kind:read 만 서빙, write/ops 는
+ * 백엔드 미접촉 로컬 차단 (401 왕복조차 없음). Python 브리지의 사실상 무토큰 읽기 운용과 파리티. */
+export type GatewayPosture = "full" | "read_only";
+
 export type ToolError =
   | { readonly _tag: "tool_error"; readonly reason: "unknown_tool" }
+  | { readonly _tag: "tool_error"; readonly reason: "auth_required"; readonly detail: string }
   | { readonly _tag: "tool_error"; readonly reason: "invalid_call"; readonly detail: string }
   | { readonly _tag: "tool_error"; readonly reason: "budget_halted"; readonly report: HaltReport }
   | { readonly _tag: "tool_error"; readonly reason: "unsupported_local_tool"; readonly detail: string }
@@ -145,6 +150,7 @@ export const createGateway = (
   decl: BudgetDeclaration,
   port: StorePort,
   bearer: string | null,
+  posture: GatewayPosture = "full",
 ): Gateway | DeclarationError => {
   const invalid = validateBudgetDeclaration(decl);
   if (invalid !== null) {
@@ -153,10 +159,21 @@ export const createGateway = (
   const byName = new Map(specs.map((s) => [s.name, s]));
   let state: RunState = applyRunEvent(initialRunState, decl).next;
 
-  const call = async (name: string, args: ToolArgs): Promise<ToolPage | ToolError> => {
+  const call = async (name: string, rawArgs: ToolArgs): Promise<ToolPage | ToolError> => {
     const spec = byName.get(name);
     if (spec === undefined) {
       return { _tag: "tool_error", reason: "unknown_tool" };
+    }
+    // A-5 footgun 봉합(외부리뷰 2026-07-24): 경로의 {name}=트리명인데 직관과 반대라 반복 혼동 —
+    // name 부재 시 tree= alias 를 수용한다. name 명시 시 alias 무시 (name 이 정본).
+    let args = rawArgs;
+    if (
+      spec.path.includes("{name}") &&
+      rawArgs["name"] === undefined &&
+      rawArgs["tree"] !== undefined
+    ) {
+      const { tree, ...rest } = rawArgs;
+      args = { ...rest, name: tree };
     }
     if (state.halt !== null) {
       return { _tag: "tool_error", reason: "budget_halted", report: state.halt };
@@ -166,6 +183,13 @@ export const createGateway = (
         _tag: "tool_error",
         reason: "unsupported_local_tool",
         detail: "HTTP 아닌 로컬 함수 — .venv CLI 사용, TS 이식은 별도 슬라이스 (spec not_mechanized)",
+      };
+    }
+    if (posture === "read_only" && spec.kind !== "read") {
+      return {
+        _tag: "tool_error",
+        reason: "auth_required",
+        detail: "read-only 기동(store token_required + 토큰 부재) — write/ops 는 로컬 차단, LAKATOS_API_TOKEN 공급 후 재기동",
       };
     }
     const path = buildPath(spec.path, args);

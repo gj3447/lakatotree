@@ -148,3 +148,92 @@ describe("MCP stdio smoke", () => {
     expect(reply).toMatchObject({ id: 6, error: { code: -32601 } });
   });
 });
+
+describe("READONLY-POSTURE: token_required 스토어 + 무토큰", () => {
+  let roStore: Server;
+  let roChild: ChildProcessWithoutNullStreams;
+  const roResponses = new Map<number, unknown>();
+  const roHits: string[] = [];
+  let roBuffer = "";
+
+  const roSend = (message: unknown): void => {
+    roChild.stdin.write(`${JSON.stringify(message)}\n`);
+  };
+  const roWait = async (id: number, timeoutMs = 5000): Promise<unknown> => {
+    const start = Date.now();
+    for (;;) {
+      const found = roResponses.get(id);
+      if (found !== undefined) return found;
+      if (Date.now() - start > timeoutMs) throw new Error(`timeout ro id ${id}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+
+  beforeAll(async () => {
+    roStore = createServer((req, res) => {
+      roHits.push(`${req.method} ${req.url}`);
+      if (req.url === "/version") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ auth_posture: "token_required", stale: false }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await new Promise<void>((resolve) => {
+      roStore.listen(0, "127.0.0.1", resolve);
+    });
+    const address = roStore.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    const childEnv: Record<string, string | undefined> = {
+      ...process.env,
+      LAKATOS_STORE_URL: `http://127.0.0.1:${address.port}`,
+    };
+    delete childEnv["LAKATOS_API_TOKEN"];
+    roChild = spawn(process.execPath, [entrypoint], { env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+    roChild.stdout.on("data", (chunk: Buffer) => {
+      roBuffer += chunk.toString("utf8");
+      const lines = roBuffer.split("\n");
+      roBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim() === "") continue;
+        const message = JSON.parse(line) as { id?: number };
+        if (message.id !== undefined) roResponses.set(message.id, message);
+      }
+    });
+  });
+
+  afterAll(async () => {
+    roChild.kill();
+    await new Promise<void>((resolve, reject) => {
+      roStore.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  it("기동은 막히지 않고 read 는 서빙, write 는 백엔드 미접촉 auth_required", async () => {
+    roSend({
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "ro", version: "0" } },
+    });
+    await roWait(1);
+    roSend({
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: { name: "get_tree", arguments: { name: "t" } },
+    });
+    const read = (await roWait(2)) as { result: { isError: boolean } };
+    expect(read.result.isError).toBe(false);
+    const hitsBefore = roHits.length;
+    roSend({
+      jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "add_node", arguments: { name: "t", tag: "n1" } },
+    });
+    const write = (await roWait(3)) as {
+      result: { isError: boolean; content: { text: string }[] };
+    };
+    expect(write.result.isError).toBe(true);
+    expect(JSON.parse(write.result.content[0]?.text ?? "{}")).toMatchObject({
+      _tag: "tool_error", reason: "auth_required",
+    });
+    expect(roHits.length).toBe(hitsBefore); // 백엔드 미접촉
+  });
+});
