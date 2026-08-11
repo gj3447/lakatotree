@@ -48,7 +48,15 @@ export const fileCasStore = (root: string): BundleStore => {
     const sha = sha256Hex(bytes);
     const target = pathFor(sha);
     try {
-      const existing = await readFile(target).catch(() => null);
+      // ENOENT 만 '미존재'다 — 그 외 읽기 오류를 미존재로 오독하면 write-once 를 우회해
+      // 재발행하게 된다 (제3자 리뷰 노트). 비-ENOENT 는 즉시 io_error.
+      let existing: Buffer | null;
+      try {
+        existing = await readFile(target);
+      } catch (cause) {
+        if ((cause as { code?: string }).code !== "ENOENT") return ioError(cause);
+        existing = null;
+      }
       if (existing !== null) {
         // 같은 이름에 다른 내용 = 저장층 변조 — freshen 이 아니라 divergence 오류다.
         return equalBytes(new Uint8Array(existing), bytes)

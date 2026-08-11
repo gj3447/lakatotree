@@ -62,6 +62,20 @@ describe("Scenario FILE-CAS", () => {
     expect(await store.get("0".repeat(64))).toMatchObject({ _tag: "cas_error", reason: "not_found" });
   });
 
+  it("guard_defect: 비-ENOENT 읽기 오류는 io_error — write-once 우회 재발행 금지", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lakatos-cas-"));
+    const store = fileCasStore(root);
+    const payload = bytes("eacces-target");
+    const put1 = await store.put(payload);
+    if ("_tag" in put1) throw new Error("put failed");
+    const onDisk = join(root, put1.sha.slice(0, 2), put1.sha);
+    await chmod(onDisk, 0o200); // write-only: 읽기 EACCES, rename 은 여전히 가능한 조건
+    const result = await store.put(payload);
+    // 구버전(모든 오류=null)은 여기서 조용히 재발행에 성공한다 — revert 시 이 단언이 RED
+    expect(result).toMatchObject({ _tag: "cas_error", reason: "io_error" });
+    await chmod(onDisk, 0o444);
+  });
+
   it("불변 강제: 산출 파일은 쓰기 비트가 없다 (write-once)", async () => {
     const root = await mkdtemp(join(tmpdir(), "lakatos-cas-"));
     const store = fileCasStore(root);
