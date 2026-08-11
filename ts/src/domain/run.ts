@@ -12,8 +12,10 @@ import {
 } from "./ledger.ts";
 import type { BudgetDeclaration, CapBreach, Usage } from "./budget.ts";
 import { checkCaps, usageOf, validateBudgetDeclaration } from "./budget.ts";
+import type { GateResult, GateStreak } from "./streak.ts";
+import { NO_PROGRESS_RED_LIMIT, reduceStreaks, streakOf } from "./streak.ts";
 
-export type RunEvent = BudgetDeclaration | TokenSpend | ComputeSpend;
+export type RunEvent = BudgetDeclaration | TokenSpend | ComputeSpend | GateResult;
 
 export const REJECT_REASONS = [
   "budget_not_declared",
@@ -23,6 +25,7 @@ export const REJECT_REASONS = [
   "run_id_mismatch",
   "negative_or_non_integer_tokens",
   "negative_or_non_integer_compute",
+  "red_without_reason",
   "already_halted",
 ] as const;
 export type RejectReason = (typeof REJECT_REASONS)[number];
@@ -31,14 +34,23 @@ export const HALT_REASONS = [
   "call_cap_exceeded",
   "token_cap_exceeded",
   "wall_cap_exceeded",
+  "no_progress_same_gate_red3",
 ] as const;
 
-export type HaltReport = {
-  readonly _tag: "cap_halt";
-  readonly reason: CapBreach;
-  readonly capValue: number;
-  readonly usedValue: number;
-};
+export type HaltReport =
+  | {
+      readonly _tag: "cap_halt";
+      readonly reason: CapBreach;
+      readonly capValue: number;
+      readonly usedValue: number;
+    }
+  | {
+      readonly _tag: "no_progress_halt";
+      readonly reason: "no_progress_same_gate_red3";
+      readonly gateId: string;
+      readonly gateReason: string;
+      readonly reds: number;
+    };
 
 export type RunDecision =
   | { readonly _tag: "admitted" }
@@ -48,6 +60,7 @@ export type RunDecision =
 export interface RunState {
   readonly declared: BudgetDeclaration | null;
   readonly budget: BudgetState;
+  readonly streaks: readonly GateStreak[];
   readonly calls: number;
   readonly halt: HaltReport | null;
 }
@@ -55,6 +68,7 @@ export interface RunState {
 export const initialRunState: RunState = {
   declared: null,
   budget: emptyBudget,
+  streaks: [],
   calls: 0,
   halt: null,
 };
@@ -127,6 +141,24 @@ export const applyRunEvent = (state: RunState, event: RunEvent): RunApplyResult 
   }
   if (event.runId !== declared.runId) {
     return rejected(state, "run_id_mismatch");
+  }
+  if (event._tag === "GateResultRecorded") {
+    if (event.outcome === "red" && event.reason === "") {
+      return rejected(state, "red_without_reason");
+    }
+    const streaks = reduceStreaks(state.streaks, event);
+    const updated = streakOf(streaks, event.gateId);
+    if (updated !== undefined && updated.consecutiveReds >= NO_PROGRESS_RED_LIMIT) {
+      const report: HaltReport = {
+        _tag: "no_progress_halt",
+        reason: "no_progress_same_gate_red3",
+        gateId: updated.gateId,
+        gateReason: updated.reason,
+        reds: updated.consecutiveReds,
+      };
+      return { next: { ...state, streaks, halt: report }, decision: { _tag: "halted", report } };
+    }
+    return { next: { ...state, streaks }, decision: { _tag: "admitted" } };
   }
   if (event._tag === "TokenSpendRecorded") {
     if (validateTokenSpend(event) !== null) {

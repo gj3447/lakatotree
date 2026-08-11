@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { BudgetDeclaration } from "../../src/domain/budget.ts";
 import { usageOf } from "../../src/domain/budget.ts";
 import { reduceBudget, emptyBudget } from "../../src/domain/ledger.ts";
+import { NO_PROGRESS_RED_LIMIT } from "../../src/domain/streak.ts";
 import { HALT_REASONS, REJECT_REASONS, applyRunEvent, replayRun } from "../../src/domain/run.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -16,6 +17,7 @@ const spec = JSON.parse(
   schema_version: string;
   cap_check_order: string[];
   token_sum_formula: string;
+  no_progress_red_limit: number;
   reject_reasons: string[];
   halt_reasons: string[];
 };
@@ -31,6 +33,10 @@ describe("spec-pin: 어휘 드리프트 가드", () => {
 
   it("halt 어휘 완전 동치", () => {
     expect([...HALT_REASONS].sort()).toEqual([...spec.halt_reasons].sort());
+  });
+
+  it("B3 조문 상수 — 코드·스펙 한쪽만 고치면 RED", () => {
+    expect(NO_PROGRESS_RED_LIMIT).toBe(spec.no_progress_red_limit);
   });
 });
 
