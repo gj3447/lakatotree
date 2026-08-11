@@ -3,7 +3,7 @@
  * 교차 언어 파리티는 event-id.test 의 실 Python 생성 픽스처가 핀한다 (드리프트 = RED).
  * lone surrogate: Python 은 utf-8 encode 에서 raise — TS 는 값으로 거부한다. TextEncoder 의
  * 무음 U+FFFD 대체가 Python 과 다른 해시를 만드는 경로를 선검출로 봉쇄 (파리티 위장 green 차단). */
-import { canonicalBytes } from "../contracts/canonical.ts";
+import { canonicalBytes, type CanonicalValue } from "../contracts/canonical.ts";
 import { sha256Hex } from "../contracts/sha256.ts";
 
 export const HISTORY_EVENT_DOMAIN = "lakatotree-history-event-v1";
@@ -43,4 +43,54 @@ export const historyEventId = (
     return { _tag: "event_id_error", reason: "non_canonical_input" };
   }
   return `he-${sha256Hex(bytes)}`;
+};
+
+/** 페이로드 정준화 — Python reconcile.canonical_history_payload 파리티 (픽스처 핀).
+ * NUL·lone surrogate 는 값·키 모두 선거부: 'Neo4j 는 통과시키고 PG JSONB 는 거부하는' 바이트를
+ * durable intent 로 만들면 영구 오염이 남는다 (reconcile.py 교훈 — 투영 시점 검증 금지).
+ * float 는 Python 보다 엄격하게 거부 (canonical.ts 마이크로 정수 규율 — 문서화된 부분집합). */
+export type PayloadError = {
+  readonly _tag: "payload_error";
+  readonly reason: "nul_not_representable" | "lone_surrogate" | "non_canonical";
+  readonly path: string;
+};
+
+const scanText = (text: string, path: string): PayloadError | null =>
+  text.includes("\u0000")
+    ? { _tag: "payload_error", reason: "nul_not_representable", path }
+    : hasLoneSurrogate(text)
+      ? { _tag: "payload_error", reason: "lone_surrogate", path }
+      : null;
+
+const scanValue = (value: CanonicalValue, path: string): PayloadError | null => {
+  if (typeof value === "string") return scanText(value, path);
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const error = scanValue(value[index] ?? null, `${path}/${index}`);
+      if (error !== null) return error;
+    }
+    return null;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      const keyError = scanText(key, `${path}/<key>`);
+      if (keyError !== null) return keyError;
+      if (item === undefined) continue;
+      const error = scanValue(item, `${path}/${key}`);
+      if (error !== null) return error;
+    }
+  }
+  return null;
+};
+
+const decoder = new TextDecoder();
+
+export const canonicalHistoryPayload = (value: CanonicalValue): string | PayloadError => {
+  const scanned = scanValue(value, "");
+  if (scanned !== null) return scanned;
+  const bytes = canonicalBytes(value);
+  if (!(bytes instanceof Uint8Array)) {
+    return { _tag: "payload_error", reason: "non_canonical", path: bytes.path };
+  }
+  return decoder.decode(bytes);
 };
