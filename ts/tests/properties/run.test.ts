@@ -139,7 +139,8 @@ describe("run aggregate laws", () => {
             (e): e is TokenSpend | ComputeSpend =>
               e._tag === "TokenSpendRecorded" || e._tag === "ComputeSpendRecorded",
           );
-        const finalState = steps.length > 0 ? steps[steps.length - 1].next : initialRunState;
+        const last = steps.at(-1);
+        const finalState = last === undefined ? initialRunState : last.next;
         expect(finalState.budget).toEqual(appliedSpends.reduce(reduceBudget, emptyBudget));
       }),
       { numRuns: 300 },
