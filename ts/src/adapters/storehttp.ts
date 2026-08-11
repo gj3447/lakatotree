@@ -9,8 +9,9 @@ export const httpStorePort = (baseUrl: string): StorePort => ({
     path: string,
     body: string | null,
     bearer: string | null,
+    extraHeaders?: Readonly<Record<string, string>>,
   ): Promise<StoreResponse> => {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extraHeaders };
     if (body !== null) headers["content-type"] = "application/json";
     if (bearer !== null) headers["authorization"] = `Bearer ${bearer}`;
     try {

@@ -14,8 +14,18 @@ const decl: BudgetDeclaration = {
 };
 
 const SPECS: readonly ToolSpec[] = [
-  { name: "get_tree", method: "GET", path: "/api/tree/{name}", kind: "read", capBytes: 8 },
-  { name: "add_node", method: "POST", path: "/api/tree/{tree}/nodes", kind: "write", capBytes: 100 },
+  { name: "get_tree", method: "GET", path: "/api/tree/{name}", kind: "read", bodyMode: "none", capBytes: 8 },
+  { name: "critique", method: "POST", path: "/api/tree/{tree}/critique", kind: "write", bodyMode: "flat", capBytes: 100 },
+  { name: "run_cycle", method: "POST", path: "/api/tree/{name}/cycle", kind: "write", bodyMode: "spec_json", capBytes: 100 },
+  { name: "longinus_audit", method: "LOCAL", path: "LOCAL", kind: "local", bodyMode: "local", capBytes: 100 },
+  {
+    name: "fsck", method: "GET", path: "/api/ops/fsck", kind: "ops", bodyMode: "none", capBytes: 100,
+    query: [{ name: "tree", mode: "omit_empty" }, { name: "emit_skiplist", mode: "one_flag" }],
+  },
+  {
+    name: "delete_tree", method: "DELETE", path: "/api/tree/{name}", kind: "write", bodyMode: "none",
+    capBytes: 100, query: [{ name: "cascade", mode: "true_only" }], idempotencyHeader: true,
+  },
 ];
 
 const mustGateway = (g: ReturnType<typeof createGateway>): Gateway => {
@@ -26,10 +36,17 @@ const mustGateway = (g: ReturnType<typeof createGateway>): Gateway => {
 const fakePort = (
   handler: (method: string, path: string, body: string | null) => StoreResponse,
 ) => {
-  const calls: { method: string; path: string; body: string | null; bearer: string | null }[] = [];
+  const calls: {
+    method: string; path: string; body: string | null; bearer: string | null;
+    extraHeaders?: Readonly<Record<string, string>>;
+  }[] = [];
   const port: StorePort = {
-    request: (method, path, body, bearer) => {
-      calls.push({ method, path, body, bearer });
+    request: (method, path, body, bearer, extraHeaders) => {
+      calls.push(
+        extraHeaders === undefined
+          ? { method, path, body, bearer }
+          : { method, path, body, bearer, extraHeaders },
+      );
       return Promise.resolve(handler(method, path, body));
     },
   };
@@ -98,14 +115,58 @@ describe("gateway pipeline", () => {
     expect(calls.length).toBe(before); // 포트 미호출
   });
 
-  it("write 도구: 경로 파라미터 외 인자를 JSON body 로, Bearer 는 주입 시 전달", async () => {
+  it("flat write 도구: 경로 파라미터 외 인자를 JSON body 로, Bearer 는 주입 시 전달", async () => {
     const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{\"ok\":true}" }));
     const gateway = mustGateway(createGateway(SPECS, decl, port, "tok-1"));
-    await gateway.call("add_node", { tree: "t1", tag: "n1", comment: "c" });
-    expect(calls[0]).toEqual({
-      method: "POST", path: "/api/tree/t1/nodes",
-      body: JSON.stringify({ tag: "n1", comment: "c" }),
+    await gateway.call("critique", { tree: "t1", arg_id: "a1", attacks: "root" });
+    expect(calls[0]).toMatchObject({
+      method: "POST", path: "/api/tree/t1/critique",
+      body: JSON.stringify({ arg_id: "a1", attacks: "root" }),
       bearer: "tok-1",
+    });
+  });
+
+  it("spec_json 도구: 파싱 실패는 서버 미호출 로컬 오류 — Python invalid_spec_json 파리티", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{}" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
+    const error = await gateway.call("run_cycle", { name: "t", spec_json: "{broken" });
+    expect(error).toEqual({
+      _tag: "tool_error", reason: "assemble_error", detail: "invalid_spec_json",
+    });
+    expect(calls.length).toBe(0);
+    await gateway.call("run_cycle", { name: "t", spec_json: "{\"dry_run\":true}" });
+    expect(calls[0]).toMatchObject({ body: JSON.stringify({ dry_run: true }) });
+  });
+
+  it("local 도구는 typed unsupported — 조용한 오프록시 없음 (정직 공시)", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{}" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
+    const error = await gateway.call("longinus_audit", {});
+    expect(error).toMatchObject({ _tag: "tool_error", reason: "unsupported_local_tool" });
+    expect(calls.length).toBe(0);
+  });
+
+  it("쿼리 직렬화 셈: omit_empty·one_flag·true_only — Python 생략 셈 이식", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{}" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
+    await gateway.call("fsck", {});
+    expect(calls.at(-1)).toMatchObject({ path: "/api/ops/fsck" });
+    await gateway.call("fsck", { tree: "t1", emit_skiplist: true });
+    expect(calls.at(-1)).toMatchObject({ path: "/api/ops/fsck?tree=t1&emit_skiplist=1" });
+  });
+
+  it("delete_tree: Idempotency-Key 헤더 필수(누락=미호출) + cascade true_only", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{}" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
+    const missing = await gateway.call("delete_tree", { name: "t" });
+    expect(missing).toEqual({
+      _tag: "tool_error", reason: "invalid_call", detail: "missing_param",
+    });
+    expect(calls.length).toBe(0);
+    await gateway.call("delete_tree", { name: "t", idempotency_key: "k1", cascade: true });
+    expect(calls[0]).toMatchObject({
+      method: "DELETE", path: "/api/tree/t?cascade=true",
+      extraHeaders: { "Idempotency-Key": "k1" },
     });
   });
 

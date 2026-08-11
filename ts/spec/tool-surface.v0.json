@@ -1,0 +1,631 @@
+{
+  "schema_version": "tool-surface/v1",
+  "authority": "lakatos/mcp_server.py @ ts-rebuild 진단 2026-08-11 (recon wf_214094fc) — Python MCP 51도구의 TS 게이트웨이 등록 정본",
+  "count": 51,
+  "cap_unit": "UTF-8 bytes (emitPage capBytes)",
+  "body_modes": [
+    "none",
+    "empty",
+    "flat",
+    "spec_json",
+    "assembler",
+    "local"
+  ],
+  "not_mechanized": "local 2종(manifest_verify·longinus_audit)은 HTTP 아닌 로컬 함수 — TS 이식 전 typed unsupported_local_tool. _preflight_paths(/proc 스캔) 미이식 — preflight_unavailable 정직 공시. tokenCap 은 게이트웨이 경로에서 계량 불가(LLM 토큰은 하네스 몫) — callCap·emission 캡만 산다. verification:true 도구는 봉인 단위 미만 페이지화 금지 원칙에 따라 capBytes 500000.",
+  "tools": [
+    {
+      "name": "list_trees",
+      "method": "GET",
+      "path": "/api/trees",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "(없음)",
+      "note": "공통: 모든 도구 응답은 json.dumps(ensure_ascii=False) 문자열. _get 은 raise_for_status(HTTP 오류가 예외로 전파), _post 는 4xx/5xx 를 {'error':status,'detail':text[:200]} 구조화 dict 로 반환. LAKATOS_API_TOKEN 있으면 Bearer 헤더."
+    },
+    {
+      "name": "tree_metrics",
+      "method": "GET",
+      "path": "/api/tree/{name}/metrics",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "진보율/기각률/베이즈 신뢰도/frontier 지표."
+    },
+    {
+      "name": "next_directions",
+      "method": "GET",
+      "path": "/api/tree/{name}/directions",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "VoI/UCB 우선순위 frontier 질문."
+    },
+    {
+      "name": "stack",
+      "method": "GET",
+      "path": "/api/tree/{name}/stack",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), leaf:str(선택,기본'')",
+      "note": "leaf 비면 쿼리스트링 자체를 생략(정본 leaf). urlencode 사용.",
+      "query": [
+        {
+          "name": "leaf",
+          "mode": "omit_empty"
+        }
+      ]
+    },
+    {
+      "name": "lifecycle",
+      "method": "GET",
+      "path": "/api/tree/{name}/lifecycle",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), leaf:str(선택,기본'')",
+      "note": "leaf 비면 쿼리 생략. extinct 는 stack 정족수만 선고.",
+      "query": [
+        {
+          "name": "leaf",
+          "mode": "omit_empty"
+        }
+      ]
+    },
+    {
+      "name": "series",
+      "method": "GET",
+      "path": "/api/tree/{name}/series",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), leaf:str(선택,기본'')",
+      "note": "leaf 비면 쿼리 생략. diagnostic_only(verdict 권위 없음).",
+      "query": [
+        {
+          "name": "leaf",
+          "mode": "omit_empty"
+        }
+      ]
+    },
+    {
+      "name": "tradition",
+      "method": "GET",
+      "path": "/api/tree/{name}/tradition",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "Laudan 연구전통 조회, diagnostic_only."
+    },
+    {
+      "name": "tradition_set",
+      "method": "POST",
+      "path": "/api/tree/{name}/tradition",
+      "kind": "write",
+      "bodyMode": "spec_json",
+      "capBytes": 24000,
+      "params": "name:str(필수), spec_json:str(필수)",
+      "note": "body = json.loads(spec_json) 그대로 전달. JSON 파싱 실패 시 서버 미호출, 로컬 {'error':'invalid_spec_json'} 반환. diagnostic_only(hard core 불침범)."
+    },
+    {
+      "name": "tradition_appraise",
+      "method": "POST",
+      "path": "/api/tree/{name}/tradition/appraise",
+      "kind": "write",
+      "bodyMode": "flat",
+      "capBytes": 24000,
+      "params": "name:str(필수), commitment_id:str(필수), operation:str(선택,'modify'), reason:str(선택,''), compatibility_claim:str(선택,'')",
+      "note": "body = 평면 dict(commitment_id,operation,reason,compatibility_claim). 진단 전용 — identity_boundary 도 후보일 뿐."
+    },
+    {
+      "name": "heuristic",
+      "method": "GET",
+      "path": "/api/tree/{name}/heuristic",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), leaf:str(선택,기본'')",
+      "note": "leaf 비면 쿼리 생략. MSRP negative/positive heuristic.",
+      "query": [
+        {
+          "name": "leaf",
+          "mode": "omit_empty"
+        }
+      ]
+    },
+    {
+      "name": "trust",
+      "method": "GET",
+      "path": "/api/tree/{name}/trust",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "eigentrust. coverage.mode 로 데이터 두께 정직표기."
+    },
+    {
+      "name": "leaderboard",
+      "method": "GET",
+      "path": "/api/leaderboard",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "trees_csv:str(필수,쉼표구분 ≥2), snapshot:bool(선택,False)",
+      "note": "★snapshot=true 는 side-effect GET — 패러다임 판정용 스냅샷을 서버에 축적(순수 read 아님). snapshot 은 소문자 'true'/'false' 문자열로 직렬화.",
+      "query": [
+        {
+          "name": "trees",
+          "mode": "required"
+        },
+        {
+          "name": "snapshot",
+          "mode": "bool_always"
+        }
+      ]
+    },
+    {
+      "name": "paradigm",
+      "method": "GET",
+      "path": "/api/paradigm",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "incumbent:str(필수), rivals_csv:str(필수)",
+      "note": "정상과학/위기/shift_candidate. 자동 교체 금지(인간 안건).",
+      "query": [
+        {
+          "name": "incumbent",
+          "mode": "required"
+        },
+        {
+          "name": "rivals",
+          "mode": "required"
+        }
+      ]
+    },
+    {
+      "name": "certificate",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/certificate",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 500000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "5게이트 AND 인증서 + 증거 ref.",
+      "verification": true
+    },
+    {
+      "name": "eureka",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/eureka",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "felt/true/hallucinated 판정 seam."
+    },
+    {
+      "name": "graph",
+      "method": "GET",
+      "path": "/api/graph/{name}",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "GUI 데이터 척추(node/edge/frontier/agenda). /api/tree 가 아닌 /api/graph prefix 주의."
+    },
+    {
+      "name": "agm_revise",
+      "method": "POST",
+      "path": "/api/agm/revise",
+      "kind": "write",
+      "bodyMode": "spec_json",
+      "capBytes": 24000,
+      "params": "spec_json:str(필수)",
+      "note": "body = json.loads(spec_json). 파싱 실패 시 로컬 invalid_spec_json. tree-scope 아닌 전역 경로. hard core 는 allow_hard_core 없이 깎으면 409."
+    },
+    {
+      "name": "run_cycle",
+      "method": "POST",
+      "path": "/api/tree/{name}/cycle",
+      "kind": "write",
+      "bodyMode": "spec_json",
+      "capBytes": 24000,
+      "params": "name:str(필수), spec_json:str(필수)",
+      "note": "body = json.loads(spec_json)(CycleIn). ★_preflight_paths 경유: spec.novel_script/spec.script 는 role='script', spec.result_path 는 role='result' — 경고 시 응답에 local_preflight_warning 병합. dry_run:true 지원(쓰기 0). cycle_budget 소진 시 타입 거부 {status:'budget_exhausted'}. 서버는 bash 미실행(RCE 회피). 파싱 실패 시 로컬 invalid_spec_json."
+    },
+    {
+      "name": "calibration",
+      "method": "GET",
+      "path": "/api/tree/{name}/calibration",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "Brier/log/ECE proper scoring."
+    },
+    {
+      "name": "open_question",
+      "method": "POST",
+      "path": "/api/tree/{name}/question",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), qname:str(필수), body:str(선택,''), expected_gain:float|None(선택), cost:float|None(선택)",
+      "note": "payload = {qname,body}; expected_gain/cost 는 None 이면 body 에서 생략(서버 파생값 보존)."
+    },
+    {
+      "name": "close_question",
+      "method": "POST",
+      "path": "/api/tree/{name}/question/{qname}/close",
+      "kind": "write",
+      "bodyMode": "empty",
+      "capBytes": 24000,
+      "params": "name:str(필수), qname:str(필수), closed_by:str(선택,'')",
+      "note": "body = 빈 {}. closed_by 는 쿼리 파라미터(비면 쿼리 생략). closed_by 는 노드 tag 여야 per-branch 귀속 집계.",
+      "query": [
+        {
+          "name": "closed_by",
+          "mode": "omit_empty"
+        }
+      ]
+    },
+    {
+      "name": "reattribute_question",
+      "method": "POST",
+      "path": "/api/tree/{name}/question/{qname}/reattribute",
+      "kind": "write",
+      "bodyMode": "empty",
+      "capBytes": 24000,
+      "params": "name:str(필수), qname:str(필수), closed_by:str(필수)",
+      "note": "body = 빈 {}. closed_by 쿼리 필수. CLOSED 질문에만, closer 는 force_of_row==COUNTS 필요, 위반 409. append-only.",
+      "query": [
+        {
+          "name": "closed_by",
+          "mode": "required"
+        }
+      ]
+    },
+    {
+      "name": "create_tree",
+      "method": "POST",
+      "path": "/api/tree/{name}",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), title:str(선택,''), hard_core:str(선택,''), frontier_rule:str(선택,''), doc:str(선택,''), coverage_statement:str(선택,''), coverage_backlog_csv:str(선택,''→list), ontology:str(선택,''), require_novel_anchor:bool(선택,False), assurance_tier:str(선택,''→None), attestor_dids_csv:str(선택,''→list|None), coverage_status:str(선택,'unknown'), cycle_budget:int|None(선택)",
+      "note": "멱등 MERGE 이되 last-write-wins(생략 필드 빈값 초기화). csv 필드는 클라이언트에서 쉼표 split→list. assurance_tier 빈문자면 None(불변), 하향은 409 ratchet. cycle_budget 은 ratchet 없음(self-raisable). 응답에 policy_warnings 가능."
+    },
+    {
+      "name": "delete_tree",
+      "method": "DELETE",
+      "path": "/api/tree/{name}",
+      "kind": "write",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), idempotency_key:str(필수), cascade:bool(선택,False)",
+      "note": "★파괴적·복구불가. Idempotency-Key HTTP 헤더 필수(_delete 전용 helper). 노드 있는 나무는 cascade=true 없이 409. 미존재 404. 4xx 는 {'error','detail'} 구조화.",
+      "query": [
+        {
+          "name": "cascade",
+          "mode": "true_only"
+        }
+      ],
+      "idempotencyHeader": true
+    },
+    {
+      "name": "add_node",
+      "method": "POST",
+      "path": "/api/tree/{name}/node",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), parent:str(선택,''), parents_csv:str(선택,''), comment:str(선택,''), algorithm:str(선택,''), author:str(선택,''), result_path:str(선택,''), parent_edges_json:str(선택,'')",
+      "note": "body: parents = parents_csv split + parent 를 맨앞 삽입. parent_edges_json 은 클라이언트에서 검증(64KB/64edge 상한, 필드 whitelist tag/inferred/relation_kind/evidence_ref, typed/inferred edge 는 evidence_ref 필수 — 위반 시 ValueError 예외) 후 body.parent_edges. result_path 있을 때만 body 포함. ★_preflight_paths(result_path, role='result') 경유."
+    },
+    {
+      "name": "register_prediction",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/prediction",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), metric:str(필수), baseline:float(필수), direction:str(선택,'lower'), noise_band:float(선택,0.0), novel_metric:str(선택,''), novel_direction:str(선택,''), novel_threshold:float(선택,0.0), script_sha:str(선택,''), credence:float|None(선택), closes_question:str(선택,'')",
+      "note": "body 조건부 조립: metric→metric_name, baseline→baseline_value 로 개명. novel_metric 있을 때만 novel_* 3필드(novel_direction 기본 'higher'), script_sha→judge_script_sha, credence/closes_question 은 값 있을 때만. closes_question 여기 선언해야 eureka 살아남(사후 소급 없음)."
+    },
+    {
+      "name": "fsck",
+      "method": "GET",
+      "path": "/api/ops/fsck",
+      "kind": "ops",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "tree:str(선택,''=전 트리), emit_skiplist:bool(선택,False)",
+      "note": "비변이 전수감사. 쿼리는 truthy 값만 포함(emit_skiplist=True→'1', False 면 키 자체 생략). skiplist 는 사람 검토→git 커밋 대상.",
+      "query": [
+        {
+          "name": "tree",
+          "mode": "omit_empty"
+        },
+        {
+          "name": "emit_skiplist",
+          "mode": "one_flag"
+        }
+      ]
+    },
+    {
+      "name": "consilience",
+      "method": "GET",
+      "path": "/api/tree/{name}/consilience",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 500000,
+      "params": "name:str(필수), leaf1:str(필수), leaf2:str(필수), credence:bool(선택,False)",
+      "note": "★유일하게 _get 안 쓰고 raw httpx.get — 422(fail-closed)/404 를 예외 대신 {'error',​'detail'[:300]} 구조화 반환. 무변이 GET(verdict_mutation=False). credence 는 소문자 문자열.",
+      "query": [
+        {
+          "name": "leaf1",
+          "mode": "required"
+        },
+        {
+          "name": "leaf2",
+          "mode": "required"
+        },
+        {
+          "name": "credence",
+          "mode": "bool_always"
+        }
+      ],
+      "verification": true
+    },
+    {
+      "name": "node_receipts",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/receipts",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 500000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "VerdictReceipt 체인 + head 포인터. lineage rebuild_verify 와 다른 물건.",
+      "verification": true
+    },
+    {
+      "name": "verify_verdict",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/receipts/verify",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 500000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "체인 fold 재유도 vs 캐시 대조. 부패는 500 아닌 finding 열거(RECEIPT_CHAIN_MISMATCH), ok:false=변조/드리프트.",
+      "verification": true
+    },
+    {
+      "name": "submit_result",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/test_result",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), value:float(필수), script:str(필수), script_sha:str(선택,''), novel_measured:float|None(선택), novel_script:str(선택,''), data_branch:bool(선택,False), data_replay_passed:bool(선택,True), human_verdict_required:bool(선택,False), result_path:str(선택,''), write_cert_json:str(선택,''), lakatos_anomaly/consequence/excess/hardcore:bool|None(선택,None=미제출), touched_assumptions_csv:str(선택,''→list), implementation_complete:bool(선택,True), counterexample_response:str(선택,''→None), counterexample_type:str(선택,''→None), ce_excess_content:bool(False), ce_novel_corroborated:bool(False), ce_in_heuristic_spirit:bool|None, ce_proof_concept_name/born_from/incorporated_lemma:str(선택), freshen:bool(선택,False), supersedes_receipt_sha:str(선택,'')",
+      "note": "★클라이언트 선검증: freshen ↔ supersedes_receipt_sha 는 반드시 동시 제출(불일치 시 서버 미호출, invalid_freshen_binding). body: value→metric_value 개명, script_sha/novel_measured/novel_script/result_path/supersedes_receipt_sha 는 값 있을 때만, write_cert_json 은 json.loads 후 body.write_cert(파싱 예외 미포획!). ★_preflight_paths: script·novel_script role='script', 실패 시 result_path role='result'. cycle_budget 소진 시 429(실 초크포인트). 평범한 동일 제출은 멱등 replay."
+    },
+    {
+      "name": "provenance",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/provenance",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 500000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "W3C PROV-O 계보 + 재현 명령.",
+      "verification": true
+    },
+    {
+      "name": "set_verdict",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/verdict",
+      "kind": "write",
+      "bodyMode": "flat",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), verdict:str(필수), note:str(선택,''), scope:str(선택,''), human_verdict:bool(선택,False)",
+      "note": "ADMIN_VERDICTS 만(scripted 판결은 submit_result 전용). CANONICAL 승격 게이트 미통과 409. cycle_budget 소진 시 429."
+    },
+    {
+      "name": "critique",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/critique",
+      "kind": "write",
+      "bodyMode": "flat",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), arg_id:str(필수), attacks:str(필수), by:str(선택,''), kind:str(선택,'doubt'), body:str(선택,'')",
+      "note": "Dung attack 등재. kind=doubt|comment|rebuttal|evaluation."
+    },
+    {
+      "name": "add_research_event",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/event",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), event_id:str(필수), realm:str(필수), action:str(필수), actor:str(선택,''), evidence_csv:str(선택,''→evidence_refs list), payload_json:str(선택,'{}')",
+      "note": "append-only. payload_json 은 json.loads — 파싱 실패 시 로컬 {'error':'invalid_payload_json'}."
+    },
+    {
+      "name": "research_events",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/events",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "ClaimStanding 이 소비하는 append-only 이벤트 목록."
+    },
+    {
+      "name": "standing",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/standing",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수)",
+      "note": "grounded extension 판정."
+    },
+    {
+      "name": "claim_standing",
+      "method": "GET",
+      "path": "/api/tree/{name}/node/{tag}/claim-standing",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), require_replay:bool(선택,True)",
+      "note": "require_replay=True(기본)면 쿼리스트링 자체 생략, False 일 때만 ?require_replay=false 부착.",
+      "query": [
+        {
+          "name": "require_replay",
+          "mode": "false_only"
+        }
+      ]
+    },
+    {
+      "name": "add_element",
+      "method": "POST",
+      "path": "/api/tree/{name}/element",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), element_name:str(필수), definition:str(선택,''), implication:str(선택,''), lifecycle:str(선택,''), scope:str(선택,'domain-agnostic')",
+      "note": "body 에서 element_name→name 개명(트리 name 과 충돌 회피용 MCP 파라미터명)."
+    },
+    {
+      "name": "use_element",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/element/{element_name}",
+      "kind": "write",
+      "bodyMode": "flat",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), element_name:str(필수), note:str(선택,''), evidence_ref:str(선택,'')",
+      "note": "element_name 이 path 세그먼트(url-encode 없음 주의). body={note,evidence_ref}."
+    },
+    {
+      "name": "foundation_requirements",
+      "method": "GET",
+      "path": "/api/tree/{name}/foundation",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "requirement + gap summary."
+    },
+    {
+      "name": "add_foundation",
+      "method": "POST",
+      "path": "/api/tree/{name}/foundation",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), requirement_name:str(필수), kind:str(필수), question:str(선택,''), why_needed:str(선택,''), acceptance_csv:str(선택,''→acceptance_criteria list), evidence_csv:str(선택,''→evidence_refs list), status:str(선택,'needed'), optional:bool(선택,False), owner:str(선택,''), risk_if_missing:str(선택,'')",
+      "note": "requirement_name→name 개명. csv 2종은 쉼표 split→list."
+    },
+    {
+      "name": "get_tree",
+      "method": "GET",
+      "path": "/api/tree/{name}",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "name:str(필수)",
+      "note": "raw 트리 전체(노드/엣지/판결). CLI `tree` 대칭. POST 같은 경로는 create_tree."
+    },
+    {
+      "name": "get_lineage",
+      "method": "GET",
+      "path": "/api/lineage/{artifact}",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "artifact:str(필수), stale:bool(선택,False)",
+      "note": "artifact 는 urllib.parse.quote 처리(서버 route 는 {artifact:path}). stale=False 면 쿼리 생략.",
+      "query": [
+        {
+          "name": "stale",
+          "mode": "true_only"
+        }
+      ]
+    },
+    {
+      "name": "script_history",
+      "method": "GET",
+      "path": "/api/lineage-script/{producer}",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "producer:str(필수)",
+      "note": "producer urllib.parse.quote 처리. sha 이력 무결성 추적."
+    },
+    {
+      "name": "rebuild_verify",
+      "method": "GET",
+      "path": "/api/rebuild-verify/{artifact}",
+      "kind": "read",
+      "bodyMode": "none",
+      "capBytes": 24000,
+      "params": "artifact:str(필수)",
+      "note": "artifact urllib.parse.quote 처리. 검증만 — 실제 재실행(bash)은 CLI rebuild-run 전용, MCP 미노출."
+    },
+    {
+      "name": "record_derivation",
+      "method": "POST",
+      "path": "/api/lineage/derivation",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "output:str(필수), output_sha:str(필수), producer:str(선택,''), producer_sha:str(선택,''), inputs_csv:str(선택,'' — 'path:sha,path:sha' 형식→[[path,sha],...] rsplit(':',1) 파싱), kind:str(선택,'intermediate' — source|intermediate|final)",
+      "note": "tree-scope 아닌 전역 경로. ★_preflight_paths(output + 모든 input path, role='result') 경유 — 경고 시 local_preflight_warning 병합. ':' 없는 inputs_csv 항목은 무음 드롭."
+    },
+    {
+      "name": "manifest_verify",
+      "method": "LOCAL",
+      "path": "LOCAL",
+      "kind": "local",
+      "bodyMode": "local",
+      "capBytes": 24000,
+      "params": "manifest_path:str(필수), current_sha_csv:str(선택,'' — 'path:sha,...' 형식→dict), require_environment:bool(선택,True)",
+      "note": "★서버 무관 — MCP 프로세스가 load_dataset_manifest+verify_dataset_manifest 를 로컬 실행. TS 게이트웨이 이식 시 HTTP 프록시 불가, 로컬 구현 또는 별도 엔드포인트 필요. 응답 = res.as_dict()."
+    },
+    {
+      "name": "add_observation",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/observation",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), event_id:str(필수), url:str(선택,''), source_type:str(선택,''), lakatos_location:str(선택,'' — hard_core|protective_belt|positive_heuristic|negative_heuristic), retrieved_at:str(선택,''), content_hash:str(선택,''), raw_snapshot_path:str(선택,''), trust/link_authority/source_class_weight/primary_source_bonus/provenance_score/corroboration_score/recency_score/supply_chain_score:float|None(선택 — None 이면 body 생략), content:str(선택,''), theory_basis:str(선택,''), foundation_refs_csv:str(선택,''→list), rival_name/rival_relation/rival_node:str(선택,''), comparison_axes_csv:str(선택,''→list), longinus_refs_json:str(선택,'' — JSON 파싱, 비list 면 [x] 래핑, 파싱 실패 시 로컬 invalid_longinus_refs_json)",
+      "note": "G-Web 강제 게이트. 신뢰성분 float 8종은 None 아닐 때만 body 포함(분해 제출 권장, bare trust 는 lower-assurance). content 는 서버 인젝션 스캔(F07) 대상, 미통과 422. preflight 없음(raw_snapshot_path 미검사)."
+    },
+    {
+      "name": "add_world_action",
+      "method": "POST",
+      "path": "/api/tree/{name}/node/{tag}/world-action",
+      "kind": "write",
+      "bodyMode": "assembler",
+      "capBytes": 24000,
+      "params": "name:str(필수), tag:str(필수), event_id:str(필수), command:str(선택,''), cwd:str(선택,''), exit_code:int|None(선택 — None 이면 body 생략), stdout_summary:str(선택,''), stderr_summary:str(선택,''), git_diff_hash:str(선택,''), require_git_diff:bool(선택,False)",
+      "note": "G-WorldAction 강제 — bash 실행 증거 적재. 미통과 422, 통과 시 claim-standing 하계(bash) 공급."
+    },
+    {
+      "name": "longinus_audit",
+      "method": "LOCAL",
+      "path": "LOCAL",
+      "kind": "local",
+      "bodyMode": "local",
+      "capBytes": 24000,
+      "params": "(없음)",
+      "note": "★서버 무관 — docs/data/longinus_bindings.json + 로컬 소스 기반 drift 감사(L4 심볼소멸/L6 시그니처변경). TS 게이트웨이 이식 시 로컬 구현 필요."
+    }
+  ]
+}

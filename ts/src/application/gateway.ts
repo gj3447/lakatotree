@@ -8,6 +8,9 @@ import type { BudgetDeclaration, DeclarationError } from "../domain/budget.ts";
 import { validateBudgetDeclaration } from "../domain/budget.ts";
 import type { EmissionRecorded } from "../domain/emission.ts";
 import { emitPage, type ToolPage } from "../domain/page.ts";
+import { ASSEMBLERS, type ToolArgs } from "./assemblers.ts";
+
+export type { ToolArgs } from "./assemblers.ts";
 import {
   applyRunEvent,
   initialRunState,
@@ -15,12 +18,30 @@ import {
   type RunState,
 } from "../domain/run.ts";
 
+export type QueryMode =
+  | "required"
+  | "omit_empty"
+  | "bool_always"
+  | "true_only"
+  | "false_only"
+  | "one_flag";
+
+export interface QueryDef {
+  readonly name: string;
+  readonly mode: QueryMode;
+}
+
+export type BodyMode = "none" | "empty" | "flat" | "spec_json" | "assembler" | "local";
+
 export interface ToolSpec {
   readonly name: string;
-  readonly method: "GET" | "POST" | "PUT" | "DELETE";
+  readonly method: "GET" | "POST" | "PUT" | "DELETE" | "LOCAL";
   readonly path: string;
-  readonly kind: "read" | "write" | "ops";
+  readonly kind: "read" | "write" | "ops" | "local";
+  readonly bodyMode: BodyMode;
   readonly capBytes: number;
+  readonly query?: readonly QueryDef[];
+  readonly idempotencyHeader?: boolean;
 }
 
 export interface StoreResponse {
@@ -34,6 +55,7 @@ export interface StorePort {
     path: string,
     body: string | null,
     bearer: string | null,
+    extraHeaders?: Readonly<Record<string, string>>,
   ) => Promise<StoreResponse>;
 }
 
@@ -46,14 +68,14 @@ export type ToolError =
   | { readonly _tag: "tool_error"; readonly reason: "unknown_tool" }
   | { readonly _tag: "tool_error"; readonly reason: "invalid_call"; readonly detail: string }
   | { readonly _tag: "tool_error"; readonly reason: "budget_halted"; readonly report: HaltReport }
+  | { readonly _tag: "tool_error"; readonly reason: "unsupported_local_tool"; readonly detail: string }
+  | { readonly _tag: "tool_error"; readonly reason: "assemble_error"; readonly detail: string }
   | {
       readonly _tag: "tool_error";
       readonly reason: "store_error";
       readonly status: number;
       readonly detail: string;
     };
-
-export type ToolArgs = Readonly<Record<string, string | number>>;
 
 const PARAM_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
@@ -75,6 +97,39 @@ export const buildPath = (
 
 const pathParamNames = (template: string): ReadonlySet<string> =>
   new Set([...template.matchAll(PARAM_PATTERN)].map((m) => m[1] ?? ""));
+
+const truthy = (value: string | number | boolean | undefined): boolean =>
+  value === true || value === "true" || value === 1 || value === "1";
+
+/** 쿼리 직렬화 — Python 클라이언트의 도구별 생략 셈(spec query mode 표)을 그대로 이식. */
+export const buildQuery = (
+  defs: readonly QueryDef[],
+  args: ToolArgs,
+): string | CallError => {
+  const pairs: string[] = [];
+  for (const def of defs) {
+    const raw = args[def.name];
+    if (def.mode === "required") {
+      if (raw === undefined || raw === "") {
+        return { _tag: "invalid_call", reason: "missing_param" };
+      }
+      pairs.push(`${def.name}=${encodeURIComponent(String(raw))}`);
+    } else if (def.mode === "omit_empty") {
+      if (raw !== undefined && raw !== "") {
+        pairs.push(`${def.name}=${encodeURIComponent(String(raw))}`);
+      }
+    } else if (def.mode === "bool_always") {
+      pairs.push(`${def.name}=${truthy(raw) ? "true" : "false"}`);
+    } else if (def.mode === "true_only") {
+      if (truthy(raw)) pairs.push(`${def.name}=true`);
+    } else if (def.mode === "false_only") {
+      if (raw !== undefined && !truthy(raw)) pairs.push(`${def.name}=false`);
+    } else {
+      if (truthy(raw)) pairs.push(`${def.name}=1`);
+    }
+  }
+  return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
+};
 
 const ERROR_DETAIL_CAP = 300;
 
@@ -106,19 +161,71 @@ export const createGateway = (
     if (state.halt !== null) {
       return { _tag: "tool_error", reason: "budget_halted", report: state.halt };
     }
+    if (spec.bodyMode === "local" || spec.method === "LOCAL") {
+      return {
+        _tag: "tool_error",
+        reason: "unsupported_local_tool",
+        detail: "HTTP 아닌 로컬 함수 — .venv CLI 사용, TS 이식은 별도 슬라이스 (spec not_mechanized)",
+      };
+    }
     const path = buildPath(spec.path, args);
     if (typeof path !== "string") {
       return { _tag: "tool_error", reason: "invalid_call", detail: path.reason };
     }
+    const query = buildQuery(spec.query ?? [], args);
+    if (typeof query !== "string") {
+      return { _tag: "tool_error", reason: "invalid_call", detail: query.reason };
+    }
     const cursorRaw = args["cursor"];
     const cursor = typeof cursorRaw === "string" ? cursorRaw : "";
-    const pathParams = pathParamNames(spec.path);
-    const bodyEntries = Object.entries(args).filter(
-      ([key]) => !pathParams.has(key) && key !== "cursor",
-    );
-    const body =
-      spec.method === "GET" ? null : JSON.stringify(Object.fromEntries(bodyEntries));
-    const response = await port.request(spec.method, path, body, bearer);
+    let body: string | null;
+    if (spec.bodyMode === "none") {
+      body = null;
+    } else if (spec.bodyMode === "empty") {
+      body = "{}";
+    } else if (spec.bodyMode === "spec_json") {
+      const raw = args["spec_json"];
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(typeof raw === "string" ? raw : "");
+      } catch {
+        // Python 파리티: json.loads 실패 시 서버 미호출 로컬 오류 (invalid_spec_json)
+        return { _tag: "tool_error", reason: "assemble_error", detail: "invalid_spec_json" };
+      }
+      body = JSON.stringify(parsed);
+    } else if (spec.bodyMode === "assembler") {
+      const assemble = ASSEMBLERS[name];
+      if (assemble === undefined) {
+        return { _tag: "tool_error", reason: "assemble_error", detail: "assembler_missing" };
+      }
+      const assembled = assemble(args);
+      if (assembled._tag === "assemble_error") {
+        return {
+          _tag: "tool_error",
+          reason: "assemble_error",
+          detail: `${assembled.reason}:${assembled.detail}`.slice(0, ERROR_DETAIL_CAP),
+        };
+      }
+      body = JSON.stringify(assembled.body);
+    } else {
+      const pathParams = pathParamNames(spec.path);
+      const queryNames = new Set((spec.query ?? []).map((q) => q.name));
+      const bodyEntries = Object.entries(args).filter(
+        ([key]) =>
+          !pathParams.has(key) && !queryNames.has(key) &&
+          key !== "cursor" && key !== "idempotency_key",
+      );
+      body = JSON.stringify(Object.fromEntries(bodyEntries));
+    }
+    let extraHeaders: Readonly<Record<string, string>> | undefined;
+    if (spec.idempotencyHeader === true) {
+      const key = args["idempotency_key"];
+      if (typeof key !== "string" || key === "") {
+        return { _tag: "tool_error", reason: "invalid_call", detail: "missing_param" };
+      }
+      extraHeaders = { "Idempotency-Key": key };
+    }
+    const response = await port.request(spec.method, path + query, body, bearer, extraHeaders);
     if (response.status < 200 || response.status >= 300) {
       return {
         _tag: "tool_error",
