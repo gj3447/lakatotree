@@ -1,10 +1,11 @@
 /** Scenario GATEWAY-CORE: 도구 호출 파이프라인 — 모든 응답은 ToolPage 경유(유계 강제),
  * 호출마다 EmissionRecorded 실바이트 계량이 RUN-BUDGET 게이트를 통과하며, 정지 후에는
- * 백엔드 호출 자체가 일어나지 않는다 (돈 나가기 전에 차단). 함수형 코어 + 얇은 상태 셸. */
+ * 백엔드 호출 자체가 일어나지 않는다 (돈 나가기 전에 차단). 무효 예산 선언은 게이트웨이
+ * 자체를 만들지 않는다 (fail-closed 기동 — 무예산 fail-open 봉쇄). */
 import { describe, expect, it } from "vitest";
 import type { BudgetDeclaration } from "../../src/domain/budget.ts";
-import type { StorePort, StoreResponse } from "../../src/application/gateway.ts";
-import { buildPath, createGateway, type ToolSpec } from "../../src/application/gateway.ts";
+import type { Gateway, StorePort, StoreResponse, ToolSpec } from "../../src/application/gateway.ts";
+import { buildPath, createGateway } from "../../src/application/gateway.ts";
 
 const decl: BudgetDeclaration = {
   _tag: "BudgetDeclared", runId: "gw1",
@@ -13,9 +14,14 @@ const decl: BudgetDeclaration = {
 };
 
 const SPECS: readonly ToolSpec[] = [
-  { name: "get_tree", method: "GET", path: "/api/tree/{name}", kind: "read", capChars: 8 },
-  { name: "add_node", method: "POST", path: "/api/tree/{tree}/nodes", kind: "write", capChars: 100 },
+  { name: "get_tree", method: "GET", path: "/api/tree/{name}", kind: "read", capBytes: 8 },
+  { name: "add_node", method: "POST", path: "/api/tree/{tree}/nodes", kind: "write", capBytes: 100 },
 ];
+
+const mustGateway = (g: ReturnType<typeof createGateway>): Gateway => {
+  if ("_tag" in g) throw new Error(`gateway not created: ${g.reason}`);
+  return g;
+};
 
 const fakePort = (
   handler: (method: string, path: string, body: string | null) => StoreResponse,
@@ -45,32 +51,42 @@ describe("buildPath", () => {
 });
 
 describe("gateway pipeline", () => {
-  it("guard_mechanism: 응답은 ToolPage — cap 강제 + 보존 공시 + 커서 재개", async () => {
+  it("guard_defect: 무효 선언(빈 runId·음수 캡)은 게이트웨이를 만들지 않는다 — fail-closed 기동", () => {
+    const { port } = fakePort(() => ({ status: 200, bodyText: "x" }));
+    expect(createGateway(SPECS, { ...decl, runId: "" }, port, null)).toEqual({
+      _tag: "invalid_declaration", reason: "empty_run_id",
+    });
+    expect(createGateway(SPECS, { ...decl, callCap: -1 }, port, null)).toEqual({
+      _tag: "invalid_declaration", reason: "negative_or_non_integer_cap",
+    });
+  });
+
+  it("guard_mechanism: 응답은 ToolPage — 바이트 cap 강제 + 보존 공시 + 커서 재개", async () => {
     const { port } = fakePort(() => ({ status: 200, bodyText: "0123456789ABCDEF" }));
-    const gateway = createGateway(SPECS, decl, port, null);
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
     const first = await gateway.call("get_tree", { name: "t" });
     expect(first).toMatchObject({
-      _tag: "ToolPage", body: "01234567", nextCursor: "8", totalChars: 16,
+      _tag: "ToolPage", body: "01234567", nextCursor: "8", totalBytes: 16,
     });
     const second = await gateway.call("get_tree", { name: "t", cursor: "8" });
     expect(second).toMatchObject({ _tag: "ToolPage", body: "89ABCDEF", nextCursor: "" });
   });
 
-  it("guard_mechanism: 호출마다 방출 계량 — 실바이트(UTF-8)가 원장에 쌓인다", async () => {
-    const { port } = fakePort(() => ({ status: 200, bodyText: "가나다라마바사아자차" }));
-    const gateway = createGateway(SPECS, decl, port, null);
+  it("guard_mechanism: 호출마다 방출 계량 — 페이지 공시 실바이트가 그대로 원장에 쌓인다", async () => {
+    const { port } = fakePort(() => ({ status: 200, bodyText: "가나다라마" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
     await gateway.call("get_tree", { name: "t" });
     const state = gateway.state();
     expect(state.calls).toBe(1);
-    // 페이지 body = 앞 8자 = UTF-8 24바이트, 잘림 = 2자 = 6바이트
-    expect(state.emission.emittedBytes).toBe(24);
-    expect(state.emission.truncatedBytes).toBe(6);
+    // cap 8B → body '가나' = 6B 방출, 잔여 '다라마' = 9B 잘림 공시
+    expect(state.emission.emittedBytes).toBe(6);
+    expect(state.emission.truncatedBytes).toBe(9);
   });
 
   it("guard_defect: 예산 정지 후에는 백엔드 호출 자체가 없다 — 돈 나가기 전 차단", async () => {
-    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "x" }));
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "xyzw" }));
     const tight = { ...decl, callCap: 1 };
-    const gateway = createGateway(SPECS, tight, port, null);
+    const gateway = mustGateway(createGateway(SPECS, tight, port, null));
     await gateway.call("get_tree", { name: "a" });
     await gateway.call("get_tree", { name: "b" }); // 2번째 계량이 callCap 초과 → 기재 후 정지
     const before = calls.length;
@@ -84,7 +100,7 @@ describe("gateway pipeline", () => {
 
   it("write 도구: 경로 파라미터 외 인자를 JSON body 로, Bearer 는 주입 시 전달", async () => {
     const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{\"ok\":true}" }));
-    const gateway = createGateway(SPECS, decl, port, "tok-1");
+    const gateway = mustGateway(createGateway(SPECS, decl, port, "tok-1"));
     await gateway.call("add_node", { tree: "t1", tag: "n1", comment: "c" });
     expect(calls[0]).toEqual({
       method: "POST", path: "/api/tree/t1/nodes",
@@ -95,7 +111,7 @@ describe("gateway pipeline", () => {
 
   it("guard_defect: 미등록 도구·백엔드 오류는 닫힌 오류 값 (throw 없음)", async () => {
     const { port } = fakePort(() => ({ status: 500, bodyText: "boom" }));
-    const gateway = createGateway(SPECS, decl, port, null);
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
     expect(await gateway.call("nope", {})).toEqual({
       _tag: "tool_error", reason: "unknown_tool",
     });
@@ -106,7 +122,7 @@ describe("gateway pipeline", () => {
 
   it("스토어 오류 detail 도 유계 — 오류 경로로 무제한 방출 불가", async () => {
     const { port } = fakePort(() => ({ status: 500, bodyText: "e".repeat(10_000) }));
-    const gateway = createGateway(SPECS, decl, port, null);
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
     const error = await gateway.call("get_tree", { name: "t" });
     expect(error).toMatchObject({ _tag: "tool_error", reason: "store_error" });
     if (error._tag === "tool_error" && error.reason === "store_error") {

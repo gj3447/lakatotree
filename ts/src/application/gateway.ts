@@ -4,7 +4,8 @@
  * 백엔드 포트 호출 자체가 없다(선차단). 초과를 만든 그 응답은 전달·기재된다(소비는 사실 —
  * 기재 후 정지). 오류 detail 은 [:300] 캡 — mcp_server.py 오류 캡 선례. truncatedBytes 는
  * '이 방출 시점의 미전달 잔여'(offset 이후 보존: emitted+truncated = offset 이후 원본). */
-import type { BudgetDeclaration } from "../domain/budget.ts";
+import type { BudgetDeclaration, DeclarationError } from "../domain/budget.ts";
+import { validateBudgetDeclaration } from "../domain/budget.ts";
 import type { EmissionRecorded } from "../domain/emission.ts";
 import { emitPage, type ToolPage } from "../domain/page.ts";
 import {
@@ -19,7 +20,7 @@ export interface ToolSpec {
   readonly method: "GET" | "POST" | "PUT" | "DELETE";
   readonly path: string;
   readonly kind: "read" | "write" | "ops";
-  readonly capChars: number;
+  readonly capBytes: number;
 }
 
 export interface StoreResponse {
@@ -82,14 +83,19 @@ export interface Gateway {
   readonly state: () => RunState;
 }
 
+/** fail-closed 기동: 무효 선언은 게이트웨이를 만들지 않는다 — 무예산 fail-open 경로 봉쇄
+ * (B1: 예산 없는 자율 실행은 시작하지 않는다. 제3자 리뷰 실결함 채택). */
 export const createGateway = (
   specs: readonly ToolSpec[],
   decl: BudgetDeclaration,
   port: StorePort,
   bearer: string | null,
-): Gateway => {
+): Gateway | DeclarationError => {
+  const invalid = validateBudgetDeclaration(decl);
+  if (invalid !== null) {
+    return invalid;
+  }
   const byName = new Map(specs.map((s) => [s.name, s]));
-  const encoder = new TextEncoder();
   let state: RunState = applyRunEvent(initialRunState, decl).next;
 
   const call = async (name: string, args: ToolArgs): Promise<ToolPage | ToolError> => {
@@ -121,19 +127,19 @@ export const createGateway = (
         detail: response.bodyText.slice(0, ERROR_DETAIL_CAP),
       };
     }
-    const page = emitPage(name, response.bodyText, spec.capChars, cursor);
+    const page = emitPage(name, response.bodyText, spec.capBytes, cursor);
     if (page._tag === "invalid_page") {
       return { _tag: "tool_error", reason: "invalid_call", detail: page.reason };
     }
-    const remainderText = response.bodyText.slice(page.offsetChars + page.body.length);
+    // 계량은 페이지가 이미 공시한 실바이트를 그대로 쓴다 — 한 개념 한 표현 (이중 인코딩 없음).
     const emission: EmissionRecorded = {
       _tag: "EmissionRecorded",
       runId: decl.runId,
       surface: name,
-      emittedBytes: encoder.encode(page.body).length,
+      emittedBytes: page.emittedBytes,
       emittedItems: 1,
-      truncatedBytes: encoder.encode(remainderText).length,
-      truncatedItems: page.remainingChars > 0 ? 1 : 0,
+      truncatedBytes: page.remainingBytes,
+      truncatedItems: page.remainingBytes > 0 ? 1 : 0,
     };
     state = applyRunEvent(state, emission).next;
     return page;
