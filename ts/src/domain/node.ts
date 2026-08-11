@@ -5,6 +5,7 @@ import type { Configuration, EffectCommand, FsmEvent } from "../contracts/fsm.ts
 import { machineById } from "./machines.ts";
 import { productionGuardEval, step } from "./step.ts";
 import { judge, type Direction, type PredictionSpec } from "./judge.ts";
+import { receiptSha, RECEIPT_TYPE_HEADER, type VerdictReceipt } from "./receipts.ts";
 
 export interface NodeState {
   readonly config: Configuration;
@@ -63,9 +64,25 @@ const withComputedVerdict = (state: NodeState, event: FsmEvent): Configuration =
   };
 };
 
-/** 수리 후 head 갱신 — 콘텐츠 주소 해시 어댑터 도입 전까지 event_id 유도 자리표시 식별자.
- * (실제 receipt_sha 봉인은 canonical-bytes+sha256 슬라이스의 몫 — 여기선 CAS 사슬 형태만.) */
-const nextHead = (event: FsmEvent): string => `receipt:${event.event_id}`;
+/** 판정 영수증 봉인 — 콘텐츠 주소: head = sha256(canonical(receipt)), prev 사슬 유지 (G1). */
+const sealVerdict = (
+  state: NodeState,
+  event: FsmEvent,
+  verdict: string,
+): { readonly sha: string; readonly receipt: VerdictReceipt } | null => {
+  const receipt: VerdictReceipt = {
+    type_header: RECEIPT_TYPE_HEADER,
+    tree: strField(event, "tree"),
+    tag: strField(event, "tag"),
+    verdict,
+    value_micro: num(event, "value"),
+    bundle_sha: strField(event, "bundle_sha"),
+    event_id: event.event_id,
+    prev_receipt_sha: state.config.context.head_receipt_sha,
+  };
+  const sha = receiptSha(receipt);
+  return typeof sha === "string" ? { sha, receipt } : null;
+};
 
 export const applyNodeEvent = (state: NodeState, event: FsmEvent): ApplyResult => {
   const machine = machineById("node-judgment");
@@ -79,11 +96,37 @@ export const applyNodeEvent = (state: NodeState, event: FsmEvent): ApplyResult =
   }
   const sealsVerdict = result.commands.some((c) => c.effect === "SealVerdictReceipt");
   const sealsPrediction = result.commands.some((c) => c.effect === "SealPredictionReceipt");
+  let head = result.next.context.head_receipt_sha;
+  let commands = result.commands;
+  if (sealsVerdict) {
+    const sealed = sealVerdict(state, event, config.context.last_verdict);
+    if (sealed === null) {
+      return {
+        next: { ...state, config: { ...state.config } },
+        commands: [{
+          effect: "AuditInvalidTransition",
+          payload: {
+            state: state.config.state, event: event.type, actor: event.actor_role,
+            reason: "canonicalization_failed", event_id: event.event_id,
+          },
+        }],
+        admitted: false,
+      };
+    }
+    head = sealed.sha;
+    commands = commands.map((c) =>
+      c.effect === "SealVerdictReceipt"
+        ? { effect: c.effect, payload: { ...c.payload, receipt_sha: sealed.sha, prev_receipt_sha: sealed.receipt.prev_receipt_sha } }
+        : c.effect === "MovePointerCAS"
+          ? { effect: c.effect, payload: { ...c.payload, new_value: sealed.sha } }
+          : c,
+    );
+  }
   const next: NodeState = {
     config: {
       state: result.next.state,
       context: {
-        head_receipt_sha: sealsVerdict ? nextHead(event) : result.next.context.head_receipt_sha,
+        head_receipt_sha: head,
         prediction_sealed: sealsPrediction ? true : result.next.context.prediction_sealed,
         last_verdict: result.next.context.last_verdict,
       },
@@ -91,7 +134,7 @@ export const applyNodeEvent = (state: NodeState, event: FsmEvent): ApplyResult =
     spec: sealsPrediction ? specFromEvent(event) : state.spec,
     receiptCount: state.receiptCount + (sealsVerdict || sealsPrediction ? 1 : 0),
   };
-  return { next, commands: result.commands, admitted: true };
+  return { next, commands, admitted: true };
 };
 
 export const replay = (events: readonly FsmEvent[]): NodeState =>
