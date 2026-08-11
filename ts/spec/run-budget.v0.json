@@ -1,0 +1,23 @@
+{
+  "schema_version": "run-budget/v1",
+  "authority": "CLAUDE.md §5 실행 예산 (2026-08-10, 08-07~10 델타워 Codex 폭식 실측) + SYMPOSIUM AGENT_PARADIGM_CONTRACT_v1 §5 B1~B5",
+  "cap_check_order": ["calls", "tokens", "wallMs"],
+  "token_sum_formula": "inputTokens+cacheReadTokens+outputTokens",
+  "call_unit": "admitted_metering_event(TokenSpendRecorded|ComputeSpendRecorded)",
+  "reject_reasons": [
+    "budget_not_declared",
+    "budget_already_declared",
+    "empty_run_id",
+    "negative_or_non_integer_cap",
+    "run_id_mismatch",
+    "negative_or_non_integer_tokens",
+    "negative_or_non_integer_compute",
+    "already_halted"
+  ],
+  "halt_reasons": [
+    "call_cap_exceeded",
+    "token_cap_exceeded",
+    "wall_cap_exceeded"
+  ],
+  "not_mechanized": "B2(세션 수명)는 하네스 hook 몫, 제3자 재검증은 오케스트레이터 몫 — 이 도메인 밖임을 정직 공시. replayRun 결정론이 재검증을 가능하게 할 뿐 강제하지 않는다."
+}
