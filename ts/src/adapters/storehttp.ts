@@ -14,11 +14,9 @@ export const httpStorePort = (baseUrl: string): StorePort => ({
     if (body !== null) headers["content-type"] = "application/json";
     if (bearer !== null) headers["authorization"] = `Bearer ${bearer}`;
     try {
-      const response = await fetch(baseUrl + path, {
-        method,
-        headers,
-        body: body ?? undefined,
-      });
+      const init: RequestInit =
+        body === null ? { method, headers } : { method, headers, body };
+      const response = await fetch(baseUrl + path, init);
       return { status: response.status, bodyText: await response.text() };
     } catch (cause) {
       // 연결 실패도 값 — 게이트웨이가 store_error 로 유계 보고한다.
