@@ -1,12 +1,13 @@
-name: ci
+name: Python and formal CI
 
-# Clean-container CI for LakatoTree's independent architectural, behavior,
+# Clean-container CI for the Python implementation's independent architectural, behavior,
 # integration, receipt, and formal-kernel gates.
 # Every job starts from a fresh checkout and installs only its declared pinned requirement
 # manifests, catching dependency/runtime drift that made "tests green" unreproducible before.
 # "receipts, not claims" applies to the build itself.
 
 on:
+  workflow_dispatch:
   push:
     branches: ["**"]
   pull_request:
