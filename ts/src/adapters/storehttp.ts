@@ -1,40 +1,55 @@
-/** StorePort 실 HTTP 어댑터 — 기존 :55170 엔진 API 프록시용. 상태·본문을 가감 없이 값으로
- * 반환하고 절대 throw 하지 않는다 — 판정(store_error 캡·유계)은 application 게이트웨이 몫.
- * Bearer 는 주입 시에만 부착 (LAKATOS_API_TOKEN 관례, auth_posture 존중). */
-import type { StorePort, StoreResponse } from "../application/gateway.ts";
+/** 기존 :55170 엔진 API를 위한 Effect StoreClient Layer. HTTP 상태는 값으로 보존하고,
+ * transport/timeout만 typed unknown-outcome failure로 분리한다. 자동 재시도는 없다. */
+import { Effect, Layer } from "effect";
+import {
+  StoreClient,
+  type StoreRequest,
+  type StoreResponse,
+  type StoreTransportError,
+} from "../application/store.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-export const httpStorePort = (
-  baseUrl: string,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): StorePort => ({
-  request: async (
-    method: string,
-    path: string,
-    body: string | null,
-    bearer: string | null,
-    extraHeaders?: Readonly<Record<string, string>>,
-  ): Promise<StoreResponse> => {
-    const headers: Record<string, string> = { ...extraHeaders };
-    if (body !== null) headers["content-type"] = "application/json";
-    if (bearer !== null) headers["authorization"] = `Bearer ${bearer}`;
-    try {
-      const boundedTimeoutMs = Number.isSafeInteger(timeoutMs) && timeoutMs > 0
-        ? timeoutMs
-        : DEFAULT_TIMEOUT_MS;
-      const init: RequestInit =
-        body === null
-          ? { method, headers, signal: AbortSignal.timeout(boundedTimeoutMs) }
-          : { method, headers, body, signal: AbortSignal.timeout(boundedTimeoutMs) };
-      const response = await fetch(baseUrl + path, init);
-      return { status: response.status, bodyText: await response.text() };
-    } catch (cause) {
-      // 연결 실패도 값 — 게이트웨이가 store_error 로 유계 보고한다.
-      return {
-        status: 0,
-        bodyText: `connection_failed: ${cause instanceof Error ? cause.message : "unknown"}`,
-      };
-    }
-  },
+const detailOf = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : "unknown";
+
+const connectionFailure = (cause: unknown): StoreTransportError => ({
+  _tag: "store_transport_error",
+  reason: "connection_failed",
+  outcome: "unknown",
+  detail: detailOf(cause),
 });
+
+const timeoutFailure = (): StoreTransportError => ({
+  _tag: "store_transport_error",
+  reason: "timeout",
+  outcome: "unknown",
+  detail: "request_timeout",
+});
+
+const boundedTimeout = (timeoutMs: number): number =>
+  Number.isSafeInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
+
+const request = (baseUrl: string, request: StoreRequest) => {
+  const headers: Record<string, string> = { ...request.extraHeaders };
+  if (request.body !== null) headers["content-type"] = "application/json";
+  if (request.bearer !== null) headers["authorization"] = `Bearer ${request.bearer}`;
+  return Effect.tryPromise({
+    try: async (signal): Promise<StoreResponse> => {
+      const init: RequestInit = request.body === null
+        ? { method: request.method, headers, signal }
+        : { method: request.method, headers, body: request.body, signal };
+      const response = await fetch(baseUrl + request.path, init);
+      return { status: response.status, bodyText: await response.text() };
+    },
+    catch: connectionFailure,
+  }).pipe(
+    Effect.timeoutFail({
+      duration: boundedTimeout(request.timeoutMs),
+      onTimeout: timeoutFailure,
+    }),
+  );
+};
+
+export const httpStoreLayer = (baseUrl: string) =>
+  Layer.succeed(StoreClient, { request: (input) => request(baseUrl, input) });

@@ -33,6 +33,7 @@ export default [
       {
         patterns: [
           { group: ["node:*"], message: "domain 은 플랫폼 import 금지" },
+          { group: ["effect", "effect/*"], message: "Effect는 application/adapters/entrypoints 경계에서만" },
           { group: ["zod"], message: "domain 은 zod 런타임 금지 (type-only 는 contracts 타입으로)" },
           { group: ["../application/*", "../adapters/*", "../entrypoints/*"], message: "역방향 import 금지" },
         ],

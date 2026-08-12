@@ -1,8 +1,10 @@
-/** Scenario STORE-HTTP: StorePort 의 실 HTTP 어댑터 — 로컬 실서버 왕복 (fake 재구현 아님).
+/** Scenario STORE-HTTP: Effect StoreClient Layer의 실 HTTP 왕복 (fake 재구현 아님).
  * Bearer 는 주입 시에만, GET 은 body 없음, 상태·본문을 가감 없이 반환 (판정은 application 몫). */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { Effect, Either } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { httpStorePort } from "../../src/adapters/storehttp.ts";
+import { httpStoreLayer } from "../../src/adapters/storehttp.ts";
+import { requestStore } from "../../src/application/store.ts";
 
 interface Seen {
   method: string | undefined;
@@ -58,10 +60,11 @@ afterAll(async () => {
   });
 });
 
-describe("httpStorePort", () => {
+describe("httpStoreLayer", () => {
   it("guard_mechanism: GET 왕복 — 상태·본문 그대로, body 없음, Bearer 없음", async () => {
-    const port = httpStorePort(baseUrl);
-    const response = await port.request("GET", "/api/tree/t1", null, null);
+    const response = await Effect.runPromise(requestStore({
+      method: "GET", path: "/api/tree/t1", body: null, bearer: null, timeoutMs: 30_000,
+    }).pipe(Effect.provide(httpStoreLayer(baseUrl))));
     expect(response.status).toBe(200);
     expect(response.bodyText).toBe(JSON.stringify({ echo: "/api/tree/t1", method: "GET" }));
     const last = seen.at(-1);
@@ -69,8 +72,13 @@ describe("httpStorePort", () => {
   });
 
   it("guard_mechanism: POST — JSON body + Bearer 전달", async () => {
-    const port = httpStorePort(baseUrl);
-    await port.request("POST", "/api/trees", JSON.stringify({ name: "t" }), "tok-9");
+    await Effect.runPromise(requestStore({
+      method: "POST",
+      path: "/api/trees",
+      body: JSON.stringify({ name: "t" }),
+      bearer: "tok-9",
+      timeoutMs: 30_000,
+    }).pipe(Effect.provide(httpStoreLayer(baseUrl))));
     const last = seen.at(-1);
     expect(last).toMatchObject({
       method: "POST",
@@ -81,15 +89,24 @@ describe("httpStorePort", () => {
   });
 
   it("5xx 도 값으로 반환 — throw 없음 (판정은 application 몫)", async () => {
-    const port = httpStorePort(baseUrl);
-    const response = await port.request("GET", "/api/boom", null, null);
+    const response = await Effect.runPromise(requestStore({
+      method: "GET", path: "/api/boom", body: null, bearer: null, timeoutMs: 30_000,
+    }).pipe(Effect.provide(httpStoreLayer(baseUrl))));
     expect(response).toEqual({ status: 500, bodyText: "kaboom" });
   });
 
-  it("유계 timeout — 반쯤 열린 store가 MCP를 무기한 붙잡지 못한다", async () => {
-    const port = httpStorePort(baseUrl, 25);
-    const response = await port.request("GET", "/api/slow", null, null);
-    expect(response.status).toBe(0);
-    expect(response.bodyText).toContain("connection_failed");
+  it("유계 timeout — status=0 sentinel이 아니라 unknown typed failure", async () => {
+    const result = await Effect.runPromise(Effect.either(requestStore({
+      method: "GET", path: "/api/slow", body: null, bearer: null, timeoutMs: 25,
+    }).pipe(Effect.provide(httpStoreLayer(baseUrl)))));
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left).toEqual({
+        _tag: "store_transport_error",
+        reason: "timeout",
+        outcome: "unknown",
+        detail: "request_timeout",
+      });
+    }
   });
 });

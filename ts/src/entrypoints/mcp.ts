@@ -10,9 +10,11 @@ import { createInterface } from "node:readline";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { Gateway, GatewayPosture, ToolSpec } from "../application/gateway.ts";
+import { Effect, ManagedRuntime } from "effect";
+import type { Gateway, GatewayPosture, StorePort, ToolSpec } from "../application/gateway.ts";
 import { createGateway, type ToolArgs } from "../application/gateway.ts";
-import { httpStorePort } from "../adapters/storehttp.ts";
+import { httpStoreLayer } from "../adapters/storehttp.ts";
+import { requestStore, type StoreRequest, type StoreResponse } from "../application/store.ts";
 import type { BudgetDeclaration } from "../domain/budget.ts";
 
 interface SurfaceTool extends ToolSpec {
@@ -45,6 +47,8 @@ const positiveIntEnv = (key: string, fallback: number): number => {
 };
 
 const inFlightCap = positiveIntEnv("LAKATOS_TS_IN_FLIGHT_CAP", 8);
+const callTimeoutMs = positiveIntEnv("LAKATOS_STORE_CALL_TIMEOUT_MS", 30_000);
+const bootTimeoutMs = positiveIntEnv("LAKATOS_STORE_BOOT_TIMEOUT_MS", 5_000);
 
 const log = (message: string): void => {
   process.stderr.write(`[lakatotree-ts] ${message}\n`);
@@ -66,8 +70,26 @@ const declFor = (runId: string): BudgetDeclaration => ({
   emissionItemCap: intEnv("LAKATOS_TS_EMISSION_ITEM_CAP", 500),
 });
 
-const port = httpStorePort(baseUrl, positiveIntEnv("LAKATOS_STORE_CALL_TIMEOUT_MS", 30_000));
-const bootPort = httpStorePort(baseUrl, positiveIntEnv("LAKATOS_STORE_BOOT_TIMEOUT_MS", 5_000));
+const runtime = ManagedRuntime.make(httpStoreLayer(baseUrl));
+
+const runStoreRequest = (request: StoreRequest): Promise<StoreResponse> =>
+  runtime.runPromise(requestStore(request).pipe(
+    Effect.catchAll((failure) => Effect.succeed({
+      status: 0,
+      bodyText: `connection_failed:${failure.reason}:${failure.detail}`,
+    })),
+  ));
+
+const port: StorePort = {
+  request: (method, path, body, requestBearer, extraHeaders) => runStoreRequest({
+    method,
+    path,
+    body,
+    bearer: requestBearer,
+    timeoutMs: callTimeoutMs,
+    ...(extraHeaders === undefined ? {} : { extraHeaders }),
+  }),
+};
 let armCount = 0;
 let gateway: Gateway;
 let posture: GatewayPosture = "read_only";
@@ -89,7 +111,13 @@ const arm = (): string => {
  * 명시적 open 또는 token_required+토큰일 때만 full 승격한다. 실패·손상·미지 posture는
  * read-only 유지: kind:read 만 서빙하고 write/ops는 로컬 auth_required 차단. */
 const bootReadback = async (): Promise<void> => {
-  const version = await bootPort.request("GET", "/version", null, bearer);
+  const version = await runStoreRequest({
+    method: "GET",
+    path: "/version",
+    body: null,
+    bearer,
+    timeoutMs: bootTimeoutMs,
+  });
   if (version.status !== 200) {
     log(`warn: /version readback failed (status ${version.status}) — store may be down`);
     return;
@@ -249,8 +277,17 @@ void bootReadback().then(() => {
   // (드레인 없이 exit 하면 느린 백엔드 호출의 응답이 조용히 유실된다 — 제3자 리뷰 노트 채택).
   let inFlight = 0;
   let stdinClosed = false;
+  let disposing = false;
   const exitIfDrained = (): void => {
-    if (stdinClosed && inFlight === 0) process.exit(0);
+    if (!stdinClosed || inFlight !== 0 || disposing) return;
+    disposing = true;
+    void runtime.dispose().then(
+      () => process.exit(0),
+      (cause: unknown) => {
+        log(`fatal: Effect runtime disposal failed (${cause instanceof Error ? cause.message : "unknown"})`);
+        process.exit(1);
+      },
+    );
   };
   const rl = createInterface({ input: process.stdin, terminal: false });
   rl.on("line", (line) => {

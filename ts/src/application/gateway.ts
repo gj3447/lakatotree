@@ -9,8 +9,10 @@ import { validateBudgetDeclaration } from "../domain/budget.ts";
 import type { EmissionRecorded } from "../domain/emission.ts";
 import { emitPage, type ToolPage } from "../domain/page.ts";
 import { ASSEMBLERS, type ToolArgs } from "./assemblers.ts";
+import type { StoreMethod, StoreResponse } from "./store.ts";
 
 export type { ToolArgs } from "./assemblers.ts";
+export type { StoreResponse } from "./store.ts";
 import {
   applyRunEvent,
   initialRunState,
@@ -47,14 +49,9 @@ export interface ToolSpec {
   readonly idempotencyHeader?: boolean;
 }
 
-export interface StoreResponse {
-  readonly status: number;
-  readonly bodyText: string;
-}
-
 export interface StorePort {
   readonly request: (
-    method: string,
+    method: StoreMethod,
     path: string,
     body: string | null,
     bearer: string | null,
