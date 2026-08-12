@@ -22,3 +22,6 @@ longinus_bindings.html
 build/
 dist/
 .venv/
+
+# Root command shim artifacts (`pnpm verify` delegates to ts/).
+node_modules/

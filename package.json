@@ -1,0 +1,14 @@
+{
+  "name": "lakatotree",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "pnpm --dir ts check",
+    "test": "pnpm --dir ts verify",
+    "verify": "pnpm --dir ts verify"
+  }
+}
