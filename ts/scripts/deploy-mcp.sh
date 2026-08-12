@@ -45,7 +45,7 @@ payload_digest() {
     find dist spec -type f -print
     printf '%s\n' package.json pnpm-lock.yaml pnpm-workspace.yaml SOURCE_COMMIT
   ) | LC_ALL=C sort | while IFS= read -r path; do
-    sha256sum "${root}/${path}"
+    printf '%s  %s\n' "$(sha256sum "${root}/${path}" | cut -d ' ' -f 1)" "${path}"
   done | sha256sum | cut -d ' ' -f 1
 }
 
