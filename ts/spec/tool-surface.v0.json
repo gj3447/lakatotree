@@ -159,6 +159,7 @@
       "query": [
         {
           "name": "trees",
+          "argName": "trees_csv",
           "mode": "required"
         },
         {
@@ -183,6 +184,7 @@
         },
         {
           "name": "rivals",
+          "argName": "rivals_csv",
           "mode": "required"
         }
       ]

@@ -33,6 +33,13 @@ beforeAll(async () => {
         res.end("kaboom");
         return;
       }
+      if (req.url === "/api/slow") {
+        setTimeout(() => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end("{}");
+        }, 250);
+        return;
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ echo: req.url, method: req.method }));
     });
@@ -77,5 +84,12 @@ describe("httpStorePort", () => {
     const port = httpStorePort(baseUrl);
     const response = await port.request("GET", "/api/boom", null, null);
     expect(response).toEqual({ status: 500, bodyText: "kaboom" });
+  });
+
+  it("유계 timeout — 반쯤 열린 store가 MCP를 무기한 붙잡지 못한다", async () => {
+    const port = httpStorePort(baseUrl, 25);
+    const response = await port.request("GET", "/api/slow", null, null);
+    expect(response.status).toBe(0);
+    expect(response.bodyText).toContain("connection_failed");
   });
 });

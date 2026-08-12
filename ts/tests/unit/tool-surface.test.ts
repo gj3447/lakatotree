@@ -63,4 +63,5 @@ describe("spec-pin: tool-surface", () => {
     const deleteTree = spec.tools.find((t) => t.name === "delete_tree");
     expect(deleteTree).toMatchObject({ idempotencyHeader: true, method: "DELETE" });
   });
+
 });

@@ -27,6 +27,9 @@ export type QueryMode =
   | "one_flag";
 
 export interface QueryDef {
+  /** 공개 MCP 인자명. 생략하면 wire query key인 name과 같다. */
+  readonly argName?: string;
+  /** 백엔드 HTTP query key. */
   readonly name: string;
   readonly mode: QueryMode;
 }
@@ -64,8 +67,9 @@ export type CallError = {
   readonly reason: "missing_param";
 };
 
-/** read_only: token_required 스토어 + 토큰 부재 기동 — kind:read 만 서빙, write/ops 는
- * 백엔드 미접촉 로컬 차단 (401 왕복조차 없음). Python 브리지의 사실상 무토큰 읽기 운용과 파리티. */
+/** read_only: token_required 스토어 + 토큰 부재 기동 — kind:read 만 서빙하고 side-effect
+ * GET(leaderboard snapshot=true)까지 백엔드 미접촉 로컬 차단한다(401 왕복조차 없음).
+ * Python 브리지의 사실상 무토큰 읽기 운용과 파리티. */
 export type GatewayPosture = "full" | "read_only";
 
 export type ToolError =
@@ -113,7 +117,7 @@ export const buildQuery = (
 ): string | CallError => {
   const pairs: string[] = [];
   for (const def of defs) {
-    const raw = args[def.name];
+    const raw = args[def.argName ?? def.name];
     if (def.mode === "required") {
       if (raw === undefined || raw === "") {
         return { _tag: "invalid_call", reason: "missing_param" };
@@ -159,7 +163,7 @@ export const createGateway = (
   const byName = new Map(specs.map((s) => [s.name, s]));
   let state: RunState = applyRunEvent(initialRunState, decl).next;
 
-  const call = async (name: string, rawArgs: ToolArgs): Promise<ToolPage | ToolError> => {
+  const callOne = async (name: string, rawArgs: ToolArgs): Promise<ToolPage | ToolError> => {
     const spec = byName.get(name);
     if (spec === undefined) {
       return { _tag: "tool_error", reason: "unknown_tool" };
@@ -185,11 +189,12 @@ export const createGateway = (
         detail: "HTTP 아닌 로컬 함수 — .venv CLI 사용, TS 이식은 별도 슬라이스 (spec not_mechanized)",
       };
     }
-    if (posture === "read_only" && spec.kind !== "read") {
+    const sideEffectRead = spec.name === "leaderboard" && truthy(args["snapshot"]);
+    if (posture === "read_only" && (spec.kind !== "read" || sideEffectRead)) {
       return {
         _tag: "tool_error",
         reason: "auth_required",
-        detail: "read-only 기동(store token_required + 토큰 부재) — write/ops 는 로컬 차단, LAKATOS_API_TOKEN 공급 후 재기동",
+        detail: "read-only 기동(store token_required + 토큰 부재) — write/ops 및 side-effect read는 로컬 차단, LAKATOS_API_TOKEN 공급 후 재기동",
       };
     }
     const path = buildPath(spec.path, args);
@@ -274,6 +279,19 @@ export const createGateway = (
     };
     state = applyRunEvent(state, emission).next;
     return page;
+  };
+
+  // RunState의 예산 선검사와 방출 기재는 한 임계구역이다. 동시 요청이 같은 이전 state를
+  // 읽고 모두 외부 호출을 시작하면 call cap을 우회하므로, 현재 v0 gateway는 직렬 처리한다.
+  // MCP 진입점의 별도 admission cap이 이 대기열의 크기를 제한한다.
+  let tail: Promise<void> = Promise.resolve();
+  const call = (name: string, args: ToolArgs): Promise<ToolPage | ToolError> => {
+    const scheduled = tail.then(() => callOne(name, args));
+    tail = scheduled.then(
+      () => undefined,
+      () => undefined,
+    );
+    return scheduled;
   };
 
   return { call, state: () => state };

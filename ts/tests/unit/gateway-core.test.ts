@@ -26,6 +26,22 @@ const SPECS: readonly ToolSpec[] = [
     name: "delete_tree", method: "DELETE", path: "/api/tree/{name}", kind: "write", bodyMode: "none",
     capBytes: 100, query: [{ name: "cascade", mode: "true_only" }], idempotencyHeader: true,
   },
+  {
+    name: "leaderboard", method: "GET", path: "/api/leaderboard", kind: "read", bodyMode: "none",
+    capBytes: 100,
+    query: [
+      { name: "trees", argName: "trees_csv", mode: "required" },
+      { name: "snapshot", mode: "bool_always" },
+    ],
+  },
+  {
+    name: "paradigm", method: "GET", path: "/api/paradigm", kind: "read", bodyMode: "none",
+    capBytes: 100,
+    query: [
+      { name: "incumbent", mode: "required" },
+      { name: "rivals", argName: "rivals_csv", mode: "required" },
+    ],
+  },
 ];
 
 const mustGateway = (g: ReturnType<typeof createGateway>): Gateway => {
@@ -115,6 +131,47 @@ describe("gateway pipeline", () => {
     expect(calls.length).toBe(before); // 포트 미호출
   });
 
+  it("동시 호출도 직렬로 예산을 소비해 call cap 뒤의 포트 호출을 막는다", async () => {
+    const releases: Array<() => void> = [];
+    let active = 0;
+    let maxActive = 0;
+    let portCalls = 0;
+    const port: StorePort = {
+      request: () => new Promise<StoreResponse>((resolve) => {
+        portCalls += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        releases.push(() => {
+          active -= 1;
+          resolve({ status: 200, bodyText: "ok" });
+        });
+      }),
+    };
+    const gateway = mustGateway(createGateway(SPECS, { ...decl, callCap: 1 }, port, null));
+    const calls = [
+      gateway.call("get_tree", { name: "a" }),
+      gateway.call("get_tree", { name: "b" }),
+      gateway.call("get_tree", { name: "c" }),
+    ];
+
+    const waitForRelease = async (): Promise<void> => {
+      for (let turn = 0; turn < 10 && releases.length === 0; turn += 1) {
+        await Promise.resolve();
+      }
+    };
+    await waitForRelease();
+    expect(releases).toHaveLength(1);
+    releases.shift()?.();
+    await waitForRelease();
+    expect(releases).toHaveLength(1);
+    releases.shift()?.();
+
+    const results = await Promise.all(calls);
+    expect(maxActive).toBe(1);
+    expect(portCalls).toBe(2);
+    expect(results[2]).toMatchObject({ _tag: "tool_error", reason: "budget_halted" });
+  });
+
   it("flat write 도구: 경로 파라미터 외 인자를 JSON body 로, Bearer 는 주입 시 전달", async () => {
     const { port, calls } = fakePort(() => ({ status: 200, bodyText: "{\"ok\":true}" }));
     const gateway = mustGateway(createGateway(SPECS, decl, port, "tok-1"));
@@ -196,6 +253,28 @@ describe("gateway pipeline", () => {
       _tag: "tool_error", reason: "auth_required",
     });
     expect(calls.length).toBe(before);
+  });
+
+  it("READONLY-POSTURE: side-effect GET leaderboard snapshot=true도 백엔드 미접촉 차단", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "ok" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null, "read_only"));
+    const blocked = await gateway.call("leaderboard", { trees_csv: "a,b", snapshot: true });
+    expect(blocked).toMatchObject({ _tag: "tool_error", reason: "auth_required" });
+    expect(calls.length).toBe(0);
+
+    expect(
+      await gateway.call("leaderboard", { trees_csv: "a,b", snapshot: false }),
+    ).toMatchObject({ _tag: "ToolPage" });
+    expect(calls[0]).toMatchObject({ path: "/api/leaderboard?trees=a%2Cb&snapshot=false" });
+  });
+
+  it("공개 *_csv 인자를 backend query key로 명시 변환한다", async () => {
+    const { port, calls } = fakePort(() => ({ status: 200, bodyText: "ok" }));
+    const gateway = mustGateway(createGateway(SPECS, decl, port, null));
+    expect(
+      await gateway.call("paradigm", { incumbent: "old", rivals_csv: "new-a,new-b" }),
+    ).toMatchObject({ _tag: "ToolPage" });
+    expect(calls[0]).toMatchObject({ path: "/api/paradigm?incumbent=old&rivals=new-a%2Cnew-b" });
   });
 
   it("guard_defect: 미등록 도구·백엔드 오류는 닫힌 오류 값 (throw 없음)", async () => {

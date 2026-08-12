@@ -3,7 +3,12 @@
  * Bearer 는 주입 시에만 부착 (LAKATOS_API_TOKEN 관례, auth_posture 존중). */
 import type { StorePort, StoreResponse } from "../application/gateway.ts";
 
-export const httpStorePort = (baseUrl: string): StorePort => ({
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+export const httpStorePort = (
+  baseUrl: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): StorePort => ({
   request: async (
     method: string,
     path: string,
@@ -15,8 +20,13 @@ export const httpStorePort = (baseUrl: string): StorePort => ({
     if (body !== null) headers["content-type"] = "application/json";
     if (bearer !== null) headers["authorization"] = `Bearer ${bearer}`;
     try {
+      const boundedTimeoutMs = Number.isSafeInteger(timeoutMs) && timeoutMs > 0
+        ? timeoutMs
+        : DEFAULT_TIMEOUT_MS;
       const init: RequestInit =
-        body === null ? { method, headers } : { method, headers, body };
+        body === null
+          ? { method, headers, signal: AbortSignal.timeout(boundedTimeoutMs) }
+          : { method, headers, body, signal: AbortSignal.timeout(boundedTimeoutMs) };
       const response = await fetch(baseUrl + path, init);
       return { status: response.status, bodyText: await response.text() };
     } catch (cause) {
