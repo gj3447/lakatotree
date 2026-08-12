@@ -7,7 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
+    "build:mcp": "pnpm --dir ts build:mcp",
     "check": "pnpm --dir ts check",
+    "deploy:mcp": "bash ts/scripts/deploy-mcp.sh",
     "test": "pnpm --dir ts verify",
     "verify": "pnpm --dir ts verify"
   }

@@ -25,3 +25,6 @@ dist/
 
 # Root command shim artifacts (`pnpm verify` delegates to ts/).
 node_modules/
+
+# Versioned MCP runtime assembled only from a committed, verified tree.
+.runtime/

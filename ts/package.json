@@ -11,7 +11,9 @@
     "check": "pnpm typecheck && pnpm lint && pnpm check:arch",
     "test:unit": "vitest run tests/unit",
     "test:prop": "vitest run tests/properties",
-    "verify": "pnpm check && pnpm test:unit && pnpm test:prop"
+    "build:mcp": "node node_modules/typescript7/bin/tsc -p tsconfig.build.json",
+    "smoke:mcp-artifact": "node scripts/smoke-mcp-artifact.mjs dist/entrypoints/mcp.js",
+    "verify": "pnpm check && pnpm test:unit && pnpm test:prop && pnpm build:mcp && pnpm smoke:mcp-artifact"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
