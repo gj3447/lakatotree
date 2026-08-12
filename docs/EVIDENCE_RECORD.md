@@ -1,5 +1,9 @@
 # evidence-record 계약 (`lakato-evidence-record/v1`)
 
+> **legacy Python adapter notes** — 언어 중립 포맷 정본은
+> [`lakato-evidence-record-v1.md`](lakato-evidence-record-v1.md)다. 이 문서는 보존된
+> `lakatos.programme.evidence` 로더와 기존 3D 하네스의 Python 연결 설명만 담당한다.
+
 > 측정 하네스 → **grounded record(json)** → LakatoTree `source_record` grounding 의 표준 포맷.
 > 로더/검증 = `lakatos.programme.evidence` (공개 저작 API; 구 `examples/_evidence.py` 는 back-compat shim).
 > longinus-data-binding(데이터 provenance)을 *측정*으로 확장.

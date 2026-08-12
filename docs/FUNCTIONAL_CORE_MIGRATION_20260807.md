@@ -1,6 +1,9 @@
 # LakatoTree functional-core migration
 
-Status: active, milestone 1 implemented on 2026-08-07.
+Status: historical Python migration record. The only current roadmap is [`MAP.md`](../MAP.md#7-다음-단계-ts-로드맵).
+
+This document preserves the earlier Python-internal refactoring plan. It is not the TypeScript
+development queue and its pytest gate does not apply to `ts/**` changes.
 
 ## Outcome
 

@@ -1,6 +1,10 @@
 # Consuming LakatoTree as a library — you do not touch this repo
 
-> **Canonical.** Enforced, not aspirational: the `engine ⊥ examples` import-linter contract,
+> **Legacy Python oracle guide.** 이 문서는 보존된 Python 패키지 안에서만 정본이다. 현재 TS MCP
+> 진입점과 작업 순서는 [`README.md`](../README.md#active-redevelopment-typescript) 및
+> [`MAP.md`](../MAP.md)가 정본이다.
+>
+> **Canonical inside the legacy oracle.** Enforced, not aspirational: the `engine ⊥ examples` import-linter contract,
 > the Longinus code↔KG bindings, the README module-map bijection test, and
 > `tests/test_packaging_contract.py` together make every claim below regression-guarded.
 > If any of them drifts, CI goes red.

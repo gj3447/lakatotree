@@ -45,12 +45,11 @@ bundle-fail-closed(seal-don't-point) · assurance-not-stored · retraction-prese
 **Mongo=자유형 산출물**. 추가: **콘텐츠 주소 증거 번들 스토어**(evidence-bundle 머신이 그 수명주기) —
 경로 앵커의 호스트 종속을 sha 주소로 대체(이번 세션 실측 결함 ②⑥의 봉합). 단일 writer 펜스
 (advisory lock + RuntimeWriterLease CAS)와 정본 캐넌 제약(불변 영수증·필수 CAS 포인터·버전드 정준
-인코딩·레코드별 재도출 검증·정직 경로 최저가)은 전부 상속 — `grounding.md` 제약 47건이 요구사항 원장.
+인코딩·레코드별 재도출 검증·정직 경로 최저가)은 전부 상속 —
+[`GROUNDING_2026-08-11.md`](GROUNDING_2026-08-11.md)의 제약 47건이 요구사항 원장.
 
-## 5. 다음 슬라이스 (시나리오 단위)
+## 5. 완료 기록과 다음 경계
 
-1. **Scenario FSM-CONFORM GREEN**: TS 리듀서가 21개 추상 트레이스와 정확히 합치 (vitest conformance).
-2. **Scenario LEDGER-SPLIT GREEN**: 토큰 원장 vs 컴퓨팅 원장 이중 평면 — 타입·이벤트·리듀서 분리,
-   교차 오염 불가 property 게이트 (사용자 요구: AI 토큰과 컴퓨팅 파워는 따로).
-3. **Scenario JUDGE-PURE GREEN**: 결정론 판정 함수(+dead-σ 4치) property 스위트.
-4. 어댑터(PG 이벤트로그·번들 스토어) — 도메인 green 이후.
+FSM-CONFORM, LEDGER-SPLIT, JUDGE-PURE 시나리오는 구현·검증이 끝난 완료 이력이다. PG 이벤트로그와
+번들 CAS 어댑터도 구현됐지만 런타임 composition root에는 아직 배선되지 않았다. 이 결정 기록은
+별도 작업 큐를 소유하지 않으며 후속 순서는 [`MAP.md` §7](../../MAP.md#7-다음-단계-ts-로드맵)에서 관리한다.

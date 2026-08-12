@@ -2,11 +2,44 @@
 
 **Deterministic verdicts for research programmes: pre-register a prediction, measure the world, and derive a reproducible judgement without letting the agent grade itself.**
 
-[![CI](https://github.com/gj3447/lakatotree/actions/workflows/ci.yml/badge.svg)](https://github.com/gj3447/lakatotree/actions/workflows/ci.yml)
+[![TypeScript CI](https://github.com/gj3447/lakatotree/actions/workflows/ts-ci.yml/badge.svg)](https://github.com/gj3447/lakatotree/actions/workflows/ts-ci.yml)
+[![Python and formal CI](https://github.com/gj3447/lakatotree/actions/workflows/ci.yml/badge.svg)](https://github.com/gj3447/lakatotree/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-%3E%3D3.10-3776AB)
 ![Lean](https://img.shields.io/badge/Lean_4-theory_model-6B4FBB)
 
-LakatoTree is a Python engine for running branching, Lakatosian research programmes. An experiment starts with a locked prediction and metric. A measurement is then scored by a pure function, producing one of four kernel verdicts: `progressive`, `partial`, `equivalent`, or `rejected`. The result can be carried into programme history, Bayesian credence, Laudan problem-solving metrics, provenance, and rival-programme comparison.
+## Active redevelopment: TypeScript
+
+TypeScript under [`ts/`](ts/) is the active redevelopment lane. [`MAP.md`](MAP.md) is the single
+current index and roadmap. The Python package remains the published implementation and comparison
+oracle until explicit parity and release gates are met.
+
+```bash
+pnpm --dir ts install --frozen-lockfile
+pnpm verify
+```
+
+`pnpm verify` runs strict type-checking, architecture lint, unit/property tests, a JavaScript build,
+and a checkout-independent MCP artifact smoke. The Store HTTP boundary uses pinned Effect v3 for
+typed transport failures, timeout/interruption, and one composition runtime; the pure domain stays
+plain TypeScript.
+
+Build and activate a versioned runtime from a committed revision—not from dirty source—with:
+
+```bash
+pnpm deploy:mcp <commit>
+```
+
+The MCP starts read-only and moves to full
+posture only after `/version` explicitly reports `open`, or reports `token_required` while a token
+is present. In read-only posture the catalog is filtered to non-mutating tools and gateway controls;
+mutating, operations, local, and side-effect-read calls are blocked before HTTP. Authenticated write
+capabilities are intentionally available in full posture—the policy boundary controls them rather
+than deleting them from the agent's tool model. The gateway still targets the Python HTTP store;
+this slice is not a whole-backend or parity claim.
+
+## Python implementation and oracle
+
+The preserved Python oracle runs branching, Lakatosian research programmes. An experiment starts with a locked prediction and metric. A measurement is then scored by a pure function, producing one of four kernel verdicts: `progressive`, `partial`, `equivalent`, or `rejected`. The result can be carried into programme history, Bayesian credence, Laudan problem-solving metrics, provenance, and rival-programme comparison.
 
 The project is useful when an AI agent, research workflow, or evaluation harness must show *why* it claims progress. It is not a general experiment runner, a truth oracle, or a replacement for domain-specific measurement. If you only need to log arbitrary scores, LakatoTree is deliberately stricter than necessary.
 
@@ -197,17 +230,17 @@ This compact roster is machine-checked against the package. See the architecture
 ## Develop and verify
 
 ```bash
-python -m pip install -e ".[dev]"
-python -m pytest tests/ -q
-lint-imports
-(cd formal && lake build)
+pnpm --dir ts install --frozen-lockfile
+pnpm verify
 ```
 
-Lean requires its pinned toolchain. Database integration tests and the optional service have additional environment requirements; the default unit suite and Euler demo do not.
+Changes to the Python implementation, its packaging, or formal model run the applicable
+pytest/Longinus/Lean gates. A cross-language wire or fixture change runs both lanes.
 
 ## Documentation paths
 
-- **Start integrating:** [Consuming LakatoTree](docs/CONSUMING_LAKATOTREE.md)
+- **Build the TS MCP:** use the [TypeScript quickstart](#active-redevelopment-typescript) and the committed-artifact deployment command above
+- **Use the Python library:** [Python consumer guide](docs/CONSUMING_LAKATOTREE.md)
 - **Understand the design:** [THEORY.md](THEORY.md) and [PIDNA](docs/PIDNA.md)
 - **Coordinate compute and token budgets:** [dual-resource coordination](docs/DUAL_RESOURCE_COORDINATION.md)
 - **Follow the HSWM direction:** [HSWM agent network](docs/HSWM_AGENT_NETWORK.md)

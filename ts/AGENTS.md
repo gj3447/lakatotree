@@ -1,7 +1,7 @@
 # lakatotree-ts — Repository Contract
 
-TypeScript+함수형 재개발 라카토트리. 기존 Python 엔진(`~/CD/lakatotree`)은 레퍼런스 오라클이며
-이 저장소의 수정 대상이 아니다. 효능 지위: **PROPOSED / 무측정** — 이 저장소를 "검증된 방법"으로
+TypeScript+함수형 재개발 라카토트리. 같은 저장소의 Python 구현은 배포된 비교 오라클이며 TS 슬라이스의
+묵시적 수정 대상이 아니다. 효능 지위: **PROPOSED / 무측정** — 이 레인을 "검증된 방법"으로
 인용하지 않는다. 상태 어휘: HYPOTHESIS / PROPOSED / MEASURED / FALSIFIED / ACCEPTED —
 산문 동의·import 성공·모델 판정으로 승격 금지, MEASURED는 명령+픽스처+환경+영수증 필요.
 
@@ -9,8 +9,8 @@ TypeScript+함수형 재개발 라카토트리. 기존 Python 엔진(`~/CD/lakat
 
 ```
 pnpm check    # typecheck + lint + arch  — 수시, 초 단위
-pnpm verify   # check + unit + property  — DONE 의 유일한 정의
-node src/entrypoints/mcp.ts   # MCP stdio 게이트웨이 (env: LAKATOS_STORE_URL·LAKATOS_API_TOKEN·LAKATOS_TS_*_CAP)
+pnpm verify   # check + test + JS build + artifact smoke — DONE 의 유일한 정의
+pnpm --dir .. deploy:mcp <commit>  # committed tree만 검증·빌드해 versioned runtime 활성화
 ```
 
 커밋 게이트: `pnpm verify && git commit`(exit code 직접 연결) — 커밋 시점 트리가 verify 시점과
@@ -30,15 +30,16 @@ node src/entrypoints/mcp.ts   # MCP stdio 게이트웨이 (env: LAKATOS_STORE_UR
 src/contracts/     wire 스키마(Zod)·타입. contracts 외 import 금지.
 src/domain/        순수 함수만. Effect·Promise·IO·Date·random·throw·zod 런타임 전부 금지.
                    결정 = Decision 값 반환(오류는 값), 상태 전이 = 이벤트 소싱 reduce.
-src/application/   유스케이스 오케스트레이션 — gateway(51도구 유계 파이프라인)·assemblers(body 조립 셈 이식).
-src/adapters/      storehttp(:55170 프록시) 구현. PG 이벤트 스토어·콘텐츠 주소 증거 스토어 (미구현).
-src/entrypoints/   런타임 실행이 허용되는 유일한 곳 (+ tests) — mcp.ts stdio 게이트웨이.
+src/application/   유스케이스 오케스트레이션 — gateway·assemblers·Effect StoreClient service.
+src/adapters/      Effect HTTP Layer. PG 이벤트로그·CAS는 구현됐지만 MCP composition root에는 미배선.
+src/entrypoints/   Effect 실행/composition이 허용되는 유일한 제품 경계 — mcp.ts stdio 게이트웨이.
 ```
 
 - 도메인 시각은 이벤트 데이터로만 들어온다 (ambient clock 금지).
 - **회계 이중 평면**: AI 토큰 원장(TokenLedger)과 컴퓨팅 원장(ComputeLedger)은 타입·이벤트·리듀서가
   분리된 별도 평면이다. 한 평면의 이벤트가 다른 평면 상태를 건드리면 결함이다 (property 게이트).
 - 판정(verdict)은 결정론 순수 함수다. LLM 점수 금지.
+- Effect는 application/adapters/entrypoints의 I/O·timeout·resource 경계에만 둔다. domain은 plain TS다.
 
 ## Coding Rules
 

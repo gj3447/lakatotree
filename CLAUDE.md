@@ -1,5 +1,9 @@
 # lakatotree — 에이전트 작업 규율
 
+현재 재개발 레인은 `ts/`이고 현행 인덱스·로드맵은 `MAP.md` 하나다. `lakatos/`, `server/`, 루트
+`tests/`의 Python 구현은 배포된 구현이자 비교 오라클로 보존한다. TS-only 변경은 `pnpm verify`,
+Python 변경은 해당 Python 게이트, 언어 간 wire/spec 변경은 양쪽 게이트를 실행한다.
+
 이 repo 는 SYMPOSIUM canonical `main`의 **단일 writer**가 순차적으로 변경한다.
 기본 개발 스택은 2층: **ooptdd/LTDD(측정) × judge(진보 판정)** — 아래는 그 채택 규율.
 
@@ -11,24 +15,36 @@
    read-only이며, writer가 끝나기 전 별도 쓰기 레인으로 분산하지 않는다.
 3. **커밋은 반드시 pathspec**: `git add <내파일들> && git commit -- <내파일들>`.
    맨 `git commit` 은 남이 스테이징한 파일까지 인덱스 전체를 쓸어담는다(사고 전례 0691263).
-4. 전체회귀 판정 시 남의 in-flight RED 파일은 `--ignore=<파일>` 후 판정하고, 내 커밋에 절대 포함 금지.
-5. 커밋하면 **곧바로 push**하고 remote readback으로 같은 SHA를 확인한다.
+4. 알려진 RED를 ignore/deselection/skip/xfail/path scoping/allow-failure로 숨겨 DONE을 만들지 않는다.
+   다른 in-flight 변경이 적용 게이트를 깨면 완료를 선언하지 말고, 정확한 후보 커밋의 clean 격리 checkout에서
+   적용되는 전체 게이트를 제외 없이 실행한다.
+5. 파일을 바꾸는 작업은 소유한 diff를 scoped commit으로 닫기 전에는 완료가 아니다. 커밋하면 곧바로
+   push하고 remote readback으로 같은 SHA를 확인한다.
 
-## 2. 방법론 (RED-first 이중가드 + ooptdd 영수증 + judge 채점)
+## 2. 방법론 (행동 RED-first + 증거 비례)
 
-- 슬라이스마다 가드 먼저(RED 확인) → 구현 → green. 이중가드: guard_defect(음성 오라클, 결함 죽음)
-  + guard_mechanism(양성 오라클, 메커니즘 실재). revert-민감하게(가드 떼면 RED).
-- **엔진 거동 슬라이스는 ooptdd 영수증 동반**: `ooptdd_receipts/<ID>/{requirements.yaml, <id>_receipt.py}`.
-  emit-adapter 는 *실코드*를 구동(재구현 금지)하고 **음성 오라클**(결함 주입 시 검출 = vacuous green 차단)을
-  포함한다. `tests/test_ooptdd_receipts_all.py` 가 자동 발견·전수 실행 — 추가만 하면 CI 상주(등록 불요).
+- 의미 결함은 가장 작은 행동·fault fixture로 RED를 먼저 확인한 뒤 고친다. 별도 mechanism guard는
+  실제 false-green을 추가로 구분할 때만 둔다. 소스 문자열·주석·내부 함수 위치를 제품 동작의 대리물로 검사하지 않는다.
+- 해시는 릴리스·외부 영수증·동결 역사 증거처럼 저장소 밖으로 나가는 경계에만 쓴다. 내부 코드·문서·테스트
+  사이의 결속은 실행 계약이나 의미 불변식으로 검증한다.
+- 파생물은 재생성 명령과 단일 정본이 있을 때만 둔다. 손으로 맞춰야 하는 schema/manifest/golden/receipt 복제는
+  만들지 않는다. 기존 `ooptdd_receipts/`는 레거시 회귀 corpus로 동결하며 새 변경의 기본 산출물이 아니다.
+- blocking guard에는 보호하는 실제 실패, owner, retirement 조건이 있어야 한다. 새 guard를 넣을 때 겹치는
+  source/hash/string guard를 하나 제거하거나, 제거할 것이 없다는 근거를 남긴다.
 - 진보 주장은 `examples/*_programme.py` 하네스의 **judge() 채점으로만** (손입력 verdict 금지, no fake green).
 
-## 3. 검증 게이트 (커밋 전)
+## 3. 경로별 검증 게이트 (커밋 전)
 
 ```bash
-.venv/bin/python -m pytest -q                    # 전체 0 회귀 (uv run 금지 — 이 repo 는 .venv 직접)
-.venv/bin/python -m lakatos.longinus audit       # 코어 def-line 변경 시 docs/data/longinus_bindings.json 재베이스라인
+pnpm verify                                      # TS 변경의 유일한 DONE 게이트
+
+# 아래는 레거시 Python 경로를 실제로 변경한 경우에만 실행한다.
+.venv/bin/python -m pytest -q
+.venv/bin/python -m lakatos.longinus audit       # Python 코어 def-line 변경 시에만
 ```
+
+게이트는 단순 경로명이 아니라 실제 dependency/contract closure로 선택한다. 알려진 RED를 경로
+스코핑으로 숨겨 green으로 만들지 않는다.
 
 ## 4. 함정 (실전 비용 지불됨 — 반복 금지)
 

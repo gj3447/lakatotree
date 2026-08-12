@@ -27,32 +27,31 @@ result was checked.
 
 ## Development setup
 
-LakatoTree requires Python 3.10 or newer. From a fresh clone:
+TypeScript is the active redevelopment lane. From a fresh clone:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -e '.[dev]'
+pnpm --dir ts install --frozen-lockfile
 ```
 
 Run the narrowest relevant tests while developing, then run the repository gates:
 
 ```bash
-.venv/bin/python -m pytest -q
-.venv/bin/python -m lakatos.longinus audit
+pnpm verify
 ```
 
-If a change affects the formal kernel, also run:
+The Python tree remains the published implementation and comparison oracle. Changes to it,
+its packaging, or formal compatibility surfaces require the relevant additional gates:
 
 ```bash
-cd formal && lake build
+.venv/bin/python -m pytest -q
+.venv/bin/python -m lakatos.longinus audit
+(cd formal && lake build)
 ```
 
-Engine-behavior changes follow RED-first development and require both a defect
-guard and a positive mechanism guard. They also require an OOPTDD receipt under
-`ooptdd_receipts/<ID>/` that drives the real implementation and contains a
-negative oracle. See `CLAUDE.md` for the shared-worktree coordination rules used
-by repository agents.
+For a semantic bug, first add the smallest behavioral or fault fixture that reproduces it. Add a
+separate mechanism guard only when it distinguishes a real false-green mode. Python OOPTDD receipts
+are not a default TypeScript deliverable. See `MAP.md` for the current roadmap and `CLAUDE.md` for
+shared-worktree coordination and evidence-proportional gates.
 
 ## Pull requests
 

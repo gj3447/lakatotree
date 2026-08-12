@@ -1,5 +1,8 @@
 # LakatoTree Engine Development Knowledge
 
+> **Legacy Python adapter notes.** 이 문서는 보존된 Python 엔진의 모듈·외부 어댑터 지식을
+> 설명한다. 현재 TypeScript 구조와 작업 순서는 [`MAP.md`](../MAP.md)가 정본이다.
+
 > Goal: make LakatoTree a small, testable research-program engine that can bind
 > internet observations, human/agent critique, bash execution, source history,
 > and raw-data replay into one auditable tree.
