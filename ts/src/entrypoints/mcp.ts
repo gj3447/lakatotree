@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Effect, ManagedRuntime } from "effect";
-import type { Gateway, GatewayPosture, StorePort, ToolSpec } from "../application/gateway.ts";
+import type { Gateway, GatewayPosture, ToolSpec } from "../application/gateway.ts";
 import { createGateway, type ToolArgs } from "../application/gateway.ts";
 import { httpStoreLayer } from "../adapters/storehttp.ts";
 import { requestStore, type StoreRequest, type StoreResponse } from "../application/store.ts";
@@ -80,16 +80,6 @@ const runStoreRequest = (request: StoreRequest): Promise<StoreResponse> =>
     })),
   ));
 
-const port: StorePort = {
-  request: (method, path, body, requestBearer, extraHeaders) => runStoreRequest({
-    method,
-    path,
-    body,
-    bearer: requestBearer,
-    timeoutMs: callTimeoutMs,
-    ...(extraHeaders === undefined ? {} : { extraHeaders }),
-  }),
-};
 let armCount = 0;
 let gateway: Gateway;
 let posture: GatewayPosture = "read_only";
@@ -97,7 +87,12 @@ let posture: GatewayPosture = "read_only";
 const arm = (): string => {
   armCount += 1;
   const runId = `mcp-${process.pid}-r${armCount}`;
-  const created = createGateway(surface.tools, declFor(runId), port, bearer, posture);
+  const created = createGateway(
+    surface.tools,
+    declFor(runId),
+    { bearer, timeoutMs: callTimeoutMs },
+    posture,
+  );
   if ("_tag" in created) {
     log(`fatal: invalid budget declaration (${created.reason}) — fail-closed`);
     process.exit(1);
@@ -208,7 +203,7 @@ const handleCall = async (params: unknown): Promise<unknown> => {
       true,
     );
   }
-  const result = await gateway.call(name, args);
+  const result = await runtime.runPromise(gateway.call(name, args));
   return textResult(result, result._tag === "tool_error");
 };
 

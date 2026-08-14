@@ -4,15 +4,15 @@
  * 백엔드 포트 호출 자체가 없다(선차단). 초과를 만든 그 응답은 전달·기재된다(소비는 사실 —
  * 기재 후 정지). 오류 detail 은 [:300] 캡 — mcp_server.py 오류 캡 선례. truncatedBytes 는
  * '이 방출 시점의 미전달 잔여'(offset 이후 보존: emitted+truncated = offset 이후 원본). */
+import { Effect } from "effect";
 import type { BudgetDeclaration, DeclarationError } from "../domain/budget.ts";
 import { validateBudgetDeclaration } from "../domain/budget.ts";
 import type { EmissionRecorded } from "../domain/emission.ts";
 import { emitPage, type ToolPage } from "../domain/page.ts";
 import { ASSEMBLERS, type ToolArgs } from "./assemblers.ts";
-import type { StoreMethod, StoreResponse } from "./store.ts";
+import { requestStore, StoreClient } from "./store.ts";
 
 export type { ToolArgs } from "./assemblers.ts";
-export type { StoreResponse } from "./store.ts";
 import {
   applyRunEvent,
   initialRunState,
@@ -47,16 +47,6 @@ export interface ToolSpec {
   readonly capBytes: number;
   readonly query?: readonly QueryDef[];
   readonly idempotencyHeader?: boolean;
-}
-
-export interface StorePort {
-  readonly request: (
-    method: StoreMethod,
-    path: string,
-    body: string | null,
-    bearer: string | null,
-    extraHeaders?: Readonly<Record<string, string>>,
-  ) => Promise<StoreResponse>;
 }
 
 export type CallError = {
@@ -140,8 +130,16 @@ export const buildQuery = (
 const ERROR_DETAIL_CAP = 300;
 
 export interface Gateway {
-  readonly call: (name: string, args: ToolArgs) => Promise<ToolPage | ToolError>;
+  readonly call: (
+    name: string,
+    args: ToolArgs,
+  ) => Effect.Effect<ToolPage | ToolError, never, StoreClient>;
   readonly state: () => RunState;
+}
+
+export interface GatewayStoreConfig {
+  readonly bearer: string | null;
+  readonly timeoutMs: number;
 }
 
 /** fail-closed 기동: 무효 선언은 게이트웨이를 만들지 않는다 — 무예산 fail-open 경로 봉쇄
@@ -149,8 +147,7 @@ export interface Gateway {
 export const createGateway = (
   specs: readonly ToolSpec[],
   decl: BudgetDeclaration,
-  port: StorePort,
-  bearer: string | null,
+  storeConfig: GatewayStoreConfig,
   posture: GatewayPosture = "full",
 ): Gateway | DeclarationError => {
   const invalid = validateBudgetDeclaration(decl);
@@ -159,8 +156,12 @@ export const createGateway = (
   }
   const byName = new Map(specs.map((s) => [s.name, s]));
   let state: RunState = applyRunEvent(initialRunState, decl).next;
+  const mutex = Effect.unsafeMakeSemaphore(1);
 
-  const callOne = async (name: string, rawArgs: ToolArgs): Promise<ToolPage | ToolError> => {
+  const callOne = (
+    name: string,
+    rawArgs: ToolArgs,
+  ): Effect.Effect<ToolPage | ToolError, never, StoreClient> => Effect.gen(function*() {
     const spec = byName.get(name);
     if (spec === undefined) {
       return { _tag: "tool_error", reason: "unknown_tool" };
@@ -251,7 +252,19 @@ export const createGateway = (
       }
       extraHeaders = { "Idempotency-Key": key };
     }
-    const response = await port.request(spec.method, path + query, body, bearer, extraHeaders);
+    const response = yield* requestStore({
+      method: spec.method,
+      path: path + query,
+      body,
+      bearer: storeConfig.bearer,
+      timeoutMs: storeConfig.timeoutMs,
+      ...(extraHeaders === undefined ? {} : { extraHeaders }),
+    }).pipe(
+      Effect.catchAll((failure) => Effect.succeed({
+        status: 0,
+        bodyText: `connection_failed:${failure.reason}:${failure.detail}`,
+      })),
+    );
     if (response.status < 200 || response.status >= 300) {
       return {
         _tag: "tool_error",
@@ -276,20 +289,13 @@ export const createGateway = (
     };
     state = applyRunEvent(state, emission).next;
     return page;
-  };
+  });
 
   // RunState의 예산 선검사와 방출 기재는 한 임계구역이다. 동시 요청이 같은 이전 state를
   // 읽고 모두 외부 호출을 시작하면 call cap을 우회하므로, 현재 v0 gateway는 직렬 처리한다.
   // MCP 진입점의 별도 admission cap이 이 대기열의 크기를 제한한다.
-  let tail: Promise<void> = Promise.resolve();
-  const call = (name: string, args: ToolArgs): Promise<ToolPage | ToolError> => {
-    const scheduled = tail.then(() => callOne(name, args));
-    tail = scheduled.then(
-      () => undefined,
-      () => undefined,
-    );
-    return scheduled;
+  return {
+    call: (name, args) => mutex.withPermits(1)(callOne(name, args)),
+    state: () => state,
   };
-
-  return { call, state: () => state };
 };
