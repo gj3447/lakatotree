@@ -39,7 +39,7 @@ LAKATOS_IT=1 bash scripts/fix_harness.sh    # #16/#17 실-Neo4j 영수증까지
 
 | # | 심각도 | 영수증 (test) | 재현 | 수정 위치 | 수정 한 줄 |
 |---|---|---|---|---|---|
-| **16/17** | **P1** | `test_fix_16_17_nonatomic-cas-rescore.py` | 🔶 **LAKATOS_IT 게이트**(실 Neo4j 동시 tx 필요 — 위증 없는 정직 스킵) | `server/contexts/tree/judgement_service.py:560-596` (+ `:268-304`, `evidence_claim_service.py:125-147`) | 가드 읽기 **전** 노드 쓰기락 강제: `SET e._cas=coalesce(e._cas,0)+0 WITH e WHERE (...)` (또는 verdict_source uniqueness 제약). 0행→409 유지. |
+| **16/17** | **P1** | `tests/integration/test_kg_tx_atomicity.py::test_lock_held_cycle_budget_allows_only_one_last_slot` | ✅ **실 Neo4j 차단 게이트** | `LOCKED_BUDGET_GUARD`를 모든 verdict writer가 공유 | 제3 tx가 tree lock을 보유한 상태에서 실제 waiter를 관측하고 submit/admin 조합의 loser write·receipt 0을 검증. 스케줄을 강제하지 못한 옛 fix-harness 2건은 퇴역. |
 | 14 | P2(보안) | `test_fix_14_dashboard-xss-canonical-path.py` | ✅ hermetic RED | `server/dashboard_view.py:67` | `' → '.join(html.escape(p) for p in (m['canonical_path'] or []))` |
 | 12 | P2(보안) | `test_fix_12_judge-script-symbol-path-escape.py` | ✅ hermetic RED | `server/contexts/tree/judgement_service.py:171-179` | `::` 분기도 plain 분기처럼 longinus 호출 **전** file_part 해석·격리(out_of_root 거부 + is_file + `_SCRIPT_MAX_BYTES`) |
 | 15 | P2(보안) | `test_fix_15_reproducible-fs-walk-escape.py` | ✅ hermetic RED | `server/file_hashing.py:18` (+ `app.py:414`) | `path_sha` 진입부에서 source 경로를 artifact root 로 confine(`realpath().startswith(base)`), out-of-root 거부 + walk 크기/시간 cap |
@@ -61,7 +61,7 @@ LAKATOS_IT=1 bash scripts/fix_harness.sh    # #16/#17 실-Neo4j 영수증까지
 | #13 #14 (**2개**) | ✅ **FIXED → partial** — 수정·green 이나 단일 증상 오라클 → 엔진이 partial 천장(독립 mechanism 오라클 추가 시 progressive) |
 | #1 (P2) | ✅ **FIXED → progressive** (honest-exposure, 전용 PR) — floor 가 `measurement_externally_anchored` 노출(judge_receipt 단독=False). '위조불가 영수증' 과대표현 봉합, *거동 불변* |
 | #3 (P2) | ✅ **FIXED → progressive** (전용 PR) — noise_band 부재→약증거('부재 ≠ 선언-0') |
-| #16/#17 (P1) | 🔶 **PATCHED(gated)** — eager-lock 3 사이트 적용 + h9 CAS-클래스 가드 통과. **race 자체는 `LAKATOS_IT`(실 Neo4j) 영수증 필요** → 로컬 eureka 는 felt-but-not-true |
+| #16/#17 (P1) | ✅ **COVERED** — 공용 tree-lock을 실 Neo4j waiter로 검증하고 모든 public verdict writer 배선을 별도 계약 테스트로 확인. 비결정적 strict-xfail 2건은 퇴역 |
 
 **수정 후 전체 스위트**: `pytest tests/` → **1402+ passed / 13 skipped / 0 failed**(고정·랜덤 순서). lint-imports 3/3, 커널 커버리지 ≥95% green.
 

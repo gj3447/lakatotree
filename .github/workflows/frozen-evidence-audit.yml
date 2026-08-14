@@ -1,0 +1,57 @@
+name: Frozen evidence audit
+
+# Historical evidence remains executable, but does not tax every product push/PR.
+# Every command here is blocking within this scheduled or manually requested audit.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frozen-evidence-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frozen-evidence-audit:
+    name: frozen evidence — Longinus, fsck skiplist, legacy receipts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+      - name: Audit frozen Longinus bindings
+        run: python -m pytest tests/frozen_longinus_bindings.py -q
+      - name: Audit the reviewed fsck exemption ledger
+        run: |
+          python -m json.tool docs/data/fsck_skiplist.json > /dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          from server.contexts.audit.fsck import load_skiplist
+
+          path = Path("docs/data/fsck_skiplist.json")
+          entries = json.loads(path.read_text(encoding="utf-8"))["entries"]
+          declared = frozenset(entry["sha"] for entry in entries)
+          loaded = load_skiplist(str(path))
+          assert loaded == declared, "fsck loader did not reproduce the reviewed ledger"
+          print(f"{len(entries)} reviewed entries; {len(loaded)} unique record identities")
+          PY
+      - name: Re-verify checkout-hermetic frozen ooptdd-loop receipts
+        # HSWM source authorities live in a sibling repository and are not copied or silently
+        # trusted here. Point them at guaranteed-absent roots so this audit deterministically
+        # exercises the receipts' declared checkout-only boundary. External source-binding
+        # verification is a separate cross-repository audit, not evidence from this workflow.
+        env:
+          LAKATOTREE_HSWM_SOURCE_ROOT: ${{ runner.temp }}/unavailable-hswm-source
+          LAKATOTREE_SYMPOSIUM_SOURCE_ROOT: ${{ runner.temp }}/unavailable-symposium-source
+        run: python -m pytest tests/frozen_ooptdd_receipts_all.py -q

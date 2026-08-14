@@ -7,7 +7,7 @@ mirror was **hand-pierced once and never regenerated**, so when symbols moved th
 rotted while nobody noticed. Hand-maintained mirrors drift. The fix is structural:
 
     ``docs/data/longinus_bindings.json`` is the single source of truth (symbol-resolved,
-    def-line sha, drift-guarded every commit by ``tests/test_longinus_bindings.py``).
+    def-line sha, audited by ``tests/frozen_longinus_bindings.py``).
     The KG ReferenceSite set is a **GENERATED mirror of it** — produced by this script,
     never edited by hand — so it cannot drift independently of the tested SoT.
 

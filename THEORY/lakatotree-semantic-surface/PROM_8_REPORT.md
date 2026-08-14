@@ -52,7 +52,7 @@ contract, not as a class-per-slogan rule.
 
 ## Verification Plan
 
-- `pytest -q tests/test_semantic_surface.py tests/test_meaning_srp.py tests/test_longinus_bindings.py`
+- `pytest -q tests/test_semantic_surface.py tests/test_meaning_srp.py tests/frozen_longinus_bindings.py`
 - `python -m lakatos.longinus`
 - Full suite if the focused gates pass.
 

@@ -1,10 +1,12 @@
-"""ooptdd 영수증 전수 CI 이빨 — ooptdd_receipts/*/requirements.yaml 자동 발견·전수 실행.
+"""Frozen ooptdd 영수증 전수 감사 — ooptdd_receipts/*/requirements.yaml 자동 발견·전수 실행.
 
 채택 배선(2026-07-02): LTDD 영수증이 '만든 사람 세션에서만 도는 산출물'이면 채택이 아니다 —
-여기서 *자동 발견*해 매 스위트마다 전수 실행한다. 새 영수증은 ooptdd_receipts/<ID>/ 에 spec+
-emit-adapter 만 두면 등록 없이 CI 상주(추가만 하면 이빨). 엔진 코드가 영수증 계약을 깨면 스위트 RED.
+주간·수동 감사에서 *자동 발견*해 전수 실행한다. 예외적으로 승인되어 추가된 영수증은
+ooptdd_receipts/<ID>/ 에 spec+emit-adapter 만 두면 등록 없이 감사 대상이 된다.
+엔진 코드가 영수증 계약을 깨면 감사 RED.
 
-러너는 self-contained: _vendor/ooptdd_loop + repo .venv(fastapi 有), 네트워크/시크릿 0 (memory backend).
+러너의 checkout-only 모드는 self-contained: _vendor/ooptdd_loop + repo .venv(fastapi 有),
+네트워크/시크릿 0 (memory backend).
 코퍼스는 자동발견하므로 수동 개수표와 무관하게 모든 영수증을 실행한다.
 
 규율 리마인드(각 영수증): emit-adapter 는 실코드 구동(재구현 금지) + 음성 오라클(vacuous green 차단) 필수.
@@ -25,13 +27,8 @@ _REPO = Path(__file__).resolve().parents[1]
 _SPECS = sorted(glob.glob(str(_REPO / "ooptdd_receipts" / "*" / "requirements.yaml")))
 
 
-def test_receipt_corpus_is_nonempty_and_growing():
-    """자동발견이 진공이 아님 — 현재 정본 28개 이상(삭제는 명시 결정이어야 한다)."""
-    assert len(_SPECS) >= 28, f"영수증 코퍼스 축소: {len(_SPECS)}개 — 삭제는 명시 결정이어야 한다"
-
-
 def test_dedicated_runner_discovers_exact_same_corpus():
-    """전용 CI runner와 pytest가 같은 spec 집합을 실행한다 — 수동 allowlist drift 차단."""
+    """전용 audit runner와 pytest가 같은 spec 집합을 실행한다 — 수동 allowlist drift 차단."""
     from ooptdd_receipts.run_all import discover_specs
 
     dedicated = {str(p) for p in discover_specs()}

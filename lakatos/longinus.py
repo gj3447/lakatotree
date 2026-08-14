@@ -6,7 +6,7 @@
   - L6 drift : def-line 시그니처 변경 (sha256[:16] 불일치 — 의도된 변경이면 재베이스라인)
   - line_hint 는 *캐시* — stale 허용(심볼이 정본, 줄은 밀려도 무드리프트).
 
-tests/test_longinus_bindings.py 와 동일 규칙을 재사용 가능한 함수로 추출.
+tests/frozen_longinus_bindings.py 와 동일 규칙을 재사용 가능한 함수로 추출.
 # KG: span_lakatotree_world_gates, rs-longinus-cli-audit
 """
 from __future__ import annotations

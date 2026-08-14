@@ -1,6 +1,6 @@
 {
   "name": "lakatotree-code-longinus-bindings",
-  "purpose": "엔진/서버 코드 심볼 ↔ KG ReferenceSite(Longinus) 의 in-repo 정본 미러. tests/test_longinus_bindings.py 가 매 커밋 drift 검사(KG 접속 불필요).",
+  "purpose": "엔진/서버 코드 심볼 ↔ KG ReferenceSite(Longinus) 의 in-repo 정본 미러. tests/frozen_longinus_bindings.py 가 주간·수동 감사(KG 접속 불필요).",
   "policy": "symbol-resolved. anchor=sourceId(심볼). sha256=def-line 내용 해시(시그니처 변경 감지). line_hint=재유도 가능한 캐시(주석 추가 등으로 줄이 밀려도 무방 — 드리프트 아님). 진짜 drift = 심볼 소멸/리네임(L4) 또는 def-line 시그니처 변경(L6).",
   "kg_mirror": "ReferenceSite:Longinus (commit baseline 7723a4c, HAS_REFERENCE_SITE)",
   "commit_baseline": "7723a4c",

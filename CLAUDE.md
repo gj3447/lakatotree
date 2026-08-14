@@ -23,14 +23,13 @@ Python 변경은 해당 Python 게이트, 언어 간 wire/spec 변경은 양쪽 
 
 ## 2. 방법론 (행동 RED-first + 증거 비례)
 
-- 의미 결함은 가장 작은 행동·fault fixture로 RED를 먼저 확인한 뒤 고친다. 별도 mechanism guard는
-  실제 false-green을 추가로 구분할 때만 둔다. 소스 문자열·주석·내부 함수 위치를 제품 동작의 대리물로 검사하지 않는다.
-- 해시는 릴리스·외부 영수증·동결 역사 증거처럼 저장소 밖으로 나가는 경계에만 쓴다. 내부 코드·문서·테스트
-  사이의 결속은 실행 계약이나 의미 불변식으로 검증한다.
-- 파생물은 재생성 명령과 단일 정본이 있을 때만 둔다. 손으로 맞춰야 하는 schema/manifest/golden/receipt 복제는
-  만들지 않는다. 기존 `ooptdd_receipts/`는 레거시 회귀 corpus로 동결하며 새 변경의 기본 산출물이 아니다.
-- blocking guard에는 보호하는 실제 실패, owner, retirement 조건이 있어야 한다. 새 guard를 넣을 때 겹치는
-  source/hash/string guard를 하나 제거하거나, 제거할 것이 없다는 근거를 남긴다.
+- 20~50개 실제 작업 비교평가가 생기기 전에는 새 규칙·judge·receipt·FSM·MCP 도구를 추가하지 않는다.
+  실제 실패를 기존 행동 테스트로 잡을 수 없는 예외만 허용하며, 새 blocking guard를 넣는 같은 패치에서
+  겹치는 source/hash/string guard 하나를 제거한다.
+- 의미 결함은 가장 작은 행동·fault fixture로 RED를 먼저 확인한 뒤 고친다. 소스 문자열·주석·내부 함수
+  위치를 제품 동작의 대리물로 검사하지 않는다. 해시는 외부 릴리스·영수증·동결 역사 증거에만 쓴다.
+- 파생물은 재생성 명령과 단일 정본이 있을 때만 둔다. 손으로 맞추는 schema/manifest/golden/receipt 복제는
+  만들지 않는다. 기존 `ooptdd_receipts/`는 동결 LTS 감사 corpus이며 일상 변경의 산출물·기본 게이트가 아니다.
 - 진보 주장은 `examples/*_programme.py` 하네스의 **judge() 채점으로만** (손입력 verdict 금지, no fake green).
 
 ## 3. 경로별 검증 게이트 (커밋 전)

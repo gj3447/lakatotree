@@ -1,8 +1,9 @@
-# ooptdd_receipts — 자동발견 ooptdd-loop 영수증 코퍼스
+# ooptdd_receipts — 동결된 ooptdd-loop LTS 영수증 코퍼스
 
 LakatoTree 설계감사(2026-06-25, [docs/DESIGN_AUDIT_PROM_20260625.md](../docs/DESIGN_AUDIT_PROM_20260625.md)
 + `examples/design_audit_20260625_programme.py` dogfood)에서 닫은 **13건**(H1~H4, M1~M9)을
-**ooptdd-loop 정식 영수증**으로 박제한 데서 시작했고, 이후 캠페인 영수증도 같은 코퍼스에 누적한다.
+**ooptdd-loop 정식 영수증**으로 박제한 데서 시작했다. 이 디렉터리는 현재 역사 증거의 LTS
+감사 코퍼스이며, 일반 제품 변경의 완료 조건이나 새 영수증의 기본 목적지가 아니다.
 
 엔진 자체 dogfood(LTDD/PROM, `examples/design_audit_20260625_programme.py` → 13/13 progressive)와
 **이중 검증**: 여기 영수증은 pytest pass 가 아니라 **ooptdd 방법론** 기준이다 —
@@ -14,7 +15,7 @@ LakatoTree 설계감사(2026-06-25, [docs/DESIGN_AUDIT_PROM_20260625.md](../docs
 
 ```
 ooptdd_receipts/
-  run_all.py            # CI 엔트리 — 모든 */requirements.yaml 자동발견, 하나라도 RED 면 exit 1
+  run_all.py            # 감사 엔트리 — 모든 */requirements.yaml 자동발견, 하나라도 RED 면 exit 1
   <F>/<f>_receipt.py    # emit-adapter: 실제 고쳐진 lakatos/server 코드를 in-process 구동 + 구조화 이벤트 ship
   <F>/requirements.yaml # ooptdd spec: gate(이벤트 count) + longinus(must_emit → verify)
 ```
@@ -48,17 +49,13 @@ cd ooptdd_receipts/H3 && ooptdd-loop run requirements.yaml   # root: "." = 이 �
 > 참고: `memory` 백엔드는 per-run ephemeral 이라 사후 `ooptdd-loop verify <cid>` 단독 호출은
 > `absent` 를 반환한다(영수증 결함 아님). 권위는 `run`/`run_all.py` 출력이다.
 
-## CI 배선
+## 감사 배선
 
-lakatotree CI 의 전용 잡은 모든 spec을 자동발견해 상시 재검증한다. 엔진 코드가 회귀해 결함이
-돌아오거나 pytest와 전용 runner의 코퍼스가 갈라지면 잡이 실패한다:
+이 코퍼스는 일반 push/PR 제품 게이트에서 제외된다. 주간 또는 수동
+`.github/workflows/frozen-evidence-audit.yml`이 checkout 안에서 재현 가능한 경계를 전수 검사한다.
+외부 HSWM/SYMPOSIUM 원본과의 결속은 별도 cross-repository 감사 대상이며, 이 워크플로가 그
+권위를 검증했다고 주장하지 않는다.
 
-```yaml
-  ooptdd-receipts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |   # ooptdd-loop 체크아웃 + 설치(ooptdd_loop + fastapi)
-          pip install -e ../ooptdd-loop fastapi
-          python ooptdd_receipts/run_all.py
-```
+일부 동결 spec 주석에는 역사적 runner 이름인 `test_ooptdd_receipts_all(.py)`가 남아 있다.
+현재 후계 runner는 `tests/frozen_ooptdd_receipts_all.py`다. spec 바이트에 결속된 기존 영수증을
+단순 문구 정리로 재발행하지 않기 위해 해당 주석은 의도적으로 보존한다.

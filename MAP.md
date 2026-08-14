@@ -1,7 +1,7 @@
 # LakatoTree 전체 지도 (MAP)
 
 > 파편화된 정본·문서·코드의 단일 진입점이자 **유일한 현행 로드맵**. 산문은 설명 뷰다 — 충돌 시 기계 파일(spec·스키마·테스트)이
-> 이긴다. 최종 갱신 2026-08-12 (verified artifact + Effect Store boundary). 갱신 규칙: 층 구조나 정본 위치가 바뀌는 커밋만
+> 이긴다. 최종 갱신 2026-08-14 (eval-first freeze + frozen-evidence audit 분리). 갱신 규칙: 층 구조나 정본 위치가 바뀌는 커밋만
 > 이 파일을 손댄다 (일상 슬라이스는 손대지 않음 — 지도가 또 하나의 파편이 되지 않게).
 
 ## 0. 한 문장
@@ -14,7 +14,7 @@ LakatoTree = 연구 프로그램의 진보 주장을 **사전등록 → 측정 �
 | 층 | 위치 | 지위 |
 |---|---|---|
 | **TypeScript 재개발 레인** | `ts/` | **PROPOSED**. 함수형 코어·유계 MCP 게이트웨이·Effect I/O 경계. `pnpm verify`가 이 레인의 DONE 게이트 |
-| Python 구현·오라클 | `lakatos/` `server/` 루트 `tests/` | 현재 배포·공개 패키지와 비교 기준. TS 전환이 이 지위를 자동 폐기하지 않음 |
+| Python LTS 구현·오라클 | `lakatos/` `server/` 루트 `tests/` | 현재 배포·비교 기준. 신규 기능 확장은 동결하고 치명 결함 수리·TS parity 판정만 수행 |
 | 외부 재검증기 | `c1verify/` | 엔진 코드 0 import 로 Certificate 재검증 (import-linter + clean-venv CI 로 구축 사실 증명) |
 | 이론 모델 | `formal/` (Lean4) · `THEORY.md` | judge 커널의 이론 검증 — Python 바이너리·측정의 참을 검증하지 않음 (정직 범위) |
 
@@ -90,7 +90,9 @@ paradigm `.limit(50)` · graph body `[:160]`.
 
 - 판정·보증이 왜 이렇게 나왔나 → `ts/src/domain/derive.ts` (TS 레인) · `lakatos/verdicts.py` (Python 구현·비교 오라클)
 - :55170 재시작 → `scripts/dev_server_restart.sh` 만 (CLAUDE.md §4 — 손 재시작 금지)
-- 엔진 거동 증명 → `ooptdd_receipts/<ID>/` + `tests/test_ooptdd_receipts_all.py` (자동 발견·전수 실행)
+- 동결 역사 영수증 감사 → `ooptdd_receipts/<ID>/` + `.github/workflows/frozen-evidence-audit.yml`
+  (주간·수동 checkout-only 전수 실행; 외부 HSWM source binding은 별도 cross-repo 감사,
+  일상 제품 게이트와 분리)
 - 진보 주장 채점 → `examples/*_programme.py` 하네스의 judge() 만 (손입력 verdict 금지)
 - 결정 기록 → `docs/ADR-*.md` (그 외 문서는 프로토콜·핸드오프·감사 기록)
 
@@ -108,12 +110,14 @@ paradigm `.limit(50)` · graph body `[:160]`.
 
 ## 7. 다음 단계 (ts 로드맵)
 
-1. **MCP capability UX**: `tool-surface.v0.json` 한 정본에서 실제 JSON input schema를 생성하고,
-   인증된 세션에서는 write 도구도 discoverable하게 유지한다. read-only는 권한 부재 시 fail-closed
-   posture이지 영구적인 기능 삭제가 아니다.
-2. **Effect 후속은 소비자 기준**: 실제 composition root에 연결할 때만 PG pool/CAS 수명을 scoped
-   Layer로 옮긴다. 자동 write retry나 domain의 Effect 전환은 하지 않는다.
-3. **실사용 eval**: 실제 작업 실패에서 뽑은 20–50개 clean-task corpus로 Python baseline과 TS
-   레인을 비교한다. trace·receipt 수가 아니라 최종 DB/파일/판정 결과를 독립 grader가 채점한다.
-4. **오라클 파리티와 퇴역**: 동결 corpus와 실제 consumer parity가 green인 세로 슬라이스만 Python
-   중복 구현·source/hash guard를 함께 제거한다. 전환 전에는 전체 동등성을 주장하지 않는다.
+1. **실사용 eval이 먼저**: 실제 작업 실패에서 뽑은 20–50개 clean-task corpus로 Python baseline과
+   TS 레인을 비교한다. trace·receipt 수가 아니라 최종 DB/파일/판정 결과를 독립 grader가 채점한다.
+   이 corpus 전에는 새 규칙·judge·receipt·FSM·MCP 도구를 만들지 않는다.
+2. **핵심 workflow만 승격**: corpus가 실제로 요구하는 발견·기록·측정·판정·검증·복구의 5~8개
+   outcome workflow만 TS composition root에 연결한다. 기존 51개 도구의 1:1 이식은 목표가 아니다.
+   필요한 write capability는 숨기지 않고 해당 workflow 안에서 인증·승인·검증 경계로 제공한다.
+3. **Effect 후속은 소비자 기준**: 선택된 workflow의 실제 composition root에 연결할 때만 PG pool/CAS
+   수명을 scoped Layer로 옮긴다. 자동 write retry나 순수 domain의 Effect 전환은 하지 않는다.
+4. **오라클 파리티와 동시 퇴역**: 동결 corpus와 실제 consumer parity가 green인 세로 슬라이스만
+   Python 중복 구현과 겹치는 source/hash/string guard를 같은 패치에서 제거한다. 전환 전에는 전체
+   동등성을 주장하지 않는다.

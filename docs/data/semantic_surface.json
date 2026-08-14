@@ -108,7 +108,7 @@
       "layer": "foundation",
       "change_actor": "traceability auditor",
       "source_refs": ["external:nasa-traceability", "kg:finding_lkt_traceability_bidirectional_20260618", "repo:docs/data/longinus_bindings.json"],
-      "tests": ["tests/test_longinus_bindings.py::test_all_bindings_symbol_resolves"],
+      "tests": ["tests/frozen_longinus_bindings.py::test_all_bindings_symbol_resolves"],
       "docs": ["docs/data/longinus_bindings.json"]
     }
   ]

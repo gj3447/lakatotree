@@ -1,5 +1,4 @@
-"""prom32 conditional 해소 검증 (4/N) — finding_08 이 PROGRESSIVE 의 전제로 명시한
-"automated G-Web/G-Trust/G-WorldAction/G-SourceHistory 게이트"가 코드로 강제됨을 증명.
+"""prom32 제품 행동 검증 (3/N) — G-Web/G-Trust/G-WorldAction 게이트가 코드로 강제됨을 증명.
 
 각 명명 게이트 → 강제 지점 매핑이 실재하고, 불완전 입력을 거부함을 핀.
 """
@@ -65,20 +64,12 @@ def test_gtrust_enforced_no_silent_promotion():
     assert ok_extracted.passed is True                                      # 직접출처 → EXTRACTED
 
 
-# ── G-SourceHistory: Longinus drift-guard (process gate) 실재 ──────────────────
-def test_gsourcehistory_drift_guard_exists():
-    # in-repo Longinus binding line→symbol 해석 강제(test_p7e)가 SourceHistory 게이트의 코드면.
-    import tests.test_longinus_bindings as t
-    assert callable(t.test_all_bindings_symbol_resolves)
-
-
-# ── 종합: 4 명명 게이트 모두 강제 지점 보유 ───────────────────────────────────
-def test_all_four_named_gates_have_enforcement():
+# ── 종합: 3개 제품 행동 게이트 모두 강제 지점 보유 ─────────────────────────────
+def test_all_three_behavioral_gates_have_enforcement():
     app = load_app()
     enforced = {
         'G-Web': callable(web_gate) and callable(app.add_observation),
         'G-WorldAction': callable(world_action_gate) and callable(app.add_world_action),
         'G-Trust': hasattr(CredibilityPromotionGate, 'evaluate'),
-        'G-SourceHistory': True,   # Longinus process gate (test_p7e drift-guard)
     }
     assert all(enforced.values()), enforced

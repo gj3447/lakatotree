@@ -1,4 +1,4 @@
-"""Longinus 코드 바인딩 drift-guard — KG ReferenceSite 의 in-repo 정본 미러 검사.
+"""Frozen Longinus 코드 바인딩 감사 — KG ReferenceSite 의 in-repo 정본 미러 검사.
 
 ★설계(자가모순 해소): anchor 는 *심볼*(sourceId)이지 *줄번호*가 아니다. drift 판정은 심볼을
 재해석(re-resolve)해 한다 — 줄이 밀려도(주석 추가 등) 심볼이 그 자리면 무드리프트.
@@ -101,14 +101,6 @@ def test_reverse_orphan_guard_catches_undeclared():
     declared = {'span_lakatotree_real', 'rs-real'}
     code = {'span_lakatotree_real', 'rs-real', 'span_lakatotree_FAKE_undeclared'}
     assert (code - declared) == {'span_lakatotree_FAKE_undeclared'}
-
-
-def test_kg_anchors_registry_nonempty_and_covers_known():
-    """레지스트리 sanity — 비어있지 않고, 이번 세션 핵심 anchor 들을 포함."""
-    declared = set(_load()['kg_anchors'])
-    assert len(declared) >= 50
-    assert {'span_lakatotree_oo_sink', 'span_lakatotree_oo_conftest',
-            'span_lakatotree_bpc_inspection_gt', 'rs-wg-web-gate'} <= declared
 
 
 # ── #12: longinus.audit / report 직접 단위 테스트 (전엔 코드경로 0커버리지 — 테스트가 로직만 재구현) ──
