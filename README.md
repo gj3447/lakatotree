@@ -222,13 +222,20 @@ Lean requires its pinned toolchain. Database integration tests and the optional 
 
 GitHub can render the repository's [`CITATION.cff`](CITATION.cff) as a software citation for **Gyeongjun Ra (라경준)**. No DOI or tagged release exists yet, so include the repository URL, access date, and exact commit SHA when reproducibility depends on the current source revision.
 
-The project is **dual-licensed**: **GNU AGPL-3.0-or-later** (open source) or a
-**commercial license** for proprietary use — see [`LICENSE`](LICENSE) and
-[`LICENSING.md`](LICENSING.md). Note the AGPL §13 network-use clause: running a
-modified version as a hosted service also triggers source disclosure. Contribution and vulnerability-reporting paths are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md); unreleased changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
+The current default is [MetaHumotonic License 1.2](LICENSE). Existing AGPL and
+commercial grants remain valid within [LICENSE-NOTICE.md](LICENSE-NOTICE.md).
+Contribution and vulnerability-reporting paths are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md); unreleased changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Theoretical references
 
 The engine draws on Lakatos's *Methodology of Scientific Research Programmes* and *Proofs and Refutations*, Popper on falsification, Laudan's *Progress and its Problems*, Zahar on use-novelty, and Bayesian confirmation work by Jeffreys and Kass–Raftery. [THEORY.md](THEORY.md) distinguishes implemented rules, operational policy, open limits, and philosophical motivation; it should be preferred over treating this short list as a complete bibliography.
 
 <!-- Internal drift anchor required by the repository's Longinus binding test: span_lakatotree_engine -->
+
+## License
+
+**MetaHumotonic License 1.2** — [LICENSE](LICENSE); [scope, prior grants and third-party notices](LICENSE-NOTICE.md).
+
+지정한 하드웨어의 접근권한과 전체 관리 권한을 합의한 명세서에 따라 공유하고, **CHU의 일부가 된다**는 참여 원칙을 적용합니다. 실제 접근에는 별도 승인이 필요합니다.
+
+Source-available; not OSI-approved. Existing grants and separately licensed material remain valid.
